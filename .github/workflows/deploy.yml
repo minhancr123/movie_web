@@ -92,22 +92,4 @@ jobs:
             docker exec movieweb-redis redis-cli ping || exit 1
             echo "✓ Redis is healthy"
             
-            echo "✓ Deployment successful!"
-
-      - name: Notify Deployment Status
-        if: always()
-        uses: appleboy/telegram-action@master
-        with:
-          to: ${{ secrets.TELEGRAM_CHAT_ID }}
-          token: ${{ secrets.TELEGRAM_BOT_TOKEN }}
-          message: |
-            🚀 MovieWeb Deployment
-            
-            Repository: ${{ github.repository }}
-            Branch: ${{ github.ref_name }}
-            Commit: ${{ github.sha }}
-            Author: ${{ github.actor }}
-            
-            Status: ${{ job.status }}
-            
-            ${{ job.status == 'success' && '✅ Deployment successful!' || '❌ Deployment failed!' }}
+            echo "✓ Deployment successful!
