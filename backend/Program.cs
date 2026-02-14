@@ -84,7 +84,49 @@ app.UseCors("AllowNextApp");
 app.UseAuthorization();
 app.MapControllers();
 
-// Health check endpoint for Docker
-app.MapGet("/health", () => Results.Ok(new { status = "healthy", timestamp = DateTime.UtcNow }));
+// Health check endpoint for Docker with Redis check
+app.MapGet("/health", async (IDistributedCache cache) =>
+{
+    try
+    {
+        // Test Redis connection by setting and getting a test value
+        var testKey = "health-check-test";
+        await cache.SetStringAsync(testKey, "ok", new DistributedCacheEntryOptions
+        {
+            AbsoluteExpirationRelativeToNow = TimeSpan.FromSeconds(5)
+        });
+        
+        var testValue = await cache.GetStringAsync(testKey);
+        
+        if (testValue == "ok")
+        {
+            return Results.Ok(new
+            {
+                status = "healthy",
+                redis = "connected",
+                timestamp = DateTime.UtcNow
+            });
+        }
+        else
+        {
+            return Results.Json(new
+            {
+                status = "degraded",
+                redis = "disconnected",
+                timestamp = DateTime.UtcNow
+            }, statusCode: 503);
+        }
+    }
+    catch (Exception ex)
+    {
+        return Results.Json(new
+        {
+            status = "unhealthy",
+            redis = "error",
+            error = ex.Message,
+            timestamp = DateTime.UtcNow
+        }, statusCode: 503);
+    }
+});
 
 app.Run();

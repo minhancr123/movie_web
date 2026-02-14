@@ -31,7 +31,7 @@ services:
       - ASPNETCORE_URLS=http://+:8080
       - ConnectionStrings__Redis=redis:6379
       - MovieSettings__BaseApiUrl=https://phimapi.com
-      - MovieSettings__FrontendUrl=${FRONTEND_URL}
+      - MovieSettings__FrontendUrl=https://movie-web-green-sigma.vercel.app,http://localhost:3000,http://localhost:3001
     depends_on:
       redis:
         condition: service_healthy

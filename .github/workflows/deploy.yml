@@ -1,0 +1,113 @@
+name: Deploy to VPS
+
+on:
+  push:
+    branches:
+      - main
+      - master
+    paths:
+      - 'backend/**'
+      - 'backend-node/**'
+      - 'docker-compose.prod.yml'
+      - '.github/workflows/deploy.yml'
+
+jobs:
+  deploy:
+    name: Deploy Docker Images to VPS
+    runs-on: ubuntu-latest
+    
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@v3
+
+      - name: Login to Docker Hub
+        uses: docker/login-action@v3
+        with:
+          username: ${{ secrets.DOCKER_USERNAME }}
+          password: ${{ secrets.DOCKER_PASSWORD }}
+
+      - name: Build and Push Node.js Backend
+        uses: docker/build-push-action@v5
+        with:
+          context: ./backend-node
+          file: ./backend-node/Dockerfile
+          push: true
+          tags: |
+            ${{ secrets.DOCKER_USERNAME }}/movie-web:node-latest
+            ${{ secrets.DOCKER_USERNAME }}/movie-web:node-${{ github.sha }}
+            ${{ secrets.DOCKER_USERNAME }}/movie-web:latest
+          cache-from: type=registry,ref=${{ secrets.DOCKER_USERNAME }}/movie-web:node-latest
+          cache-to: type=inline
+
+      - name: Build and Push C# Backend
+        uses: docker/build-push-action@v5
+        with:
+          context: ./backend
+          file: ./backend/Dockerfile
+          push: true
+          tags: |
+            ${{ secrets.DOCKER_USERNAME }}/movie-web:csharp-latest
+            ${{ secrets.DOCKER_USERNAME }}/movie-web:csharp-${{ github.sha }}
+          cache-from: type=registry,ref=${{ secrets.DOCKER_USERNAME }}/movie-web:csharp-latest
+          cache-to: type=inline
+
+      - name: Deploy to VPS
+        uses: appleboy/ssh-action@v1.0.0
+        with:
+          host: ${{ secrets.VPS_HOST }}
+          username: ${{ secrets.VPS_USERNAME }}
+          key: ${{ secrets.VPS_SSH_KEY }}
+          port: ${{ secrets.VPS_PORT }}
+          script: |
+            cd /var/www/movieweb
+            
+            # Pull latest code
+            git pull origin main
+            
+            # Pull latest Docker images
+            docker-compose -f docker-compose.prod.yml pull
+            
+            # Restart services with zero-downtime
+            docker-compose -f docker-compose.prod.yml up -d --force-recreate --no-deps backend-node backend-csharp
+            
+            # Clean up old images
+            docker image prune -af
+            
+            # Health checks
+            echo "Waiting for services to be healthy..."
+            sleep 15
+            
+            # Check Node.js Backend
+            curl -f http://localhost:5001/health || exit 1
+            echo "✓ Node.js Backend is healthy"
+            
+            # Check C# Backend
+            curl -f http://localhost:5291/health || exit 1
+            echo "✓ C# Backend is healthy"
+            
+            # Check Redis
+            docker exec movieweb-redis redis-cli ping || exit 1
+            echo "✓ Redis is healthy"
+            
+            echo "✓ Deployment successful!"
+
+      - name: Notify Deployment Status
+        if: always()
+        uses: appleboy/telegram-action@master
+        with:
+          to: ${{ secrets.TELEGRAM_CHAT_ID }}
+          token: ${{ secrets.TELEGRAM_BOT_TOKEN }}
+          message: |
+            🚀 MovieWeb Deployment
+            
+            Repository: ${{ github.repository }}
+            Branch: ${{ github.ref_name }}
+            Commit: ${{ github.sha }}
+            Author: ${{ github.actor }}
+            
+            Status: ${{ job.status }}
+            
+            ${{ job.status == 'success' && '✅ Deployment successful!' || '❌ Deployment failed!' }}
