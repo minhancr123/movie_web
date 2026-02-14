@@ -2,7 +2,7 @@
 
 import Link from 'next/link';
 import Image from 'next/image';
-import { PlayCircle, Star, Calendar } from 'lucide-react';
+import { PlayCircle, Star, Calendar, Eye } from 'lucide-react';
 import { Movie, getMovieDetail, MovieDetail, IMAGE_PREFIX } from '@/lib/api';
 import { useState, useRef, useEffect } from 'react';
 import Hls from 'hls.js';
@@ -18,6 +18,7 @@ const MovieCard = ({ movie }: MovieCardProps) => {
     const [isVideoReady, setIsVideoReady] = useState(false);
     const [popupPosition, setPopupPosition] = useState<'left' | 'center' | 'right'>('center'); // New state for popup alignment
     const [details, setDetails] = useState<MovieDetail | null>(null);
+    const [views, setViews] = useState(0); // State for view count
     const videoRef = useRef<HTMLVideoElement>(null);
     const hlsRef = useRef<Hls | null>(null);
     const cardRef = useRef<HTMLDivElement>(null); // Ref for the card container
@@ -46,6 +47,22 @@ const MovieCard = ({ movie }: MovieCardProps) => {
             }
         };
     }, []);
+
+    // Fetch view count
+    useEffect(() => {
+        const fetchViews = async () => {
+            try {
+                const baseUrl = process.env.NEXT_PUBLIC_BACKEND_API_URL || 'http://localhost:5000';
+                const res = await fetch(`${baseUrl}/api/movies/views/${movie.slug}`);
+                if (res.ok) {
+                    const data = await res.json();
+                    setViews(data.views);
+                }
+            } catch (e) { console.error("Error fetching views", e); }
+        };
+        // Fetch lazily or instantly? Instantly for now.
+        fetchViews();
+    }, [movie.slug]);
 
 
 
@@ -225,6 +242,13 @@ const MovieCard = ({ movie }: MovieCardProps) => {
                     <div className="absolute top-2 left-2 flex gap-1 z-10">
                         <span className="bg-red-600 text-white text-[10px] font-bold px-2 py-0.5 rounded-sm shadow-sm tracking-wider">FHD</span>
                         <span className="bg-yellow-500 text-black text-[10px] font-bold px-2 py-0.5 rounded-sm shadow-sm tracking-wider">VIP</span>
+                    </div>
+
+                    {/* View Count Badge */}
+                    <div className="absolute top-2 right-2 z-10">
+                        <div className="bg-black/60 text-gray-200 text-[10px] font-bold px-1.5 py-0.5 rounded-sm shadow-sm flex items-center gap-1 backdrop-blur-md border border-white/5">
+                            <Eye size={10} className="text-emerald-400" /> {views > 0 ? views.toLocaleString() : '0'}
+                        </div>
                     </div>
                 </div>
 

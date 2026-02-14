@@ -67,6 +67,62 @@ builder.Services.AddCors(options =>
 
 var app = builder.Build();
 
+// --- RATE LIMIT MIDDLEWARE ---
+app.Use(async (context, next) => {
+    // Apply only to API endpoints
+    if (context.Request.Path.StartsWithSegments("/api")) {
+         var cache = context.RequestServices.GetRequiredService<IDistributedCache>();
+         // Use X-Forwarded-For if behind proxy, else RemoteIpAddress
+         var ip = context.Request.Headers["X-Forwarded-For"].FirstOrDefault() ?? context.Connection.RemoteIpAddress?.ToString() ?? "unknown";
+         
+         // 1. Get Global Limit Config (Default 60 req/min/IP)
+         var limitStr = await cache.GetStringAsync("sys:rate_limit");
+         int limit = 200; // Default safe limit
+         if (!string.IsNullOrEmpty(limitStr) && int.TryParse(limitStr, out var l)) limit = l;
+         
+         // 2. Count requests per minute for this IP
+         var key = $"rate:{ip}:{DateTime.UtcNow:yyyyMMddHHmm}";
+         var countStr = await cache.GetStringAsync(key);
+         int count = 0;
+         if (!string.IsNullOrEmpty(countStr) && int.TryParse(countStr, out var c)) count = c;
+         
+         if (count >= limit) {
+             context.Response.StatusCode = 429;
+             context.Response.ContentType = "application/json";
+             await context.Response.WriteAsync("{\"message\": \"Too Many Requests. Please try again later.\"}");
+             return;
+         }
+         
+         // Increment Per-IP Rate Limit
+         await cache.SetStringAsync(key, (count + 1).ToString(), new DistributedCacheEntryOptions { AbsoluteExpirationRelativeToNow = TimeSpan.FromMinutes(1) });
+    
+         // --- GLOBAL STATS TRACKING ---
+         // 1. Total Requests (Persistent-ish)
+         // Note: Not atomic
+         var totalKey = "stats:req_total";
+         var totalVal = await cache.GetStringAsync(totalKey);
+         long total = 0;
+         if (long.TryParse(totalVal, out var t)) total = t;
+         // Save, expire in 30 days
+         await cache.SetStringAsync(totalKey, (total + 1).ToString(), new DistributedCacheEntryOptions { SlidingExpiration = TimeSpan.FromDays(30) });
+
+         // 2. Current Minute Requests (For Rate/Active User calc)
+         var minKey = "stats:req_current_min"; // Just overwrite/increment. Wait, this never resets if I just inc.
+         // Actually, let's use a time-bucket key
+         var timeBucket = DateTime.UtcNow.ToString("yyyyMMddHHmm");
+         var bucketKey = $"stats:req_bucket:{timeBucket}";
+         var bucketVal = await cache.GetStringAsync(bucketKey);
+         int bucketCount = 0;
+         if (int.TryParse(bucketVal, out var b)) bucketCount = b;
+         await cache.SetStringAsync(bucketKey, (bucketCount + 1).ToString(), new DistributedCacheEntryOptions { AbsoluteExpiration = DateTimeOffset.UtcNow.AddMinutes(2) });
+         
+         // Also update the "current_min" pointer for easier service access? 
+         // Service can just generate same key.
+         // Let's update Service to use the bucket key logic.
+    }
+    await next();
+});
+
 // Configure the HTTP request pipeline.
 if (app.Environment.IsDevelopment())
 {

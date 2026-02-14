@@ -647,7 +647,7 @@ export default function VideoPlayer({ src, movie, episode, onNextEpisode }: Vide
 
             {/* Loading Spinner */}
             {isLoading && (
-                <div className="absolute inset-0 flex items-center justify-center bg-black/50 z-20 backdrop-blur-sm">
+                <div className="absolute inset-0 flex items-center justify-center bg-black/50 z-20">
                     <Loader2 className="w-12 h-12 text-red-600 animate-spin" />
                 </div>
             )}
@@ -660,7 +660,7 @@ export default function VideoPlayer({ src, movie, episode, onNextEpisode }: Vide
                             e.stopPropagation(); // Stop propagation to avoid double-toggling if container also handles click
                             togglePlay();
                         }}
-                        className="w-20 h-20 bg-black/60 rounded-full flex items-center justify-center pl-2 shadow-2xl backdrop-blur-sm border border-white/10 group-hover:scale-110 transition-transform duration-300 pointer-events-auto cursor-pointer hover:bg-white/20"
+                        className="w-20 h-20 bg-black/60 rounded-full flex items-center justify-center pl-2 shadow-2xl border border-white/10 group-hover:scale-110 transition-transform duration-300 pointer-events-auto cursor-pointer hover:bg-white/20"
                     >
                         <Play className="text-white w-10 h-10 fill-white" />
                     </button>

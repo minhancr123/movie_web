@@ -71,5 +71,55 @@ namespace backend.Controllers
              await _movieService.ClearCacheAsync(key);
              return Ok(new { message = string.IsNullOrEmpty(key) ? "All Cache Cleared (Redis)" : $"Cache Key '{key}' Cleared" });
         }
+
+        [HttpPost("views/{slug}")]
+        public async Task<IActionResult> IncreaseView(string slug)
+        {
+            var views = await _movieService.IncrementViewCount(slug);
+            return Ok(new { views });
+        }
+
+        [HttpGet("views/{slug}")]
+        public async Task<IActionResult> GetViewCount(string slug)
+        {
+            var views = await _movieService.GetViewCount(slug);
+            return Ok(new { views }); 
+        }
+
+        [HttpPost("admin/rate-limit")]
+        public async Task<IActionResult> SetRateLimit([FromQuery] int limit, [FromQuery] string secret)
+        {
+             if (secret != "admin123") return Unauthorized();
+             await _movieService.SetSystemRateLimit(limit);
+             return Ok(new { message = $"Rate limit set to {limit} req/min" });
+        }
+
+        [HttpGet("admin/rate-limit")]
+        public async Task<IActionResult> GetRateLimit([FromQuery] string secret)
+        {
+             if (secret != "admin123") return Unauthorized();
+             var limit = await _movieService.GetSystemRateLimit();
+             return Ok(new { limit });
+        }
+
+        [HttpGet("admin/stats")]
+        public async Task<IActionResult> GetSystemStats([FromQuery] string secret)
+        {
+             if (secret != "admin123") return Unauthorized();
+             
+             var totalViews = await _movieService.GetTotalViews();
+             var totalRequests = await _movieService.GetRequestCount();
+             var activeUsers = await _movieService.GetActiveUsersEstimate();
+             var requestRate = activeUsers * 4; // Estimate
+             
+             return Ok(new 
+             {
+                 activeUsers,
+                 requestRate,
+                 totalViews,
+                 totalRequests,
+                 serverTime = DateTime.UtcNow
+             });
+        }
     }
 }

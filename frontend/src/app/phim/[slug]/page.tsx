@@ -8,6 +8,7 @@ import SaveButton from '@/components/SaveButton';   // Client Component wrapper
 import Link from 'next/link';
 import CommentsSection from '@/components/CommentsSection';
 import MovieRow from '@/components/MovieRow';
+import ViewCounter from '@/components/ViewCounter';
 
 export async function generateStaticParams() {
     // Pre-render top movies from page 1 for better performance (SSG)
@@ -68,6 +69,19 @@ export default async function MovieDetail({ params }: { params: { slug: string }
         }
     }
 
+
+    // Fetch initial views
+    let initialViews = 0;
+    try {
+        const viewRes = await fetch(`${process.env.NEXT_PUBLIC_BACKEND_API_URL || 'http://localhost:5000'}/api/movies/views/${params.slug}`, { cache: 'no-store' });
+        if (viewRes.ok) {
+            const vdata = await viewRes.json();
+            initialViews = vdata.views || 0;
+        }
+    } catch (e) {
+        console.error("Failed to fetch views", e);
+    }
+
     return (
         <div className="min-h-screen bg-[#0a0a0a] relative pb-20">
             {/* 1. Backdrop / Background Blur */}
@@ -123,6 +137,7 @@ export default async function MovieDetail({ params }: { params: { slug: string }
 
                         {/* Metadata Row */}
                         <div className="flex flex-wrap items-center gap-6 mb-8 text-sm md:text-base text-gray-300 w-fit">
+                            <ViewCounter slug={movie.slug} initialViews={initialViews} />
                             <div className="flex items-center gap-2 bg-white/5 px-4 py-2 rounded-lg border border-white/5 backdrop-blur-sm">
                                 <Clock size={18} className="text-red-500" />
                                 <span className="font-semibold">{movie.time || 'N/A'}</span>
