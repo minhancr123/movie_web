@@ -1,0 +1,76 @@
+version: '3.8'
+
+services:
+  # Redis Cache
+  redis:
+    image: redis:7-alpine
+    container_name: movieweb-redis
+    restart: unless-stopped
+    ports:
+      - "6379:6379"
+    volumes:
+      - redis-data:/data
+    command: redis-server --appendonly yes --maxmemory 256mb --maxmemory-policy allkeys-lru
+    networks:
+      - movieweb-network
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 10s
+      timeout: 3s
+      retries: 3
+
+  # C# Backend (ASP.NET Core - Movie API)
+  backend-csharp:
+    image: minhancr123/movie-web:csharp-latest
+    container_name: movieweb-backend-csharp
+    restart: unless-stopped
+    ports:
+      - "5291:8080"
+    environment:
+      - ASPNETCORE_ENVIRONMENT=Production
+      - ASPNETCORE_URLS=http://+:8080
+      - ConnectionStrings__Redis=redis:6379
+      - MovieSettings__BaseApiUrl=https://phimapi.com
+      - MovieSettings__FrontendUrl=${FRONTEND_URL}
+    depends_on:
+      redis:
+        condition: service_healthy
+    networks:
+      - movieweb-network
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:8080/health"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 40s
+
+  # Node.js Backend (Auth, Comments, Socket.io)
+  backend-node:
+    image: minhancr123/movie-web:node-latest
+    container_name: movieweb-backend-node
+    restart: unless-stopped
+    ports:
+      - "5001:5001"
+    environment:
+      - NODE_ENV=production
+      - PORT=5001
+      - MONGODB_URI=${MONGODB_URI}
+      - JWT_SECRET=${JWT_SECRET}
+      - CORS_ORIGIN=${CORS_ORIGIN}
+      - FRONTEND_URL=${FRONTEND_URL}
+    networks:
+      - movieweb-network
+    healthcheck:
+      test: ["CMD", "wget", "--quiet", "--tries=1", "--spider", "http://localhost:5001/health"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 40s
+
+volumes:
+  redis-data:
+    driver: local
+
+networks:
+  movieweb-network:
+    driver: bridge
