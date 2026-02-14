@@ -1,5 +1,6 @@
 using backend.Services;
 using Microsoft.AspNetCore.ResponseCompression;
+using Microsoft.Extensions.Caching.Distributed;
 using System.IO.Compression;
 
 var builder = WebApplication.CreateBuilder(args);
