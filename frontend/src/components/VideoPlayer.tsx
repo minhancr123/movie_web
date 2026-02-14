@@ -300,17 +300,41 @@ export default function VideoPlayer({ src, movie, episode, onNextEpisode }: Vide
 
     const togglePlay = useCallback(() => {
         if (videoRef.current) {
-            if (isPlaying) videoRef.current.pause();
-            else videoRef.current.play();
+            if (isPlaying) {
+                videoRef.current.pause();
+            } else {
+                const playPromise = videoRef.current.play();
+                if (playPromise !== undefined) {
+                    playPromise.catch(error => {
+                        console.error("❌ Play failed:", error);
+                    });
+                }
+            }
         }
     }, [isPlaying]);
 
     const toggleFullscreen = useCallback(() => {
+        const video = videoRef.current;
+
+        // iOS Safari Support (Native Fullscreen)
+        if (video && (video as any).webkitEnterFullscreen) {
+            (video as any).webkitEnterFullscreen();
+            return;
+        }
+
+        // Standard Desktop Support
         if (!document.fullscreenElement) {
-            containerRef.current?.requestFullscreen();
+            containerRef.current?.requestFullscreen().catch(err => {
+                // Fallback to video fullscreen if container fails
+                if (video && video.requestFullscreen) {
+                    video.requestFullscreen();
+                }
+            });
             setIsFullscreen(true);
         } else {
-            document.exitFullscreen();
+            if (document.exitFullscreen) {
+                document.exitFullscreen();
+            }
             setIsFullscreen(false);
         }
     }, []);
@@ -631,9 +655,15 @@ export default function VideoPlayer({ src, movie, episode, onNextEpisode }: Vide
             {/* Big Play Button (when paused) */}
             {!isPlaying && !isLoading && (
                 <div className="absolute inset-0 flex items-center justify-center z-10 pointer-events-none">
-                    <div className="w-20 h-20 bg-black/60 rounded-full flex items-center justify-center pl-2 shadow-2xl backdrop-blur-sm border border-white/10 group-hover:scale-110 transition-transform duration-300">
+                    <button
+                        onClick={(e) => {
+                            e.stopPropagation(); // Stop propagation to avoid double-toggling if container also handles click
+                            togglePlay();
+                        }}
+                        className="w-20 h-20 bg-black/60 rounded-full flex items-center justify-center pl-2 shadow-2xl backdrop-blur-sm border border-white/10 group-hover:scale-110 transition-transform duration-300 pointer-events-auto cursor-pointer hover:bg-white/20"
+                    >
                         <Play className="text-white w-10 h-10 fill-white" />
-                    </div>
+                    </button>
                 </div>
             )}
 
