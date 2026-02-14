@@ -16,7 +16,7 @@ jobs:
     name: Deploy Docker Images to VPS
     runs-on: ubuntu-latest
     environment: 'Production Environments'
-    
+
     steps:
       - name: Checkout code
         uses: actions/checkout@v4
@@ -63,34 +63,29 @@ jobs:
           key: ${{ secrets.VPS_SSH_KEY }}
           port: ${{ secrets.VPS_PORT }}
           script: |
-            cd /var/www/movieweb
-            
-            # Pull latest code
-            git pull origin main
+            cd /root/movieweb
             
             # Pull latest Docker images
             docker-compose -f docker-compose.prod.yml pull
             
-            # Restart services with zero-downtime
-            docker-compose -f docker-compose.prod.yml up -d --force-recreate --no-deps backend-node backend-csharp
+            # Restart services
+            docker-compose -f docker-compose.prod.yml up -d --force-recreate
             
             # Clean up old images
             docker image prune -af
             
-            # Health checks
             echo "Waiting for services to be healthy..."
             sleep 15
             
-            # Check Node.js Backend
+            # Health checks
             curl -f http://localhost:5001/health || exit 1
             echo "✓ Node.js Backend is healthy"
             
-            # Check C# Backend
             curl -f http://localhost:5291/health || exit 1
             echo "✓ C# Backend is healthy"
             
-            # Check Redis
             docker exec movieweb-redis redis-cli ping || exit 1
             echo "✓ Redis is healthy"
             
-            echo "✓ Deployment successful!
+            echo "✓ Deployment successful!"
+
