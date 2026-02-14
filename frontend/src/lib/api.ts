@@ -59,9 +59,9 @@ export interface MovieDetail extends Movie {
 
 export const getLatestMovies = async (page = 1) => {
   try {
-    // Backend Controller: [HttpGet("latest")]
-    const res = await axiosClient.get(`${API_URL}/latest?page=${page}`);
-    return res.data;
+    const res = await fetch(`${API_URL}/latest?page=${page}`, { next: { revalidate: 300 } });
+    if (!res.ok) throw new Error('Network response was not ok');
+    return await res.json();
   } catch (error) {
     console.error('Error fetching latest movies:', error);
     return { items: [], pagination: {} };
@@ -70,9 +70,9 @@ export const getLatestMovies = async (page = 1) => {
 
 export const getMovieDetail = async (slug: string) => {
   try {
-    // Backend Controller: [HttpGet("details/{slug}")]
-    const res = await axiosClient.get(`${API_URL}/details/${slug}`);
-    return res.data;
+    const res = await fetch(`${API_URL}/details/${slug}`, { next: { revalidate: 3600 } });
+    if (!res.ok) return null;
+    return await res.json();
   } catch (error) {
     console.error(`Error fetching movie detail for ${slug}:`, error);
     return null;
@@ -81,9 +81,9 @@ export const getMovieDetail = async (slug: string) => {
 
 export const searchMovies = async (keyword: string, limit = 10) => {
   try {
-    // Backend Controller: [HttpGet("search")]
-    const res = await axiosClient.get(`${API_URL}/search?keyword=${keyword}&limit=${limit}`);
-    return res.data;
+    const res = await fetch(`${API_URL}/search?keyword=${keyword}&limit=${limit}`, { cache: 'no-store' });
+    if (!res.ok) return { data: { items: [] } };
+    return await res.json();
   } catch (error) {
     console.error('Error searching movies:', error);
     return { data: { items: [] } };
@@ -92,12 +92,9 @@ export const searchMovies = async (keyword: string, limit = 10) => {
 
 export const getMoviesByCategory = async (category: string, page = 1) => {
   try {
-    const res = await axiosClient.get(`${API_URL}/category/${category}?page=${page}`);
-    // The API structure for categories might be slightly different
-    // Usually: { status: 'success', data: { items: [], params: { pagination: {} } } }
-    // Or just { data: { items: [], ... } } depending on API version.
-    // Let's assume consistent wrapper or return raw data to handle in component
-    return res.data;
+    const res = await fetch(`${API_URL}/category/${category}?page=${page}`, { next: { revalidate: 3600 } });
+    if (!res.ok) return { data: { items: [] } };
+    return await res.json();
   } catch (error) {
     console.error(`Error fetching category ${category}:`, error);
     return { data: { items: [] } };
@@ -106,8 +103,9 @@ export const getMoviesByCategory = async (category: string, page = 1) => {
 
 export async function getMoviesByGenre(genre: string, page: number = 1) {
   try {
-    const response = await axiosClient.get(`${API_URL}/genre/${genre}?page=${page}`);
-    return response.data;
+    const res = await fetch(`${API_URL}/genre/${genre}?page=${page}`, { next: { revalidate: 3600 } });
+    if (!res.ok) return { status: false, msg: 'Error', data: { items: [] } };
+    return await res.json();
   } catch (error) {
     console.error(`Error fetching movies by genre ${genre}:`, error);
     return { status: false, msg: 'Error', data: { items: [] } };
@@ -116,8 +114,9 @@ export async function getMoviesByGenre(genre: string, page: number = 1) {
 
 export async function getMoviesByCountry(country: string, page: number = 1) {
   try {
-    const response = await axiosClient.get(`${API_URL}/country/${country}?page=${page}`);
-    return response.data;
+    const res = await fetch(`${API_URL}/country/${country}?page=${page}`, { next: { revalidate: 3600 } });
+    if (!res.ok) return { status: false, msg: 'Error', data: { items: [] } };
+    return await res.json();
   } catch (error) {
     console.error(`Error fetching movies by country ${country}:`, error);
     return { status: false, msg: 'Error', data: { items: [] } };
@@ -181,7 +180,7 @@ export const watchHistoryAPI = {
 
 // Comments APIs
 export const commentsAPI = {
-  getAll: (movieSlug: string, page = 1, limit = 10) => 
+  getAll: (movieSlug: string, page = 1, limit = 10) =>
     authClient.get(`/comments/${movieSlug}?page=${page}&limit=${limit}`),
   add: (data: any) => authClient.post('/comments', data),
   update: (commentId: string, data: any) => authClient.put(`/comments/${commentId}`, data),
@@ -199,7 +198,7 @@ export const premiereAPI = {
   getUpcoming: () => authClient.get('/premieres/upcoming'),
   getBySlug: (movieSlug: string) => authClient.get(`/premieres/movie/${movieSlug}`),
   create: (data: any) => authClient.post('/premieres', data),
-  updateStatus: (eventId: string, status: string) => 
+  updateStatus: (eventId: string, status: string) =>
     authClient.put(`/premieres/${eventId}/status`, { status }),
   delete: (eventId: string) => authClient.delete(`/premieres/${eventId}`),
   registerNotification: (eventId: string) => authClient.post(`/premieres/${eventId}/notify`),

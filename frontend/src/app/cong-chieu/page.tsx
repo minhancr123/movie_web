@@ -49,7 +49,18 @@ export default function PremierePage() {
     return `${m}m`;
   };
 
-  const isLive = (start: string) => new Date(start).getTime() <= Date.now();
+  const isLive = (start: string) => {
+    const startTime = new Date(start).getTime();
+    const now = Date.now();
+    // Live if started and less than 3 hours has passed (approx max movie duration)
+    return startTime <= now && now - startTime < 3 * 60 * 60 * 1000;
+  };
+
+  const isEnded = (start: string) => {
+    const startTime = new Date(start).getTime();
+    const now = Date.now();
+    return now - startTime >= 3 * 60 * 60 * 1000;
+  };
 
   if (loading) {
     return (
@@ -76,12 +87,19 @@ export default function PremierePage() {
         <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-5 gap-4">
           {events.map(e => {
             const live = isLive(e.startTime);
+            const ended = isEnded(e.startTime);
+
             return (
               <div key={e._id} className="group relative bg-gray-900 rounded-xl overflow-hidden border border-white/10 hover:border-red-500/50 hover:shadow-lg hover:shadow-red-500/20 transition-all">
                 {live && (
                   <div className="absolute top-2 left-2 z-10 bg-red-600 px-3 py-1 rounded-full flex items-center gap-1 shadow-lg">
                     <div className="w-2 h-2 bg-white rounded-full animate-pulse"></div>
                     <span className="text-xs font-bold text-white">LIVE</span>
+                  </div>
+                )}
+                {ended && (
+                  <div className="absolute top-2 left-2 z-10 bg-gray-600 px-3 py-1 rounded-full flex items-center gap-1 shadow-lg">
+                    <span className="text-xs font-bold text-white">ĐÃ KẾT THÚC</span>
                   </div>
                 )}
                 <div className="relative aspect-[2/3]">
@@ -91,13 +109,28 @@ export default function PremierePage() {
                 <div className="p-4 space-y-2">
                   <h3 className="text-white font-bold line-clamp-2 text-sm group-hover:text-red-400 transition-colors">{e.name}</h3>
                   <div className="flex items-center gap-2 text-xs">
-                    <Clock size={12} className={live ? 'text-red-500' : 'text-yellow-500'} />
-                    <span className={live ? 'text-red-500 font-semibold' : 'text-yellow-500'}>{getTime(e.startTime)}</span>
+                    <Clock size={12} className={live ? 'text-red-500' : ended ? 'text-gray-400' : 'text-yellow-500'} />
+                    <span className={live ? 'text-red-500 font-semibold' : ended ? 'text-gray-400' : 'text-yellow-500'}>
+                      {ended ? 'Đã chiếu xong' : getTime(e.startTime)}
+                    </span>
                   </div>
-                  <Link href={live ? `/cong-chieu/xem/${e.movieSlug}` : `/phim/${e.movieSlug}`} className={`block text-center py-2 rounded-lg text-sm font-semibold transition-all ${live ? 'bg-red-600 hover:bg-red-700 text-white shadow-lg shadow-red-600/50' : 'bg-white/10 hover:bg-white/20 text-white'}`}>
-                    <Play size={14} className="inline mr-1" />
-                    {live ? 'Xem ngay' : 'Chi tiết'}
-                  </Link>
+
+                  {live ? (
+                    <Link href={`/cong-chieu/xem/${e.movieSlug}`} className="block text-center py-2 rounded-lg text-sm font-semibold transition-all bg-red-600 hover:bg-red-700 text-white shadow-lg shadow-red-600/50">
+                      <Play size={14} className="inline mr-1" />
+                      Xem ngay
+                    </Link>
+                  ) : ended ? (
+                    <Link href={`/phim/${e.movieSlug}`} className="block text-center py-2 rounded-lg text-sm font-semibold transition-all bg-gray-700 hover:bg-gray-600 text-white">
+                      <Play size={14} className="inline mr-1" />
+                      Xem lại
+                    </Link>
+                  ) : (
+                    <Link href={`/phim/${e.movieSlug}`} className="block text-center py-2 rounded-lg text-sm font-semibold transition-all bg-white/10 hover:bg-white/20 text-white">
+                      <Play size={14} className="inline mr-1" />
+                      Chi tiết
+                    </Link>
+                  )}
                 </div>
               </div>
             );

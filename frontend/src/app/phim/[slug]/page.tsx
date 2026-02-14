@@ -1,12 +1,45 @@
-import { getMovieDetail, IMAGE_PREFIX, getMoviesByCategory } from '@/lib/api';
+import { getMovieDetail, IMAGE_PREFIX, getMoviesByCategory, getLatestMovies } from '@/lib/api';
 import Image from 'next/image';
 import { notFound } from 'next/navigation';
+import { Metadata } from 'next';
 import { Play, Calendar, Clock, Star, Users, Film, Globe, MessageSquare } from 'lucide-react';
 import WatchButton from '@/components/WatchButton'; // Client Component wrapper
 import SaveButton from '@/components/SaveButton';   // Client Component wrapper
 import Link from 'next/link';
 import CommentsSection from '@/components/CommentsSection';
 import MovieRow from '@/components/MovieRow';
+
+export async function generateStaticParams() {
+    // Pre-render top movies from page 1 for better performance (SSG)
+    try {
+        const latest = await getLatestMovies(1);
+        return (latest.items || []).map((movie: any) => ({
+            slug: movie.slug,
+        }));
+    } catch (error) {
+        console.error('Error in generateStaticParams:', error);
+        return [];
+    }
+}
+
+export async function generateMetadata({ params }: { params: { slug: string } }): Promise<Metadata> {
+    const data = await getMovieDetail(params.slug);
+    if (!data || !data.movie) {
+        return {
+            title: 'Phim không tìm thấy',
+        };
+    }
+    const movie = data.movie;
+    return {
+        title: `${movie.name} (${movie.year}) - Xem phim Full HD`,
+        description: `Xem phim ${movie.name} (${movie.year}) ${movie.quality} Vietsub, Thuyết minh. ${movie.content.replace(/<[^>]*>?/gm, '').substring(0, 150)}...`,
+        openGraph: {
+            title: `${movie.name} (${movie.year})`,
+            description: movie.content.replace(/<[^>]*>?/gm, '').substring(0, 200),
+            images: [movie.poster_url || movie.thumb_url],
+        },
+    };
+}
 
 export default async function MovieDetail({ params }: { params: { slug: string } }) {
     const data = await getMovieDetail(params.slug);
@@ -44,7 +77,6 @@ export default async function MovieDetail({ params }: { params: { slug: string }
                     alt="Backdrop"
                     fill
                     className="object-cover opacity-20 blur-sm scale-105"
-                    unoptimized
                     priority
                 />
                 {/* Gradients to blend smoothly */}
@@ -64,7 +96,6 @@ export default async function MovieDetail({ params }: { params: { slug: string }
                                 alt={movie.name}
                                 fill
                                 className="object-cover transition-transform duration-700 group-hover:scale-105"
-                                unoptimized
                                 priority
                             />
                             {/* Quality Badge Overlay */}

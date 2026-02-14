@@ -3,16 +3,16 @@ import { useState, useEffect } from 'react';
 /* eslint-disable react-hooks/exhaustive-deps */
 
 interface SavedMovie {
-    id: string; // Movie ID or Slug
-    slug: string;
-    name: string;
-    poster_url: string;
-    origin_name?: string; // Added for MovieCard compatibility
-    quality?: string;      // Added for MovieCard compatibility
-    timeSaved: number;
-    currentEpisode?: string;
-    progress?: number; // seconds
-    duration?: number; // seconds
+  id: string; // Movie ID or Slug
+  slug: string;
+  name: string;
+  poster_url: string;
+  origin_name?: string; // Added for MovieCard compatibility
+  quality?: string;      // Added for MovieCard compatibility
+  timeSaved: number;
+  currentEpisode?: string;
+  progress?: number; // seconds
+  duration?: number; // seconds
 }
 
 export function useLocalStorage<T>(key: string, initialValue: T) {
@@ -49,35 +49,39 @@ export function useLocalStorage<T>(key: string, initialValue: T) {
 }
 
 export const useSavedMovies = () => {
-    const [savedMovies, setSavedMovies] = useLocalStorage<SavedMovie[]>('my_saved_movies', []);
+  const [savedMovies, setSavedMovies] = useLocalStorage<SavedMovie[]>('my_saved_movies', []);
 
-    const toggleSaveMovie = (movie: Omit<SavedMovie, 'timeSaved'>) => {
-        const exists = savedMovies.find(m => m.slug === movie.slug);
-        if (exists) {
-            setSavedMovies(savedMovies.filter(m => m.slug !== movie.slug));
-        } else {
-            setSavedMovies([{...movie, timeSaved: Date.now()},...savedMovies]);
-        }
-    };
+  const toggleSaveMovie = (movie: Omit<SavedMovie, 'timeSaved'>) => {
+    const exists = savedMovies.find(m => m.slug === movie.slug);
+    if (exists) {
+      setSavedMovies(savedMovies.filter(m => m.slug !== movie.slug));
+    } else {
+      setSavedMovies([{ ...movie, timeSaved: Date.now() }, ...savedMovies]);
+    }
+  };
 
-    const isSaved = (slug: string) => {
-        return savedMovies.some(m => m.slug === slug);
-    };
+  const isSaved = (slug: string) => {
+    return savedMovies.some(m => m.slug === slug);
+  };
 
-    return { savedMovies, toggleSaveMovie, isSaved };
+  return { savedMovies, toggleSaveMovie, isSaved };
 };
 
 // Hook for Continue Watching
 export const useWatchHistory = () => {
-    const [history, setHistory] = useLocalStorage<SavedMovie[]>('watch_history', []);
+  const [history, setHistory] = useLocalStorage<SavedMovie[]>('watch_history', []);
 
-    const addToHistory = (movie: SavedMovie) => {
-        // Remove old entry if exists to push new one to top
-        const others = history.filter(h => h.slug !== movie.slug);
-        setHistory([movie, ...others].slice(0, 20)); // Keep last 20 items
-    };
+  const addToHistory = (movie: SavedMovie) => {
+    // Remove old entry if exists to push new one to top
+    const others = history.filter(h => h.slug !== movie.slug);
+    setHistory([movie, ...others].slice(0, 20)); // Keep last 20 items
+  };
 
-    const getContinueList = () => history;
+  const getContinueList = () => history;
 
-    return { history, addToHistory };
+  const removeFromHistory = (slug: string) => {
+    setHistory(history.filter(h => h.slug !== slug));
+  };
+
+  return { history, addToHistory, removeFromHistory };
 };

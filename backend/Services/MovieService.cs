@@ -92,6 +92,13 @@ namespace backend.Services
 
         public async Task<string> GetMoviesByCategory(string category, int page = 1)
         {
+             string cacheKey = $"category_{category}_page_{page}";
+             var cachedData = await _cache.GetStringAsync(cacheKey);
+             if (!string.IsNullOrEmpty(cachedData))
+             {
+                 return cachedData;
+             }
+
              // API Documents: https://phimapi.com/v1/api/danh-sach/{category}
              // Valid categories: phim-le, phim-bo, hoat-hinh, tv-shows
              try 
@@ -103,7 +110,15 @@ namespace backend.Services
                      // Return empty structure or try genre fallback if logic permits, but for now just safe return
                      return "{\"status\":false,\"msg\":\"Category not found or API error\",\"data\":{\"items\":[]}}";
                  }
-                 return await response.Content.ReadAsStringAsync();
+                 var data = await response.Content.ReadAsStringAsync();
+
+                 // Save to Redis (30 mins)
+                 await _cache.SetStringAsync(cacheKey, data, new DistributedCacheEntryOptions
+                 {
+                     AbsoluteExpirationRelativeToNow = TimeSpan.FromMinutes(30)
+                 });
+
+                 return data;
              }
              catch
              {
@@ -113,6 +128,13 @@ namespace backend.Services
 
         public async Task<string> GetMoviesByGenre(string genre, int page = 1)
         {
+             string cacheKey = $"genre_{genre}_page_{page}";
+             var cachedData = await _cache.GetStringAsync(cacheKey);
+             if (!string.IsNullOrEmpty(cachedData))
+             {
+                 return cachedData;
+             }
+
              // API Documents: https://phimapi.com/v1/api/the-loai/{genre}
              try
              {
@@ -121,7 +143,15 @@ namespace backend.Services
                  {
                       return "{\"status\":false,\"msg\":\"Genre not found or API error\",\"data\":{\"items\":[]}}";
                  }
-                 return await response.Content.ReadAsStringAsync();
+                 var data = await response.Content.ReadAsStringAsync();
+
+                 // Save to Redis (30 mins)
+                 await _cache.SetStringAsync(cacheKey, data, new DistributedCacheEntryOptions
+                 {
+                     AbsoluteExpirationRelativeToNow = TimeSpan.FromMinutes(30)
+                 });
+
+                 return data;
              }
              catch
              {
@@ -131,6 +161,13 @@ namespace backend.Services
 
         public async Task<string> GetMoviesByCountry(string country, int page = 1)
         {
+             string cacheKey = $"country_{country}_page_{page}";
+             var cachedData = await _cache.GetStringAsync(cacheKey);
+             if (!string.IsNullOrEmpty(cachedData))
+             {
+                 return cachedData;
+             }
+
              // API Documents: https://phimapi.com/v1/api/quoc-gia/{country}
              try
              {
@@ -140,7 +177,15 @@ namespace backend.Services
                  {
                       return "{\"status\":false,\"msg\":\"Country not found or API error\",\"data\":{\"items\":[]}}";
                  }
-                 return await response.Content.ReadAsStringAsync();
+                 var data = await response.Content.ReadAsStringAsync();
+
+                 // Save to Redis (30 mins)
+                 await _cache.SetStringAsync(cacheKey, data, new DistributedCacheEntryOptions
+                 {
+                     AbsoluteExpirationRelativeToNow = TimeSpan.FromMinutes(30)
+                 });
+
+                 return data;
              }
              catch
              {

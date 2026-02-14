@@ -1,4 +1,4 @@
-import type { Metadata } from "next";
+import type { Metadata, Viewport } from "next";
 import "./globals.css";
 import Header from "@/components/Header";
 import Footer from "@/components/Footer";
@@ -9,11 +9,17 @@ export const metadata: Metadata = {
   description: "Web xem phim miễn phí",
   manifest: "/manifest.json",
   themeColor: "#DC2626",
-  viewport: {
-    width: "device-width",
-    initialScale: 1,
-    maximumScale: 1,
+  appleWebApp: {
+    capable: true,
+    statusBarStyle: "black-translucent",
+    title: "MovieWeb",
   },
+};
+
+export const viewport: Viewport = {
+  width: "device-width",
+  initialScale: 1,
+  maximumScale: 1,
 };
 
 import BottomNav from "@/components/BottomNav";

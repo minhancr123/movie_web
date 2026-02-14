@@ -2,13 +2,22 @@
 
 import Link from 'next/link';
 import Image from 'next/image';
-import { Search, Menu, X, ChevronDown, Loader2, PlayCircle, Bell, User } from 'lucide-react';
+import { Search, Menu, X, ChevronDown, Loader2, PlayCircle, Bell, User, Mic } from 'lucide-react';
 import { useState, useEffect, useRef } from 'react';
 import { useRouter, usePathname } from 'next/navigation';
 import { useSearchMovies } from '@/hooks/useSearchMovies';
 import { useDebounce } from '@/hooks/useDebounce';
 import { IMAGE_PREFIX } from '@/lib/api';
 import UserMenu from '@/components/UserMenu';
+import NotificationMenu from '@/components/NotificationMenu';
+
+declare global {
+    interface Window {
+        SpeechRecognition: any;
+        webkitSpeechRecognition: any;
+    }
+}
+
 
 const GENRES = [
     // ...existing code...
@@ -36,6 +45,7 @@ const Header = () => {
     const [isMobileMenuOpen, setIsMobileMenuOpen] = useState(false);
     const [isGenreOpen, setIsGenreOpen] = useState(false);
     const [isSearchOpen, setIsSearchOpen] = useState(false);
+    const [isMobileSearchVisible, setIsMobileSearchVisible] = useState(false);
     const [searchQuery, setSearchQuery] = useState('');
     const searchContainerRef = useRef<HTMLDivElement>(null);
 
@@ -78,7 +88,37 @@ const Header = () => {
             router.push(`/search?keyword=${encodeURIComponent(searchQuery)}`);
             setIsSearchOpen(false);
             setIsMobileMenuOpen(false);
+            setIsMobileSearchVisible(false);
         }
+    };
+
+    const [isListening, setIsListening] = useState(false);
+
+    const startVoiceSearch = () => {
+        if (typeof window === 'undefined') return;
+
+        const SpeechRecognition = window.SpeechRecognition || window.webkitSpeechRecognition;
+        if (!SpeechRecognition) {
+            alert('Trình duyệt không hỗ trợ tìm kiếm giọng nói');
+            return;
+        }
+
+        const recognition = new SpeechRecognition();
+        recognition.lang = 'vi-VN';
+        recognition.continuous = false;
+        recognition.interimResults = false;
+
+        recognition.onstart = () => setIsListening(true);
+        recognition.onend = () => setIsListening(false);
+        recognition.onresult = (event: any) => {
+            const transcript = event.results[0][0].transcript;
+            setSearchQuery(transcript);
+            router.push(`/search?keyword=${encodeURIComponent(transcript)}`);
+            setIsSearchOpen(false);
+            setIsMobileSearchVisible(false);
+        };
+
+        recognition.start();
     };
 
     return (
@@ -164,7 +204,7 @@ const Header = () => {
                                     <Search size={18} />
                                 </button>
 
-                                <form onSubmit={handleSearchSubmit} className={`flex-1 ${isSearchOpen ? 'block mr-1' : 'hidden'}`}>
+                                <form onSubmit={handleSearchSubmit} className={`flex-1 flex items-center ${isSearchOpen ? 'block mr-1' : 'hidden'}`}>
                                     <input
                                         type="text"
                                         placeholder="Tìm kiếm phim..."
@@ -173,6 +213,14 @@ const Header = () => {
                                         onChange={(e) => setSearchQuery(e.target.value)}
                                         autoFocus={isSearchOpen}
                                     />
+                                    <button
+                                        type="button"
+                                        onClick={startVoiceSearch}
+                                        className={`p-2 transition-colors ${isListening ? 'text-red-500 animate-pulse' : 'text-gray-400 hover:text-white'}`}
+                                        title="Tìm kiếm bằng giọng nói"
+                                    >
+                                        <Mic size={16} />
+                                    </button>
                                 </form>
 
                                 {isSearchOpen && (
@@ -241,6 +289,14 @@ const Header = () => {
                             )}
                         </div>
 
+                        {/* Mobile Search Button */}
+                        <button
+                            className="md:hidden text-gray-400 hover:text-white transition-colors p-2"
+                            onClick={() => setIsMobileSearchVisible(!isMobileSearchVisible)}
+                        >
+                            <Search size={22} />
+                        </button>
+
                         {/* Mobile Menu Button */}
                         <button
                             className="lg:hidden text-white hover:text-red-500 transition-colors p-2"
@@ -250,15 +306,51 @@ const Header = () => {
                         </button>
 
                         {/* Profile Actions */}
-                        <div className="hidden sm:flex items-center gap-3 pl-2 border-l border-white/10">
-                            <button className="text-gray-400 hover:text-red-500 transition-colors relative group p-2">
-                                <Bell size={20} />
-                                <span className="absolute top-1.5 right-2 w-2 h-2 bg-red-500 rounded-full border-2 border-black"></span>
-                            </button>
+                        <div className="flex items-center gap-3 pl-2 border-l border-white/10">
+                            <div className="hidden sm:block">
+                                <NotificationMenu />
+                            </div>
                             <UserMenu />
                         </div>
                     </div>
                 </div>
+
+                {/* Mobile Search Bar Overlay */}
+                {isMobileSearchVisible && (
+                    <div className="absolute top-full left-0 w-full bg-[#111] border-b border-white/10 p-4 md:hidden animate-in slide-in-from-top-2 shadow-2xl">
+                        <form onSubmit={handleSearchSubmit} className="relative">
+                            <input
+                                type="text"
+                                placeholder="Tìm kiếm phim..."
+                                className="w-full bg-black border border-gray-800 rounded-xl px-4 py-3 text-white focus:border-red-500 focus:outline-none pl-11 pr-12"
+                                value={searchQuery}
+                                onChange={(e) => setSearchQuery(e.target.value)}
+                                autoFocus
+                            />
+                            <Search className="absolute left-4 top-1/2 -translate-y-1/2 text-gray-500" size={18} />
+
+                            <div className="absolute right-3 top-1/2 -translate-y-1/2 flex items-center gap-2">
+                                {searchQuery ? (
+                                    <button
+                                        type="button"
+                                        onClick={() => { setSearchQuery(''); }}
+                                        className="text-gray-500"
+                                    >
+                                        <X size={18} />
+                                    </button>
+                                ) : (
+                                    <button
+                                        type="button"
+                                        onClick={startVoiceSearch}
+                                        className={`${isListening ? 'text-red-500 animate-pulse' : 'text-gray-500'}`}
+                                    >
+                                        <Mic size={20} />
+                                    </button>
+                                )}
+                            </div>
+                        </form>
+                    </div>
+                )}
             </header>
 
             {/* Mobile Menu Overlay */}
@@ -281,16 +373,7 @@ const Header = () => {
                         </button>
                     </div>
 
-                    <form onSubmit={handleSearchSubmit} className="mb-8 relative group">
-                        <input
-                            type="text"
-                            placeholder="Tìm kiếm phim..."
-                            className="w-full bg-black border border-white/10 rounded-xl px-4 py-3.5 text-white focus:border-red-500 focus:ring-1 focus:ring-red-500/50 focus:outline-none transition-all pl-11 shadow-inner"
-                            value={searchQuery}
-                            onChange={(e) => setSearchQuery(e.target.value)}
-                        />
-                        <Search className="absolute left-4 top-1/2 -translate-y-1/2 text-gray-500 group-focus-within:text-red-500 transition-colors" size={18} />
-                    </form>
+
 
                     <div className="flex-1 overflow-y-auto space-y-2 pr-2 custom-scrollbar">
                         <Link href="/" className="flex items-center gap-3 px-4 py-3.5 text-base font-bold text-gray-300 hover:text-white hover:bg-white/5 rounded-xl transition-all hover:pl-6 border border-transparent hover:border-white/5">
@@ -335,11 +418,7 @@ const Header = () => {
                         </Link>
                     </div>
 
-                    <div className="mt-6 pt-6 border-t border-white/10 flex flex-col gap-3">
-                        <button className="flex items-center justify-center gap-2 w-full py-3 bg-white/5 hover:bg-white/10 rounded-xl text-sm font-bold text-white transition-colors border border-white/5">
-                            <User size={18} /> Đăng nhập / Đăng ký
-                        </button>
-                    </div>
+
                 </div>
             </div>
         </>

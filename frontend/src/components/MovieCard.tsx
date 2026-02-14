@@ -47,6 +47,8 @@ const MovieCard = ({ movie }: MovieCardProps) => {
         };
     }, []);
 
+
+
     // Handle playing video when details are loaded and isPlaying is true
     useEffect(() => {
         if (isPlaying && details && videoRef.current) {
@@ -68,9 +70,14 @@ const MovieCard = ({ movie }: MovieCardProps) => {
                     if (hlsRef.current) hlsRef.current.destroy();
 
                     const hls = new Hls({
-                        enableWorker: false,
-                        startLevel: -1, // Auto quality
-                        capLevelToPlayerSize: true // Limit quality to player size to save bandwidth
+                        enableWorker: true,
+                        startLevel: 0, // Start with lowest quality for faster load
+                        maxMaxBufferLength: 10, // Only buffer 10 seconds max
+                        maxBufferSize: 2 * 1000 * 1000, // 2MB buffer limit
+                        maxBufferLength: 5, // Only buffer 5 seconds ahead
+                        capLevelToPlayerSize: true, // Limit quality to player size
+                        autoStartLoad: true,
+                        backBufferLength: 0 // Don't keep old segments
                     });
 
                     hls.loadSource(m3u8Url);
@@ -117,7 +124,10 @@ const MovieCard = ({ movie }: MovieCardProps) => {
     }, [isPlaying, details]);
 
     // Handle hover to fetch details and play trailer
-    const handleMouseEnter = () => {
+    const handleMouseEnter = async () => {
+        // Disable popup/video logic on mobile to save data
+        if (typeof window !== 'undefined' && window.innerWidth < 768) return;
+
         setIsHovered(true);
 
         // Calculate position
@@ -142,30 +152,29 @@ const MovieCard = ({ movie }: MovieCardProps) => {
         // Clear any existing timeout
         if (timeoutRef.current) clearTimeout(timeoutRef.current);
 
-        // Set delay before showing popup to avoid accidental triggers
-        timeoutRef.current = setTimeout(async () => {
-            setIsPlaying(true);
+        // Start playing immediately - no delay
+        setIsPlaying(true);
 
-            if (!details) {
-                try {
-                    const data = await getMovieDetail(movie.slug);
-                    if (data?.movie) {
-                        const enhancedDetails = { ...data.movie };
-                        if (data.episodes) {
-                            enhancedDetails.episodes = data.episodes;
-                        }
-                        setDetails(enhancedDetails);
-                    } else if (data) {
-                        setDetails(data);
-                    } else {
-                        setIsPlaying(false);
+        // Fetch details if not already loaded
+        if (!details) {
+            try {
+                const data = await getMovieDetail(movie.slug);
+                if (data?.movie) {
+                    const enhancedDetails = { ...data.movie };
+                    if (data.episodes) {
+                        enhancedDetails.episodes = data.episodes;
                     }
-                } catch (error) {
-                    console.error("Failed to fetch movie details", error);
+                    setDetails(enhancedDetails);
+                } else if (data) {
+                    setDetails(data);
+                } else {
                     setIsPlaying(false);
                 }
+            } catch (error) {
+                console.error("Failed to fetch movie details", error);
+                setIsPlaying(false);
             }
-        }, 800); // 0.8s delay before showing popup
+        }
     };
 
     const handleMouseLeave = () => {
@@ -205,9 +214,12 @@ const MovieCard = ({ movie }: MovieCardProps) => {
                         </div>
                     )}
 
-                    {/* Base Card Overlay */}
-                    <div className="absolute inset-0 bg-black/60 opacity-0 group-hover:opacity-100 transition-opacity duration-300 flex items-center justify-center backdrop-blur-[2px]">
-                        {/* Hidden in base card when hovering because popup handles it, but keep for transition feel */}
+                    {/* Base Card Overlay - Visible on Mobile or when popup is hidden */}
+                    <div className="absolute inset-0 bg-black/60 opacity-0 group-hover:opacity-100 transition-opacity duration-300 flex flex-col items-center justify-center backdrop-blur-[2px] gap-2">
+                        <div className="w-12 h-12 rounded-full bg-red-600 flex items-center justify-center shadow-lg shadow-red-600/40 transform scale-0 group-hover:scale-100 transition-transform duration-300">
+                            <PlayCircle size={24} className="text-white fill-white" />
+                        </div>
+                        <span className="text-white font-bold text-xs tracking-widest uppercase transform translate-y-4 group-hover:translate-y-0 transition-transform duration-300">Xem ngay</span>
                     </div>
 
                     <div className="absolute top-2 left-2 flex gap-1 z-10">
@@ -226,12 +238,12 @@ const MovieCard = ({ movie }: MovieCardProps) => {
             <div className={`
           absolute z-[60] top-1/2 -translate-y-1/2
           w-[150%] bg-[#111] rounded-xl overflow-hidden shadow-2xl shadow-red-900/40 border border-gray-700
-          transition-[transform,opacity,visibility] duration-300 flex flex-col pointer-events-none
+          transition-[transform,opacity,visibility] duration-150 hidden md:flex flex-col pointer-events-none
           ${popupPosition === 'left' ? 'left-0 origin-left' : ''}
           ${popupPosition === 'right' ? 'right-0 origin-right' : ''}
           ${popupPosition === 'center' ? 'left-1/2 -translate-x-1/2 origin-center' : ''}
           ${isHovered
-                    ? 'scale-110 opacity-100 visible delay-300 pointer-events-auto'
+                    ? 'scale-110 opacity-100 visible pointer-events-auto'
                     : 'scale-90 opacity-0 invisible'
                 }
       `}>
@@ -240,36 +252,42 @@ const MovieCard = ({ movie }: MovieCardProps) => {
                     {/* ... existing video setup ... */}
                     <video
                         ref={videoRef}
-                        className={`w-full h-full object-cover transition-opacity duration-500 ${isVideoReady ? 'opacity-100' : 'opacity-0'}`}
+                        className={`w-full h-full object-cover transition-opacity duration-300 ${isVideoReady ? 'opacity-100' : 'opacity-0'}`}
                         muted
                         loop
                         playsInline
+                        preload="metadata"
                         onPlaying={() => setIsVideoReady(true)}
                     />
 
                     {/* Loading / Poster Fallback in Popup */}
-                    <div className={`absolute inset-0 transition-opacity duration-500 z-10 ${isVideoReady ? 'opacity-0' : 'opacity-100'}`}>
+                    <div className={`absolute inset-0 transition-opacity duration-300 z-10 ${isVideoReady ? 'opacity-0 pointer-events-none' : 'opacity-100'}`}>
                         <Image
                             src={popupImageUrl} // Use Landscape thumb for popup
                             alt={movie.name}
                             fill
                             className="object-cover opacity-60"
-                            unoptimized
+                            sizes="(max-width: 768px) 100vw, 400px"
+                            priority
                         />
-                        <div className="absolute inset-0 flex items-center justify-center">
-                            <div className="w-8 h-8 border-2 border-red-600 border-t-transparent rounded-full animate-spin"></div>
-                        </div>
+                        {isPlaying && !isVideoReady && (
+                            <div className="absolute inset-0 flex items-center justify-center">
+                                <div className="w-8 h-8 border-2 border-red-600 border-t-transparent rounded-full animate-spin"></div>
+                            </div>
+                        )}
                     </div>
 
-                    <div className="absolute top-2 right-2 z-20">
-                        <div className="w-6 h-6 rounded-full bg-black/60 flex items-center justify-center border border-white/20">
-                            {(!isPlaying || !isVideoReady) ? (
-                                <div className="w-4 h-4 rounded-full border-2 border-white/40 border-t-transparent animate-spin" />
-                            ) : (
-                                <div className="w-2 h-2 bg-red-500 rounded-full animate-pulse" />
-                            )}
+                    {isPlaying && (
+                        <div className="absolute top-2 right-2 z-20">
+                            <div className="w-6 h-6 rounded-full bg-black/60 flex items-center justify-center border border-white/20">
+                                {!isVideoReady ? (
+                                    <div className="w-4 h-4 rounded-full border-2 border-white/40 border-t-transparent animate-spin" />
+                                ) : (
+                                    <div className="w-2 h-2 bg-red-500 rounded-full animate-pulse" />
+                                )}
+                            </div>
                         </div>
-                    </div>
+                    )}
                 </div>
 
                 {/* Overlay Info inside Popup */}

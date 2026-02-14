@@ -45,6 +45,7 @@ export default function VideoPlayer({ src, movie, episode, onNextEpisode }: Vide
     const [buffered, setBuffered] = useState(0);
     const [isLoading, setIsLoading] = useState(true);
     const [error, setError] = useState<string | null>(null);
+    const [skippedIntro, setSkippedIntro] = useState(false);
 
     const controlsTimeoutRef = useRef<NodeJS.Timeout>();
     const hlsRef = useRef<Hls | null>(null); // Keep reference to HLS instance
@@ -71,13 +72,17 @@ export default function VideoPlayer({ src, movie, episode, onNextEpisode }: Vide
     };
 
     const getQualityLabel = (level: any) => {
-        if (level.width >= 3840) return '4K';
-        if (level.width >= 2560) return '2K';
-        if (level.width >= 1920) return '1080p';
-        if (level.width >= 1280) return '720p';
-        if (level.height >= 1080) return '1080p';
-        if (level.height >= 720) return '720p';
-        return `${level.height}p`;
+        const height = level.height;
+        const width = level.width;
+
+        if (width >= 3840 || height >= 2160) return '4K';
+        if (width >= 2560 || height >= 1440) return '2K';
+        if (width >= 1920 || height >= 1080) return '1080p';
+        if (width >= 1280 || height >= 720) return '720p';
+        if (height) return `${height}p`;
+
+        if (level.bitrate) return `${Math.round(level.bitrate / 1000)}Kbps`;
+        return 'Normal';
     };
 
     // Format time (seconds -> MM:SS)
@@ -128,7 +133,8 @@ export default function VideoPlayer({ src, movie, episode, onNextEpisode }: Vide
                 if (saved && saved.currentEpisode === episode.slug && saved.progress) {
                     video.currentTime = saved.progress;
                 }
-                video.play().catch(() => setIsPlaying(false));
+                // video.play().catch(() => setIsPlaying(false)); // Autoplay removed
+                setIsPlaying(false);
                 setIsLoading(false);
             });
 
@@ -155,7 +161,8 @@ export default function VideoPlayer({ src, movie, episode, onNextEpisode }: Vide
                 if (saved && saved.currentEpisode === episode.slug && saved.progress) {
                     video.currentTime = saved.progress;
                 }
-                video.play().catch(() => setIsPlaying(false));
+                // video.play().catch(() => setIsPlaying(false)); // Autoplay removed
+                setIsPlaying(false);
                 setIsLoading(false);
             });
         } else {
@@ -232,6 +239,8 @@ export default function VideoPlayer({ src, movie, episode, onNextEpisode }: Vide
         return () => clearInterval(interval);
     }, [movie, episode, addToHistory]);
 
+
+
     // Event Listeners
     useEffect(() => {
         const video = videoRef.current;
@@ -255,7 +264,10 @@ export default function VideoPlayer({ src, movie, episode, onNextEpisode }: Vide
         const handlePlaying = () => setIsLoading(false);
         const handleEnded = () => {
             setIsPlaying(false);
-            // if (onNextEpisode) onNextEpisode(); // Optional auto-next
+            if (onNextEpisode) {
+                console.log("🎬 Auto playing next episode...");
+                onNextEpisode();
+            }
         };
 
         video.addEventListener('timeupdate', handleTimeUpdate);
@@ -306,7 +318,7 @@ export default function VideoPlayer({ src, movie, episode, onNextEpisode }: Vide
     // Toggle Picture-in-Picture
     const togglePiP = async () => {
         if (!videoRef.current) return;
-        
+
         try {
             if (document.pictureInPictureElement) {
                 await document.exitPictureInPicture();
@@ -320,30 +332,131 @@ export default function VideoPlayer({ src, movie, episode, onNextEpisode }: Vide
         }
     };
 
-    // Auto PiP when page hidden (switch tab/minimize)
+    // Auto PiP when page hidden (switch tab/minimize) or scroll out of view
     useEffect(() => {
-        const handleVisibilityChange = async () => {
-            if (!videoRef.current || !isPlaying) return;
-            
-            if (document.hidden) {
-                // User switched tab, enable PiP automatically
+        let pipTimeout: NodeJS.Timeout;
+
+        const tryEnablePiP = async () => {
+            if (!videoRef.current) return false;
+
+            // Check if video is ready and playing
+            if (videoRef.current.readyState < 2) {
+                console.log('Video not ready for PiP');
+                return false;
+            }
+
+            // Check if already in PiP
+            if (document.pictureInPictureElement) {
+                console.log('Already in PiP mode');
+                return true;
+            }
+
+            try {
+                await videoRef.current.requestPictureInPicture();
+                setIsPiP(true);
+                console.log('✅ PiP enabled successfully');
+                return true;
+            } catch (err: any) {
+                console.error('❌ PiP failed:', err.message || err);
+                return false;
+            }
+        };
+
+        const tryDisablePiP = async () => {
+            if (document.pictureInPictureElement) {
                 try {
-                    await videoRef.current.requestPictureInPicture();
-                    setIsPiP(true);
-                } catch (err) {
-                    console.log('Auto PiP blocked:', err);
-                }
-            } else {
-                // User came back, exit PiP
-                if (document.pictureInPictureElement) {
                     await document.exitPictureInPicture();
                     setIsPiP(false);
+                    console.log('✅ PiP disabled');
+                } catch (err) {
+                    console.error('❌ PiP exit failed:', err);
                 }
             }
         };
 
+        const handleVisibilityChange = () => {
+            const isHidden = document.hidden || document.visibilityState === 'hidden';
+            console.log(`📄 Visibility changed: ${isHidden ? 'HIDDEN' : 'VISIBLE'}`);
+
+            if (isHidden && isPlaying) {
+                // Delay slightly to ensure video is ready
+                pipTimeout = setTimeout(() => {
+                    tryEnablePiP();
+                }, 100);
+            } else {
+                clearTimeout(pipTimeout);
+                tryDisablePiP();
+            }
+        };
+
+        const handleBlur = () => {
+            console.log('🔵 Window BLUR (minimize/switch app)');
+            if (isPlaying) {
+                pipTimeout = setTimeout(() => {
+                    tryEnablePiP();
+                }, 100);
+            }
+        };
+
+        const handleFocus = () => {
+            console.log('🟢 Window FOCUS (restore)');
+            clearTimeout(pipTimeout);
+
+            // Only exit PiP if video is in viewport
+            if (document.pictureInPictureElement && containerRef.current) {
+                const rect = containerRef.current.getBoundingClientRect();
+                const isInView = rect.top < window.innerHeight && rect.bottom > 0;
+
+                if (isInView) {
+                    tryDisablePiP();
+                }
+            }
+        };
+
+        const handleScroll = () => {
+            if (!isPlaying || !containerRef.current) return;
+
+            const rect = containerRef.current.getBoundingClientRect();
+            const isOutOfView = rect.bottom < 0 || rect.top > window.innerHeight;
+
+            if (isOutOfView) {
+                console.log('📜 Video scrolled OUT of view');
+                tryEnablePiP();
+            } else if (document.pictureInPictureElement) {
+                console.log('📜 Video scrolled INTO view');
+                tryDisablePiP();
+            }
+        };
+
+        const handleEnterPiP = () => {
+            setIsPiP(true);
+            console.log('🎬 ENTERED PiP mode');
+        };
+
+        const handleLeavePiP = () => {
+            setIsPiP(false);
+            console.log('🎬 LEFT PiP mode');
+        };
+
+        // Add all event listeners
         document.addEventListener('visibilitychange', handleVisibilityChange);
-        return () => document.removeEventListener('visibilitychange', handleVisibilityChange);
+        window.addEventListener('blur', handleBlur);
+        window.addEventListener('focus', handleFocus);
+        window.addEventListener('scroll', handleScroll, { passive: true });
+        videoRef.current?.addEventListener('enterpictureinpicture', handleEnterPiP);
+        videoRef.current?.addEventListener('leavepictureinpicture', handleLeavePiP);
+
+        console.log('🎯 Auto PiP listeners registered. isPlaying:', isPlaying);
+
+        return () => {
+            clearTimeout(pipTimeout);
+            document.removeEventListener('visibilitychange', handleVisibilityChange);
+            window.removeEventListener('blur', handleBlur);
+            window.removeEventListener('focus', handleFocus);
+            window.removeEventListener('scroll', handleScroll);
+            videoRef.current?.removeEventListener('enterpictureinpicture', handleEnterPiP);
+            videoRef.current?.removeEventListener('leavepictureinpicture', handleLeavePiP);
+        };
     }, [isPlaying]);
 
     const handleSeek = (e: React.ChangeEvent<HTMLInputElement>) => {
@@ -453,7 +566,7 @@ export default function VideoPlayer({ src, movie, episode, onNextEpisode }: Vide
                                 </svg>
                             </button>
                         </div>
-                        
+
                         <div className="space-y-3">
                             <div className="flex justify-between items-center text-sm">
                                 <span className="text-gray-300">Play / Pause</span>
@@ -483,7 +596,7 @@ export default function VideoPlayer({ src, movie, episode, onNextEpisode }: Vide
                                 <kbd className="bg-white/10 px-3 py-1 rounded text-white">←</kbd>
                             </div>
                         </div>
-                        
+
                         <div className="mt-6 text-center">
                             <button onClick={() => setShowKeyboardHelp(false)} className="bg-red-600 hover:bg-red-700 text-white px-6 py-2 rounded-full font-semibold transition">
                                 Đóng
@@ -522,6 +635,23 @@ export default function VideoPlayer({ src, movie, episode, onNextEpisode }: Vide
                         <Play className="text-white w-10 h-10 fill-white" />
                     </div>
                 </div>
+            )}
+
+            {/* Skip Intro Button */}
+            {currentTime < 300 && !skippedIntro && !isLoading && isPlaying && (
+                <button
+                    onClick={(e) => {
+                        e.stopPropagation();
+                        setSkippedIntro(true);
+                        if (videoRef.current) {
+                            videoRef.current.currentTime += 85;
+                        }
+                    }}
+                    className="absolute bottom-24 right-6 z-40 bg-white/10 hover:bg-red-600 text-white px-5 py-2.5 rounded-lg backdrop-blur-md border border-white/10 transition-all duration-300 hover:scale-105 flex items-center gap-2 font-bold text-sm group animate-in slide-in-from-right-10 fade-in shadow-lg"
+                >
+                    <span>Bỏ qua Mở đầu</span>
+                    <SkipForward size={18} className="group-hover:translate-x-1 transition-transform" />
+                </button>
             )}
 
             {/* Controls Overlay */}
@@ -594,6 +724,16 @@ export default function VideoPlayer({ src, movie, episode, onNextEpisode }: Vide
                                 <SkipForward size={16} fill="white" />
                                 <span className="font-bold"> Tập Tiếp</span>
                             </button>
+                        )}
+
+                        {/* Max Quality Badge */}
+                        {qualityOptions.length > 0 && (
+                            <div className="hidden sm:flex items-center px-2 py-1 rounded bg-white/5 text-[10px] font-bold text-gray-400 border border-white/5 uppercase tracking-wider backdrop-blur-sm select-none">
+                                {qualityOptions[0].label === '4K' ? <span className="text-yellow-500 drop-shadow-sm">4K ULTRA</span> :
+                                    qualityOptions[0].label === '2K' ? <span className="text-blue-400 drop-shadow-sm">2K QHD</span> :
+                                        qualityOptions[0].label === '1080p' ? <span className="text-red-500 drop-shadow-sm">FHD</span> :
+                                            <span className="text-white">{qualityOptions[0].label}</span>}
+                            </div>
                         )}
 
                         <div className="relative group/settings">
