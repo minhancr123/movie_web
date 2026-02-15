@@ -20,6 +20,10 @@
 
 </div>
 
+<div align="center">
+  <img src="./frontend/public/demo-screenshot.png" alt="Giao diện MovieWeb" width="100%" style="border-radius: 10px; box-shadow: 0 0 20px rgba(0,0,0,0.5);" />
+</div>
+
 ---
 
 ## � Giới Thiệu
