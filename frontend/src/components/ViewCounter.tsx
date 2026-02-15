@@ -20,8 +20,10 @@ export default function ViewCounter({ slug, initialViews = 0 }: ViewCounterProps
             try {
                 // Use relative path since we likely have a rewrite or standard env
                 // Or use the env var if defined.
-                const baseUrl = process.env.NEXT_PUBLIC_BACKEND_API_URL || 'http://localhost:5000';
-                const res = await fetch(`${baseUrl}/api/movies/views/${slug}`, {
+                const envUrl = process.env.NEXT_PUBLIC_BACKEND_API_URL || 'http://localhost:5000';
+                const apiUrl = envUrl.endsWith('/api/movies') ? envUrl : `${envUrl}/api/movies`;
+
+                const res = await fetch(`${apiUrl}/views/${slug}`, {
                     method: 'POST',
                     headers: { 'Content-Type': 'application/json' }
                 });

@@ -3,6 +3,7 @@ import Link from 'next/link';
 import { notFound } from 'next/navigation';
 import WatchSection from '@/components/WatchSection';
 import MovieRow from '@/components/MovieRow';
+import ViewCounter from '@/components/ViewCounter';
 import dynamic from 'next/dynamic';
 
 // Lazy load CommentsSection because it's heavy and below the fold
@@ -114,6 +115,21 @@ export default async function WatchPage({
         }
     }
 
+
+    // Fetch initial views
+    let initialViews = 0;
+    try {
+        const envUrl = process.env.NEXT_PUBLIC_BACKEND_API_URL || 'http://localhost:5000';
+        const apiUrl = envUrl.endsWith('/api/movies') ? envUrl : `${envUrl}/api/movies`;
+        const viewRes = await fetch(`${apiUrl}/views/${params.slug}`, { cache: 'no-store' });
+        if (viewRes.ok) {
+            const vdata = await viewRes.json();
+            initialViews = vdata.views || 0;
+        }
+    } catch (e) {
+        console.error("Failed to fetch views", e);
+    }
+
     const m3u8Url = currentEpisode.link_m3u8;
     const embedUrl = currentEpisode.link_embed || `https://player.phimapi.com/player/?url=${currentEpisode.link_m3u8}`;
 
@@ -128,7 +144,7 @@ export default async function WatchPage({
                         {movie.name}
                     </Link>
                     <span className="text-gray-600">/</span>
-                    <span className="text-white font-medium shrink-0">Tập {currentEpisode.name}</span>
+                    <span className="text-white font-medium shrink-0">{currentEpisode.name.toLowerCase().startsWith('tập') ? currentEpisode.name : `Tập ${currentEpisode.name}`}</span>
                 </div>
 
                 {/* Video Player Container */}
@@ -154,13 +170,17 @@ export default async function WatchPage({
                 <div className="mt-8 flex flex-col md:flex-row gap-8">
                     <div className="flex-1">
                         <h1 className="text-2xl md:text-3xl font-bold text-white mb-2 flex items-center gap-3">
-                            {movie.name} <span className="text-red-600 text-xl font-normal">Tập {currentEpisode.name}</span>
+                            {movie.name} <span className="text-red-600 text-xl font-normal">{currentEpisode.name.toLowerCase().startsWith('tập') ? currentEpisode.name : `Tập ${currentEpisode.name}`}</span>
                         </h1>
-                        <p className="text-gray-400 text-sm mb-6 flex items-center gap-2">
+                        <div className="text-gray-400 text-sm mb-6 flex items-center gap-4">
                             <span className="bg-gray-800 text-gray-300 px-2 py-0.5 rounded text-xs uppercase font-bold">Server {currentServerName}</span>
                             <span className="text-gray-600">|</span>
                             <span>Cập nhật mới nhất</span>
-                        </p>
+                            <span className="text-gray-600">|</span>
+                            <div className="scale-90 origin-left">
+                                <ViewCounter slug={movie.slug} initialViews={initialViews} />
+                            </div>
+                        </div>
 
                         {/* Note Box */}
                         <div className="bg-yellow-500/10 border border-yellow-500/20 p-4 rounded-lg mb-8 text-sm text-yellow-200/80">

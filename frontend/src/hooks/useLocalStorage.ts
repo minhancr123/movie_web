@@ -1,5 +1,5 @@
 'use client';
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useCallback } from 'react';
 /* eslint-disable react-hooks/exhaustive-deps */
 
 interface SavedMovie {
@@ -31,34 +31,35 @@ export function useLocalStorage<T>(key: string, initialValue: T) {
     }
   });
 
-  // Return a wrapped version of useState's setter function that ...
-  // ... persists the new value to localStorage.
-  const setValue = (value: T | ((val: T) => T)) => {
+  // Use useEffect to update localStorage whenever the state changes
+  useEffect(() => {
     try {
-      const valueToStore = value instanceof Function ? value(storedValue) : value;
-      setStoredValue(valueToStore);
       if (typeof window !== 'undefined') {
-        window.localStorage.setItem(key, JSON.stringify(valueToStore));
+        window.localStorage.setItem(key, JSON.stringify(storedValue));
       }
     } catch (error) {
       console.log(error);
     }
-  };
+  }, [key, storedValue]);
 
-  return [storedValue, setValue] as const;
+  // Return storedValue and setStoredValue. 
+  // setStoredValue is stable from useState, so consumers can use it in dependency arrays.
+  return [storedValue, setStoredValue] as const;
 }
 
 export const useSavedMovies = () => {
   const [savedMovies, setSavedMovies] = useLocalStorage<SavedMovie[]>('my_saved_movies', []);
 
-  const toggleSaveMovie = (movie: Omit<SavedMovie, 'timeSaved'>) => {
-    const exists = savedMovies.find(m => m.slug === movie.slug);
-    if (exists) {
-      setSavedMovies(savedMovies.filter(m => m.slug !== movie.slug));
-    } else {
-      setSavedMovies([{ ...movie, timeSaved: Date.now() }, ...savedMovies]);
-    }
-  };
+  const toggleSaveMovie = useCallback((movie: Omit<SavedMovie, 'timeSaved'>) => {
+    setSavedMovies((prevSavedMovies) => {
+      const exists = prevSavedMovies.find(m => m.slug === movie.slug);
+      if (exists) {
+        return prevSavedMovies.filter(m => m.slug !== movie.slug);
+      } else {
+        return [{ ...movie, timeSaved: Date.now() }, ...prevSavedMovies];
+      }
+    });
+  }, [setSavedMovies]);
 
   const isSaved = (slug: string) => {
     return savedMovies.some(m => m.slug === slug);
@@ -71,17 +72,19 @@ export const useSavedMovies = () => {
 export const useWatchHistory = () => {
   const [history, setHistory] = useLocalStorage<SavedMovie[]>('watch_history', []);
 
-  const addToHistory = (movie: SavedMovie) => {
-    // Remove old entry if exists to push new one to top
-    const others = history.filter(h => h.slug !== movie.slug);
-    setHistory([movie, ...others].slice(0, 20)); // Keep last 20 items
-  };
+  const addToHistory = useCallback((movie: SavedMovie) => {
+    setHistory((prevHistory) => {
+      // Remove old entry if exists to push new one to top
+      const others = prevHistory.filter(h => h.slug !== movie.slug);
+      return [movie, ...others].slice(0, 20); // Keep last 20 items
+    });
+  }, [setHistory]);
 
   const getContinueList = () => history;
 
-  const removeFromHistory = (slug: string) => {
-    setHistory(history.filter(h => h.slug !== slug));
-  };
+  const removeFromHistory = useCallback((slug: string) => {
+    setHistory((prevHistory) => prevHistory.filter(h => h.slug !== slug));
+  }, [setHistory]);
 
   return { history, addToHistory, removeFromHistory };
 };

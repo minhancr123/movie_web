@@ -98,13 +98,39 @@ export default function VideoPlayer({ src, movie, episode, onNextEpisode }: Vide
         const video = videoRef.current;
         if (!video) return;
 
+        // Perform cleanup of previous HLS instance if it exists
+        if (hlsRef.current) {
+            hlsRef.current.destroy();
+            hlsRef.current = null;
+        }
+
         setError(null);
         setIsLoading(true);
+
+        const initPlayer = () => {
+            // Try to restore from history specifically for this movie/episode
+            // We access the current history state directly. 
+            // Since we removed history from deps, this uses the value at the time src changed.
+            const saved = history.find(h => h.slug === movie.slug);
+            if (saved && saved.currentEpisode === episode.slug && saved.progress) {
+                // Only restore if we are close to the beginning (to avoid overriding user seek? No, this is init)
+                // But wait, if user refreshes, we want to restore.
+                video.currentTime = saved.progress;
+            }
+        };
 
         if (Hls.isSupported()) {
             const hls = new Hls({
                 enableWorker: true,
-                lowLatencyMode: true,
+                lowLatencyMode: false, // Better for VOD (allows larger buffer)
+                maxBufferLength: 60,   // Stable buffer size
+                maxMaxBufferLength: 600,
+                capLevelToPlayerSize: true, // Limit quality based on screen size to save bandwidth
+                startLevel: -1, // Auto quality start
+                // Aggressive timeouts to recover from stuck segments faster
+                fragLoadingTimeOut: 20000,
+                manifestLoadingTimeOut: 20000,
+                levelLoadingTimeOut: 20000,
             });
             hlsRef.current = hls;
 
@@ -113,7 +139,6 @@ export default function VideoPlayer({ src, movie, episode, onNextEpisode }: Vide
 
             hls.on(Hls.Events.MANIFEST_PARSED, (event, data) => {
                 const levels = hls.levels;
-                // Map levels to options with original index
                 const options = levels.map((level, index) => ({
                     height: level.height,
                     width: level.width,
@@ -121,33 +146,39 @@ export default function VideoPlayer({ src, movie, episode, onNextEpisode }: Vide
                     index: index,
                     label: getQualityLabel(level)
                 }));
-
-                // Sort by resolution descending (width/height)
+                // Sort by resolution descending (width/height) for UI
                 options.sort((a, b) => b.width - a.width);
-
                 setQualityOptions(options);
-                setCurrentQuality(-1); // Default to Auto
+                setCurrentQuality(-1);
 
-                // Restore history
-                const saved = history.find(h => h.slug === movie.slug);
-                if (saved && saved.currentEpisode === episode.slug && saved.progress) {
-                    video.currentTime = saved.progress;
+                initPlayer();
+
+                // Attempt to auto-play
+                const playPromise = video.play();
+                if (playPromise !== undefined) {
+                    playPromise.catch(() => {
+                        setIsPlaying(false);
+                        // Auto-play blocked, user interaction required.
+                    });
                 }
-                // video.play().catch(() => setIsPlaying(false)); // Autoplay removed
-                setIsPlaying(false);
+
                 setIsLoading(false);
             });
 
             hls.on(Hls.Events.ERROR, (event, data) => {
+                console.warn("HLS Error:", data);
                 if (data.fatal) {
                     switch (data.type) {
                         case Hls.ErrorTypes.NETWORK_ERROR:
+                            console.log("Trying to recover from network error...");
                             hls.startLoad();
                             break;
                         case Hls.ErrorTypes.MEDIA_ERROR:
+                            console.log("Trying to recover from media error...");
                             hls.recoverMediaError();
                             break;
                         default:
+                            console.error("Fatal HLS error, cannot recover");
                             setError("Không thể phát video này.");
                             hls.destroy();
                             break;
@@ -157,12 +188,8 @@ export default function VideoPlayer({ src, movie, episode, onNextEpisode }: Vide
         } else if (video.canPlayType('application/vnd.apple.mpegurl')) {
             video.src = src;
             video.addEventListener('loadedmetadata', () => {
-                const saved = history.find(h => h.slug === movie.slug);
-                if (saved && saved.currentEpisode === episode.slug && saved.progress) {
-                    video.currentTime = saved.progress;
-                }
-                // video.play().catch(() => setIsPlaying(false)); // Autoplay removed
-                setIsPlaying(false);
+                initPlayer();
+                video.play().catch(() => setIsPlaying(false));
                 setIsLoading(false);
             });
         } else {
@@ -175,7 +202,9 @@ export default function VideoPlayer({ src, movie, episode, onNextEpisode }: Vide
                 hlsRef.current = null;
             }
         };
-    }, [src, history, movie.slug, episode.slug]);
+        // Removed 'history' from dependency array to prevent re-init on auto-save
+        // eslint-disable-next-line react-hooks/exhaustive-deps
+    }, [src, movie.slug, episode.slug]);
 
     // History Saver
     useEffect(() => {
@@ -548,6 +577,12 @@ export default function VideoPlayer({ src, movie, episode, onNextEpisode }: Vide
                     e.preventDefault();
                     setShowKeyboardHelp(true);
                     break;
+                case 's':
+                    if (videoRef.current && videoRef.current.currentTime < 300) {
+                        setSkippedIntro(true);
+                        videoRef.current.currentTime += 90;
+                    }
+                    break;
             }
         };
 
@@ -654,13 +689,13 @@ export default function VideoPlayer({ src, movie, episode, onNextEpisode }: Vide
 
             {/* Big Play Button (when paused) */}
             {!isPlaying && !isLoading && (
-                <div className="absolute inset-0 flex items-center justify-center z-10 pointer-events-none">
+                <div className="absolute top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2 z-10">
                     <button
                         onClick={(e) => {
                             e.stopPropagation(); // Stop propagation to avoid double-toggling if container also handles click
                             togglePlay();
                         }}
-                        className="w-20 h-20 bg-black/60 rounded-full flex items-center justify-center pl-2 shadow-2xl border border-white/10 group-hover:scale-110 transition-transform duration-300 pointer-events-auto cursor-pointer hover:bg-white/20"
+                        className="w-20 h-20 bg-black/60 rounded-full flex items-center justify-center pl-2 shadow-2xl border border-white/10 group-hover:scale-110 transition-transform duration-300 cursor-pointer hover:bg-white/20"
                     >
                         <Play className="text-white w-10 h-10 fill-white" />
                     </button>
@@ -672,9 +707,9 @@ export default function VideoPlayer({ src, movie, episode, onNextEpisode }: Vide
                 <button
                     onClick={(e) => {
                         e.stopPropagation();
-                        setSkippedIntro(true);
+                        setSkippedIntro(true); // Hide after one use
                         if (videoRef.current) {
-                            videoRef.current.currentTime += 85;
+                            videoRef.current.currentTime += 90; // Standard Intro (1m30s)
                         }
                     }}
                     className="absolute bottom-24 right-6 z-40 bg-white/10 hover:bg-red-600 text-white px-5 py-2.5 rounded-lg backdrop-blur-md border border-white/10 transition-all duration-300 hover:scale-105 flex items-center gap-2 font-bold text-sm group animate-in slide-in-from-right-10 fade-in shadow-lg"
@@ -749,10 +784,10 @@ export default function VideoPlayer({ src, movie, episode, onNextEpisode }: Vide
                         {onNextEpisode && (
                             <button
                                 onClick={onNextEpisode}
-                                className="flex items-center gap-2 bg-white/10 hover:bg-red-600 text-white text-sm px-4 py-1.5 rounded-lg backdrop-blur-sm transition-all border border-white/10"
+                                className="flex items-center gap-2 bg-white/10 hover:bg-red-600 text-white text-sm px-2 sm:px-4 py-1.5 rounded-lg backdrop-blur-sm transition-all border border-white/10"
                             >
                                 <SkipForward size={16} fill="white" />
-                                <span className="font-bold"> Tập Tiếp</span>
+                                <span className="font-bold hidden sm:inline"> Tập Tiếp</span>
                             </button>
                         )}
 
