@@ -10,7 +10,7 @@ services:
     # ports:
     #   - "6379:6379" # Removed for security. Access internally via Docker network.
     volumes:
-      - redis-data:/data
+      - redis-data-new:/data
     command: redis-server --appendonly yes --maxmemory 256mb --maxmemory-policy allkeys-lru
     networks:
       - movieweb-network
@@ -69,7 +69,7 @@ services:
       start_period: 40s
 
 volumes:
-  redis-data:
+  redis-data-new:
     driver: local
 
 networks:
