@@ -21,7 +21,7 @@ const app = express();
 const httpServer = createServer(app);
 const io = new Server(httpServer, {
   cors: {
-    origin: ['http://localhost:3000', 'http://localhost:3001','https://movie-web-green-sigma.vercel.app'],
+    origin: ['http://localhost:3000', 'http://localhost:3001', 'https://movie-web-green-sigma.vercel.app'],
     credentials: true
   }
 });
@@ -32,7 +32,7 @@ const PORT = process.env.PORT || 5001;
 app.use(helmet()); // Security headers
 app.use(compression()); // Gzip compression
 app.use(cors({
-  origin: ['http://localhost:3000', 'http://localhost:3001'],
+  origin: ['http://localhost:3000', 'http://localhost:3001', 'https://movie-web-green-sigma.vercel.app'],
   credentials: true
 }));
 app.use(express.json());
@@ -59,7 +59,6 @@ app.use('/api/favorites', favoriteRoutes);
 app.use('/api/watch-history', watchHistoryRoutes);
 app.use('/api/comments', commentRoutes);
 app.use('/api/premieres', premiereRoutes);
-app.use('/api/premieres', premiereRoutes);
 
 // Socket.IO Logic
 const premiereViewers = new Map(); // Track viewers per premiere
@@ -69,17 +68,17 @@ io.on('connection', (socket) => {
 
   socket.on('join_premiere', async (premiereId) => {
     socket.join(premiereId);
-    
+
     // Track viewer
     if (!premiereViewers.has(premiereId)) {
       premiereViewers.set(premiereId, new Set());
     }
     premiereViewers.get(premiereId).add(socket.id);
-    
+
     const viewerCount = premiereViewers.get(premiereId).size;
-    
+
     console.log(`Socket ${socket.id} joined premiere ${premiereId}. Viewers: ${viewerCount}`);
-    
+
     // Send chat history
     try {
       const db = getDB();
@@ -88,27 +87,27 @@ io.on('connection', (socket) => {
         .sort({ timestamp: -1 })
         .limit(100)
         .toArray();
-      
+
       socket.emit('chat_history', messages.reverse());
     } catch (error) {
       console.error('Error loading chat history:', error);
     }
-    
+
     // Broadcast updated viewer count to all in room
     io.to(premiereId).emit('viewer_count', viewerCount);
   });
 
   socket.on('leave_premiere', (premiereId) => {
     socket.leave(premiereId);
-    
+
     // Remove viewer
     if (premiereViewers.has(premiereId)) {
       premiereViewers.get(premiereId).delete(socket.id);
       const viewerCount = premiereViewers.get(premiereId).size;
-      
+
       // Broadcast updated count
       io.to(premiereId).emit('viewer_count', viewerCount);
-      
+
       console.log(`Socket ${socket.id} left premiere ${premiereId}. Viewers: ${viewerCount}`);
     }
   });
@@ -139,7 +138,7 @@ io.on('connection', (socket) => {
 
   socket.on('disconnect', () => {
     console.log('Client disconnected:', socket.id);
-    
+
     // Remove from all premiere rooms
     premiereViewers.forEach((viewers, premiereId) => {
       if (viewers.has(socket.id)) {
