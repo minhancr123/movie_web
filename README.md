@@ -20,10 +20,6 @@
 
 </div>
 
-<div align="center">
-  <img src="./frontend/public/demo-screenshot.png" alt="Giao diện MovieWeb" width="100%" style="border-radius: 10px; box-shadow: 0 0 20px rgba(0,0,0,0.5);" />
-</div>
-
 ---
 
 ## � Giới Thiệu
@@ -101,37 +97,62 @@ Sử dụng sức mạnh của **Next.js 14 (App Router)** kết hợp với cô
   - [x] Tối ưu tốc độ tải (Lazy Load)
 
 - [ ] **Giai đoạn 3: Cộng đồng & Cá nhân hóa (Sắp tới)**
-  - [ ] Đăng nhập/Đăng ký tài khoản
-  - [ ] Bình luận phim (Real-time comment)
   - [ ] Đánh giá/Rating sao
   - [ ] Gợi ý phim bằng AI
+  - [ ] Có các phim có độ phân giải 2k/4k
   - [ ] Đồng bộ lịch sử lên Cloud
 
-## 🔧 Cài Đặt & Chạy Thử
+## 🔧 Cài Đặt & Chạy Thử (Full-Stack Setup)
 
-1. **Clone dự án**
-   ```bash
-   git clone https://github.com/minhancr123/movie_web.git
-   ```
+### Yêu cầu tiên quyết (Prerequisites)
+- [Node.js](https://nodejs.org/) (v18+)
+- [.NET SDK](https://dotnet.microsoft.com/download) (v8.0)
+- [MongoDB](https://www.mongodb.com/) (Local hoặc Cloud Atlas)
 
-2. **Cài đặt thư viện**
-   ```bash
-   cd frontend
-   npm install
-   ```
+### 1. Khởi chạy Backend (.NET Core)
+Đây là API chính xử lý logic nghiệp vụ và dữ liệu phim.
 
-3. **Cấu hình môi trường**
-   Tạo file `.env.local` và thêm:
-   ```env
-   NEXT_PUBLIC_BACKEND_API_URL=http://localhost:5000
-   NEXT_PUBLIC_IMAGE_PREFIX=https://phimimg.com/
-   ```
+```bash
+cd backend
+# Cấu hình chuỗi kết nối trong appsettings.json nếu cần
+dotnet restore
+dotnet watch run
+```
+*Backend sẽ chạy tại: `http://localhost:5000`*
 
-4. **Chạy server dev**
-   ```bash
-   npm run dev
-   ```
-   Truy cập `http://localhost:3000` để trải nghiệm.
+### 2. Khởi chạy Backend Node.js (Phụ trợ)
+Service này xử lý các tác vụ real-time hoặc proxy (nếu có).
+
+```bash
+cd backend-node
+npm install
+npm run dev
+```
+
+### 3. Khởi chạy Frontend (Next.js)
+Giao diện người dùng chính.
+
+```bash
+cd frontend
+npm install
+
+# Tạo file .env.local
+echo "NEXT_PUBLIC_BACKEND_API_URL=http://localhost:5000" > .env.local
+echo "NEXT_PUBLIC_IMAGE_PREFIX=https://phimimg.com/" >> .env.local
+
+npm run dev
+```
+*Frontend sẽ chạy tại: `http://localhost:3000`*
+
+---
+
+### 🐳 Chạy nhanh bằng Docker (Khuyên dùng)
+
+Nếu máy bạn đã cài Docker, chỉ cần 1 lệnh duy nhất để chạy toàn bộ hệ thống:
+
+```bash
+docker-compose up --build
+```
 
 ---
 
