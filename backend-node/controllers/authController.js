@@ -140,7 +140,7 @@ export const login = async (req, res) => {
         role: user.role || 'user'
       },
       process.env.JWT_SECRET,
-      { expiresIn: process.env.JWT_EXPIRE }
+      { expiresIn: process.env.JWT_EXPIRE || '30d' }
     );
 
     res.json({
