@@ -1,8 +1,10 @@
+import { Suspense } from 'react';
 import { getLatestMovies, getMoviesByCategory } from '@/lib/api';
 import MovieCard from '@/components/MovieCard';
 import HeroSection from '@/components/HeroSection';
 import Pagination from '@/components/Pagination';
 import MovieRow from '@/components/MovieRow';
+import AsyncMovieRow from '@/components/AsyncMovieRow';
 import ContinueWatchingRow from '@/components/ContinueWatchingRow';
 import IntroAnimation from '@/components/IntroAnimation'; // Import Intro
 
@@ -10,7 +12,7 @@ export default async function Home({ searchParams }: { searchParams: { page?: st
   const currentPage = Number(searchParams.page) || 1;
   const page = currentPage; // alias
 
-  // Fetch Data concurrently
+  // Fetch Data concurrently (Only critical data for Hero + Main List)
   // 1. Latest movies (paginated)
   const latestDataPromise = getLatestMovies(page);
 
@@ -18,11 +20,9 @@ export default async function Home({ searchParams }: { searchParams: { page?: st
   // Let's only show Feature Rows on Page 1
   const isFirstPage = page === 1;
 
-  const [latestData, phimLeData, phimBoData, hoatHinhData, phimChieuRapData] = await Promise.all([
+  // We only wait for Hero data (Phim Chieu Rap) and Main Content (Latest)
+  const [latestData, phimChieuRapData] = await Promise.all([
     latestDataPromise,
-    isFirstPage ? getMoviesByCategory('phim-le', 1) : Promise.resolve(null),
-    isFirstPage ? getMoviesByCategory('phim-bo', 1) : Promise.resolve(null),
-    isFirstPage ? getMoviesByCategory('hoat-hinh', 1) : Promise.resolve(null),
     isFirstPage ? getMoviesByCategory('phim-chieu-rap', 1) : Promise.resolve(null),
   ]);
 
@@ -34,6 +34,18 @@ export default async function Home({ searchParams }: { searchParams: { page?: st
   const heroMovies = (phimChieuRapData?.data?.items?.length > 0)
     ? phimChieuRapData.data.items.slice(0, 6)
     : movies.slice(0, 6);
+
+  // Skeleton for loading rows
+  const RowSkeleton = () => (
+    <div className="mb-12 w-full animate-pulse">
+      <div className="h-8 w-48 bg-gray-800 rounded mb-6"></div>
+      <div className="flex gap-4 overflow-hidden">
+        {[...Array(5)].map((_, i) => (
+          <div key={i} className="min-w-[160px] md:min-w-[220px] h-[300px] bg-gray-900 rounded-xl"></div>
+        ))}
+      </div>
+    </div>
+  );
 
   return (
     <div className="pb-8">
@@ -67,21 +79,23 @@ export default async function Home({ searchParams }: { searchParams: { page?: st
       {/* Show Featured Rows only on first page, below main list */}
       {isFirstPage && (
         <div className="mt-12 pt-8 space-y-4">
+          {/* Reuse data for Phim Chieu Rap since we already fetched it for Hero */}
           {phimChieuRapData?.data?.items && (
             <MovieRow title="Phim Chiếu Rạp" movies={phimChieuRapData.data.items} path="/danh-sach/phim-chieu-rap" />
           )}
 
-          {phimLeData?.data?.items && (
-            <MovieRow title="Phim Lẻ Hot" movies={phimLeData.data.items} path="/danh-sach/phim-le" />
-          )}
+          {/* Load other rows progressively with Suspense */}
+          <Suspense fallback={<RowSkeleton />}>
+            <AsyncMovieRow category="phim-le" title="Phim Lẻ Hot" path="/danh-sach/phim-le" />
+          </Suspense>
 
-          {phimBoData?.data?.items && (
-            <MovieRow title="Phim Bộ Mới" movies={phimBoData.data.items} path="/danh-sach/phim-bo" />
-          )}
+          <Suspense fallback={<RowSkeleton />}>
+            <AsyncMovieRow category="phim-bo" title="Phim Bộ Mới" path="/danh-sach/phim-bo" />
+          </Suspense>
 
-          {hoatHinhData?.data?.items && (
-            <MovieRow title="Hoạt Hình" movies={hoatHinhData.data.items} path="/danh-sach/hoat-hinh" />
-          )}
+          <Suspense fallback={<RowSkeleton />}>
+            <AsyncMovieRow category="hoat-hinh" title="Hoạt Hình" path="/danh-sach/hoat-hinh" />
+          </Suspense>
         </div>
       )}
     </div>
