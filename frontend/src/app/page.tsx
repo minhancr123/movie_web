@@ -18,19 +18,22 @@ export default async function Home({ searchParams }: { searchParams: { page?: st
   // Let's only show Feature Rows on Page 1
   const isFirstPage = page === 1;
 
-  const [latestData, phimLeData, phimBoData, hoatHinhData] = await Promise.all([
+  const [latestData, phimLeData, phimBoData, hoatHinhData, phimChieuRapData] = await Promise.all([
     latestDataPromise,
     isFirstPage ? getMoviesByCategory('phim-le', 1) : Promise.resolve(null),
     isFirstPage ? getMoviesByCategory('phim-bo', 1) : Promise.resolve(null),
     isFirstPage ? getMoviesByCategory('hoat-hinh', 1) : Promise.resolve(null),
+    isFirstPage ? getMoviesByCategory('phim-chieu-rap', 1) : Promise.resolve(null),
   ]);
 
   const movies = latestData.items || [];
   const pagination = latestData.pagination || {};
   const totalPages = Math.ceil((pagination.totalItems || 1000) / (pagination.totalItemsPerPage || 10));
 
-  // Pick top 5 movies for slider
-  const heroMovies = movies.slice(0, 6);
+  // Pick top 6 movies for slider - Prioritize Phim Chieu Rap if available
+  const heroMovies = (phimChieuRapData?.data?.items?.length > 0)
+    ? phimChieuRapData.data.items.slice(0, 6)
+    : movies.slice(0, 6);
 
   return (
     <div className="pb-8">
@@ -64,6 +67,10 @@ export default async function Home({ searchParams }: { searchParams: { page?: st
       {/* Show Featured Rows only on first page, below main list */}
       {isFirstPage && (
         <div className="mt-12 pt-8 space-y-4">
+          {phimChieuRapData?.data?.items && (
+            <MovieRow title="Phim Chiếu Rạp" movies={phimChieuRapData.data.items} path="/danh-sach/phim-chieu-rap" />
+          )}
+
           {phimLeData?.data?.items && (
             <MovieRow title="Phim Lẻ Hot" movies={phimLeData.data.items} path="/danh-sach/phim-le" />
           )}
