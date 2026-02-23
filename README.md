@@ -150,13 +150,6 @@ npm run dev
 
 ---
 
-### 🐳 Chạy nhanh bằng Docker (Khuyên dùng)
-
-Nếu máy bạn đã cài Docker, chỉ cần 1 lệnh duy nhất để chạy toàn bộ hệ thống:
-
-```bash
-docker-compose up --build
-```
 
 ---
 
