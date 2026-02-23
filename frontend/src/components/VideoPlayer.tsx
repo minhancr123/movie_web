@@ -45,7 +45,6 @@ export default function VideoPlayer({ src, movie, episode, onNextEpisode }: Vide
     const [buffered, setBuffered] = useState(0);
     const [isLoading, setIsLoading] = useState(true);
     const [error, setError] = useState<string | null>(null);
-    const [skippedIntro, setSkippedIntro] = useState(false);
 
     const controlsTimeoutRef = useRef<NodeJS.Timeout>();
     const hlsRef = useRef<Hls | null>(null); // Keep reference to HLS instance
@@ -72,17 +71,13 @@ export default function VideoPlayer({ src, movie, episode, onNextEpisode }: Vide
     };
 
     const getQualityLabel = (level: any) => {
-        const height = level.height;
-        const width = level.width;
-
-        if (width >= 3840 || height >= 2160) return '4K';
-        if (width >= 2560 || height >= 1440) return '2K';
-        if (width >= 1920 || height >= 1080) return '1080p';
-        if (width >= 1280 || height >= 720) return '720p';
-        if (height) return `${height}p`;
-
-        if (level.bitrate) return `${Math.round(level.bitrate / 1000)}Kbps`;
-        return 'Normal';
+        if (level.width >= 3840) return '4K';
+        if (level.width >= 2560) return '2K';
+        if (level.width >= 1920) return '1080p';
+        if (level.width >= 1280) return '720p';
+        if (level.height >= 1080) return '1080p';
+        if (level.height >= 720) return '720p';
+        return `${level.height}p`;
     };
 
     // Format time (seconds -> MM:SS)
@@ -98,39 +93,13 @@ export default function VideoPlayer({ src, movie, episode, onNextEpisode }: Vide
         const video = videoRef.current;
         if (!video) return;
 
-        // Perform cleanup of previous HLS instance if it exists
-        if (hlsRef.current) {
-            hlsRef.current.destroy();
-            hlsRef.current = null;
-        }
-
         setError(null);
         setIsLoading(true);
-
-        const initPlayer = () => {
-            // Try to restore from history specifically for this movie/episode
-            // We access the current history state directly. 
-            // Since we removed history from deps, this uses the value at the time src changed.
-            const saved = history.find(h => h.slug === movie.slug);
-            if (saved && saved.currentEpisode === episode.slug && saved.progress) {
-                // Only restore if we are close to the beginning (to avoid overriding user seek? No, this is init)
-                // But wait, if user refreshes, we want to restore.
-                video.currentTime = saved.progress;
-            }
-        };
 
         if (Hls.isSupported()) {
             const hls = new Hls({
                 enableWorker: true,
-                lowLatencyMode: false, // Better for VOD (allows larger buffer)
-                maxBufferLength: 60,   // Stable buffer size
-                maxMaxBufferLength: 600,
-                capLevelToPlayerSize: true, // Limit quality based on screen size to save bandwidth
-                startLevel: -1, // Auto quality start
-                // Aggressive timeouts to recover from stuck segments faster
-                fragLoadingTimeOut: 20000,
-                manifestLoadingTimeOut: 20000,
-                levelLoadingTimeOut: 20000,
+                lowLatencyMode: true,
             });
             hlsRef.current = hls;
 
@@ -139,6 +108,7 @@ export default function VideoPlayer({ src, movie, episode, onNextEpisode }: Vide
 
             hls.on(Hls.Events.MANIFEST_PARSED, (event, data) => {
                 const levels = hls.levels;
+                // Map levels to options with original index
                 const options = levels.map((level, index) => ({
                     height: level.height,
                     width: level.width,
@@ -146,39 +116,32 @@ export default function VideoPlayer({ src, movie, episode, onNextEpisode }: Vide
                     index: index,
                     label: getQualityLabel(level)
                 }));
-                // Sort by resolution descending (width/height) for UI
+
+                // Sort by resolution descending (width/height)
                 options.sort((a, b) => b.width - a.width);
+
                 setQualityOptions(options);
-                setCurrentQuality(-1);
+                setCurrentQuality(-1); // Default to Auto
 
-                initPlayer();
-
-                // Attempt to auto-play
-                const playPromise = video.play();
-                if (playPromise !== undefined) {
-                    playPromise.catch(() => {
-                        setIsPlaying(false);
-                        // Auto-play blocked, user interaction required.
-                    });
+                // Restore history
+                const saved = history.find(h => h.slug === movie.slug);
+                if (saved && saved.currentEpisode === episode.slug && saved.progress) {
+                    video.currentTime = saved.progress;
                 }
-
+                video.play().catch(() => setIsPlaying(false));
                 setIsLoading(false);
             });
 
             hls.on(Hls.Events.ERROR, (event, data) => {
-                console.warn("HLS Error:", data);
                 if (data.fatal) {
                     switch (data.type) {
                         case Hls.ErrorTypes.NETWORK_ERROR:
-                            console.log("Trying to recover from network error...");
                             hls.startLoad();
                             break;
                         case Hls.ErrorTypes.MEDIA_ERROR:
-                            console.log("Trying to recover from media error...");
                             hls.recoverMediaError();
                             break;
                         default:
-                            console.error("Fatal HLS error, cannot recover");
                             setError("Không thể phát video này.");
                             hls.destroy();
                             break;
@@ -188,7 +151,10 @@ export default function VideoPlayer({ src, movie, episode, onNextEpisode }: Vide
         } else if (video.canPlayType('application/vnd.apple.mpegurl')) {
             video.src = src;
             video.addEventListener('loadedmetadata', () => {
-                initPlayer();
+                const saved = history.find(h => h.slug === movie.slug);
+                if (saved && saved.currentEpisode === episode.slug && saved.progress) {
+                    video.currentTime = saved.progress;
+                }
                 video.play().catch(() => setIsPlaying(false));
                 setIsLoading(false);
             });
@@ -202,9 +168,7 @@ export default function VideoPlayer({ src, movie, episode, onNextEpisode }: Vide
                 hlsRef.current = null;
             }
         };
-        // Removed 'history' from dependency array to prevent re-init on auto-save
-        // eslint-disable-next-line react-hooks/exhaustive-deps
-    }, [src, movie.slug, episode.slug]);
+    }, [src, history, movie.slug, episode.slug]);
 
     // History Saver
     useEffect(() => {
@@ -268,8 +232,6 @@ export default function VideoPlayer({ src, movie, episode, onNextEpisode }: Vide
         return () => clearInterval(interval);
     }, [movie, episode, addToHistory]);
 
-
-
     // Event Listeners
     useEffect(() => {
         const video = videoRef.current;
@@ -293,10 +255,7 @@ export default function VideoPlayer({ src, movie, episode, onNextEpisode }: Vide
         const handlePlaying = () => setIsLoading(false);
         const handleEnded = () => {
             setIsPlaying(false);
-            if (onNextEpisode) {
-                console.log("🎬 Auto playing next episode...");
-                onNextEpisode();
-            }
+            // if (onNextEpisode) onNextEpisode(); // Optional auto-next
         };
 
         video.addEventListener('timeupdate', handleTimeUpdate);
@@ -329,41 +288,17 @@ export default function VideoPlayer({ src, movie, episode, onNextEpisode }: Vide
 
     const togglePlay = useCallback(() => {
         if (videoRef.current) {
-            if (isPlaying) {
-                videoRef.current.pause();
-            } else {
-                const playPromise = videoRef.current.play();
-                if (playPromise !== undefined) {
-                    playPromise.catch(error => {
-                        console.error("❌ Play failed:", error);
-                    });
-                }
-            }
+            if (isPlaying) videoRef.current.pause();
+            else videoRef.current.play();
         }
     }, [isPlaying]);
 
     const toggleFullscreen = useCallback(() => {
-        const video = videoRef.current;
-
-        // iOS Safari Support (Native Fullscreen)
-        if (video && (video as any).webkitEnterFullscreen) {
-            (video as any).webkitEnterFullscreen();
-            return;
-        }
-
-        // Standard Desktop Support
         if (!document.fullscreenElement) {
-            containerRef.current?.requestFullscreen().catch(err => {
-                // Fallback to video fullscreen if container fails
-                if (video && video.requestFullscreen) {
-                    video.requestFullscreen();
-                }
-            });
+            containerRef.current?.requestFullscreen();
             setIsFullscreen(true);
         } else {
-            if (document.exitFullscreen) {
-                document.exitFullscreen();
-            }
+            document.exitFullscreen();
             setIsFullscreen(false);
         }
     }, []);
@@ -371,7 +306,7 @@ export default function VideoPlayer({ src, movie, episode, onNextEpisode }: Vide
     // Toggle Picture-in-Picture
     const togglePiP = async () => {
         if (!videoRef.current) return;
-
+        
         try {
             if (document.pictureInPictureElement) {
                 await document.exitPictureInPicture();
@@ -387,111 +322,97 @@ export default function VideoPlayer({ src, movie, episode, onNextEpisode }: Vide
 
     // Auto PiP when page hidden (switch tab/minimize) or scroll out of view
     useEffect(() => {
-        let pipTimeout: NodeJS.Timeout;
-
-        const tryEnablePiP = async () => {
-            if (!videoRef.current) return false;
-
-            // Check if video is ready and playing
-            if (videoRef.current.readyState < 2) {
-                console.log('Video not ready for PiP');
-                return false;
-            }
-
-            // Check if already in PiP
-            if (document.pictureInPictureElement) {
-                console.log('Already in PiP mode');
-                return true;
-            }
-
-            try {
-                await videoRef.current.requestPictureInPicture();
-                setIsPiP(true);
-                console.log('✅ PiP enabled successfully');
-                return true;
-            } catch (err: any) {
-                console.error('❌ PiP failed:', err.message || err);
-                return false;
-            }
-        };
-
-        const tryDisablePiP = async () => {
-            if (document.pictureInPictureElement) {
+        const handleVisibilityChange = async () => {
+            if (!videoRef.current || !isPlaying) return;
+            
+            // Check both document.hidden and document.visibilityState
+            const isPageHidden = document.hidden || document.visibilityState === 'hidden';
+            
+            if (isPageHidden) {
+                // User switched tab or minimized, enable PiP automatically
                 try {
+                    if (!document.pictureInPictureElement) {
+                        await videoRef.current.requestPictureInPicture();
+                        setIsPiP(true);
+                        console.log('Auto PiP enabled (tab hidden)');
+                    }
+                } catch (err) {
+                    console.log('Auto PiP blocked:', err);
+                }
+            } else {
+                // User came back, exit PiP
+                if (document.pictureInPictureElement) {
                     await document.exitPictureInPicture();
                     setIsPiP(false);
-                    console.log('✅ PiP disabled');
-                } catch (err) {
-                    console.error('❌ PiP exit failed:', err);
+                    console.log('Auto PiP disabled (tab visible)');
                 }
             }
         };
 
-        const handleVisibilityChange = () => {
-            const isHidden = document.hidden || document.visibilityState === 'hidden';
-            console.log(`📄 Visibility changed: ${isHidden ? 'HIDDEN' : 'VISIBLE'}`);
-
-            if (isHidden && isPlaying) {
-                // Delay slightly to ensure video is ready
-                pipTimeout = setTimeout(() => {
-                    tryEnablePiP();
-                }, 100);
-            } else {
-                clearTimeout(pipTimeout);
-                tryDisablePiP();
+        // Handle window blur (when minimize or switch to another app)
+        const handleBlur = async () => {
+            if (!videoRef.current || !isPlaying) return;
+            
+            try {
+                if (!document.pictureInPictureElement) {
+                    await videoRef.current.requestPictureInPicture();
+                    setIsPiP(true);
+                    console.log('Auto PiP enabled (window blur)');
+                }
+            } catch (err) {
+                console.log('Auto PiP on blur blocked:', err);
             }
         };
 
-        const handleBlur = () => {
-            console.log('🔵 Window BLUR (minimize/switch app)');
-            if (isPlaying) {
-                pipTimeout = setTimeout(() => {
-                    tryEnablePiP();
-                }, 100);
-            }
-        };
-
-        const handleFocus = () => {
-            console.log('🟢 Window FOCUS (restore)');
-            clearTimeout(pipTimeout);
-
+        // Handle window focus (when restore or switch back)
+        const handleFocus = async () => {
+            if (!videoRef.current) return;
+            
             // Only exit PiP if video is in viewport
             if (document.pictureInPictureElement && containerRef.current) {
                 const rect = containerRef.current.getBoundingClientRect();
                 const isInView = rect.top < window.innerHeight && rect.bottom > 0;
-
+                
                 if (isInView) {
-                    tryDisablePiP();
+                    await document.exitPictureInPicture();
+                    setIsPiP(false);
+                    console.log('Auto PiP disabled (window focus)');
                 }
             }
         };
 
-        const handleScroll = () => {
-            if (!isPlaying || !containerRef.current) return;
-
+        // Auto PiP when scrolling out of viewport
+        const handleScroll = async () => {
+            if (!videoRef.current || !isPlaying || !containerRef.current) return;
+            
             const rect = containerRef.current.getBoundingClientRect();
             const isOutOfView = rect.bottom < 0 || rect.top > window.innerHeight;
-
-            if (isOutOfView) {
-                console.log('📜 Video scrolled OUT of view');
-                tryEnablePiP();
-            } else if (document.pictureInPictureElement) {
-                console.log('📜 Video scrolled INTO view');
-                tryDisablePiP();
+            
+            if (isOutOfView && !document.pictureInPictureElement) {
+                try {
+                    await videoRef.current.requestPictureInPicture();
+                    setIsPiP(true);
+                    console.log('Auto PiP enabled (scroll out)');
+                } catch (err) {
+                    console.log('Auto PiP on scroll blocked:', err);
+                }
+            } else if (!isOutOfView && document.pictureInPictureElement) {
+                await document.exitPictureInPicture();
+                setIsPiP(false);
+                console.log('Auto PiP disabled (scroll in)');
             }
         };
 
+        // Listen for PiP events
         const handleEnterPiP = () => {
             setIsPiP(true);
-            console.log('🎬 ENTERED PiP mode');
+            console.log('Entered PiP mode');
         };
-
         const handleLeavePiP = () => {
             setIsPiP(false);
-            console.log('🎬 LEFT PiP mode');
+            console.log('Left PiP mode');
         };
 
-        // Add all event listeners
         document.addEventListener('visibilitychange', handleVisibilityChange);
         window.addEventListener('blur', handleBlur);
         window.addEventListener('focus', handleFocus);
@@ -499,10 +420,7 @@ export default function VideoPlayer({ src, movie, episode, onNextEpisode }: Vide
         videoRef.current?.addEventListener('enterpictureinpicture', handleEnterPiP);
         videoRef.current?.addEventListener('leavepictureinpicture', handleLeavePiP);
 
-        console.log('🎯 Auto PiP listeners registered. isPlaying:', isPlaying);
-
         return () => {
-            clearTimeout(pipTimeout);
             document.removeEventListener('visibilitychange', handleVisibilityChange);
             window.removeEventListener('blur', handleBlur);
             window.removeEventListener('focus', handleFocus);
@@ -577,12 +495,6 @@ export default function VideoPlayer({ src, movie, episode, onNextEpisode }: Vide
                     e.preventDefault();
                     setShowKeyboardHelp(true);
                     break;
-                case 's':
-                    if (videoRef.current && videoRef.current.currentTime < 300) {
-                        setSkippedIntro(true);
-                        videoRef.current.currentTime += 90;
-                    }
-                    break;
             }
         };
 
@@ -625,7 +537,7 @@ export default function VideoPlayer({ src, movie, episode, onNextEpisode }: Vide
                                 </svg>
                             </button>
                         </div>
-
+                        
                         <div className="space-y-3">
                             <div className="flex justify-between items-center text-sm">
                                 <span className="text-gray-300">Play / Pause</span>
@@ -655,7 +567,7 @@ export default function VideoPlayer({ src, movie, episode, onNextEpisode }: Vide
                                 <kbd className="bg-white/10 px-3 py-1 rounded text-white">←</kbd>
                             </div>
                         </div>
-
+                        
                         <div className="mt-6 text-center">
                             <button onClick={() => setShowKeyboardHelp(false)} className="bg-red-600 hover:bg-red-700 text-white px-6 py-2 rounded-full font-semibold transition">
                                 Đóng
@@ -682,41 +594,18 @@ export default function VideoPlayer({ src, movie, episode, onNextEpisode }: Vide
 
             {/* Loading Spinner */}
             {isLoading && (
-                <div className="absolute inset-0 flex items-center justify-center bg-black/50 z-20">
+                <div className="absolute inset-0 flex items-center justify-center bg-black/50 z-20 backdrop-blur-sm">
                     <Loader2 className="w-12 h-12 text-red-600 animate-spin" />
                 </div>
             )}
 
             {/* Big Play Button (when paused) */}
             {!isPlaying && !isLoading && (
-                <div className="absolute top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2 z-10">
-                    <button
-                        onClick={(e) => {
-                            e.stopPropagation(); // Stop propagation to avoid double-toggling if container also handles click
-                            togglePlay();
-                        }}
-                        className="w-20 h-20 bg-black/60 rounded-full flex items-center justify-center pl-2 shadow-2xl border border-white/10 group-hover:scale-110 transition-transform duration-300 cursor-pointer hover:bg-white/20"
-                    >
+                <div className="absolute inset-0 flex items-center justify-center z-10 pointer-events-none">
+                    <div className="w-20 h-20 bg-black/60 rounded-full flex items-center justify-center pl-2 shadow-2xl backdrop-blur-sm border border-white/10 group-hover:scale-110 transition-transform duration-300">
                         <Play className="text-white w-10 h-10 fill-white" />
-                    </button>
+                    </div>
                 </div>
-            )}
-
-            {/* Skip Intro Button */}
-            {currentTime < 300 && !skippedIntro && !isLoading && isPlaying && (
-                <button
-                    onClick={(e) => {
-                        e.stopPropagation();
-                        setSkippedIntro(true); // Hide after one use
-                        if (videoRef.current) {
-                            videoRef.current.currentTime += 90; // Standard Intro (1m30s)
-                        }
-                    }}
-                    className="absolute bottom-24 right-6 z-40 bg-white/10 hover:bg-red-600 text-white px-5 py-2.5 rounded-lg backdrop-blur-md border border-white/10 transition-all duration-300 hover:scale-105 flex items-center gap-2 font-bold text-sm group animate-in slide-in-from-right-10 fade-in shadow-lg"
-                >
-                    <span>Bỏ qua Mở đầu</span>
-                    <SkipForward size={18} className="group-hover:translate-x-1 transition-transform" />
-                </button>
             )}
 
             {/* Controls Overlay */}
@@ -784,21 +673,11 @@ export default function VideoPlayer({ src, movie, episode, onNextEpisode }: Vide
                         {onNextEpisode && (
                             <button
                                 onClick={onNextEpisode}
-                                className="flex items-center gap-2 bg-white/10 hover:bg-red-600 text-white text-sm px-2 sm:px-4 py-1.5 rounded-lg backdrop-blur-sm transition-all border border-white/10"
+                                className="flex items-center gap-2 bg-white/10 hover:bg-red-600 text-white text-sm px-4 py-1.5 rounded-lg backdrop-blur-sm transition-all border border-white/10"
                             >
                                 <SkipForward size={16} fill="white" />
-                                <span className="font-bold hidden sm:inline"> Tập Tiếp</span>
+                                <span className="font-bold"> Tập Tiếp</span>
                             </button>
-                        )}
-
-                        {/* Max Quality Badge */}
-                        {qualityOptions.length > 0 && (
-                            <div className="hidden sm:flex items-center px-2 py-1 rounded bg-white/5 text-[10px] font-bold text-gray-400 border border-white/5 uppercase tracking-wider backdrop-blur-sm select-none">
-                                {qualityOptions[0].label === '4K' ? <span className="text-yellow-500 drop-shadow-sm">4K ULTRA</span> :
-                                    qualityOptions[0].label === '2K' ? <span className="text-blue-400 drop-shadow-sm">2K QHD</span> :
-                                        qualityOptions[0].label === '1080p' ? <span className="text-red-500 drop-shadow-sm">FHD</span> :
-                                            <span className="text-white">{qualityOptions[0].label}</span>}
-                            </div>
                         )}
 
                         <div className="relative group/settings">

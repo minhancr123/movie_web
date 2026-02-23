@@ -30,7 +30,7 @@ services:
     environment:
       - ASPNETCORE_ENVIRONMENT=Production
       - ASPNETCORE_URLS=http://+:8080
-      - ConnectionStrings__Redis=redis:6379
+      - ConnectionStrings__Redis=redis:6379,abortConnect=false
       - MovieSettings__BaseApiUrl=https://phimapi.com
       - MovieSettings__FrontendUrl=https://movie-web-green-sigma.vercel.app,http://localhost:3000,http://localhost:3001
     depends_on:

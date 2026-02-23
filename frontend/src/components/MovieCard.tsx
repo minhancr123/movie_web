@@ -14,7 +14,6 @@ interface MovieCardProps {
 
 const MovieCard = ({ movie }: MovieCardProps) => {
     const [isHovered, setIsHovered] = useState(false);
-    const [hasHovered, setHasHovered] = useState(false); // Only render popup after first hover
     const [isPlaying, setIsPlaying] = useState(false);
     const [isVideoReady, setIsVideoReady] = useState(false);
     const [popupPosition, setPopupPosition] = useState<'left' | 'center' | 'right'>('center'); // New state for popup alignment
@@ -50,44 +49,19 @@ const MovieCard = ({ movie }: MovieCardProps) => {
     }, []);
 
     // Fetch view count
-    // Fetch view count - Optimized with Intersection Observer
     useEffect(() => {
-        let observer: IntersectionObserver;
-        const currentRef = cardRef.current;
-
         const fetchViews = async () => {
             try {
-                const envUrl = process.env.NEXT_PUBLIC_BACKEND_API_URL || 'http://localhost:5000';
-                const apiUrl = envUrl.endsWith('/api/movies') ? envUrl : `${envUrl}/api/movies`;
-                const res = await fetch(`${apiUrl}/views/${movie.slug}`, { cache: 'no-store' });
+                const baseUrl = process.env.NEXT_PUBLIC_BACKEND_API_URL || 'http://localhost:5000';
+                const res = await fetch(`${baseUrl}/api/movies/views/${movie.slug}`);
                 if (res.ok) {
                     const data = await res.json();
                     setViews(data.views);
                 }
-            } catch (e) {
-                // Silent error
-            }
+            } catch (e) { console.error("Error fetching views", e); }
         };
-
-        if (currentRef) {
-            // Check if IntersectionObserver is supported (Client side)
-            if ('IntersectionObserver' in window) {
-                observer = new IntersectionObserver((entries) => {
-                    if (entries[0].isIntersecting) {
-                        fetchViews();
-                        observer.disconnect(); // Only fetch once
-                    }
-                }, { rootMargin: '50px' }); // Load slightly before view
-                observer.observe(currentRef);
-            } else {
-                // Fallback for older browsers
-                fetchViews();
-            }
-        }
-
-        return () => {
-            if (observer) observer.disconnect();
-        };
+        // Fetch lazily or instantly? Instantly for now.
+        fetchViews();
     }, [movie.slug]);
 
 
@@ -172,7 +146,6 @@ const MovieCard = ({ movie }: MovieCardProps) => {
         if (typeof window !== 'undefined' && window.innerWidth < 768) return;
 
         setIsHovered(true);
-        setHasHovered(true); // Mark as hovered to start rendering popup
 
         // Calculate position
         if (cardRef.current) {
@@ -198,14 +171,6 @@ const MovieCard = ({ movie }: MovieCardProps) => {
 
         // Start playing immediately - no delay
         setIsPlaying(true);
-
-        // Re-fetch views on hover to ensure freshness
-        const envUrl = process.env.NEXT_PUBLIC_BACKEND_API_URL || 'http://localhost:5000';
-        const apiUrl = envUrl.endsWith('/api/movies') ? envUrl : `${envUrl}/api/movies`;
-        fetch(`${apiUrl}/views/${movie.slug}`, { cache: 'no-store' })
-            .then(res => res.json())
-            .then(data => setViews(data.views))
-            .catch(() => { });
 
         // Fetch details if not already loaded
         if (!details) {
@@ -293,83 +258,81 @@ const MovieCard = ({ movie }: MovieCardProps) => {
                 </div>
             </Link>
 
-            {/* Pop-up Video Preview (Lazy Loaded) */}
-            {hasHovered && (
-                <div className={`
-              absolute z-[60] top-1/2 -translate-y-1/2
-              w-[150%] bg-[#111] rounded-xl overflow-hidden shadow-2xl shadow-red-900/40 border border-gray-700
-              transition-[transform,opacity,visibility] duration-150 hidden md:flex flex-col pointer-events-none
-              ${popupPosition === 'left' ? 'left-0 origin-left' : ''}
-              ${popupPosition === 'right' ? 'right-0 origin-right' : ''}
-              ${popupPosition === 'center' ? 'left-1/2 -translate-x-1/2 origin-center' : ''}
-              ${isHovered
-                        ? 'scale-110 opacity-100 visible pointer-events-auto'
-                        : 'scale-90 opacity-0 invisible'
-                    }
-          `}>
-                    <div className="relative w-full aspect-video bg-black">
-                        {/* Video Player */}
-                        {/* ... existing video setup ... */}
-                        <video
-                            ref={videoRef}
-                            className={`w-full h-full object-cover transition-opacity duration-300 ${isVideoReady ? 'opacity-100' : 'opacity-0'}`}
-                            muted
-                            loop
-                            playsInline
-                            preload="metadata"
-                            onPlaying={() => setIsVideoReady(true)}
+            {/* Pop-up Video Preview (Appears on Hover) - Positioning refinement */}
+            <div className={`
+          absolute z-[60] top-1/2 -translate-y-1/2
+          w-[150%] bg-[#111] rounded-xl overflow-hidden shadow-2xl shadow-red-900/40 border border-gray-700
+          transition-[transform,opacity,visibility] duration-150 hidden md:flex flex-col pointer-events-none
+          ${popupPosition === 'left' ? 'left-0 origin-left' : ''}
+          ${popupPosition === 'right' ? 'right-0 origin-right' : ''}
+          ${popupPosition === 'center' ? 'left-1/2 -translate-x-1/2 origin-center' : ''}
+          ${isHovered
+                    ? 'scale-110 opacity-100 visible pointer-events-auto'
+                    : 'scale-90 opacity-0 invisible'
+                }
+      `}>
+                <div className="relative w-full aspect-video bg-black">
+                    {/* Video Player */}
+                    {/* ... existing video setup ... */}
+                    <video
+                        ref={videoRef}
+                        className={`w-full h-full object-cover transition-opacity duration-300 ${isVideoReady ? 'opacity-100' : 'opacity-0'}`}
+                        muted
+                        loop
+                        playsInline
+                        preload="metadata"
+                        onPlaying={() => setIsVideoReady(true)}
+                    />
+
+                    {/* Loading / Poster Fallback in Popup */}
+                    <div className={`absolute inset-0 transition-opacity duration-300 z-10 ${isVideoReady ? 'opacity-0 pointer-events-none' : 'opacity-100'}`}>
+                        <Image
+                            src={popupImageUrl} // Use Landscape thumb for popup
+                            alt={movie.name}
+                            fill
+                            className="object-cover opacity-60"
+                            sizes="(max-width: 768px) 100vw, 400px"
+                            priority
                         />
-
-                        {/* Loading / Poster Fallback in Popup */}
-                        <div className={`absolute inset-0 transition-opacity duration-300 z-10 ${isVideoReady ? 'opacity-0 pointer-events-none' : 'opacity-100'}`}>
-                            <Image
-                                src={popupImageUrl} // Use Landscape thumb for popup
-                                alt={movie.name}
-                                fill
-                                className="object-cover opacity-60"
-                                sizes="(max-width: 768px) 100vw, 400px"
-                                priority={false} // Lazy load popup image
-                            />
-                            {isPlaying && !isVideoReady && (
-                                <div className="absolute inset-0 flex items-center justify-center">
-                                    <div className="w-8 h-8 border-2 border-red-600 border-t-transparent rounded-full animate-spin"></div>
-                                </div>
-                            )}
-                        </div>
-
-                        {isPlaying && (
-                            <div className="absolute top-2 right-2 z-20">
-                                <div className="w-6 h-6 rounded-full bg-black/60 flex items-center justify-center border border-white/20">
-                                    {!isVideoReady ? (
-                                        <div className="w-4 h-4 rounded-full border-2 border-white/40 border-t-transparent animate-spin" />
-                                    ) : (
-                                        <div className="w-2 h-2 bg-red-500 rounded-full animate-pulse" />
-                                    )}
-                                </div>
+                        {isPlaying && !isVideoReady && (
+                            <div className="absolute inset-0 flex items-center justify-center">
+                                <div className="w-8 h-8 border-2 border-red-600 border-t-transparent rounded-full animate-spin"></div>
                             </div>
                         )}
                     </div>
 
-                    {/* Overlay Info inside Popup */}
-                    <div className="p-3 bg-[#111] flex flex-col gap-1.5 min-h-[80px]">
-                        <h4 className="text-white font-bold text-sm line-clamp-1 drop-shadow-md">{movie.name}</h4>
-                        <div className="flex items-center gap-2 text-[10px] text-gray-400 font-medium">
-                            <span className="text-green-500 font-bold">98% Phù hợp</span>
-                            <span className="border border-gray-700 px-1 rounded bg-gray-800">{movie.year}</span>
-                            <span className="border border-gray-700 px-1 rounded bg-gray-800">HD</span>
+                    {isPlaying && (
+                        <div className="absolute top-2 right-2 z-20">
+                            <div className="w-6 h-6 rounded-full bg-black/60 flex items-center justify-center border border-white/20">
+                                {!isVideoReady ? (
+                                    <div className="w-4 h-4 rounded-full border-2 border-white/40 border-t-transparent animate-spin" />
+                                ) : (
+                                    <div className="w-2 h-2 bg-red-500 rounded-full animate-pulse" />
+                                )}
+                            </div>
                         </div>
+                    )}
+                </div>
 
-                        <div className="flex gap-2 mt-1">
-                            <Link href={`/phim/${movie.slug}`} className="flex-1 bg-white text-black py-1.5 rounded text-[10px] font-bold flex items-center justify-center gap-1 hover:bg-gray-200 transition-colors uppercase tracking-wide">
-                                <PlayCircle size={12} fill="black" /> XEM NGAY
-                            </Link>
-                            <button className="border border-gray-600 rounded-full p-1.5 hover:border-white hover:bg-white/10 transition-colors text-white">
-                                <Star size={12} />
-                            </button>
-                        </div>
+                {/* Overlay Info inside Popup */}
+                <div className="p-3 bg-[#111] flex flex-col gap-1.5 min-h-[80px]">
+                    <h4 className="text-white font-bold text-sm line-clamp-1 drop-shadow-md">{movie.name}</h4>
+                    <div className="flex items-center gap-2 text-[10px] text-gray-400 font-medium">
+                        <span className="text-green-500 font-bold">98% Phù hợp</span>
+                        <span className="border border-gray-700 px-1 rounded bg-gray-800">{movie.year}</span>
+                        <span className="border border-gray-700 px-1 rounded bg-gray-800">HD</span>
+                    </div>
+
+                    <div className="flex gap-2 mt-1">
+                        <Link href={`/phim/${movie.slug}`} className="flex-1 bg-white text-black py-1.5 rounded text-[10px] font-bold flex items-center justify-center gap-1 hover:bg-gray-200 transition-colors uppercase tracking-wide">
+                            <PlayCircle size={12} fill="black" /> XEM NGAY
+                        </Link>
+                        <button className="border border-gray-600 rounded-full p-1.5 hover:border-white hover:bg-white/10 transition-colors text-white">
+                            <Star size={12} />
+                        </button>
                     </div>
                 </div>
-            )}
+            </div>
         </div>
     );
 };

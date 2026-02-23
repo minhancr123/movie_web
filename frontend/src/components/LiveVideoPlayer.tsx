@@ -37,7 +37,6 @@ export default function LiveVideoPlayer({ movieSlug, premiereStartTime, movieNam
   const [isMuted, setIsMuted] = useState(true); // Start muted for autoplay
   const [isPiP, setIsPiP] = useState(false);
   const [showKeyboardHelp, setShowKeyboardHelp] = useState(false);
-  const [isEnded, setIsEnded] = useState(false);
   const videoRef = useRef<HTMLVideoElement>(null);
   const hlsRef = useRef<Hls | null>(null);
   const syncIntervalRef = useRef<NodeJS.Timeout>();
@@ -63,46 +62,46 @@ export default function LiveVideoPlayer({ movieSlug, premiereStartTime, movieNam
     const fetchMovie = async () => {
       try {
         const movie = await getMovieDetail(movieSlug);
-
+        
         console.log('Full movie data:', movie);
         console.log('All episodes:', movie?.episodes);
-
+        
         if (movie?.episodes && movie.episodes.length > 0) {
           // Thử tìm server có link m3u8 hoặc embed tốt nhất
           let bestEpisode = null;
-
+          
           for (const server of movie.episodes as Episode[]) {
             console.log('Server:', server.server_name, server.server_data);
-
+            
             if (server.server_data && server.server_data.length > 0) {
               const episode = server.server_data[0];
-
+              
               // Ưu tiên server có m3u8 URL khác hoặc embed URL tốt
               if (episode.link_m3u8 && !episode.link_m3u8.includes('phim1280.tv')) {
                 bestEpisode = episode;
                 console.log('Found better server:', server.server_name);
                 break;
               }
-
+              
               if (!bestEpisode) {
                 bestEpisode = episode;
               }
             }
           }
-
+          
           if (bestEpisode) {
             console.log('Using video source:', {
               embed: bestEpisode.link_embed,
               m3u8: bestEpisode.link_m3u8
             });
-
+            
             // Kiểm tra nếu link có chứa domain đã biết bị lỗi
             const isBrokenSource = bestEpisode.link_m3u8?.includes('phim1280.tv');
-
+            
             if (isBrokenSource) {
               console.warn('⚠️ Video source từ phim1280.tv có thể không hoạt động');
             }
-
+            
             setVideoData({
               embedUrl: bestEpisode.link_embed || '',
               m3u8Url: bestEpisode.link_m3u8 || ''
@@ -148,10 +147,16 @@ export default function LiveVideoPlayer({ movieSlug, premiereStartTime, movieNam
 
       hls.on(Hls.Events.MANIFEST_PARSED, () => {
         console.log('✅ HLS manifest loaded, levels:', hls.levels.length);
-
+        
+        // Sync to live time first
+        const targetTime = Math.max(0, Math.floor((Date.now() - new Date(premiereStartTime).getTime()) / 1000));
+        if (targetTime > 0 && video.duration) {
+          video.currentTime = Math.min(targetTime, video.duration - 1);
+        }
+        
         // Start muted for autoplay to work
         video.muted = true;
-
+        
         // Auto play
         video.play()
           .then(() => {
@@ -219,21 +224,10 @@ export default function LiveVideoPlayer({ movieSlug, premiereStartTime, movieNam
   // Sync video to live time every 10 seconds
   const syncToLiveTime = () => {
     if (!videoRef.current) return;
-
+    
     const video = videoRef.current;
     const targetTime = Math.max(0, Math.floor((Date.now() - new Date(premiereStartTime).getTime()) / 1000));
-
-    // Check if premiere ended
-    if (video.duration && video.duration > 0 && targetTime >= video.duration) {
-      if (!isEnded) {
-        setIsEnded(true);
-        setIsPlaying(false);
-        video.pause();
-        console.log('🏁 Premiere ended');
-      }
-      return;
-    }
-
+    
     // Only sync if video is more than 5 seconds behind
     const timeDiff = Math.abs(video.currentTime - targetTime);
     if (timeDiff > 5) {
@@ -247,15 +241,6 @@ export default function LiveVideoPlayer({ movieSlug, premiereStartTime, movieNam
     }
     syncIntervalRef.current = setInterval(() => {
       const currentTargetTime = Math.max(0, Math.floor((Date.now() - new Date(premiereStartTime).getTime()) / 1000));
-
-      if (video.duration && video.duration > 0 && currentTargetTime >= video.duration) {
-        setIsEnded(true);
-        setIsPlaying(false);
-        video.pause();
-        clearInterval(syncIntervalRef.current);
-        return;
-      }
-
       const currentDiff = Math.abs(video.currentTime - currentTargetTime);
       if (currentDiff > 5 && !video.paused) {
         video.currentTime = currentTargetTime;
@@ -340,7 +325,7 @@ export default function LiveVideoPlayer({ movieSlug, premiereStartTime, movieNam
   // Toggle Picture-in-Picture
   const togglePiP = async () => {
     if (!videoRef.current) return;
-
+    
     try {
       if (document.pictureInPictureElement) {
         await document.exitPictureInPicture();
@@ -356,111 +341,97 @@ export default function LiveVideoPlayer({ movieSlug, premiereStartTime, movieNam
 
   // Auto PiP when page hidden (switch tab/minimize) or scroll out of view
   useEffect(() => {
-    let pipTimeout: NodeJS.Timeout;
-
-    const tryEnablePiP = async () => {
-      if (!videoRef.current) return false;
-
-      // Check if video is ready and playing
-      if (videoRef.current.readyState < 2) {
-        console.log('Video not ready for PiP');
-        return false;
-      }
-
-      // Check if already in PiP
-      if (document.pictureInPictureElement) {
-        console.log('Already in PiP mode');
-        return true;
-      }
-
-      try {
-        await videoRef.current.requestPictureInPicture();
-        setIsPiP(true);
-        console.log('✅ PiP enabled successfully');
-        return true;
-      } catch (err: any) {
-        console.error('❌ PiP failed:', err.message || err);
-        return false;
-      }
-    };
-
-    const tryDisablePiP = async () => {
-      if (document.pictureInPictureElement) {
+    const handleVisibilityChange = async () => {
+      if (!videoRef.current || !isPlaying) return;
+      
+      // Check both document.hidden and document.visibilityState
+      const isPageHidden = document.hidden || document.visibilityState === 'hidden';
+      
+      if (isPageHidden) {
+        // User switched tab or minimized, enable PiP automatically
         try {
+          if (!document.pictureInPictureElement) {
+            await videoRef.current.requestPictureInPicture();
+            setIsPiP(true);
+            console.log('Auto PiP enabled (tab hidden)');
+          }
+        } catch (err) {
+          console.log('Auto PiP blocked:', err);
+        }
+      } else {
+        // User came back, exit PiP
+        if (document.pictureInPictureElement) {
           await document.exitPictureInPicture();
           setIsPiP(false);
-          console.log('✅ PiP disabled');
-        } catch (err) {
-          console.error('❌ PiP exit failed:', err);
+          console.log('Auto PiP disabled (tab visible)');
         }
       }
     };
 
-    const handleVisibilityChange = () => {
-      const isHidden = document.hidden || document.visibilityState === 'hidden';
-      console.log(`📄 Visibility changed: ${isHidden ? 'HIDDEN' : 'VISIBLE'}`);
-
-      if (isHidden && isPlaying) {
-        // Delay slightly to ensure video is ready
-        pipTimeout = setTimeout(() => {
-          tryEnablePiP();
-        }, 100);
-      } else {
-        clearTimeout(pipTimeout);
-        tryDisablePiP();
+    // Handle window blur (when minimize or switch to another app)
+    const handleBlur = async () => {
+      if (!videoRef.current || !isPlaying) return;
+      
+      try {
+        if (!document.pictureInPictureElement) {
+          await videoRef.current.requestPictureInPicture();
+          setIsPiP(true);
+          console.log('Auto PiP enabled (window blur)');
+        }
+      } catch (err) {
+        console.log('Auto PiP on blur blocked:', err);
       }
     };
 
-    const handleBlur = () => {
-      console.log('🔵 Window BLUR (minimize/switch app)');
-      if (isPlaying) {
-        pipTimeout = setTimeout(() => {
-          tryEnablePiP();
-        }, 100);
-      }
-    };
-
-    const handleFocus = () => {
-      console.log('🟢 Window FOCUS (restore)');
-      clearTimeout(pipTimeout);
-
+    // Handle window focus (when restore or switch back)
+    const handleFocus = async () => {
+      if (!videoRef.current) return;
+      
       // Only exit PiP if video is in viewport
       if (document.pictureInPictureElement && containerRef.current) {
         const rect = containerRef.current.getBoundingClientRect();
         const isInView = rect.top < window.innerHeight && rect.bottom > 0;
-
+        
         if (isInView) {
-          tryDisablePiP();
+          await document.exitPictureInPicture();
+          setIsPiP(false);
+          console.log('Auto PiP disabled (window focus)');
         }
       }
     };
 
-    const handleScroll = () => {
-      if (!isPlaying || !containerRef.current) return;
-
+    // Auto PiP when scrolling out of viewport
+    const handleScroll = async () => {
+      if (!videoRef.current || !isPlaying || !containerRef.current) return;
+      
       const rect = containerRef.current.getBoundingClientRect();
       const isOutOfView = rect.bottom < 0 || rect.top > window.innerHeight;
-
-      if (isOutOfView) {
-        console.log('📜 Video scrolled OUT of view');
-        tryEnablePiP();
-      } else if (document.pictureInPictureElement) {
-        console.log('📜 Video scrolled INTO view');
-        tryDisablePiP();
+      
+      if (isOutOfView && !document.pictureInPictureElement) {
+        try {
+          await videoRef.current.requestPictureInPicture();
+          setIsPiP(true);
+          console.log('Auto PiP enabled (scroll out)');
+        } catch (err) {
+          console.log('Auto PiP on scroll blocked:', err);
+        }
+      } else if (!isOutOfView && document.pictureInPictureElement) {
+        await document.exitPictureInPicture();
+        setIsPiP(false);
+        console.log('Auto PiP disabled (scroll in)');
       }
     };
 
+    // Listen for PiP events
     const handleEnterPiP = () => {
       setIsPiP(true);
-      console.log('🎬 ENTERED PiP mode');
+      console.log('Entered PiP mode');
     };
-
     const handleLeavePiP = () => {
       setIsPiP(false);
-      console.log('🎬 LEFT PiP mode');
+      console.log('Left PiP mode');
     };
 
-    // Add all event listeners
     document.addEventListener('visibilitychange', handleVisibilityChange);
     window.addEventListener('blur', handleBlur);
     window.addEventListener('focus', handleFocus);
@@ -468,10 +439,7 @@ export default function LiveVideoPlayer({ movieSlug, premiereStartTime, movieNam
     videoRef.current?.addEventListener('enterpictureinpicture', handleEnterPiP);
     videoRef.current?.addEventListener('leavepictureinpicture', handleLeavePiP);
 
-    console.log('🎯 Auto PiP listeners registered. isPlaying:', isPlaying);
-
     return () => {
-      clearTimeout(pipTimeout);
       document.removeEventListener('visibilitychange', handleVisibilityChange);
       window.removeEventListener('blur', handleBlur);
       window.removeEventListener('focus', handleFocus);
@@ -487,7 +455,7 @@ export default function LiveVideoPlayer({ movieSlug, premiereStartTime, movieNam
       // Ignore if typing in input
       if (e.target instanceof HTMLInputElement || e.target instanceof HTMLTextAreaElement) return;
 
-      switch (e.key.toLowerCase()) {
+      switch(e.key.toLowerCase()) {
         case '?':
           e.preventDefault();
           setShowKeyboardHelp(!showKeyboardHelp);
@@ -527,11 +495,11 @@ export default function LiveVideoPlayer({ movieSlug, premiereStartTime, movieNam
   // Auto-hide controls after 3 seconds of inactivity
   const handleMouseMove = () => {
     setShowControls(true);
-
+    
     if (hideControlsTimeoutRef.current) {
       clearTimeout(hideControlsTimeoutRef.current);
     }
-
+    
     hideControlsTimeoutRef.current = setTimeout(() => {
       if (isPlaying) {
         setShowControls(false);
@@ -576,8 +544,8 @@ export default function LiveVideoPlayer({ movieSlug, premiereStartTime, movieNam
   }
 
   return (
-    <div
-      ref={containerRef}
+    <div 
+      ref={containerRef} 
       className="relative w-full h-full bg-black"
       onMouseMove={handleMouseMove}
       onMouseLeave={() => isPlaying && setShowControls(false)}
@@ -600,7 +568,7 @@ export default function LiveVideoPlayer({ movieSlug, premiereStartTime, movieNam
                 </svg>
               </button>
             </div>
-
+            
             <div className="space-y-3">
               <div className="flex justify-between items-center text-sm">
                 <span className="text-gray-300">Play / Pause</span>
@@ -634,7 +602,7 @@ export default function LiveVideoPlayer({ movieSlug, premiereStartTime, movieNam
                 <kbd className="bg-white/10 px-3 py-1 rounded text-white">?</kbd>
               </div>
             </div>
-
+            
             <div className="mt-6 text-center">
               <button
                 onClick={() => setShowKeyboardHelp(false)}
@@ -649,7 +617,7 @@ export default function LiveVideoPlayer({ movieSlug, premiereStartTime, movieNam
 
       {/* Keyboard Help Hint */}
       <div className={`absolute top-4 right-4 z-20 bg-black/60 backdrop-blur-sm rounded-lg px-3 py-1.5 text-white text-xs transition-opacity ${showControls ? 'opacity-100' : 'opacity-0'}`}>
-        <button
+        <button 
           onClick={() => setShowKeyboardHelp(true)}
           className="hover:text-red-400 transition"
         >
@@ -691,34 +659,6 @@ export default function LiveVideoPlayer({ movieSlug, premiereStartTime, movieNam
         </div>
       )}
 
-      {/* Premiere Ended Overlay */}
-      {isEnded && (
-        <div className="absolute inset-0 z-50 bg-black/95 flex items-center justify-center p-8">
-          <div className="text-center max-w-md animate-in fade-in zoom-in duration-500">
-            <div className="text-gray-500 text-6xl mb-6">🏁</div>
-            <h3 className="text-3xl md:text-4xl font-bold text-white mb-4">Buổi công chiếu đã kết thúc</h3>
-            <p className="text-gray-400 text-lg mb-8">
-              Cảm ơn bạn đã tham gia buổi công chiếu phim
-              <span className="text-red-500 font-bold block mt-2">"{movieName}"</span>
-            </p>
-            <div className="flex flex-col gap-3">
-              <button
-                onClick={() => window.location.href = `/phim/${movieSlug}`}
-                className="bg-red-600 hover:bg-red-700 text-white px-8 py-3 rounded-full font-bold text-lg transition shadow-lg shadow-red-900/50 hover:scale-105"
-              >
-                Xem lại phim
-              </button>
-              <button
-                onClick={() => window.location.href = '/cong-chieu'}
-                className="text-gray-400 hover:text-white text-sm mt-2 transition"
-              >
-                Xem các sự kiện khác
-              </button>
-            </div>
-          </div>
-        </div>
-      )}
-
       {/* HLS Video Player - NO NATIVE CONTROLS */}
       {videoData && !videoError && (
         <>
@@ -727,10 +667,6 @@ export default function LiveVideoPlayer({ movieSlug, premiereStartTime, movieNam
             className="w-full h-full object-contain bg-black"
             playsInline
             autoPlay
-            onLoadedMetadata={() => {
-              console.log('🎬 Metadata loaded, forcing sync...');
-              syncToLiveTime();
-            }}
             onPlay={() => setIsPlaying(true)}
             onPause={() => setIsPlaying(false)}
           >
@@ -797,7 +733,7 @@ export default function LiveVideoPlayer({ movieSlug, premiereStartTime, movieNam
                     <span>Bật âm thanh</span>
                   </button>
                 )}
-
+                
                 {/* Volume */}
                 <div className="hidden md:flex items-center gap-2 bg-white/10 backdrop-blur-sm rounded-lg px-3 py-2">
                   <button onClick={() => handleVolumeChange(volume === 0 ? 1 : 0)}>
