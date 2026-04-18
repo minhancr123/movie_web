@@ -63,29 +63,80 @@ jobs:
           key: ${{ secrets.VPS_SSH_KEY }}
           port: ${{ secrets.VPS_PORT }}
           script: |
+            set -e
             cd /root/movieweb
+
+            # Ensure VPS is using the latest compose/workflow changes from repo.
+            git fetch --all --prune
+            if git show-ref --verify --quiet refs/remotes/origin/main; then
+              git checkout main
+              git reset --hard origin/main
+            else
+              git checkout master
+              git reset --hard origin/master
+            fi
+
+            COMPOSE_CMD="docker compose"
+            if ! docker compose version >/dev/null 2>&1; then
+              COMPOSE_CMD="docker-compose"
+            fi
             
             # Pull latest Docker images
-            docker-compose -f docker-compose.prod.yml pull
+            $COMPOSE_CMD -f docker-compose.prod.yml pull
             
             # Restart services
-            docker-compose -f docker-compose.prod.yml up -d --force-recreate
+            $COMPOSE_CMD -f docker-compose.prod.yml up -d --force-recreate
             
             # Clean up old images
             docker image prune -af
             
             echo "Waiting for services to be healthy..."
-            sleep 15
+
+            check_http() {
+              local url="$1"
+              local name="$2"
+              local max_try="${3:-30}"
+              local i=1
+              while [ "$i" -le "$max_try" ]; do
+                if curl -fsS "$url" >/dev/null; then
+                  echo "✓ $name is healthy"
+                  return 0
+                fi
+                echo "[$i/$max_try] waiting for $name..."
+                sleep 5
+                i=$((i+1))
+              done
+              echo "✗ $name health check failed"
+              return 1
+            }
+
+            check_running() {
+              local container="$1"
+              if docker inspect -f '{{.State.Running}}' "$container" 2>/dev/null | grep -q true; then
+                echo "✓ $container is running"
+                return 0
+              fi
+              echo "✗ $container is not running"
+              return 1
+            }
             
             # Health checks
-            curl -f http://localhost:5001/health || exit 1
-            echo "✓ Node.js Backend is healthy"
-            
-            curl -f http://localhost:5291/health || exit 1
-            echo "✓ C# Backend is healthy"
-            
-            docker exec movieweb-redis redis-cli ping || exit 1
+            if ! check_http "http://localhost:5001/health" "Node.js Backend" 36; then
+              docker logs --tail 200 movieweb-backend-node || true
+              exit 1
+            fi
+
+            if ! check_http "http://localhost:5291/health" "C# Backend" 36; then
+              docker logs --tail 200 movieweb-backend-csharp || true
+              exit 1
+            fi
+
+            docker exec movieweb-redis redis-cli ping | grep -q PONG || exit 1
             echo "✓ Redis is healthy"
+
+            check_http "http://localhost:9200" "Elasticsearch" 36
+            check_running "movieweb-backend-node-worker"
+            check_running "movieweb-backend-node-scheduler"
             
             echo "✓ Deployment successful!"
 
