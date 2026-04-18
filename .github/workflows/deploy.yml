@@ -85,15 +85,27 @@ jobs:
             if ! docker compose version >/dev/null 2>&1; then
               COMPOSE_CMD="docker-compose"
             fi
+
+            # Elasticsearch requires vm.max_map_count >= 262144 on Linux hosts.
+            CURRENT_VMMAP=$(sysctl -n vm.max_map_count 2>/dev/null || echo 0)
+            if [ "$CURRENT_VMMAP" -lt 262144 ]; then
+              echo "Updating vm.max_map_count from $CURRENT_VMMAP to 262144"
+              sysctl -w vm.max_map_count=262144 || true
+            fi
             
             # Pull latest Docker images
             $COMPOSE_CMD -f docker-compose.prod.yml pull
             
             # Restart services
-            $COMPOSE_CMD -f docker-compose.prod.yml up -d --force-recreate
-            
-            # Clean up old images
-            docker image prune -af
+            if ! $COMPOSE_CMD -f docker-compose.prod.yml up -d --force-recreate; then
+              echo "Compose up failed. Service status:"
+              $COMPOSE_CMD -f docker-compose.prod.yml ps || true
+              echo "Elasticsearch logs:"
+              docker logs --tail 300 movieweb-elasticsearch || true
+              echo "Node worker logs:"
+              docker logs --tail 200 movieweb-backend-node-worker || true
+              exit 1
+            fi
             
             echo "Waiting for services to be healthy..."
 
@@ -142,6 +154,9 @@ jobs:
             check_http "http://localhost:9200" "Elasticsearch" 36
             check_running "movieweb-backend-node-worker"
             check_running "movieweb-backend-node-scheduler"
+
+            # Clean up old images only after successful deployment.
+            docker image prune -af
             
             echo "✓ Deployment successful!"
 

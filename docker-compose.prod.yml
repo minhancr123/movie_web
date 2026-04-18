@@ -13,10 +13,11 @@ services:
     networks:
       - movieweb-network
     healthcheck:
-      test: ["CMD", "wget", "--quiet", "--tries=1", "--spider", "http://localhost:9200"]
+      test: ["CMD-SHELL", "curl -fsS http://localhost:9200 >/dev/null || exit 1"]
       interval: 20s
       timeout: 5s
-      retries: 10
+      retries: 20
+      start_period: 60s
 
   # Redis Cache
   redis:
@@ -88,7 +89,7 @@ services:
       redis:
         condition: service_healthy
       elasticsearch:
-        condition: service_healthy
+        condition: service_started
     healthcheck:
       test: ["CMD", "wget", "--quiet", "--tries=1", "--spider", "http://localhost:5001/health"]
       interval: 30s
@@ -114,7 +115,7 @@ services:
       redis:
         condition: service_healthy
       elasticsearch:
-        condition: service_healthy
+        condition: service_started
     networks:
       - movieweb-network
 
