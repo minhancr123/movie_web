@@ -55,6 +55,16 @@ jobs:
           cache-from: type=registry,ref=${{ secrets.DOCKER_USERNAME }}/movie-web:csharp-latest
           cache-to: type=inline
 
+      - name: Upload Compose File to VPS
+        uses: appleboy/scp-action@v0.1.7
+        with:
+          host: ${{ secrets.VPS_HOST }}
+          username: ${{ secrets.VPS_USERNAME }}
+          key: ${{ secrets.VPS_SSH_KEY }}
+          port: ${{ secrets.VPS_PORT }}
+          source: docker-compose.prod.yml
+          target: /root/movieweb
+
       - name: Deploy to VPS
         uses: appleboy/ssh-action@v1.0.0
         with:
@@ -66,14 +76,9 @@ jobs:
             set -e
             cd /root/movieweb
 
-            # Ensure VPS is using the latest compose/workflow changes from repo.
-            git fetch --all --prune
-            if git show-ref --verify --quiet refs/remotes/origin/main; then
-              git checkout main
-              git reset --hard origin/main
-            else
-              git checkout master
-              git reset --hard origin/master
+            if [ ! -f docker-compose.prod.yml ]; then
+              echo "docker-compose.prod.yml not found in /root/movieweb"
+              exit 1
             fi
 
             COMPOSE_CMD="docker compose"
