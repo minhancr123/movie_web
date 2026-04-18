@@ -136,6 +136,28 @@ jobs:
               echo "✗ $container is not running"
               return 1
             }
+
+            check_container_healthy() {
+              local container="$1"
+              local max_try="${2:-30}"
+              local i=1
+              while [ "$i" -le "$max_try" ]; do
+                local status
+                status=$(docker inspect -f '{{if .State.Health}}{{.State.Health.Status}}{{else}}none{{end}}' "$container" 2>/dev/null || echo "missing")
+
+                if [ "$status" = "healthy" ]; then
+                  echo "✓ $container is healthy"
+                  return 0
+                fi
+
+                echo "[$i/$max_try] waiting for $container health (current: $status)..."
+                sleep 5
+                i=$((i+1))
+              done
+
+              echo "✗ $container did not become healthy"
+              return 1
+            }
             
             # Health checks
             if ! check_http "http://localhost:5001/health" "Node.js Backend" 36; then
@@ -151,7 +173,11 @@ jobs:
             docker exec movieweb-redis redis-cli ping | grep -q PONG || exit 1
             echo "✓ Redis is healthy"
 
-            check_http "http://localhost:9200" "Elasticsearch" 36
+            if ! check_container_healthy "movieweb-elasticsearch" 36; then
+              docker logs --tail 300 movieweb-elasticsearch || true
+              exit 1
+            fi
+
             check_running "movieweb-backend-node-worker"
             check_running "movieweb-backend-node-scheduler"
 
