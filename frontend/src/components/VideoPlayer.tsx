@@ -107,7 +107,7 @@ export default function VideoPlayer({ src, movie, episode, onNextEpisode }: Vide
             hls.loadSource(src);
             hls.attachMedia(video);
 
-            hls.on(Hls.Events.MANIFEST_PARSED, (event, data) => {
+            hls.on(Hls.Events.MANIFEST_PARSED, () => {
                 const levels = hls.levels;
                 // Map levels to options with original index
                 const options = levels.map((level, index) => ({
@@ -169,7 +169,7 @@ export default function VideoPlayer({ src, movie, episode, onNextEpisode }: Vide
                 hlsRef.current = null;
             }
         };
-    }, [src, history, movie.slug, episode.slug]);
+    }, [src, movie.slug, episode.slug]);
 
     // History Saver
     useEffect(() => {
@@ -177,6 +177,8 @@ export default function VideoPlayer({ src, movie, episode, onNextEpisode }: Vide
         if (!video) return;
 
         const saveProgress = async () => {
+            if (video.paused || video.ended) return;
+
             if (video.currentTime > 5) {
                 // Local save
                 addToHistory({
@@ -253,12 +255,20 @@ export default function VideoPlayer({ src, movie, episode, onNextEpisode }: Vide
         const handlePlay = () => setIsPlaying(true);
         const handlePause = () => setIsPlaying(false);
         const handleWaiting = () => {
+            if (video.paused) return;
             if (loadingTimeoutRef.current) clearTimeout(loadingTimeoutRef.current);
             loadingTimeoutRef.current = setTimeout(() => {
                 setIsLoading(true);
-            }, 250);
+            }, 600);
         };
         const handlePlaying = () => {
+            if (loadingTimeoutRef.current) {
+                clearTimeout(loadingTimeoutRef.current);
+                loadingTimeoutRef.current = undefined;
+            }
+            setIsLoading(false);
+        };
+        const handleCanPlay = () => {
             if (loadingTimeoutRef.current) {
                 clearTimeout(loadingTimeoutRef.current);
                 loadingTimeoutRef.current = undefined;
@@ -276,6 +286,7 @@ export default function VideoPlayer({ src, movie, episode, onNextEpisode }: Vide
         video.addEventListener('pause', handlePause);
         video.addEventListener('waiting', handleWaiting);
         video.addEventListener('playing', handlePlaying);
+        video.addEventListener('canplay', handleCanPlay);
         video.addEventListener('ended', handleEnded);
 
         return () => {
@@ -289,6 +300,7 @@ export default function VideoPlayer({ src, movie, episode, onNextEpisode }: Vide
             video.removeEventListener('pause', handlePause);
             video.removeEventListener('waiting', handleWaiting);
             video.removeEventListener('playing', handlePlaying);
+            video.removeEventListener('canplay', handleCanPlay);
             video.removeEventListener('ended', handleEnded);
         }
     }, [onNextEpisode]);

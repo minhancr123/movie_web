@@ -70,6 +70,45 @@ const getPreviewM3u8Url = (detail: MovieDetail | null): string => {
     return '';
 };
 
+const getYoutubeVideoId = (url: string): string => {
+    if (!url) return '';
+
+    const short = url.match(/youtu\.be\/([^?&/]+)/i);
+    if (short?.[1]) return short[1];
+
+    const watch = url.match(/[?&]v=([^?&/]+)/i);
+    if (watch?.[1]) return watch[1];
+
+    const embed = url.match(/youtube\.com\/embed\/([^?&/]+)/i);
+    if (embed?.[1]) return embed[1];
+
+    return '';
+};
+
+const getTrailerSource = (detail: MovieDetail | null) => {
+    const trailerUrl = detail?.trailer_url || '';
+    if (!trailerUrl) {
+        return { type: 'none' as const, url: '' };
+    }
+
+    const youtubeId = getYoutubeVideoId(trailerUrl);
+    if (youtubeId) {
+        const embedUrl = `https://www.youtube.com/embed/${youtubeId}?autoplay=1&mute=1&controls=0&rel=0&playsinline=1&loop=1&playlist=${youtubeId}&modestbranding=1`;
+        return { type: 'youtube' as const, url: embedUrl };
+    }
+
+    const normalized = trailerUrl.toLowerCase();
+    if (normalized.includes('.m3u8')) {
+        return { type: 'm3u8' as const, url: trailerUrl };
+    }
+
+    if (normalized.includes('.mp4') || normalized.includes('.webm') || normalized.includes('.mov')) {
+        return { type: 'video' as const, url: trailerUrl };
+    }
+
+    return { type: 'none' as const, url: '' };
+};
+
 const MovieCard = ({ movie }: MovieCardProps) => {
     const [isHovered, setIsHovered] = useState(false);
     const [isPlaying, setIsPlaying] = useState(false);
@@ -83,11 +122,20 @@ const MovieCard = ({ movie }: MovieCardProps) => {
     const timeoutRef = useRef<NodeJS.Timeout | null>(null);
     const hoverActiveRef = useRef(false);
     const previewFallbackTimeoutRef = useRef<NodeJS.Timeout | null>(null);
+    const [youtubePreviewUrl, setYoutubePreviewUrl] = useState('');
 
     const { history } = useWatchHistory();
     const savedData = history.find(h => h.slug === movie.slug);
     const savedProgress = savedData?.progress || 0;
     const savedDuration = savedData?.duration || (45 * 60);
+
+    const markPreviewReady = () => {
+        if (previewFallbackTimeoutRef.current) {
+            clearTimeout(previewFallbackTimeoutRef.current);
+            previewFallbackTimeoutRef.current = null;
+        }
+        setIsVideoReady(true);
+    };
 
     const posterUrl = movie.poster_url || '';
     const imageUrl = posterUrl
@@ -134,7 +182,17 @@ const MovieCard = ({ movie }: MovieCardProps) => {
     // Handle playing video when details are loaded and isPlaying is true
     useEffect(() => {
         if (isPlaying && details && videoRef.current) {
-            const m3u8Url = getPreviewM3u8Url(details);
+            const trailer = getTrailerSource(details);
+            const m3u8Url = trailer.type === 'm3u8' ? trailer.url : getPreviewM3u8Url(details);
+            const directVideoUrl = trailer.type === 'video' ? trailer.url : '';
+
+            if (trailer.type === 'youtube') {
+                setYoutubePreviewUrl(trailer.url);
+                setIsVideoReady(false);
+                return;
+            }
+
+            setYoutubePreviewUrl('');
 
             setIsVideoReady(false);
 
@@ -148,7 +206,19 @@ const MovieCard = ({ movie }: MovieCardProps) => {
                 setIsVideoReady(false);
             }, 5000);
 
-            if (m3u8Url) {
+            if (m3u8Url || directVideoUrl) {
+                if (directVideoUrl) {
+                    if (hlsRef.current) {
+                        hlsRef.current.destroy();
+                        hlsRef.current = null;
+                    }
+
+                    videoRef.current.src = directVideoUrl;
+                    videoRef.current.load();
+                    videoRef.current.play().catch(() => setIsPlaying(false));
+                    return;
+                }
+
                 if (Hls.isSupported()) {
                     if (hlsRef.current) hlsRef.current.destroy();
 
@@ -193,6 +263,7 @@ const MovieCard = ({ movie }: MovieCardProps) => {
             }
         } else {
             // Stop playing
+            setYoutubePreviewUrl('');
             if (hlsRef.current) {
                 hlsRef.current.destroy();
                 hlsRef.current = null;
@@ -259,8 +330,9 @@ const MovieCard = ({ movie }: MovieCardProps) => {
             return;
         }
 
-        const previewUrl = getPreviewM3u8Url(nextDetails);
-        if (previewUrl) {
+        const trailer = getTrailerSource(nextDetails);
+        const streamPreviewUrl = getPreviewM3u8Url(nextDetails);
+        if (trailer.type !== 'none' || streamPreviewUrl) {
             setIsPlaying(true);
         } else {
             setIsPlaying(false);
@@ -351,21 +423,30 @@ const MovieCard = ({ movie }: MovieCardProps) => {
       `}>
                 <div className="relative w-full aspect-video bg-black">
                     {/* Video Player */}
-                    {/* ... existing video setup ... */}
-                    <video
-                        ref={videoRef}
-                        className={`w-full h-full object-cover transition-opacity duration-300 ${isVideoReady ? 'opacity-100' : 'opacity-0'}`}
-                        muted
-                        loop
-                        playsInline
-                        preload="metadata"
-                        onLoadedData={() => setIsVideoReady(true)}
-                        onPlaying={() => setIsVideoReady(true)}
-                        onError={() => {
-                            setIsPlaying(false);
-                            setIsVideoReady(false);
-                        }}
-                    />
+                    {youtubePreviewUrl && isPlaying ? (
+                        <iframe
+                            src={youtubePreviewUrl}
+                            className={`w-full h-full transition-opacity duration-300 ${isVideoReady ? 'opacity-100' : 'opacity-0'}`}
+                            allow="autoplay; encrypted-media; picture-in-picture"
+                            allowFullScreen
+                            onLoad={markPreviewReady}
+                        />
+                    ) : (
+                        <video
+                            ref={videoRef}
+                            className={`w-full h-full object-cover transition-opacity duration-300 ${isVideoReady ? 'opacity-100' : 'opacity-0'}`}
+                            muted
+                            loop
+                            playsInline
+                            preload="metadata"
+                            onLoadedData={markPreviewReady}
+                            onPlaying={markPreviewReady}
+                            onError={() => {
+                                setIsPlaying(false);
+                                setIsVideoReady(false);
+                            }}
+                        />
+                    )}
 
                     {/* Loading / Poster Fallback in Popup */}
                     <div className={`absolute inset-0 transition-opacity duration-300 z-10 ${isVideoReady ? 'opacity-0 pointer-events-none' : 'opacity-100'}`}>

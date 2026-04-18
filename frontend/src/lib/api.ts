@@ -1,16 +1,10 @@
 import axios from 'axios';
 import https from 'https';
 
-// Get API URL from Environment Variables
-const API_URL = process.env.NEXT_PUBLIC_BACKEND_API_URL;
-if (!API_URL) {
-  throw new Error("NEXT_PUBLIC_BACKEND_API_URL is not defined in environment variables");
-}
+// Frontend should call backend proxy; backend is responsible for calling phimapi.
+const API_URL = process.env.NEXT_PUBLIC_BACKEND_API_URL || 'http://localhost:5291/api/movies';
 
 const envImagePrefix = process.env.NEXT_PUBLIC_IMAGE_PREFIX;
-if (!envImagePrefix) {
-  throw new Error("NEXT_PUBLIC_IMAGE_PREFIX is not defined in environment variables");
-}
 export const IMAGE_PREFIX = envImagePrefix;
 
 // Create an axios instance that ignores self-signed certificates (for development only)
@@ -57,11 +51,54 @@ export interface MovieDetail extends Movie {
   }[];
 }
 
+const withAbsoluteImage = (url: string | undefined) => {
+  if (!url) return '';
+  return url.startsWith('http') ? url : `${IMAGE_PREFIX}${url}`;
+};
+
+const normalizeMovie = (movie: any): Movie => ({
+  ...movie,
+  poster_url: withAbsoluteImage(movie?.poster_url),
+  thumb_url: withAbsoluteImage(movie?.thumb_url),
+});
+
+const normalizeListPayload = (payload: any) => {
+  const items = (payload?.data?.items || payload?.items || []).map(normalizeMovie);
+  const pagination = payload?.data?.params?.pagination || payload?.pagination || {};
+
+  return {
+    ...payload,
+    data: {
+      ...(payload?.data || {}),
+      items,
+      params: {
+        ...(payload?.data?.params || {}),
+        pagination,
+      },
+    },
+    items,
+    pagination,
+  };
+};
+
+const isCategorySlug = (slug: string) => {
+  const known = new Set([
+    'phim-le',
+    'phim-bo',
+    'hoat-hinh',
+    'tv-shows',
+    'phim-chieu-rap',
+    'subteam',
+  ]);
+  return known.has(slug);
+};
+
 export const getLatestMovies = async (page = 1) => {
   try {
     const res = await fetch(`${API_URL}/latest?page=${page}`, { next: { revalidate: 300 } });
     if (!res.ok) throw new Error('Network response was not ok');
-    return await res.json();
+    const data = await res.json();
+    return normalizeListPayload(data);
   } catch (error) {
     console.error('Error fetching latest movies:', error);
     return { items: [], pagination: {} };
@@ -72,7 +109,17 @@ export const getMovieDetail = async (slug: string) => {
   try {
     const res = await fetch(`${API_URL}/details/${slug}`, { next: { revalidate: 3600 } });
     if (!res.ok) return null;
-    return await res.json();
+    const data = await res.json();
+
+    if (data?.movie) {
+      data.movie = {
+        ...data.movie,
+        poster_url: withAbsoluteImage(data.movie.poster_url),
+        thumb_url: withAbsoluteImage(data.movie.thumb_url),
+      };
+    }
+
+    return data;
   } catch (error) {
     console.error(`Error fetching movie detail for ${slug}:`, error);
     return null;
@@ -81,9 +128,10 @@ export const getMovieDetail = async (slug: string) => {
 
 export const searchMovies = async (keyword: string, limit = 10) => {
   try {
-    const res = await fetch(`${API_URL}/search?keyword=${keyword}&limit=${limit}`, { cache: 'no-store' });
+    const res = await fetch(`${API_URL}/search?keyword=${encodeURIComponent(keyword)}&limit=${limit}`, { cache: 'no-store' });
     if (!res.ok) return { data: { items: [] } };
-    return await res.json();
+    const data = await res.json();
+    return normalizeListPayload(data);
   } catch (error) {
     console.error('Error searching movies:', error);
     return { data: { items: [] } };
@@ -92,34 +140,47 @@ export const searchMovies = async (keyword: string, limit = 10) => {
 
 export const getMoviesByCategory = async (category: string, page = 1) => {
   try {
-    const res = await fetch(`${API_URL}/category/${category}?page=${page}`, { next: { revalidate: 3600 } });
-    if (!res.ok) return { data: { items: [] } };
-    return await res.json();
+    const primaryPath = isCategorySlug(category)
+      ? `${API_URL}/category/${category}?page=${page}`
+      : `${API_URL}/genre/${category}?page=${page}`;
+
+    let res = await fetch(primaryPath, { next: { revalidate: 3600 } });
+
+    if (!res.ok && isCategorySlug(category)) {
+      // Fallback for inconsistent slugs that are actually genres.
+      res = await fetch(`${API_URL}/genre/${category}?page=${page}`, { next: { revalidate: 3600 } });
+    }
+
+    if (!res.ok) return { data: { items: [] }, items: [], pagination: {} };
+    const data = await res.json();
+    return normalizeListPayload(data);
   } catch (error) {
     console.error(`Error fetching category ${category}:`, error);
-    return { data: { items: [] } };
+    return { data: { items: [] }, items: [], pagination: {} };
   }
 };
 
 export async function getMoviesByGenre(genre: string, page: number = 1) {
   try {
     const res = await fetch(`${API_URL}/genre/${genre}?page=${page}`, { next: { revalidate: 3600 } });
-    if (!res.ok) return { status: false, msg: 'Error', data: { items: [] } };
-    return await res.json();
+    if (!res.ok) return { status: false, msg: 'Error', data: { items: [] }, items: [], pagination: {} };
+    const data = await res.json();
+    return normalizeListPayload(data);
   } catch (error) {
     console.error(`Error fetching movies by genre ${genre}:`, error);
-    return { status: false, msg: 'Error', data: { items: [] } };
+    return { status: false, msg: 'Error', data: { items: [] }, items: [], pagination: {} };
   }
 }
 
 export async function getMoviesByCountry(country: string, page: number = 1) {
   try {
     const res = await fetch(`${API_URL}/country/${country}?page=${page}`, { next: { revalidate: 3600 } });
-    if (!res.ok) return { status: false, msg: 'Error', data: { items: [] } };
-    return await res.json();
+    if (!res.ok) return { status: false, msg: 'Error', data: { items: [] }, items: [], pagination: {} };
+    const data = await res.json();
+    return normalizeListPayload(data);
   } catch (error) {
     console.error(`Error fetching movies by country ${country}:`, error);
-    return { status: false, msg: 'Error', data: { items: [] } };
+    return { status: false, msg: 'Error', data: { items: [] }, items: [], pagination: {} };
   }
 }
 
