@@ -1,5 +1,6 @@
 import { getDB } from '../config/database.js';
 import { ObjectId } from 'mongodb';
+import { enqueueJob, JOBS } from '../config/queue.js';
 
 // Add to favorites
 export const addFavorite = async (req, res) => {
@@ -37,6 +38,14 @@ export const addFavorite = async (req, res) => {
 
     await db.collection('favorites').insertOne(favorite);
 
+    enqueueJob(JOBS.FAVORITE_SYNC, {
+      action: 'add',
+      userId,
+      movieSlug,
+      movieData: favorite.movieData,
+      occurredAt: new Date().toISOString(),
+    }).catch((err) => console.error('favorite sync enqueue error:', err.message));
+
     res.status(201).json({
       success: true,
       message: 'Đã thêm vào yêu thích'
@@ -73,6 +82,13 @@ export const removeFavorite = async (req, res) => {
       success: true,
       message: 'Đã xóa khỏi yêu thích'
     });
+
+    enqueueJob(JOBS.FAVORITE_SYNC, {
+      action: 'remove',
+      userId,
+      movieSlug,
+      occurredAt: new Date().toISOString(),
+    }).catch((err) => console.error('favorite sync enqueue error:', err.message));
   } catch (error) {
     console.error('Remove favorite error:', error);
     res.status(500).json({ 

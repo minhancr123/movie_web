@@ -1,11 +1,29 @@
 version: '3.8'
 
 services:
+  # Elasticsearch (Search index)
+  elasticsearch:
+    image: docker.elastic.co/elasticsearch/elasticsearch:8.15.3
+    container_name: movieweb-elasticsearch
+    restart: unless-stopped
+    environment:
+      - discovery.type=single-node
+      - xpack.security.enabled=false
+      - ES_JAVA_OPTS=-Xms512m -Xmx512m
+    volumes:
+      - elasticsearch-data:/usr/share/elasticsearch/data
+    networks:
+      - movieweb-network
+    healthcheck:
+      test: ["CMD", "wget", "--quiet", "--tries=1", "--spider", "http://localhost:9200"]
+      interval: 20s
+      timeout: 5s
+      retries: 10
+
   # Redis Cache
   redis:
     image: redis:7-alpine
     container_name: movieweb-redis
-    restart: unless-stopped
     restart: unless-stopped
     # ports:
     #   - "6379:6379" # Removed for security. Access internally via Docker network.
@@ -60,8 +78,19 @@ services:
       - JWT_EXPIRE=30d
       - CORS_ORIGIN=${CORS_ORIGIN}
       - FRONTEND_URL=${FRONTEND_URL}
+      - REDIS_URL=redis://redis:6379
+      - ELASTICSEARCH_URL=http://elasticsearch:9200
+      - ELASTICSEARCH_ENABLED=true
+      - MOVIE_SOURCE_API_URL=https://phimapi.com
+      - JOB_QUEUE_NAME=movieweb-jobs
+      - CATALOG_REFRESH_PAGES=3
     networks:
       - movieweb-network
+    depends_on:
+      redis:
+        condition: service_healthy
+      elasticsearch:
+        condition: service_healthy
     healthcheck:
       test: ["CMD", "wget", "--quiet", "--tries=1", "--spider", "http://localhost:5001/health"]
       interval: 30s
@@ -69,8 +98,49 @@ services:
       retries: 3
       start_period: 40s
 
+  backend-node-worker:
+    image: minhancr123/movie-web:node-latest
+    container_name: movieweb-backend-node-worker
+    restart: unless-stopped
+    command: ["node", "workers/queueWorker.js"]
+    environment:
+      - NODE_ENV=production
+      - MONGODB_URI=${MONGODB_URI}
+      - REDIS_URL=redis://redis:6379
+      - ELASTICSEARCH_URL=http://elasticsearch:9200
+      - ELASTICSEARCH_ENABLED=true
+      - MOVIE_SOURCE_API_URL=https://phimapi.com
+      - JOB_QUEUE_NAME=movieweb-jobs
+      - CATALOG_REFRESH_PAGES=3
+    depends_on:
+      redis:
+        condition: service_healthy
+      elasticsearch:
+        condition: service_healthy
+    networks:
+      - movieweb-network
+
+  backend-node-scheduler:
+    image: minhancr123/movie-web:node-latest
+    container_name: movieweb-backend-node-scheduler
+    restart: unless-stopped
+    command: ["node", "workers/scheduler.js"]
+    environment:
+      - NODE_ENV=production
+      - MONGODB_URI=${MONGODB_URI}
+      - REDIS_URL=redis://redis:6379
+      - JOB_QUEUE_NAME=movieweb-jobs
+      - CATALOG_REFRESH_PAGES=3
+    depends_on:
+      redis:
+        condition: service_healthy
+    networks:
+      - movieweb-network
+
 volumes:
   redis-data-new:
+    driver: local
+  elasticsearch-data:
     driver: local
 
 networks:

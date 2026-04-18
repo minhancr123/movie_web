@@ -1,5 +1,6 @@
 import { getDB } from '../config/database.js';
 import { ObjectId } from 'mongodb';
+import { enqueueJob, JOBS } from '../config/queue.js';
 
 // Add or update watch history
 export const addWatchHistory = async (req, res) => {
@@ -52,6 +53,16 @@ export const addWatchHistory = async (req, res) => {
       success: true,
       message: 'Đã lưu lịch sử xem'
     });
+
+    enqueueJob(JOBS.WATCH_HISTORY_SYNC, {
+      action: existing ? 'update' : 'insert',
+      userId,
+      movieSlug,
+      episode,
+      server,
+      currentTime: currentTime || 0,
+      occurredAt: new Date().toISOString(),
+    }).catch((err) => console.error('watch history sync enqueue error:', err.message));
   } catch (error) {
     console.error('Add watch history error:', error);
     res.status(500).json({ 
@@ -99,6 +110,13 @@ export const deleteWatchHistory = async (req, res) => {
       movieSlug 
     });
 
+    enqueueJob(JOBS.WATCH_HISTORY_SYNC, {
+      action: 'delete',
+      userId,
+      movieSlug,
+      occurredAt: new Date().toISOString(),
+    }).catch((err) => console.error('watch history sync enqueue error:', err.message));
+
     res.json({
       success: true,
       message: 'Đã xóa khỏi lịch sử'
@@ -121,6 +139,12 @@ export const clearWatchHistory = async (req, res) => {
     await db.collection('watch_history').deleteMany({ 
       userId: new ObjectId(userId)
     });
+
+    enqueueJob(JOBS.WATCH_HISTORY_SYNC, {
+      action: 'clear',
+      userId,
+      occurredAt: new Date().toISOString(),
+    }).catch((err) => console.error('watch history sync enqueue error:', err.message));
 
     res.json({
       success: true,

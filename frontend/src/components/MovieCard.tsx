@@ -2,7 +2,7 @@
 
 import Link from 'next/link';
 import Image from 'next/image';
-import { PlayCircle, Star, Calendar, Eye } from 'lucide-react';
+import { PlayCircle, Eye } from 'lucide-react';
 import { Movie, getMovieDetail, MovieDetail, IMAGE_PREFIX } from '@/lib/api';
 import { useState, useRef, useEffect } from 'react';
 import Hls from 'hls.js';
@@ -463,37 +463,6 @@ const MovieCard = ({ movie }: MovieCardProps) => {
                                 <div className="w-8 h-8 border-2 border-red-600 border-t-transparent rounded-full animate-spin"></div>
                             </div>
                         )}
-                    </div>
-
-                    {isPlaying && (
-                        <div className="absolute top-2 right-2 z-20">
-                            <div className="w-6 h-6 rounded-full bg-black/60 flex items-center justify-center border border-white/20">
-                                {!isVideoReady ? (
-                                    <div className="w-4 h-4 rounded-full border-2 border-white/40 border-t-transparent animate-spin" />
-                                ) : (
-                                    <div className="w-2 h-2 bg-red-500 rounded-full animate-pulse" />
-                                )}
-                            </div>
-                        </div>
-                    )}
-                </div>
-
-                {/* Overlay Info inside Popup */}
-                <div className="p-3 bg-[#111] flex flex-col gap-1.5 min-h-[80px]">
-                    <h4 className="text-white font-bold text-sm line-clamp-1 drop-shadow-md">{movie.name}</h4>
-                    <div className="flex items-center gap-2 text-[10px] text-gray-400 font-medium">
-                        <span className="text-green-500 font-bold">98% Phù hợp</span>
-                        <span className="border border-gray-700 px-1 rounded bg-gray-800">{movie.year}</span>
-                        <span className="border border-gray-700 px-1 rounded bg-gray-800">HD</span>
-                    </div>
-
-                    <div className="flex gap-2 mt-1">
-                        <Link href={`/phim/${movie.slug}`} className="flex-1 bg-white text-black py-1.5 rounded text-[10px] font-bold flex items-center justify-center gap-1 hover:bg-gray-200 transition-colors uppercase tracking-wide">
-                            <PlayCircle size={12} fill="black" /> XEM NGAY
-                        </Link>
-                        <button className="border border-gray-600 rounded-full p-1.5 hover:border-white hover:bg-white/10 transition-colors text-white">
-                            <Star size={12} />
-                        </button>
                     </div>
                 </div>
             </div>

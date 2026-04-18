@@ -6,6 +6,8 @@ import dotenv from 'dotenv';
 import { createServer } from 'http';
 import { Server } from 'socket.io';
 import { connectDB, getDB } from './config/database.js';
+import { ensureMovieIndex } from './config/elasticsearch.js';
+import { enqueueJob, JOBS } from './config/queue.js';
 
 // Import routes
 import authRoutes from './routes/auth.js';
@@ -14,6 +16,8 @@ import favoriteRoutes from './routes/favorites.js';
 import watchHistoryRoutes from './routes/watchHistory.js';
 import commentRoutes from './routes/comments.js';
 import premiereRoutes from './routes/premieres.js';
+import analyticsRoutes from './routes/analytics.js';
+import searchRoutes from './routes/search.js';
 
 dotenv.config();
 
@@ -59,6 +63,8 @@ app.use('/api/favorites', favoriteRoutes);
 app.use('/api/watch-history', watchHistoryRoutes);
 app.use('/api/comments', commentRoutes);
 app.use('/api/premieres', premiereRoutes);
+app.use('/api/analytics', analyticsRoutes);
+app.use('/api/search', searchRoutes);
 
 // Socket.IO Logic
 const premiereViewers = new Map(); // Track viewers per premiere
@@ -172,7 +178,12 @@ const startServer = async () => {
   try {
     // Connect to MongoDB
     await connectDB();
+    await ensureMovieIndex();
     await createDefaultAdmin();
+
+    // Warm up queue with one refresh after boot (non-blocking).
+    enqueueJob(JOBS.CATALOG_REFRESH, { pages: Number(process.env.CATALOG_REFRESH_PAGES || 2) })
+      .catch((err) => console.error('catalog warmup enqueue error:', err.message));
 
     // Start listening
     httpServer.listen(PORT, () => {

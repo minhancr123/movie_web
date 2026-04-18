@@ -1,5 +1,6 @@
 import { getDB } from '../config/database.js';
 import { ObjectId } from 'mongodb';
+import { enqueueJob, JOBS } from '../config/queue.js';
 
 // Create premiere event
 export const createPremiereEvent = async (req, res) => {
@@ -21,6 +22,13 @@ export const createPremiereEvent = async (req, res) => {
     };
 
     const result = await db.collection('premiere_events').insertOne(event);
+
+    enqueueJob(JOBS.ANALYTICS_TRACK, {
+      type: 'premiere.created',
+      userId,
+      payload: { movieSlug, startTime },
+      occurredAt: new Date().toISOString(),
+    }).catch((err) => console.error('premiere analytics enqueue error:', err.message));
 
     res.status(201).json({
       success: true,
@@ -194,10 +202,33 @@ export const registerForNotification = async (req, res) => {
     const userId = req.user.userId;
     const db = getDB();
 
+    const eventObjectId = new ObjectId(eventId);
     await db.collection('premiere_events').updateOne(
-      { _id: new ObjectId(eventId) },
+      { _id: eventObjectId },
       { $addToSet: { notifiedUsers: new ObjectId(userId) } }
     );
+
+    const event = await db.collection('premiere_events').findOne({ _id: eventObjectId });
+    if (event?.startTime) {
+      const remindAt = new Date(new Date(event.startTime).getTime() - 10 * 60 * 1000);
+      const delay = Math.max(0, remindAt.getTime() - Date.now());
+
+      enqueueJob(
+        JOBS.PREMIERE_NOTIFY_SEND,
+        { eventId },
+        {
+          delay,
+          jobId: `premiere-notify-${eventId}`,
+        }
+      ).catch((err) => console.error('premiere notify enqueue error:', err.message));
+    }
+
+    enqueueJob(JOBS.ANALYTICS_TRACK, {
+      type: 'premiere.notification.register',
+      userId,
+      payload: { eventId },
+      occurredAt: new Date().toISOString(),
+    }).catch((err) => console.error('premiere analytics enqueue error:', err.message));
 
     res.json({
       success: true,

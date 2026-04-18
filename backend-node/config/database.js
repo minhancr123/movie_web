@@ -43,6 +43,15 @@ const createIndexes = async () => {
     // Premiere events collection indexes
     await db.collection('premiere_events').createIndex({ startTime: 1, status: 1 });
     await db.collection('premiere_events').createIndex({ movieSlug: 1 });
+
+    // Async/analytics/search support indexes
+    await db.collection('movie_stats').createIndex({ movieSlug: 1 }, { unique: true });
+    await db.collection('analytics_events').createIndex({ type: 1, occurredAt: -1 });
+    await db.collection('analytics_events').createIndex({ movieSlug: 1, occurredAt: -1 });
+    await db.collection('notifications').createIndex({ userId: 1, createdAt: -1 });
+    await db.collection('favorite_sync_events').createIndex({ userId: 1, occurredAt: -1 });
+    await db.collection('watch_history_sync_events').createIndex({ userId: 1, occurredAt: -1 });
+    await db.collection('catalog_snapshots').createIndex({ createdAt: -1 });
     
     console.log('✅ Database indexes created');
   } catch (error) {
