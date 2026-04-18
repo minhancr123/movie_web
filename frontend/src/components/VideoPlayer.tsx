@@ -47,6 +47,7 @@ export default function VideoPlayer({ src, movie, episode, onNextEpisode }: Vide
     const [error, setError] = useState<string | null>(null);
 
     const controlsTimeoutRef = useRef<NodeJS.Timeout>();
+    const loadingTimeoutRef = useRef<NodeJS.Timeout>();
     const hlsRef = useRef<Hls | null>(null); // Keep reference to HLS instance
     const { history, addToHistory } = useWatchHistory();
 
@@ -251,8 +252,19 @@ export default function VideoPlayer({ src, movie, episode, onNextEpisode }: Vide
         const handleDurationChange = () => setDuration(video.duration);
         const handlePlay = () => setIsPlaying(true);
         const handlePause = () => setIsPlaying(false);
-        const handleWaiting = () => setIsLoading(true);
-        const handlePlaying = () => setIsLoading(false);
+        const handleWaiting = () => {
+            if (loadingTimeoutRef.current) clearTimeout(loadingTimeoutRef.current);
+            loadingTimeoutRef.current = setTimeout(() => {
+                setIsLoading(true);
+            }, 250);
+        };
+        const handlePlaying = () => {
+            if (loadingTimeoutRef.current) {
+                clearTimeout(loadingTimeoutRef.current);
+                loadingTimeoutRef.current = undefined;
+            }
+            setIsLoading(false);
+        };
         const handleEnded = () => {
             setIsPlaying(false);
             // if (onNextEpisode) onNextEpisode(); // Optional auto-next
@@ -267,6 +279,10 @@ export default function VideoPlayer({ src, movie, episode, onNextEpisode }: Vide
         video.addEventListener('ended', handleEnded);
 
         return () => {
+            if (loadingTimeoutRef.current) {
+                clearTimeout(loadingTimeoutRef.current);
+                loadingTimeoutRef.current = undefined;
+            }
             video.removeEventListener('timeupdate', handleTimeUpdate);
             video.removeEventListener('durationchange', handleDurationChange);
             video.removeEventListener('play', handlePlay);
@@ -320,111 +336,20 @@ export default function VideoPlayer({ src, movie, episode, onNextEpisode }: Vide
         }
     };
 
-    // Auto PiP when page hidden (switch tab/minimize) or scroll out of view
+    // Keep PiP state in sync with browser events, but do not auto-enter PiP on tab changes.
     useEffect(() => {
-        const handleVisibilityChange = async () => {
-            if (!videoRef.current || !isPlaying) return;
-            
-            // Check both document.hidden and document.visibilityState
-            const isPageHidden = document.hidden || document.visibilityState === 'hidden';
-            
-            if (isPageHidden) {
-                // User switched tab or minimized, enable PiP automatically
-                try {
-                    if (!document.pictureInPictureElement) {
-                        await videoRef.current.requestPictureInPicture();
-                        setIsPiP(true);
-                        console.log('Auto PiP enabled (tab hidden)');
-                    }
-                } catch (err) {
-                    console.log('Auto PiP blocked:', err);
-                }
-            } else {
-                // User came back, exit PiP
-                if (document.pictureInPictureElement) {
-                    await document.exitPictureInPicture();
-                    setIsPiP(false);
-                    console.log('Auto PiP disabled (tab visible)');
-                }
-            }
-        };
-
-        // Handle window blur (when minimize or switch to another app)
-        const handleBlur = async () => {
-            if (!videoRef.current || !isPlaying) return;
-            
-            try {
-                if (!document.pictureInPictureElement) {
-                    await videoRef.current.requestPictureInPicture();
-                    setIsPiP(true);
-                    console.log('Auto PiP enabled (window blur)');
-                }
-            } catch (err) {
-                console.log('Auto PiP on blur blocked:', err);
-            }
-        };
-
-        // Handle window focus (when restore or switch back)
-        const handleFocus = async () => {
-            if (!videoRef.current) return;
-            
-            // Only exit PiP if video is in viewport
-            if (document.pictureInPictureElement && containerRef.current) {
-                const rect = containerRef.current.getBoundingClientRect();
-                const isInView = rect.top < window.innerHeight && rect.bottom > 0;
-                
-                if (isInView) {
-                    await document.exitPictureInPicture();
-                    setIsPiP(false);
-                    console.log('Auto PiP disabled (window focus)');
-                }
-            }
-        };
-
-        // Auto PiP when scrolling out of viewport
-        const handleScroll = async () => {
-            if (!videoRef.current || !isPlaying || !containerRef.current) return;
-            
-            const rect = containerRef.current.getBoundingClientRect();
-            const isOutOfView = rect.bottom < 0 || rect.top > window.innerHeight;
-            
-            if (isOutOfView && !document.pictureInPictureElement) {
-                try {
-                    await videoRef.current.requestPictureInPicture();
-                    setIsPiP(true);
-                    console.log('Auto PiP enabled (scroll out)');
-                } catch (err) {
-                    console.log('Auto PiP on scroll blocked:', err);
-                }
-            } else if (!isOutOfView && document.pictureInPictureElement) {
-                await document.exitPictureInPicture();
-                setIsPiP(false);
-                console.log('Auto PiP disabled (scroll in)');
-            }
-        };
-
         // Listen for PiP events
         const handleEnterPiP = () => {
             setIsPiP(true);
-            console.log('Entered PiP mode');
         };
         const handleLeavePiP = () => {
             setIsPiP(false);
-            console.log('Left PiP mode');
         };
 
-        document.addEventListener('visibilitychange', handleVisibilityChange);
-        window.addEventListener('blur', handleBlur);
-        window.addEventListener('focus', handleFocus);
-        window.addEventListener('scroll', handleScroll, { passive: true });
         videoRef.current?.addEventListener('enterpictureinpicture', handleEnterPiP);
         videoRef.current?.addEventListener('leavepictureinpicture', handleLeavePiP);
 
         return () => {
-            document.removeEventListener('visibilitychange', handleVisibilityChange);
-            window.removeEventListener('blur', handleBlur);
-            window.removeEventListener('focus', handleFocus);
-            window.removeEventListener('scroll', handleScroll);
             videoRef.current?.removeEventListener('enterpictureinpicture', handleEnterPiP);
             videoRef.current?.removeEventListener('leavepictureinpicture', handleLeavePiP);
         };

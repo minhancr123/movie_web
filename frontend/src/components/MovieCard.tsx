@@ -12,6 +12,64 @@ interface MovieCardProps {
     movie: Movie;
 }
 
+const detailCache = new Map<string, MovieDetail | null>();
+const pendingDetailRequests = new Map<string, Promise<MovieDetail | null>>();
+
+const normalizeMovieDetail = (data: any): MovieDetail | null => {
+    if (!data) return null;
+
+    if (data?.movie) {
+        const enhancedDetails = { ...data.movie };
+        if (data.episodes) {
+            enhancedDetails.episodes = data.episodes;
+        }
+        return enhancedDetails as MovieDetail;
+    }
+
+    return data as MovieDetail;
+};
+
+const getMovieDetailCached = async (slug: string): Promise<MovieDetail | null> => {
+    if (detailCache.has(slug)) {
+        return detailCache.get(slug) ?? null;
+    }
+
+    const pending = pendingDetailRequests.get(slug);
+    if (pending) {
+        return pending;
+    }
+
+    const request = getMovieDetail(slug)
+        .then((data) => {
+            const normalized = normalizeMovieDetail(data);
+            detailCache.set(slug, normalized);
+            return normalized;
+        })
+        .catch(() => {
+            detailCache.set(slug, null);
+            return null;
+        })
+        .finally(() => {
+            pendingDetailRequests.delete(slug);
+        });
+
+    pendingDetailRequests.set(slug, request);
+    return request;
+};
+
+const getPreviewM3u8Url = (detail: MovieDetail | null): string => {
+    if (!detail?.episodes?.length) return '';
+
+    for (const server of detail.episodes) {
+        const first = server.server_data?.[0];
+        if (first?.link_m3u8) {
+            return first.link_m3u8;
+        }
+    }
+
+    return '';
+};
+
 const MovieCard = ({ movie }: MovieCardProps) => {
     const [isHovered, setIsHovered] = useState(false);
     const [isPlaying, setIsPlaying] = useState(false);
@@ -23,6 +81,8 @@ const MovieCard = ({ movie }: MovieCardProps) => {
     const hlsRef = useRef<Hls | null>(null);
     const cardRef = useRef<HTMLDivElement>(null); // Ref for the card container
     const timeoutRef = useRef<NodeJS.Timeout | null>(null);
+    const hoverActiveRef = useRef(false);
+    const previewFallbackTimeoutRef = useRef<NodeJS.Timeout | null>(null);
 
     const { history } = useWatchHistory();
     const savedData = history.find(h => h.slug === movie.slug);
@@ -42,8 +102,13 @@ const MovieCard = ({ movie }: MovieCardProps) => {
     // Clean up HLS on unmount
     useEffect(() => {
         return () => {
+            hoverActiveRef.current = false;
             if (hlsRef.current) {
                 hlsRef.current.destroy();
+            }
+            if (previewFallbackTimeoutRef.current) {
+                clearTimeout(previewFallbackTimeoutRef.current);
+                previewFallbackTimeoutRef.current = null;
             }
         };
     }, []);
@@ -69,18 +134,19 @@ const MovieCard = ({ movie }: MovieCardProps) => {
     // Handle playing video when details are loaded and isPlaying is true
     useEffect(() => {
         if (isPlaying && details && videoRef.current) {
-            // Find first episode m3u8
-            // Data structure check: episodes might be directly on details, or nested
-            // My fix ensures details has episodes array merged in.
+            const m3u8Url = getPreviewM3u8Url(details);
 
-            let m3u8Url = "";
+            setIsVideoReady(false);
 
-            if (details.episodes && details.episodes.length > 0) {
-                const firstServer = details.episodes[0];
-                if (firstServer.server_data && firstServer.server_data.length > 0) {
-                    m3u8Url = firstServer.server_data[0].link_m3u8;
-                }
+            if (previewFallbackTimeoutRef.current) {
+                clearTimeout(previewFallbackTimeoutRef.current);
+                previewFallbackTimeoutRef.current = null;
             }
+
+            previewFallbackTimeoutRef.current = setTimeout(() => {
+                setIsPlaying(false);
+                setIsVideoReady(false);
+            }, 5000);
 
             if (m3u8Url) {
                 if (Hls.isSupported()) {
@@ -108,11 +174,11 @@ const MovieCard = ({ movie }: MovieCardProps) => {
                     });
 
                     hls.on(Hls.Events.ERROR, (event, data) => {
-                        if (data.fatal) {
-                            console.error("HLS Error:", data);
-                            setIsPlaying(false); // Revert on error
-                            setIsVideoReady(false);
-                        }
+                        if (!data.fatal) return;
+
+                        console.error("HLS Error:", data);
+                        setIsPlaying(false); // Revert on error
+                        setIsVideoReady(false);
                     });
 
                     hlsRef.current = hls;
@@ -136,6 +202,10 @@ const MovieCard = ({ movie }: MovieCardProps) => {
                 videoRef.current.removeAttribute('src');
                 videoRef.current.load();
             }
+            if (previewFallbackTimeoutRef.current) {
+                clearTimeout(previewFallbackTimeoutRef.current);
+                previewFallbackTimeoutRef.current = null;
+            }
             setIsVideoReady(false);
         }
     }, [isPlaying, details]);
@@ -145,6 +215,7 @@ const MovieCard = ({ movie }: MovieCardProps) => {
         // Disable popup/video logic on mobile to save data
         if (typeof window !== 'undefined' && window.innerWidth < 768) return;
 
+        hoverActiveRef.current = true;
         setIsHovered(true);
 
         // Calculate position
@@ -169,36 +240,43 @@ const MovieCard = ({ movie }: MovieCardProps) => {
         // Clear any existing timeout
         if (timeoutRef.current) clearTimeout(timeoutRef.current);
 
-        // Start playing immediately - no delay
-        setIsPlaying(true);
-
         // Fetch details if not already loaded
-        if (!details) {
+        let nextDetails = details;
+
+        if (!nextDetails) {
             try {
-                const data = await getMovieDetail(movie.slug);
-                if (data?.movie) {
-                    const enhancedDetails = { ...data.movie };
-                    if (data.episodes) {
-                        enhancedDetails.episodes = data.episodes;
-                    }
-                    setDetails(enhancedDetails);
-                } else if (data) {
-                    setDetails(data);
-                } else {
-                    setIsPlaying(false);
+                nextDetails = await getMovieDetailCached(movie.slug);
+                if (nextDetails && hoverActiveRef.current) {
+                    setDetails(nextDetails);
                 }
             } catch (error) {
                 console.error("Failed to fetch movie details", error);
                 setIsPlaying(false);
             }
         }
+
+        if (!hoverActiveRef.current) {
+            return;
+        }
+
+        const previewUrl = getPreviewM3u8Url(nextDetails);
+        if (previewUrl) {
+            setIsPlaying(true);
+        } else {
+            setIsPlaying(false);
+        }
     };
 
     const handleMouseLeave = () => {
+        hoverActiveRef.current = false;
         setIsHovered(false);
         setIsPlaying(false);
         setIsVideoReady(false);
         if (timeoutRef.current) clearTimeout(timeoutRef.current);
+        if (previewFallbackTimeoutRef.current) {
+            clearTimeout(previewFallbackTimeoutRef.current);
+            previewFallbackTimeoutRef.current = null;
+        }
     };
 
     return (
@@ -281,7 +359,12 @@ const MovieCard = ({ movie }: MovieCardProps) => {
                         loop
                         playsInline
                         preload="metadata"
+                        onLoadedData={() => setIsVideoReady(true)}
                         onPlaying={() => setIsVideoReady(true)}
+                        onError={() => {
+                            setIsPlaying(false);
+                            setIsVideoReady(false);
+                        }}
                     />
 
                     {/* Loading / Poster Fallback in Popup */}
