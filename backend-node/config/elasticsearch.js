@@ -10,40 +10,48 @@ export const isElasticEnabled = () => process.env.ELASTICSEARCH_ENABLED !== 'fal
 export const ensureMovieIndex = async () => {
   if (!isElasticEnabled()) return;
 
-  const exists = await esClient.indices.exists({ index: MOVIE_INDEX });
-  if (exists) return;
+  try {
+    const exists = await esClient.indices.exists({ index: MOVIE_INDEX });
+    if (exists) return;
 
-  await esClient.indices.create({
-    index: MOVIE_INDEX,
-    mappings: {
-      properties: {
-        slug: { type: 'keyword' },
-        name: { type: 'text' },
-        origin_name: { type: 'text' },
-        year: { type: 'integer' },
-        quality: { type: 'keyword' },
-        lang: { type: 'keyword' },
-        poster_url: { type: 'keyword' },
-        thumb_url: { type: 'keyword' },
-        category_slugs: { type: 'keyword' },
-        category_names: { type: 'text' },
-        country_slugs: { type: 'keyword' },
-        country_names: { type: 'text' },
-        updated_at: { type: 'date' },
+    await esClient.indices.create({
+      index: MOVIE_INDEX,
+      mappings: {
+        properties: {
+          slug: { type: 'keyword' },
+          name: { type: 'text' },
+          origin_name: { type: 'text' },
+          year: { type: 'integer' },
+          quality: { type: 'keyword' },
+          lang: { type: 'keyword' },
+          poster_url: { type: 'keyword' },
+          thumb_url: { type: 'keyword' },
+          category_slugs: { type: 'keyword' },
+          category_names: { type: 'text' },
+          country_slugs: { type: 'keyword' },
+          country_names: { type: 'text' },
+          updated_at: { type: 'date' },
+        },
       },
-    },
-  });
+    });
+  } catch (error) {
+    console.warn('[elasticsearch] ensureMovieIndex skipped:', error.message);
+  }
 };
 
 export const upsertMovieIndex = async (movie) => {
   if (!isElasticEnabled()) return;
 
-  await esClient.index({
-    index: MOVIE_INDEX,
-    id: movie.slug,
-    document: movie,
-    refresh: false,
-  });
+  try {
+    await esClient.index({
+      index: MOVIE_INDEX,
+      id: movie.slug,
+      document: movie,
+      refresh: false,
+    });
+  } catch (error) {
+    console.warn('[elasticsearch] upsertMovieIndex failed:', error.message);
+  }
 };
 
 export const bulkUpsertMovies = async (movies) => {
@@ -55,7 +63,11 @@ export const bulkUpsertMovies = async (movies) => {
     operations.push(movie);
   }
 
-  await esClient.bulk({ refresh: false, operations });
+  try {
+    await esClient.bulk({ refresh: false, operations });
+  } catch (error) {
+    console.warn('[elasticsearch] bulkUpsertMovies failed:', error.message);
+  }
 };
 
 export const searchMovieIndex = async ({ keyword, genre, country, year, page = 1, limit = 20 }) => {
@@ -85,17 +97,22 @@ export const searchMovieIndex = async ({ keyword, genre, country, year, page = 1
     : { match_all: {} };
 
   const from = Math.max(0, (page - 1) * limit);
-  const result = await esClient.search({
-    index: MOVIE_INDEX,
-    from,
-    size: limit,
-    query,
-    sort: [{ updated_at: 'desc' }],
-  });
+  try {
+    const result = await esClient.search({
+      index: MOVIE_INDEX,
+      from,
+      size: limit,
+      query,
+      sort: [{ updated_at: 'desc' }],
+    });
 
-  const hits = result.hits?.hits || [];
-  return {
-    items: hits.map((hit) => hit._source),
-    total: Number(result.hits?.total?.value || 0),
-  };
+    const hits = result.hits?.hits || [];
+    return {
+      items: hits.map((hit) => hit._source),
+      total: Number(result.hits?.total?.value || 0),
+    };
+  } catch (error) {
+    console.warn('[elasticsearch] searchMovieIndex failed:', error.message);
+    return { items: [], total: 0 };
+  }
 };

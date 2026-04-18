@@ -178,7 +178,14 @@ const startServer = async () => {
   try {
     // Connect to MongoDB
     await connectDB();
-    await ensureMovieIndex();
+
+    // Elasticsearch can be temporarily unavailable during boot; do not block API startup.
+    try {
+      await ensureMovieIndex();
+    } catch (error) {
+      console.warn('ensureMovieIndex warning:', error.message);
+    }
+
     await createDefaultAdmin();
 
     // Warm up queue with one refresh after boot (non-blocking).

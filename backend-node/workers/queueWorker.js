@@ -117,7 +117,13 @@ const handlers = {
 
 const start = async () => {
   await connectDB();
-  await ensureMovieIndex();
+
+  // Elasticsearch can come up later; worker should still run for non-search jobs.
+  try {
+    await ensureMovieIndex();
+  } catch (error) {
+    console.warn('[worker] ensureMovieIndex warning:', error.message);
+  }
 
   const worker = new Worker(
     queueName,
