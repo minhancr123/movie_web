@@ -10,11 +10,13 @@ on:
       - 'backend-node/**'
       - 'docker-compose.prod.yml'
       - '.github/workflows/deploy.yml'
+  workflow_dispatch:
 
 jobs:
   deploy:
     name: Deploy Docker Images to VPS
     runs-on: ubuntu-latest
+    timeout-minutes: 90
     environment: 'Production Environments'
 
     steps:
@@ -78,6 +80,7 @@ jobs:
             set -euo pipefail
             cd /root/movieweb
 
+            echo "Workflow version: deploy-v2026-04-19-01"
             echo "[$(date -u +%Y-%m-%dT%H:%M:%SZ)] Deploy started"
 
             if [ ! -f docker-compose.prod.yml ]; then
