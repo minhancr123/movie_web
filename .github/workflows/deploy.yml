@@ -72,6 +72,8 @@ jobs:
           username: ${{ secrets.VPS_USERNAME }}
           key: ${{ secrets.VPS_SSH_KEY }}
           port: ${{ secrets.VPS_PORT }}
+          timeout: 120s
+          command_timeout: '45m'
           script: |
             set -e
             cd /root/movieweb
@@ -93,11 +95,15 @@ jobs:
               sysctl -w vm.max_map_count=262144 || true
             fi
             
-            # Pull latest Docker images
-            $COMPOSE_CMD -f docker-compose.prod.yml pull
+            # Ensure infra services are up (do not force recreate every deploy).
+            $COMPOSE_CMD -f docker-compose.prod.yml up -d redis elasticsearch
+
+            # Pull latest app images only.
+            docker pull ${{ secrets.DOCKER_USERNAME }}/movie-web:node-latest
+            docker pull ${{ secrets.DOCKER_USERNAME }}/movie-web:csharp-latest
             
-            # Restart services
-            if ! $COMPOSE_CMD -f docker-compose.prod.yml up -d --force-recreate; then
+            # Recreate only app services to reduce deploy time.
+            if ! $COMPOSE_CMD -f docker-compose.prod.yml up -d --force-recreate backend-node backend-csharp backend-node-worker backend-node-scheduler; then
               echo "Compose up failed. Service status:"
               $COMPOSE_CMD -f docker-compose.prod.yml ps || true
               echo "Elasticsearch logs:"
@@ -181,8 +187,5 @@ jobs:
             check_running "movieweb-backend-node-worker"
             check_running "movieweb-backend-node-scheduler"
 
-            # Clean up old images only after successful deployment.
-            docker image prune -af
-            
             echo "✓ Deployment successful!"
 
