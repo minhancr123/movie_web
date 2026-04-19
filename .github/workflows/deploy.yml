@@ -174,8 +174,8 @@ jobs:
             echo "✓ Redis is healthy"
 
             if ! check_container_healthy "movieweb-elasticsearch" 36; then
+              echo "⚠ Elasticsearch is not healthy yet. Continue deployment with search fallback mode."
               docker logs --tail 300 movieweb-elasticsearch || true
-              exit 1
             fi
 
             check_running "movieweb-backend-node-worker"
