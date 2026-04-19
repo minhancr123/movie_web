@@ -3,6 +3,7 @@ services:
   elasticsearch:
     image: docker.elastic.co/elasticsearch/elasticsearch:8.15.3
     container_name: movieweb-elasticsearch
+    profiles: ["full"]
     restart: unless-stopped
     environment:
       - discovery.type=single-node
@@ -81,7 +82,7 @@ services:
       - FRONTEND_URL=${FRONTEND_URL}
       - REDIS_URL=redis://redis:6379
       - ELASTICSEARCH_URL=http://elasticsearch:9200
-      - ELASTICSEARCH_ENABLED=true
+      - ELASTICSEARCH_ENABLED=${ELASTICSEARCH_ENABLED:-false}
       - MOVIE_SOURCE_API_URL=https://phimapi.com
       - JOB_QUEUE_NAME=movieweb-jobs
       - CATALOG_REFRESH_PAGES=3
@@ -90,8 +91,6 @@ services:
     depends_on:
       redis:
         condition: service_healthy
-      elasticsearch:
-        condition: service_started
     healthcheck:
       test: ["CMD", "wget", "--quiet", "--tries=1", "--spider", "http://localhost:5001/health"]
       interval: 30s
@@ -102,6 +101,7 @@ services:
   backend-node-worker:
     image: minhancr123/movie-web:node-latest
     container_name: movieweb-backend-node-worker
+    profiles: ["full"]
     restart: unless-stopped
     command: ["node", "workers/queueWorker.js"]
     environment:
@@ -109,7 +109,7 @@ services:
       - MONGODB_URI=${MONGODB_URI}
       - REDIS_URL=redis://redis:6379
       - ELASTICSEARCH_URL=http://elasticsearch:9200
-      - ELASTICSEARCH_ENABLED=true
+      - ELASTICSEARCH_ENABLED=${ELASTICSEARCH_ENABLED:-false}
       - MOVIE_SOURCE_API_URL=https://phimapi.com
       - JOB_QUEUE_NAME=movieweb-jobs
       - CATALOG_REFRESH_PAGES=3

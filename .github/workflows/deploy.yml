@@ -97,6 +97,25 @@ jobs:
               COMPOSE_CMD="docker-compose"
             fi
 
+            MEM_MB=$(awk '/MemTotal/ { printf "%d", $2/1024 }' /proc/meminfo)
+            LOW_MEM_MODE=0
+            if [ "$MEM_MB" -lt 1800 ]; then
+              LOW_MEM_MODE=1
+            fi
+
+            if [ "$LOW_MEM_MODE" -eq 1 ]; then
+              echo "⚠ Low-memory mode enabled (${MEM_MB}MB): run without Elasticsearch/worker/scheduler"
+              export ELASTICSEARCH_ENABLED=false
+              INFRA_SERVICES="redis"
+              API_SERVICES="backend-node backend-csharp"
+            else
+              echo "Full mode enabled (${MEM_MB}MB)"
+              export ELASTICSEARCH_ENABLED=true
+              INFRA_SERVICES="redis elasticsearch"
+              API_SERVICES="backend-node backend-csharp"
+              BG_SERVICES="backend-node-worker backend-node-scheduler"
+            fi
+
             # Elasticsearch requires vm.max_map_count >= 262144 on Linux hosts.
             CURRENT_VMMAP=$(sysctl -n vm.max_map_count 2>/dev/null || echo 0)
             if [ "$CURRENT_VMMAP" -lt 262144 ]; then
@@ -105,7 +124,7 @@ jobs:
             fi
             
             # Ensure infra services are up (do not force recreate every deploy).
-            if ! timeout 180s $COMPOSE_CMD -f docker-compose.prod.yml up -d redis elasticsearch; then
+            if ! timeout 180s $COMPOSE_CMD -f docker-compose.prod.yml up -d $INFRA_SERVICES; then
               echo "⚠ Infra startup timed out. Continue with app deploy (search fallback mode)."
               docker logs --tail 120 movieweb-elasticsearch || true
             fi
@@ -119,7 +138,7 @@ jobs:
             wait $PULL_CSHARP_PID
 
             # Update APIs first (without force-recreate) so compose only recreates when needed.
-            if ! timeout 240s $COMPOSE_CMD -f docker-compose.prod.yml up -d --no-deps backend-node backend-csharp; then
+            if ! timeout 240s $COMPOSE_CMD -f docker-compose.prod.yml up -d --no-deps $API_SERVICES; then
               echo "Compose up failed for API services. Service status:"
               $COMPOSE_CMD -f docker-compose.prod.yml ps || true
               docker logs --tail 300 movieweb-backend-node || true
@@ -127,13 +146,17 @@ jobs:
               exit 1
             fi
 
-            # Update workers separately to avoid blocking the main API rollout.
-            if ! timeout 180s $COMPOSE_CMD -f docker-compose.prod.yml up -d --no-deps backend-node-worker backend-node-scheduler; then
-              echo "Compose up failed for worker services. Service status:"
-              $COMPOSE_CMD -f docker-compose.prod.yml ps || true
-              docker logs --tail 200 movieweb-backend-node-worker || true
-              docker logs --tail 200 movieweb-backend-node-scheduler || true
-              exit 1
+            # Update workers only in full mode.
+            if [ "$LOW_MEM_MODE" -eq 0 ]; then
+              if ! timeout 180s $COMPOSE_CMD -f docker-compose.prod.yml up -d --no-deps $BG_SERVICES; then
+                echo "Compose up failed for worker services. Service status:"
+                $COMPOSE_CMD -f docker-compose.prod.yml ps || true
+                docker logs --tail 200 movieweb-backend-node-worker || true
+                docker logs --tail 200 movieweb-backend-node-scheduler || true
+                exit 1
+              fi
+            else
+              docker rm -f movieweb-backend-node-worker movieweb-backend-node-scheduler movieweb-elasticsearch >/dev/null 2>&1 || true
             fi
             
             echo "Waiting for services to be healthy..."
@@ -202,13 +225,17 @@ jobs:
             docker exec movieweb-redis redis-cli ping | grep -q PONG || exit 1
             echo "✓ Redis is healthy"
 
-            if ! check_container_healthy "movieweb-elasticsearch" 6; then
-              echo "⚠ Elasticsearch is not healthy yet. Continue deployment with search fallback mode."
-              docker logs --tail 300 movieweb-elasticsearch || true
+            if [ "$LOW_MEM_MODE" -eq 0 ]; then
+              if ! check_container_healthy "movieweb-elasticsearch" 6; then
+                echo "⚠ Elasticsearch is not healthy yet. Continue deployment with search fallback mode."
+                docker logs --tail 300 movieweb-elasticsearch || true
+              fi
             fi
 
-            check_running "movieweb-backend-node-worker"
-            check_running "movieweb-backend-node-scheduler"
+            if [ "$LOW_MEM_MODE" -eq 0 ]; then
+              check_running "movieweb-backend-node-worker"
+              check_running "movieweb-backend-node-scheduler"
+            fi
 
             echo "[$(date -u +%Y-%m-%dT%H:%M:%SZ)] ✓ Deployment successful!"
 
