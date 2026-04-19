@@ -110,18 +110,29 @@ jobs:
               docker logs --tail 120 movieweb-elasticsearch || true
             fi
 
-            # Pull latest app images only.
-            docker pull ${{ secrets.DOCKER_USERNAME }}/movie-web:node-latest
-            docker pull ${{ secrets.DOCKER_USERNAME }}/movie-web:csharp-latest
-            
-            # Recreate only app services to reduce deploy time.
-            if ! timeout 300s $COMPOSE_CMD -f docker-compose.prod.yml up -d --no-deps --force-recreate backend-node backend-csharp backend-node-worker backend-node-scheduler; then
-              echo "Compose up failed. Service status:"
+            # Pull latest app images in parallel for faster deploy.
+            docker pull ${{ secrets.DOCKER_USERNAME }}/movie-web:node-latest &
+            PULL_NODE_PID=$!
+            docker pull ${{ secrets.DOCKER_USERNAME }}/movie-web:csharp-latest &
+            PULL_CSHARP_PID=$!
+            wait $PULL_NODE_PID
+            wait $PULL_CSHARP_PID
+
+            # Update APIs first (without force-recreate) so compose only recreates when needed.
+            if ! timeout 240s $COMPOSE_CMD -f docker-compose.prod.yml up -d --no-deps backend-node backend-csharp; then
+              echo "Compose up failed for API services. Service status:"
               $COMPOSE_CMD -f docker-compose.prod.yml ps || true
-              echo "Elasticsearch logs:"
-              docker logs --tail 300 movieweb-elasticsearch || true
-              echo "Node worker logs:"
+              docker logs --tail 300 movieweb-backend-node || true
+              docker logs --tail 300 movieweb-backend-csharp || true
+              exit 1
+            fi
+
+            # Update workers separately to avoid blocking the main API rollout.
+            if ! timeout 180s $COMPOSE_CMD -f docker-compose.prod.yml up -d --no-deps backend-node-worker backend-node-scheduler; then
+              echo "Compose up failed for worker services. Service status:"
+              $COMPOSE_CMD -f docker-compose.prod.yml ps || true
               docker logs --tail 200 movieweb-backend-node-worker || true
+              docker logs --tail 200 movieweb-backend-node-scheduler || true
               exit 1
             fi
             
