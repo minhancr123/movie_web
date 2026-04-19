@@ -64,8 +64,12 @@ jobs:
           username: ${{ secrets.VPS_USERNAME }}
           key: ${{ secrets.VPS_SSH_KEY }}
           port: ${{ secrets.VPS_PORT }}
-          source: docker-compose.prod.yml
+          source: ./docker-compose.prod.yml
           target: /root/movieweb
+          overwrite: true
+          timeout: 120s
+          command_timeout: 5m
+          debug: true
 
       - name: Deploy to VPS
         uses: appleboy/ssh-action@v1.0.0
