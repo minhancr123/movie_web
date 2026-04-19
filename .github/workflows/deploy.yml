@@ -75,8 +75,10 @@ jobs:
           timeout: 120s
           command_timeout: '45m'
           script: |
-            set -e
+            set -euo pipefail
             cd /root/movieweb
+
+            echo "[$(date -u +%Y-%m-%dT%H:%M:%SZ)] Deploy started"
 
             if [ ! -f docker-compose.prod.yml ]; then
               echo "docker-compose.prod.yml not found in /root/movieweb"
@@ -96,14 +98,17 @@ jobs:
             fi
             
             # Ensure infra services are up (do not force recreate every deploy).
-            $COMPOSE_CMD -f docker-compose.prod.yml up -d redis elasticsearch
+            if ! timeout 180s $COMPOSE_CMD -f docker-compose.prod.yml up -d redis elasticsearch; then
+              echo "⚠ Infra startup timed out. Continue with app deploy (search fallback mode)."
+              docker logs --tail 120 movieweb-elasticsearch || true
+            fi
 
             # Pull latest app images only.
             docker pull ${{ secrets.DOCKER_USERNAME }}/movie-web:node-latest
             docker pull ${{ secrets.DOCKER_USERNAME }}/movie-web:csharp-latest
             
             # Recreate only app services to reduce deploy time.
-            if ! $COMPOSE_CMD -f docker-compose.prod.yml up -d --force-recreate backend-node backend-csharp backend-node-worker backend-node-scheduler; then
+            if ! timeout 300s $COMPOSE_CMD -f docker-compose.prod.yml up -d --no-deps --force-recreate backend-node backend-csharp backend-node-worker backend-node-scheduler; then
               echo "Compose up failed. Service status:"
               $COMPOSE_CMD -f docker-compose.prod.yml ps || true
               echo "Elasticsearch logs:"
@@ -166,12 +171,12 @@ jobs:
             }
             
             # Health checks
-            if ! check_http "http://localhost:5001/health" "Node.js Backend" 36; then
+            if ! check_http "http://localhost:5001/health" "Node.js Backend" 18; then
               docker logs --tail 200 movieweb-backend-node || true
               exit 1
             fi
 
-            if ! check_http "http://localhost:5291/health" "C# Backend" 36; then
+            if ! check_http "http://localhost:5291/health" "C# Backend" 18; then
               docker logs --tail 200 movieweb-backend-csharp || true
               exit 1
             fi
@@ -179,7 +184,7 @@ jobs:
             docker exec movieweb-redis redis-cli ping | grep -q PONG || exit 1
             echo "✓ Redis is healthy"
 
-            if ! check_container_healthy "movieweb-elasticsearch" 36; then
+            if ! check_container_healthy "movieweb-elasticsearch" 6; then
               echo "⚠ Elasticsearch is not healthy yet. Continue deployment with search fallback mode."
               docker logs --tail 300 movieweb-elasticsearch || true
             fi
@@ -187,5 +192,5 @@ jobs:
             check_running "movieweb-backend-node-worker"
             check_running "movieweb-backend-node-scheduler"
 
-            echo "✓ Deployment successful!"
+            echo "[$(date -u +%Y-%m-%dT%H:%M:%SZ)] ✓ Deployment successful!"
 
