@@ -77,7 +77,11 @@ export default async function MovieDetail({ params }: { params: { slug: string }
     // Fetch initial views
     let initialViews = 0;
     try {
-        const viewRes = await fetch(`${process.env.NEXT_PUBLIC_BACKEND_API_URL || 'http://localhost:5000'}/api/movies/views/${params.slug}`, { cache: 'no-store' });
+        const envUrl = process.env.NEXT_PUBLIC_BACKEND_API_URL || 'http://localhost:5291/api/movies';
+        const base = envUrl.endsWith('/api/movies')
+            ? envUrl
+            : `${envUrl.replace(/\/$/, '')}/api/movies`;
+        const viewRes = await fetch(`${base}/views/${params.slug}`, { cache: 'no-store' });
         if (viewRes.ok) {
             const vdata = await viewRes.json();
             initialViews = vdata.views || 0;

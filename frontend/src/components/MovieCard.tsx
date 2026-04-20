@@ -165,8 +165,9 @@ const MovieCard = ({ movie }: MovieCardProps) => {
     useEffect(() => {
         const fetchViews = async () => {
             try {
-                const baseUrl = process.env.NEXT_PUBLIC_BACKEND_API_URL || 'http://localhost:5000';
-                const res = await fetch(`${baseUrl}/api/movies/views/${movie.slug}`);
+                const envUrl = process.env.NEXT_PUBLIC_BACKEND_API_URL || 'http://localhost:5291/api/movies';
+                const apiUrl = envUrl.endsWith('/api/movies') ? envUrl : `${envUrl.replace(/\/$/, '')}/api/movies`;
+                const res = await fetch(`${apiUrl}/views/${movie.slug}`);
                 if (res.ok) {
                     const data = await res.json();
                     setViews(data.views);

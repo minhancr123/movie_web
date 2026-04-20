@@ -30,10 +30,11 @@ export default function AdminDashboard() {
 
     const fetchData = async () => {
         try {
-            const baseUrl = process.env.NEXT_PUBLIC_BACKEND_API_URL || 'http://localhost:5000';
+            const envUrl = process.env.NEXT_PUBLIC_BACKEND_API_URL || 'http://localhost:5291/api/movies';
+            const apiUrl = envUrl.endsWith('/api/movies') ? envUrl : `${envUrl.replace(/\/$/, '')}/api/movies`;
 
             // 1. Get Rate Limit Config
-            const limitRes = await fetch(`${baseUrl}/api/movies/admin/rate-limit?secret=admin123`);
+            const limitRes = await fetch(`${apiUrl}/admin/rate-limit?secret=admin123`);
             if (limitRes.ok) {
                 const data = await limitRes.json();
                 setRateLimit(data.limit);
@@ -42,7 +43,7 @@ export default function AdminDashboard() {
 
             // 2. Real Stats from Backend
             try {
-                const statsRes = await fetch(`${baseUrl}/api/movies/admin/stats?secret=admin123`);
+                const statsRes = await fetch(`${apiUrl}/admin/stats?secret=admin123`);
                 if (statsRes.ok) {
                     const sData = await statsRes.json();
                     setStats({
@@ -63,8 +64,9 @@ export default function AdminDashboard() {
     const handleUpdateLimit = async () => {
         setIsUpdating(true);
         try {
-            const baseUrl = process.env.NEXT_PUBLIC_BACKEND_API_URL || 'http://localhost:5000';
-            await fetch(`${baseUrl}/api/movies/admin/rate-limit?secret=admin123&limit=${newRateLimit}`, { method: 'POST' });
+            const envUrl = process.env.NEXT_PUBLIC_BACKEND_API_URL || 'http://localhost:5291/api/movies';
+            const apiUrl = envUrl.endsWith('/api/movies') ? envUrl : `${envUrl.replace(/\/$/, '')}/api/movies`;
+            await fetch(`${apiUrl}/admin/rate-limit?secret=admin123&limit=${newRateLimit}`, { method: 'POST' });
             setRateLimit(newRateLimit);
             alert("Đã cập nhật giới hạn truy cập thành công!");
         } catch (e) {
