@@ -31,12 +31,14 @@ export async function generateMetadata({ params }: { params: { slug: string } })
         };
     }
     const movie = data.movie;
+    const plainContent = String(movie.content || '').replace(/<[^>]*>?/gm, '');
+    const safeDescription = plainContent ? `${plainContent.substring(0, 150)}...` : `Xem phim ${movie.name || params.slug} chất lượng cao.`;
     return {
         title: `${movie.name} (${movie.year}) - Xem phim Full HD`,
-        description: `Xem phim ${movie.name} (${movie.year}) ${movie.quality} Vietsub, Thuyết minh. ${movie.content.replace(/<[^>]*>?/gm, '').substring(0, 150)}...`,
+        description: `Xem phim ${movie.name} (${movie.year}) ${movie.quality || ''} Vietsub, Thuyết minh. ${safeDescription}`,
         openGraph: {
             title: `${movie.name} (${movie.year})`,
-            description: movie.content.replace(/<[^>]*>?/gm, '').substring(0, 200),
+            description: plainContent.substring(0, 200) || safeDescription,
             images: [movie.poster_url || movie.thumb_url],
         },
     };
@@ -52,8 +54,10 @@ export default async function MovieDetail({ params }: { params: { slug: string }
     const movie = data.movie;
     const episodes = data.episodes || [];
 
-    const posterUrl = movie.poster_url.startsWith('http') ? movie.poster_url : `${IMAGE_PREFIX}${movie.poster_url}`;
-    const thumbUrl = movie.thumb_url.startsWith('http') ? movie.thumb_url : `${IMAGE_PREFIX}${movie.thumb_url}`;
+    const posterPath = movie.poster_url || '';
+    const thumbPath = movie.thumb_url || '';
+    const posterUrl = posterPath.startsWith('http') ? posterPath : `${IMAGE_PREFIX}${posterPath}`;
+    const thumbUrl = thumbPath.startsWith('http') ? thumbPath : `${IMAGE_PREFIX}${thumbPath}`;
 
     // Find the first episode to link to "Watch Now"
     const firstEpisodeSlug = episodes[0]?.server_data?.[0]?.slug;

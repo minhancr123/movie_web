@@ -27,7 +27,7 @@ export default function NotFound() {
             </Link>
             
             <Link 
-              href="/tim-kiem" 
+              href="/search" 
               className="flex items-center gap-2 bg-white/10 hover:bg-white/20 text-white px-8 py-3 rounded-full font-bold backdrop-blur-md border border-white/10 transition-transform hover:-translate-y-1"
             >
               <Search size={20} />

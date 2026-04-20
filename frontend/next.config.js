@@ -2,7 +2,9 @@
 
 const withPWA = require('next-pwa')({
   dest: 'public',
-  disable: process.env.NODE_ENV === 'development', // Disable PWA in development mode
+  // Temporarily disable service worker in all environments to avoid
+  // stale Workbox precache errors on Vercel app-router deployments.
+  disable: true,
   register: true,
   skipWaiting: true,
 });
