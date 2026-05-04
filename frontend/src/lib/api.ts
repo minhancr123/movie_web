@@ -4,8 +4,8 @@ import https from 'https';
 // Frontend should call backend proxy; backend is responsible for calling phimapi.
 const API_URL = process.env.NEXT_PUBLIC_BACKEND_API_URL || 'http://localhost:5291/api/movies';
 
-const envImagePrefix = process.env.NEXT_PUBLIC_IMAGE_PREFIX;
-export const IMAGE_PREFIX = envImagePrefix;
+const envImagePrefix = process.env.NEXT_PUBLIC_IMAGE_PREFIX || 'https://phimimg.com/';
+export const IMAGE_PREFIX = envImagePrefix.endsWith('/') ? envImagePrefix : `${envImagePrefix}/`;
 
 // Create an axios instance that ignores self-signed certificates (for development only)
 const axiosClient = axios.create({
@@ -53,7 +53,9 @@ export interface MovieDetail extends Movie {
 
 const withAbsoluteImage = (url: string | undefined) => {
   if (!url) return '';
-  return url.startsWith('http') ? url : `${IMAGE_PREFIX}${url}`;
+  if (url.startsWith('http')) return url;
+  const normalizedPath = url.startsWith('/') ? url.slice(1) : url;
+  return `${IMAGE_PREFIX}${normalizedPath}`;
 };
 
 const normalizeMovie = (movie: any): Movie => ({
