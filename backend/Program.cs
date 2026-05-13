@@ -54,12 +54,26 @@ builder.Services.AddHttpClient<MovieService>(); // Register HTTP Client for Movi
 var frontendUrl = builder.Configuration["MovieSettings:FrontendUrl"] ?? "http://localhost:3000";
 // Support multiple origins separated by comma
 var allowedOrigins = frontendUrl.Split(',', StringSplitOptions.RemoveEmptyEntries).Select(o => o.Trim()).ToArray();
+var localTunnelSuffix = ".loca.lt";
 
 builder.Services.AddCors(options =>
 {
     options.AddPolicy("AllowNextApp",
         builder => builder
-        .WithOrigins(allowedOrigins)
+        .SetIsOriginAllowed(origin =>
+        {
+            if (allowedOrigins.Contains(origin, StringComparer.OrdinalIgnoreCase))
+            {
+                return true;
+            }
+
+            if (Uri.TryCreate(origin, UriKind.Absolute, out var uri))
+            {
+                return uri.Host.EndsWith(localTunnelSuffix, StringComparison.OrdinalIgnoreCase);
+            }
+
+            return false;
+        })
         .AllowAnyMethod()
         .AllowAnyHeader()
         .AllowCredentials());
