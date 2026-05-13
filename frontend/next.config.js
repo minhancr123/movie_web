@@ -10,6 +10,7 @@ const withPWA = require('next-pwa')({
 });
 
 const nextConfig = {
+  output: 'standalone',
   reactStrictMode: true, // Recommended for Next.js
   images: {
     // Avoid Vercel _next/image billing quota errors on Hobby/free usage.
