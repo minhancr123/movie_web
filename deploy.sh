@@ -1,4 +1,4 @@
-#!/bin/bash
+ip route | awk '/default/ {print $3}'#!/bin/bash
 
 # MovieWeb VPS Deployment Script
 # Deploys: Redis, C# Backend, Node.js Backend
@@ -44,7 +44,6 @@ cd $APP_DIR
 log_warning "Creating backup..."
 mkdir -p $BACKUP_DIR
 docker-compose logs backend-node > $BACKUP_DIR/logs_node_$DATE.log 2>&1 || true
-docker-compose logs backend-csharp > $BACKUP_DIR/logs_csharp_$DATE.log 2>&1 || true
 docker-compose logs redis > $BACKUP_DIR/logs_redis_$DATE.log 2>&1 || true
 log_success "Backup created"
 
@@ -90,7 +89,6 @@ else
 fi
 
 # Check C# Backend
-CSHARP_HEALTH=$(curl -s -o /dev/null -w "%{http_code}" http://localhost:5291/health || echo "000")
 if [ "$CSHARP_HEALTH" = "200" ]; then
     log_success "C# Backend: Healthy"
 else

@@ -1,26 +1,4 @@
 services:
-  # Elasticsearch (Search index)
-  elasticsearch:
-    image: docker.elastic.co/elasticsearch/elasticsearch:8.15.3
-    container_name: movieweb-elasticsearch
-    profiles: ["full"]
-    restart: unless-stopped
-    environment:
-      - discovery.type=single-node
-      - xpack.security.enabled=false
-      - xpack.ml.enabled=false
-      - ES_JAVA_OPTS=-Xms256m -Xmx256m
-    volumes:
-      - elasticsearch-data:/usr/share/elasticsearch/data
-    mem_limit: 768m
-    networks:
-      - movieweb-network
-    healthcheck:
-      test: ["CMD-SHELL", "curl -fsS http://localhost:9200 >/dev/null || exit 1"]
-      interval: 20s
-      timeout: 5s
-      retries: 20
-      start_period: 60s
 
   # Redis Cache
   redis:
@@ -40,30 +18,6 @@ services:
       timeout: 3s
       retries: 3
 
-  # C# Backend (ASP.NET Core - Movie API)
-  backend-csharp:
-    image: minhancr123/movie-web:csharp-latest
-    container_name: movieweb-backend-csharp
-    restart: unless-stopped
-    ports:
-      - "5291:8080"
-    environment:
-      - ASPNETCORE_ENVIRONMENT=Production
-      - ASPNETCORE_URLS=http://+:8080
-      - ConnectionStrings__Redis=redis:6379,abortConnect=false
-      - MovieSettings__BaseApiUrl=https://phimapi.com
-      - MovieSettings__FrontendUrl=http://localhost:3000,http://localhost:3001,https://movie-web-green-sigma.vercel.app,https://movie-web-frontend.fly.dev
-    depends_on:
-      redis:
-        condition: service_healthy
-    networks:
-      - movieweb-network
-    healthcheck:
-      test: ["CMD", "curl", "-f", "http://localhost:8080/health"]
-      interval: 30s
-      timeout: 10s
-      retries: 3
-      start_period: 40s
 
   # Node.js Backend (Auth, Comments, Socket.io)
   backend-node:
@@ -81,11 +35,7 @@ services:
       - CORS_ORIGIN=${CORS_ORIGIN}
       - FRONTEND_URL=${FRONTEND_URL}
       - REDIS_URL=redis://redis:6379
-      - ELASTICSEARCH_URL=http://elasticsearch:9200
-      - ELASTICSEARCH_ENABLED=${ELASTICSEARCH_ENABLED:-false}
-      - MOVIE_SOURCE_API_URL=https://phimapi.com
       - JOB_QUEUE_NAME=movieweb-jobs
-      - CATALOG_REFRESH_PAGES=3
     networks:
       - movieweb-network
     depends_on:
@@ -101,23 +51,16 @@ services:
   backend-node-worker:
     image: minhancr123/movie-web:node-latest
     container_name: movieweb-backend-node-worker
-    profiles: ["full"]
     restart: unless-stopped
     command: ["node", "workers/queueWorker.js"]
     environment:
       - NODE_ENV=production
       - MONGODB_URI=${MONGODB_URI}
       - REDIS_URL=redis://redis:6379
-      - ELASTICSEARCH_URL=http://elasticsearch:9200
-      - ELASTICSEARCH_ENABLED=${ELASTICSEARCH_ENABLED:-false}
-      - MOVIE_SOURCE_API_URL=https://phimapi.com
       - JOB_QUEUE_NAME=movieweb-jobs
-      - CATALOG_REFRESH_PAGES=3
     depends_on:
       redis:
         condition: service_healthy
-      elasticsearch:
-        condition: service_started
     networks:
       - movieweb-network
 
@@ -131,7 +74,6 @@ services:
       - MONGODB_URI=${MONGODB_URI}
       - REDIS_URL=redis://redis:6379
       - JOB_QUEUE_NAME=movieweb-jobs
-      - CATALOG_REFRESH_PAGES=3
     depends_on:
       redis:
         condition: service_healthy
@@ -140,8 +82,6 @@ services:
 
 volumes:
   redis-data-new:
-    driver: local
-  elasticsearch-data:
     driver: local
 
 networks:

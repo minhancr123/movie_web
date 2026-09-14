@@ -112,29 +112,6 @@ jobs:
                   retries: 3
 
               # C# Backend (ASP.NET Core - Movie API)
-              backend-csharp:
-                image: minhancr123/movie-web:csharp-latest
-                container_name: movieweb-backend-csharp
-                restart: unless-stopped
-                ports:
-                  - "5291:8080"
-                environment:
-                  - ASPNETCORE_ENVIRONMENT=Production
-                  - ASPNETCORE_URLS=http://+:8080
-                  - ConnectionStrings__Redis=redis:6379,abortConnect=false
-                  - MovieSettings__BaseApiUrl=https://phimapi.com
-                  - MovieSettings__FrontendUrl=http://localhost:3000,http://localhost:3001,https://movie-web-green-sigma.vercel.app,https://movie-web-frontend.fly.dev
-                depends_on:
-                  redis:
-                    condition: service_healthy
-                networks:
-                  - movieweb-network
-                healthcheck:
-                  test: ["CMD", "curl", "-f", "http://localhost:8080/health"]
-                  interval: 30s
-                  timeout: 10s
-                  retries: 3
-                  start_period: 40s
 
               # Node.js Backend (Auth, Comments, Socket.io)
               backend-node:
@@ -154,9 +131,7 @@ jobs:
                   - REDIS_URL=redis://redis:6379
                   - ELASTICSEARCH_URL=http://elasticsearch:9200
                   - ELASTICSEARCH_ENABLED=${ELASTICSEARCH_ENABLED:-false}
-                  - MOVIE_SOURCE_API_URL=https://phimapi.com
                   - JOB_QUEUE_NAME=movieweb-jobs
-                  - CATALOG_REFRESH_PAGES=3
                 networks:
                   - movieweb-network
                 depends_on:
@@ -181,9 +156,7 @@ jobs:
                   - REDIS_URL=redis://redis:6379
                   - ELASTICSEARCH_URL=http://elasticsearch:9200
                   - ELASTICSEARCH_ENABLED=${ELASTICSEARCH_ENABLED:-false}
-                  - MOVIE_SOURCE_API_URL=https://phimapi.com
                   - JOB_QUEUE_NAME=movieweb-jobs
-                  - CATALOG_REFRESH_PAGES=3
                 depends_on:
                   redis:
                     condition: service_healthy
@@ -201,7 +174,6 @@ jobs:
                   - MONGODB_URI=${MONGODB_URI}
                   - REDIS_URL=redis://redis:6379
                   - JOB_QUEUE_NAME=movieweb-jobs
-                  - CATALOG_REFRESH_PAGES=3
                 depends_on:
                   redis:
                     condition: service_healthy
@@ -242,12 +214,10 @@ jobs:
               echo "⚠ Low-memory mode enabled (${MEM_MB}MB): run without Elasticsearch/worker/scheduler"
               export ELASTICSEARCH_ENABLED=false
               INFRA_SERVICES="redis"
-              API_SERVICES="backend-node backend-csharp"
             else
               echo "Full mode enabled (${MEM_MB}MB)"
               export ELASTICSEARCH_ENABLED=true
               INFRA_SERVICES="redis elasticsearch"
-              API_SERVICES="backend-node backend-csharp"
               BG_SERVICES="backend-node-worker backend-node-scheduler"
             fi
 
@@ -277,7 +247,6 @@ jobs:
               echo "Compose up failed for API services. Service status:"
               $COMPOSE_CMD -f docker-compose.prod.yml ps || true
               docker logs --tail 300 movieweb-backend-node || true
-              docker logs --tail 300 movieweb-backend-csharp || true
               exit 1
             fi
 
@@ -353,7 +322,6 @@ jobs:
             fi
 
             if ! check_http "http://localhost:5291/health" "C# Backend" 18; then
-              docker logs --tail 200 movieweb-backend-csharp || true
               exit 1
             fi
 
