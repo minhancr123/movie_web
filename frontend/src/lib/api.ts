@@ -1,18 +1,18 @@
 import axios from 'axios';
-import https from 'https';
+import { getSession } from 'next-auth/react';
 
-// Frontend should call backend proxy; backend is responsible for calling phimapi.
-const API_URL = process.env.NEXT_PUBLIC_BACKEND_API_URL || 'http://localhost:5291/api/movies';
+// Auth / favourites / history / comments / premiere client.
+// Catalog lives in lib/catalog.ts and talks to the TMDB-backed endpoints.
+// Legacy catalog helpers kept only for the premiere feature (/cong-chieu),
+// which still runs on the old shape and is migrated in Phase 2.
+// The .NET service is gone, so these now hit the Node API and will 404
+// until premiere is rebuilt.
+const API_URL = process.env.NEXT_PUBLIC_BACKEND_API_URL || 'http://localhost:5001/api';
 
 const envImagePrefix = process.env.NEXT_PUBLIC_IMAGE_PREFIX || 'https://phimimg.com/';
 export const IMAGE_PREFIX = envImagePrefix.endsWith('/') ? envImagePrefix : `${envImagePrefix}/`;
 
-// Create an axios instance that ignores self-signed certificates (for development only)
-const axiosClient = axios.create({
-  httpsAgent: new https.Agent({
-    rejectUnauthorized: false
-  })
-});
+const axiosClient = axios.create();
 
 export interface Movie {
 
@@ -127,72 +127,62 @@ export const getMovieDetail = async (slug: string) => {
     return null;
   }
 };
-
-export const searchMovies = async (keyword: string, limit = 10) => {
-  try {
-    const res = await fetch(`${API_URL}/search?keyword=${encodeURIComponent(keyword)}&limit=${limit}`, { cache: 'no-store' });
-    if (!res.ok) return { data: { items: [] } };
-    const data = await res.json();
-    return normalizeListPayload(data);
-  } catch (error) {
-    console.error('Error searching movies:', error);
-    return { data: { items: [] } };
-  }
-};
-
-export const getMoviesByCategory = async (category: string, page = 1) => {
-  try {
-    const primaryPath = isCategorySlug(category)
-      ? `${API_URL}/category/${category}?page=${page}`
-      : `${API_URL}/genre/${category}?page=${page}`;
-
-    let res = await fetch(primaryPath, { next: { revalidate: 3600 } });
-
-    if (!res.ok && isCategorySlug(category)) {
-      // Fallback for inconsistent slugs that are actually genres.
-      res = await fetch(`${API_URL}/genre/${category}?page=${page}`, { next: { revalidate: 3600 } });
-    }
-
-    if (!res.ok) return { data: { items: [] }, items: [], pagination: {} };
-    const data = await res.json();
-    return normalizeListPayload(data);
-  } catch (error) {
-    console.error(`Error fetching category ${category}:`, error);
-    return { data: { items: [] }, items: [], pagination: {} };
-  }
-};
-
-export async function getMoviesByGenre(genre: string, page: number = 1) {
-  try {
-    const res = await fetch(`${API_URL}/genre/${genre}?page=${page}`, { next: { revalidate: 3600 } });
-    if (!res.ok) return { status: false, msg: 'Error', data: { items: [] }, items: [], pagination: {} };
-    const data = await res.json();
-    return normalizeListPayload(data);
-  } catch (error) {
-    console.error(`Error fetching movies by genre ${genre}:`, error);
-    return { status: false, msg: 'Error', data: { items: [] }, items: [], pagination: {} };
-  }
-}
-
-export async function getMoviesByCountry(country: string, page: number = 1) {
-  try {
-    const res = await fetch(`${API_URL}/country/${country}?page=${page}`, { next: { revalidate: 3600 } });
-    if (!res.ok) return { status: false, msg: 'Error', data: { items: [] }, items: [], pagination: {} };
-    const data = await res.json();
-    return normalizeListPayload(data);
-  } catch (error) {
-    console.error(`Error fetching movies by country ${country}:`, error);
-    return { status: false, msg: 'Error', data: { items: [] }, items: [], pagination: {} };
-  }
-}
+
+
+
+
 
 export const moviesAPI = {
   getLatestMovies,
   getMovieDetail,
-  searchMovies,
-  getMoviesByCategory,
-  getMoviesByGenre,
-  getMoviesByCountry
+};
+
+// ==================== PROVIDER & PLAYBACK APIs (new) ====================
+export const providerAPI = {
+  getStatus: () => authClient.get('/providers/status'),
+  connectTorbox: (apiKey: string) => authClient.post('/providers/torbox/connect', { apiKey }),
+  disconnectTorbox: () => authClient.post('/providers/torbox/disconnect'),
+};
+
+export const playbackAPI = {
+  resolve: (data: {
+    type: string;
+    tmdbId: number;
+    season?: number;
+    episode?: number;
+    capabilities: any;
+    sourceToken?: string;
+    audioIndex?: number;
+  }) => authClient.post('/playback/resolve', data),
+  listSources: (data: {
+    type: string;
+    tmdbId: number;
+    season?: number;
+    episode?: number;
+    capabilities: any;
+  }) => authClient.post('/playback/sources', data),
+  getSession: (sessionId: string) => authClient.get(`/playback/session/${sessionId}`),
+  subtitleJob: (jobId: string) => authClient.get(`/playback/subtitles/job/${jobId}`),
+  subtitles: (data: {
+    type: string;
+    tmdbId: number;
+    season?: number;
+    episode?: number;
+    capabilities: any;
+    sourceToken?: string;
+    playbackSessionId?: string;
+    externalOnly?: boolean;
+  }) => authClient.post('/playback/subtitles', data),
+};
+
+/** Absolute backend URL for relative asset paths (extracted VTT sidecars). */
+export const apiUrl = (path: string) => {
+  if (/^https?:\/\//i.test(path)) return path;
+  const base = (process.env.NEXT_PUBLIC_API_URL || 'http://localhost:5001/api').replace(
+    /\/api\/?$/,
+    ''
+  );
+  return `${base}${path.startsWith('/') ? path : `/${path}`}`;
 };
 
 // ==================== NEW: Auth & User APIs ====================
@@ -205,16 +195,16 @@ const authClient = axios.create({
   },
 });
 
-// Add token to requests
-if (typeof window !== 'undefined') {
-  authClient.interceptors.request.use((config) => {
-    const token = localStorage.getItem('token');
-    if (token) {
-      config.headers.Authorization = `Bearer ${token}`;
+// Add token to requests from NextAuth session
+authClient.interceptors.request.use(async (config) => {
+  if (typeof window !== 'undefined') {
+    const session = await getSession();
+    if (session?.user?.accessToken) {
+      config.headers.Authorization = `Bearer ${session.user.accessToken}`;
     }
-    return config;
-  });
-}
+  }
+  return config;
+});
 
 // Auth APIs
 export const authAPI = {

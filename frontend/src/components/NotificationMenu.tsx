@@ -4,7 +4,8 @@ import { useState, useEffect, useRef } from 'react';
 import Link from 'next/link';
 import Image from 'next/image';
 import { Bell, Clock, Calendar, Film, Loader2 } from 'lucide-react';
-import { premiereAPI, getLatestMovies } from '@/lib/api';
+import { premiereAPI } from '@/lib/api';
+import { getHome, catalogHref } from '@/lib/catalog';
 
 interface Notification {
     id: string;
@@ -43,9 +44,9 @@ export default function NotificationMenu() {
                 const premiereRes = await premiereAPI.getUpcoming();
                 const premieres = premiereRes.data?.events || [];
 
-                // 2. Get Recent Movies (Top 3)
-                const latestRes = await getLatestMovies(1);
-                const latestMovies = latestRes.items?.slice(0, 3) || [];
+                // 2. Trending from the TMDB catalog (top 3)
+                const home = await getHome();
+                const latestMovies = home.trending.slice(0, 3);
 
                 const newNotifications: Notification[] = [];
 
@@ -64,15 +65,15 @@ export default function NotificationMenu() {
                 });
 
                 // Map Movies
-                latestMovies.forEach((m: any) => {
+                latestMovies.forEach((m) => {
                     newNotifications.push({
-                        id: `mov-${m._id}`,
+                        id: `mov-${m.contentRef}`,
                         type: 'new_movie',
                         title: 'Phim mới cập nhật',
-                        message: m.name,
-                        time: new Date().toISOString(), // Just now
-                        image: m.poster_url,
-                        link: `/phim/${m.slug}`,
+                        message: m.title,
+                        time: new Date().toISOString(),
+                        image: m.poster,
+                        link: catalogHref(m),
                         isRead: false
                     });
                 });
@@ -127,23 +128,23 @@ export default function NotificationMenu() {
         <div className="relative" ref={menuRef}>
             <button
                 onClick={handleToggle}
-                className="text-gray-400 hover:text-white transition-colors relative group p-2 rounded-full hover:bg-white/10"
+                className="text-cinema-subtle hover:text-white transition-colors relative group p-2 rounded-full hover:bg-white/10"
             >
                 <Bell size={20} className={isOpen ? 'text-white' : ''} />
                 {unreadCount > 0 && (
-                    <span className="absolute top-1.5 right-2 w-2 h-2 bg-red-600 rounded-full border border-black animate-pulse"></span>
+                    <span className="absolute top-1.5 right-2 w-2 h-2 bg-amber-primary rounded-full border border-black animate-pulse"></span>
                 )}
             </button>
 
             {/* Dropdown */}
             {isOpen && (
-                <div className="absolute top-full right-0 mt-2 w-80 sm:w-96 bg-[#111] border border-white/10 rounded-xl shadow-2xl overflow-hidden animate-in fade-in slide-in-from-top-2 z-50">
+                <div className="absolute top-full right-0 mt-2 w-80 sm:w-96 bg-surface-light border border-white/10 rounded-xl shadow-2xl overflow-hidden animate-in fade-in slide-in-from-top-2 z-50">
                     <div className="p-4 border-b border-white/5 flex justify-between items-center bg-white/[0.02]">
                         <h3 className="font-bold text-white text-sm">Thông báo</h3>
                         {unreadCount > 0 && (
                             <button
                                 onClick={() => setUnreadCount(0)}
-                                className="text-xs text-red-500 hover:text-red-400 transition-colors"
+                                className="text-xs text-amber-gold hover:text-amber-gold transition-colors"
                             >
                                 Đánh dấu đã đọc
                             </button>
@@ -153,10 +154,10 @@ export default function NotificationMenu() {
                     <div className="max-h-[60vh] overflow-y-auto custom-scrollbar">
                         {loading ? (
                             <div className="p-8 flex justify-center">
-                                <Loader2 className="animate-spin text-red-500" />
+                                <Loader2 className="animate-spin text-amber-gold" />
                             </div>
                         ) : notifications.length === 0 ? (
-                            <div className="p-8 text-center text-gray-500 text-sm">
+                            <div className="p-8 text-center text-cinema-subtle text-sm">
                                 <Bell className="mx-auto mb-2 opacity-50" size={24} />
                                 Không có thông báo nào
                             </div>
@@ -180,21 +181,21 @@ export default function NotificationMenu() {
                                         </div>
                                         <div className="flex-1 min-w-0">
                                             <div className="flex justify-between items-start mb-1">
-                                                <h4 className="text-xs font-bold text-red-500 uppercase tracking-wider flex items-center gap-1.5">
+                                                <h4 className="text-xs font-bold text-amber-gold uppercase tracking-wider flex items-center gap-1.5">
                                                     {item.type === 'premiere' ? <Calendar size={10} /> : <Film size={10} />}
                                                     {item.title}
                                                 </h4>
-                                                <span className="text-[10px] text-gray-500 whitespace-nowrap ml-2">
+                                                <span className="text-[10px] text-cinema-subtle whitespace-nowrap ml-2">
                                                     {formatTime(item.time)}
                                                 </span>
                                             </div>
-                                            <p className="text-sm font-medium text-white line-clamp-2 group-hover:text-gray-200 transition-colors">
+                                            <p className="text-sm font-medium text-white line-clamp-2 group-hover:text-cinema-text transition-colors">
                                                 {item.message}
                                             </p>
                                         </div>
                                         {/* Status indicator if unread (optional logic) */}
                                         {unreadCount > 0 && item.isRead === false && (
-                                            <div className="absolute top-4 right-4 w-1.5 h-1.5 bg-red-500 rounded-full"></div>
+                                            <div className="absolute top-4 right-4 w-1.5 h-1.5 bg-amber-primary rounded-full"></div>
                                         )}
                                     </Link>
                                 ))}
@@ -202,7 +203,7 @@ export default function NotificationMenu() {
                         )}
                     </div>
                     <div className="p-3 text-center border-t border-white/5 bg-white/[0.02]">
-                        <Link href="/cong-chieu" onClick={() => setIsOpen(false)} className="text-xs text-gray-400 hover:text-white transition-colors">
+                        <Link href="/cong-chieu" onClick={() => setIsOpen(false)} className="text-xs text-cinema-subtle hover:text-white transition-colors">
                             Xem lịch công chiếu
                         </Link>
                     </div>

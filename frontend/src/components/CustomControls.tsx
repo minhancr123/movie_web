@@ -35,10 +35,10 @@ export const CustomControls = ({ videoRef, isPlaying, setIsPlaying, onNextEpisod
   return (
     <div className="absolute bottom-0 left-0 w-full bg-gradient-to-t from-black/80 to-transparent p-4 flex items-center justify-between opacity-0 group-hover:opacity-100 transition-opacity duration-300">
        <div className="flex gap-4">
-          <button onClick={togglePlay} className="text-white hover:text-red-500">
+          <button onClick={togglePlay} className="text-white hover:text-amber-gold">
              {isPlaying ? <Pause size={24} /> : <Play size={24} />}
           </button>
-          <button onClick={() => { if(videoRef.current) videoRef.current.currentTime -= 10; }} className="text-white hover:text-gray-300">
+          <button onClick={() => { if(videoRef.current) videoRef.current.currentTime -= 10; }} className="text-white hover:text-cinema-muted">
              <RotateCcw size={20} /> <span className="text-xs">10s</span>
           </button>
        </div>
@@ -56,13 +56,13 @@ export const CustomControls = ({ videoRef, isPlaying, setIsPlaying, onNextEpisod
           {onNextEpisode && (
               <button 
                 onClick={onNextEpisode}
-                className="bg-red-600 hover:bg-red-700 text-white text-xs px-3 py-1 rounded transition-colors"
+                className="bg-amber-primary hover:bg-amber-600 text-white text-xs px-3 py-1 rounded transition-colors"
                 >
                 Tập Tiếp
               </button>
           )}
 
-          <button onClick={toggleFullscreen} className="text-white hover:text-gray-300">
+          <button onClick={toggleFullscreen} className="text-white hover:text-cinema-muted">
              <Maximize size={24} />
           </button>
        </div>

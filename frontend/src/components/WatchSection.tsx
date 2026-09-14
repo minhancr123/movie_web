@@ -35,7 +35,7 @@ export default function WatchSection({ embedUrl, m3u8Url, nextEpisodeSlug, movie
   return (
     <div className="space-y-4">
       {/* Player Container */}
-      <div className="aspect-video w-full bg-black rounded-lg overflow-hidden relative shadow-2xl border border-gray-800">
+      <div className="aspect-video w-full bg-black rounded-lg overflow-hidden relative shadow-2xl border border-white/10">
         {playerType === 'embed' ? (
           embedUrl ? (
             <iframe
@@ -47,11 +47,11 @@ export default function WatchSection({ embedUrl, m3u8Url, nextEpisodeSlug, movie
               referrerPolicy="no-referrer"
             ></iframe>
           ) : (
-            <div className="flex flex-col items-center justify-center h-full text-gray-500">
+            <div className="flex flex-col items-center justify-center h-full text-cinema-subtle">
               <p>Không có link Embed.</p>
               <button
                 onClick={() => setPlayerType('direct')}
-                className="mt-2 text-red-500 underline"
+                className="mt-2 text-amber-gold underline"
               >
                 Thử player dự phòng
               </button>
@@ -68,17 +68,17 @@ export default function WatchSection({ embedUrl, m3u8Url, nextEpisodeSlug, movie
       </div>
 
       {/* Control / Info Bar */}
-      <div className="bg-gray-800/50 p-4 rounded flex flex-col md:flex-row justify-between items-center gap-4">
-        <div className="text-sm text-gray-400">
-          <span className="font-bold text-gray-200">Đang dùng:</span> {playerType === 'embed' ? 'Server gốc (Embed)' : 'Player dự phòng (HLS)'}
+      <div className="bg-surface-container/50 p-4 rounded flex flex-col md:flex-row justify-between items-center gap-4">
+        <div className="text-sm text-cinema-subtle">
+          <span className="font-bold text-cinema-text">Đang dùng:</span> {playerType === 'embed' ? 'Server gốc (Embed)' : 'Player dự phòng (HLS)'}
         </div>
 
         <div className="flex gap-2">
           <button
             onClick={() => setPlayerType('embed')}
             className={`px-3 py-1 rounded text-sm font-bold transition-colors ${playerType === 'embed'
-                ? 'bg-red-600 text-white'
-                : 'bg-gray-700 text-gray-300 hover:bg-gray-600'
+                ? 'bg-amber-primary text-black'
+                : 'bg-surface-container-high text-cinema-muted hover:bg-surface-container-highest'
               }`}
           >
             Server Gốc
@@ -86,26 +86,16 @@ export default function WatchSection({ embedUrl, m3u8Url, nextEpisodeSlug, movie
           <button
             onClick={() => setPlayerType('direct')}
             className={`px-3 py-1 rounded text-sm font-bold transition-colors ${playerType === 'direct'
-                ? 'bg-red-600 text-white'
-                : 'bg-gray-700 text-gray-300 hover:bg-gray-600'
+                ? 'bg-amber-primary text-black'
+                : 'bg-surface-container-high text-cinema-muted hover:bg-surface-container-highest'
               }`}
           >
             Server Dự Phòng
           </button>
-          {m3u8Url && (
-            <a
-              href={m3u8Url}
-              target="_blank"
-              rel="noopener noreferrer"
-              className="px-3 py-1 rounded text-sm font-bold bg-gray-700 text-gray-300 hover:bg-gray-600"
-            >
-              Tải M3U8
-            </a>
-          )}
         </div>
       </div>
 
-      <div className="text-xs text-gray-500 mt-2">
+      <div className="text-xs text-cinema-subtle mt-2">
         <p>Nếu server này lỗi, hãy thử chuyển sang server khác hoặc đổi Tập phim.</p>
       </div>
     </div>

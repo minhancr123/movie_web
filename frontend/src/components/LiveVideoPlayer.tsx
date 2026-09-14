@@ -437,7 +437,7 @@ export default function LiveVideoPlayer({ movieSlug, premiereStartTime, movieNam
     return (
       <div className="w-full h-full bg-black flex items-center justify-center">
         <div className="text-center">
-          <div className="w-16 h-16 border-4 border-red-600 border-t-transparent rounded-full animate-spin mx-auto mb-4"></div>
+          <div className="w-16 h-16 border-4 border-amber-primary border-t-transparent rounded-full animate-spin mx-auto mb-4"></div>
           <p className="text-white text-lg">Đang tải video...</p>
         </div>
       </div>
@@ -462,7 +462,7 @@ export default function LiveVideoPlayer({ movieSlug, premiereStartTime, movieNam
       {/* Keyboard Shortcuts Help Modal */}
       {showKeyboardHelp && (
         <div className="absolute inset-0 z-50 flex items-center justify-center bg-black/80 backdrop-blur-sm">
-          <div className="bg-gray-900 rounded-xl p-6 max-w-md w-full mx-4 shadow-2xl border border-white/10">
+          <div className="bg-surface-light rounded-xl p-6 max-w-md w-full mx-4 shadow-2xl border border-white/10">
             <div className="flex items-center justify-between mb-4">
               <h3 className="text-white text-xl font-bold flex items-center gap-2">
                 <span>⌨️</span>
@@ -470,7 +470,7 @@ export default function LiveVideoPlayer({ movieSlug, premiereStartTime, movieNam
               </h3>
               <button
                 onClick={() => setShowKeyboardHelp(false)}
-                className="text-gray-400 hover:text-white transition"
+                className="text-cinema-subtle hover:text-white transition"
               >
                 <svg className="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                   <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
@@ -480,34 +480,34 @@ export default function LiveVideoPlayer({ movieSlug, premiereStartTime, movieNam
             
             <div className="space-y-3">
               <div className="flex justify-between items-center text-sm">
-                <span className="text-gray-300">Play / Pause</span>
+                <span className="text-cinema-muted">Play / Pause</span>
                 <div className="flex gap-2">
                   <kbd className="bg-white/10 px-3 py-1 rounded text-white">Space</kbd>
                   <kbd className="bg-white/10 px-3 py-1 rounded text-white">K</kbd>
                 </div>
               </div>
               <div className="flex justify-between items-center text-sm">
-                <span className="text-gray-300">Toàn màn hình</span>
+                <span className="text-cinema-muted">Toàn màn hình</span>
                 <kbd className="bg-white/10 px-3 py-1 rounded text-white">F</kbd>
               </div>
               <div className="flex justify-between items-center text-sm">
-                <span className="text-gray-300">Picture-in-Picture</span>
+                <span className="text-cinema-muted">Picture-in-Picture</span>
                 <kbd className="bg-white/10 px-3 py-1 rounded text-white">I</kbd>
               </div>
               <div className="flex justify-between items-center text-sm">
-                <span className="text-gray-300">Tắt / Bật âm thanh</span>
+                <span className="text-cinema-muted">Tắt / Bật âm thanh</span>
                 <kbd className="bg-white/10 px-3 py-1 rounded text-white">M</kbd>
               </div>
               <div className="flex justify-between items-center text-sm">
-                <span className="text-gray-300">Tăng âm lượng</span>
+                <span className="text-cinema-muted">Tăng âm lượng</span>
                 <kbd className="bg-white/10 px-3 py-1 rounded text-white">↑</kbd>
               </div>
               <div className="flex justify-between items-center text-sm">
-                <span className="text-gray-300">Giảm âm lượng</span>
+                <span className="text-cinema-muted">Giảm âm lượng</span>
                 <kbd className="bg-white/10 px-3 py-1 rounded text-white">↓</kbd>
               </div>
               <div className="flex justify-between items-center text-sm">
-                <span className="text-gray-300">Hiện bảng này</span>
+                <span className="text-cinema-muted">Hiện bảng này</span>
                 <kbd className="bg-white/10 px-3 py-1 rounded text-white">?</kbd>
               </div>
             </div>
@@ -515,7 +515,7 @@ export default function LiveVideoPlayer({ movieSlug, premiereStartTime, movieNam
             <div className="mt-6 text-center">
               <button
                 onClick={() => setShowKeyboardHelp(false)}
-                className="bg-red-600 hover:bg-red-700 text-white px-6 py-2 rounded-full font-semibold transition"
+                className="bg-amber-primary hover:bg-amber-600 text-white px-6 py-2 rounded-full font-semibold transition"
               >
                 Đóng
               </button>
@@ -528,16 +528,16 @@ export default function LiveVideoPlayer({ movieSlug, premiereStartTime, movieNam
       <div className={`absolute top-4 right-4 z-20 bg-black/60 backdrop-blur-sm rounded-lg px-3 py-1.5 text-white text-xs transition-opacity ${showControls ? 'opacity-100' : 'opacity-0'}`}>
         <button 
           onClick={() => setShowKeyboardHelp(true)}
-          className="hover:text-red-400 transition"
+          className="hover:text-amber-gold transition"
         >
           Press <kbd className="bg-white/20 px-1.5 py-0.5 rounded mx-1">?</kbd> for shortcuts
         </button>
       </div>
 
       {/* Time indicator - Always visible */}
-      <div className={`absolute top-4 right-4 z-50 bg-black/80 backdrop-blur-sm px-4 py-2 rounded-lg border border-red-500/50 transition-opacity duration-300 ${showControls ? 'opacity-100' : 'opacity-0'}`}>
+      <div className={`absolute top-4 right-4 z-50 bg-black/80 backdrop-blur-sm px-4 py-2 rounded-lg border border-amber-primary/50 transition-opacity duration-300 ${showControls ? 'opacity-100' : 'opacity-0'}`}>
         <p className="text-white text-sm font-mono">
-          <span className="text-red-500 animate-pulse">●</span> LIVE • {formatTime(elapsedTime)}
+          <span className="text-amber-gold animate-pulse">●</span> LIVE • {formatTime(elapsedTime)}
         </p>
       </div>
 
@@ -545,21 +545,21 @@ export default function LiveVideoPlayer({ movieSlug, premiereStartTime, movieNam
       {videoError && (
         <div className="absolute inset-0 z-40 bg-black/90 flex items-center justify-center p-8">
           <div className="text-center max-w-md">
-            <div className="text-red-500 text-6xl mb-4">⚠️</div>
+            <div className="text-amber-gold text-6xl mb-4">⚠️</div>
             <h3 className="text-white text-xl font-bold mb-2">Nguồn video không khả dụng</h3>
-            <p className="text-gray-400 mb-4">
+            <p className="text-cinema-subtle mb-4">
               Video không thể phát. Vui lòng thử lại sau hoặc liên hệ quản trị viên.
             </p>
             <div className="flex gap-2 justify-center">
               <button
                 onClick={() => window.location.reload()}
-                className="bg-red-600 hover:bg-red-700 text-white px-6 py-2 rounded-lg transition"
+                className="bg-amber-primary hover:bg-amber-600 text-white px-6 py-2 rounded-lg transition"
               >
                 Tải lại
               </button>
               <button
                 onClick={() => window.history.back()}
-                className="bg-gray-700 hover:bg-gray-600 text-white px-6 py-2 rounded-lg transition"
+                className="bg-surface-container-high hover:bg-surface-container-highest text-white px-6 py-2 rounded-lg transition"
               >
                 Quay lại
               </button>
@@ -605,7 +605,7 @@ export default function LiveVideoPlayer({ movieSlug, premiereStartTime, movieNam
 
                 <button
                   onClick={resyncToLive}
-                  className="px-3 py-1.5 rounded-lg bg-red-600/80 hover:bg-red-600 backdrop-blur-sm text-white text-xs font-semibold transition flex items-center gap-1.5"
+                  className="px-3 py-1.5 rounded-lg bg-amber-primary/80 hover:bg-amber-primary backdrop-blur-sm text-white text-xs font-semibold transition flex items-center gap-1.5"
                   title="Đồng bộ lại với phát trực tiếp"
                 >
                   <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
@@ -617,7 +617,7 @@ export default function LiveVideoPlayer({ movieSlug, premiereStartTime, movieNam
 
               {/* Center: Live indicator */}
               <div className="flex-1 text-center">
-                <span className="text-red-500 text-xs font-semibold">🔴 ĐANG PHÁT TRỰC TIẾP</span>
+                <span className="text-amber-gold text-xs font-semibold">🔴 ĐANG PHÁT TRỰC TIẾP</span>
               </div>
 
               {/* Right: Volume & Quality */}
@@ -663,7 +663,7 @@ export default function LiveVideoPlayer({ movieSlug, premiereStartTime, movieNam
                     step="0.1"
                     value={volume}
                     onChange={(e) => handleVolumeChange(parseFloat(e.target.value))}
-                    className="w-20 accent-red-600"
+                    className="w-20 accent-amber-primary"
                   />
                 </div>
 
@@ -672,7 +672,7 @@ export default function LiveVideoPlayer({ movieSlug, premiereStartTime, movieNam
                   <select
                     value={currentQuality}
                     onChange={(e) => changeQuality(parseInt(e.target.value))}
-                    className="bg-white/10 backdrop-blur-sm text-white text-xs rounded-lg px-2 py-1.5 border border-white/20 focus:outline-none focus:ring-2 focus:ring-red-500"
+                    className="bg-white/10 backdrop-blur-sm text-white text-xs rounded-lg px-2 py-1.5 border border-white/20 focus:outline-none focus:ring-2 focus:ring-amber-primary"
                   >
                     <option value={-1}>Tự động</option>
                     {hlsRef.current.levels.map((level, index) => (

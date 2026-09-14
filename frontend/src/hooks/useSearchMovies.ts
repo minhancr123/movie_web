@@ -1,32 +1,24 @@
 import useSWR from 'swr';
-import { searchMovies } from '@/lib/api';
+import { searchCatalog, type CatalogItem } from '@/lib/catalog';
 
-// SWR fetcher wrapper
-const fetcher = async ([keyword, limit]: [string, number]) => {
-  const result = await searchMovies(keyword, limit);
-  // api.ts searchMovies returns res.data.
-  // Assuming the structure is { status: 'success', data: { items: [...] } } or similar.
-  return result;
-};
+const fetcher = async ([keyword]: [string, number]) => searchCatalog(keyword, 1);
 
+/**
+ * Type-ahead search against the TMDB catalog.
+ * Returns CatalogItem[] — callers should link with catalogHref(), not a slug.
+ */
 export function useSearchMovies(keyword: string, limit = 5) {
-  // Use array key to pass arguments to fetcher
-  // If keyword is empty or too short, pass null to disable auto-fetching
   const shouldFetch = keyword && keyword.length >= 2;
-  
-  const { data, error, isLoading } = useSWR(
-    shouldFetch ? [keyword, limit] : null,
-    fetcher,
-    {
-      revalidateOnFocus: false, // Don't revalidate when window gets focus (for search results)
-      dedupingInterval: 60000, // Dedup requests for 1 min
-      keepPreviousData: true, // Keep showing previous results while typing (optional, but good for pagination/filtering)
-    }
-  );
+
+  const { data, error, isLoading } = useSWR(shouldFetch ? [keyword, limit] : null, fetcher, {
+    revalidateOnFocus: false,
+    dedupingInterval: 60000,
+    keepPreviousData: true,
+  });
 
   return {
-    movies: data?.data?.items || [],
+    movies: (data?.items || []).slice(0, limit) as CatalogItem[],
     isLoading,
-    isError: error
+    isError: error,
   };
 }

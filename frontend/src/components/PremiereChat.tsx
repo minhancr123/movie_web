@@ -78,10 +78,10 @@ export default function PremiereChat({ premiereId, initialMessages }: PremiereCh
     };
 
     return (
-        <div className="flex flex-col h-full bg-[#111] border-l border-white/10">
-            <div className="p-4 border-b border-white/10 bg-[#0a0a0a]">
+        <div className="flex flex-col h-full bg-surface-light border-l border-white/10">
+            <div className="p-4 border-b border-white/10 bg-surface-dark">
                 <h3 className="font-bold text-white flex items-center gap-2">
-                    <span className="w-2 h-2 rounded-full bg-red-500 animate-pulse"></span>
+                    <span className="w-2 h-2 rounded-full bg-amber-primary animate-pulse"></span>
                     Trò chuyện trực tiếp
                 </h3>
             </div>
@@ -92,13 +92,13 @@ export default function PremiereChat({ premiereId, initialMessages }: PremiereCh
             >
                 {messages.map((msg, idx) => (
                     <div key={idx} className="flex gap-3">
-                        <div className="w-8 h-8 rounded-full bg-gray-700 flex items-center justify-center shrink-0">
-                            <User size={14} className="text-gray-400" />
+                        <div className="w-8 h-8 rounded-full bg-surface-container-high flex items-center justify-center shrink-0">
+                            <User size={14} className="text-cinema-subtle" />
                         </div>
                         <div>
                             <div className="flex items-baseline gap-2">
-                                <span className="text-sm font-bold text-gray-300">{msg.username}</span>
-                                <span className="text-[10px] text-gray-600">{new Date(msg.timestamp).toLocaleTimeString()}</span>
+                                <span className="text-sm font-bold text-cinema-muted">{msg.username}</span>
+                                <span className="text-[10px] text-cinema-subtle">{new Date(msg.timestamp).toLocaleTimeString()}</span>
                             </div>
                             <p className="text-sm text-white break-words">{msg.message}</p>
                         </div>
@@ -106,19 +106,19 @@ export default function PremiereChat({ premiereId, initialMessages }: PremiereCh
                 ))}
             </div>
 
-            <form onSubmit={handleSend} className="p-4 border-t border-white/10 bg-[#0a0a0a]">
+            <form onSubmit={handleSend} className="p-4 border-t border-white/10 bg-surface-dark">
                 <div className="relative">
                     <input
                         type="text"
                         value={input}
                         onChange={(e) => setInput(e.target.value)}
                         placeholder="Nhập tin nhắn..."
-                        className="w-full bg-gray-800 text-white rounded-full px-4 py-2.5 pr-10 border border-gray-700 focus:border-red-500 focus:outline-none text-sm"
+                        className="w-full bg-surface-container text-white rounded-full px-4 py-2.5 pr-10 border border-white/10 focus:border-amber-primary focus:outline-none text-sm"
                     />
                     <button
                         type="submit"
                         disabled={!input.trim()}
-                        className="absolute right-1.5 top-1.5 p-1.5 bg-red-600 rounded-full text-white hover:bg-red-700 disabled:opacity-50 disabled:hover:bg-red-600 transition-colors"
+                        className="absolute right-1.5 top-1.5 p-1.5 bg-amber-primary rounded-full text-white hover:bg-amber-600 disabled:opacity-50 disabled:hover:bg-amber-primary transition-colors"
                     >
                         <Send size={14} />
                     </button>

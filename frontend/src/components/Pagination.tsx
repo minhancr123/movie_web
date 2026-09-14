@@ -61,8 +61,8 @@ const Pagination = ({ currentPage, totalPages, path = '/' }: PaginationProps) =>
         className={`
             w-10 h-10 rounded-lg flex items-center justify-center transition-all duration-300
             ${currentPage > 1 
-                ? 'bg-[#1a1a1a] hover:bg-red-600 text-gray-400 hover:text-white border border-gray-800 hover:border-red-600' 
-                : 'bg-transparent text-gray-700 cursor-not-allowed'}
+                ? 'bg-surface-light hover:bg-amber-primary text-cinema-subtle hover:text-white border border-white/10 hover:border-amber-primary' 
+                : 'bg-transparent text-surface-bright cursor-not-allowed'}
         `}
         aria-disabled={currentPage <= 1}
       >
@@ -70,11 +70,11 @@ const Pagination = ({ currentPage, totalPages, path = '/' }: PaginationProps) =>
       </Link>
 
       {/* Page Numbers */}
-      <div className="flex items-center gap-2 bg-[#111] p-1.5 rounded-xl border border-gray-800/50 hidden md:flex">
+      <div className="flex items-center gap-2 bg-surface-light p-1.5 rounded-xl border border-white/10/50 hidden md:flex">
         {pages.map((page, index) => {
             if (page === '...') {
                 return (
-                    <span key={`dots-${index}`} className="w-10 h-10 flex items-center justify-center text-gray-600 font-bold">
+                    <span key={`dots-${index}`} className="w-10 h-10 flex items-center justify-center text-cinema-subtle font-bold">
                         ...
                     </span>
                 );
@@ -88,8 +88,8 @@ const Pagination = ({ currentPage, totalPages, path = '/' }: PaginationProps) =>
                     className={`
                         w-10 h-10 rounded-lg flex items-center justify-center font-bold text-sm transition-all duration-300
                         ${isCurrent 
-                            ? 'bg-red-600 text-white shadow-lg shadow-red-900/20 scale-105 pointer-events-none' 
-                            : 'text-gray-400 hover:bg-gray-800 hover:text-white'}
+                            ? 'bg-amber-primary text-black shadow-lg shadow-amber-primary/20 scale-105 pointer-events-none' 
+                            : 'text-cinema-subtle hover:bg-surface-container hover:text-white'}
                     `}
                 >
                     {page}
@@ -99,7 +99,7 @@ const Pagination = ({ currentPage, totalPages, path = '/' }: PaginationProps) =>
       </div>
 
        {/* Simple Page Numbers for Mobile */}
-       <div className="flex md:hidden items-center px-4 font-mono text-sm text-gray-300">
+       <div className="flex md:hidden items-center px-4 font-mono text-sm text-cinema-muted">
            <span className="text-white font-bold text-base">{currentPage}</span>
            <span className="mx-2">/</span>
            <span>{totalPages}</span>
@@ -111,8 +111,8 @@ const Pagination = ({ currentPage, totalPages, path = '/' }: PaginationProps) =>
         className={`
             w-10 h-10 rounded-lg flex items-center justify-center transition-all duration-300
             ${currentPage < totalPages 
-                ? 'bg-[#1a1a1a] hover:bg-red-600 text-gray-400 hover:text-white border border-gray-800 hover:border-red-600' 
-                : 'bg-transparent text-gray-700 cursor-not-allowed'}
+                ? 'bg-surface-light hover:bg-amber-primary text-cinema-subtle hover:text-white border border-white/10 hover:border-amber-primary' 
+                : 'bg-transparent text-surface-bright cursor-not-allowed'}
         `}
         aria-disabled={currentPage >= totalPages}
       >

@@ -5,8 +5,12 @@ import { Play, Info, ChevronLeft, ChevronRight } from 'lucide-react';
 import { Movie } from '@/lib/api';
 import { useState, useEffect } from 'react';
 
+// `href` lets the caller supply the canonical URL. The TMDB catalog uses
+// /phim/{type}/{tmdbId}/{slug}, which cannot be derived from a slug alone.
+export type HeroMovie = Movie & { href?: string };
+
 interface HeroSectionProps {
-  movies: Movie[];
+  movies: HeroMovie[];
 }
 
 const HeroSection = ({ movies }: HeroSectionProps) => {
@@ -68,7 +72,7 @@ const HeroSection = ({ movies }: HeroSectionProps) => {
 
   return (
     <div
-      className="relative w-full h-[55vh] md:h-[75vh] rounded-2xl overflow-hidden mb-8 group shadow-2xl border border-gray-800/50 bg-[#0a0a0a]"
+      className="spatial-stage relative w-full h-[60vh] md:h-[80vh] rounded-3xl overflow-hidden mb-12 group shadow-glass-card border border-white/10 bg-surface"
       onMouseMove={handleMouseMove}
       onMouseLeave={() => setMousePos({ x: 0, y: 0 })}
     >
@@ -108,10 +112,9 @@ const HeroSection = ({ movies }: HeroSectionProps) => {
                 sizes="100vw"
               />
 
-              {/* Complex Gradient Overlay */}
-              <div className="absolute inset-0 bg-gradient-to-t from-[#0e0e0e] via-black/40 to-transparent" />
-              <div className="absolute inset-0 bg-gradient-to-r from-[#0e0e0e] via-[#0e0e0e]/70 to-transparent" />
-              <div className="absolute inset-0 bg-black/10" />
+              {/* Cinematic Vignette Overlay */}
+              <div className="absolute inset-0 hero-vignette" />
+              <div className="absolute inset-0 bg-black/20 mix-blend-overlay" />
             </div>
 
             {/* Content with 3D-ish entry */}
@@ -123,19 +126,19 @@ const HeroSection = ({ movies }: HeroSectionProps) => {
                   transform: isActive ? `translate(${mousePos.x * -10}px, ${mousePos.y * -10}px)` : undefined
                 }}
               >
-                <span className="px-3 py-1 bg-red-600 text-white text-xs font-bold rounded uppercase tracking-wider shadow-lg shadow-red-600/20 animate-pulse">
+                <span className="px-4 py-1.5 bg-amber-primary/20 text-amber-gold font-mono text-label-md rounded-full uppercase border border-amber-primary/40 shadow-amber-glow animate-pulse-slow">
                   Phim Mới
                 </span>
-                <span className="px-3 py-1 bg-white/10 backdrop-blur text-white text-xs font-bold rounded border border-white/20">
+                <span className="px-4 py-1.5 glass-panel text-cinema-text font-mono text-label-md rounded-full">
                   {movie.year}
                 </span>
-                <span className="px-3 py-1 bg-yellow-500/20 text-yellow-400 text-xs font-bold rounded border border-yellow-500/20">
-                  VIP
+                <span className="px-4 py-1.5 bg-cyan-accent/10 text-cyan-accent font-mono text-label-md rounded-full border border-cyan-accent/30 uppercase">
+                  4K HDR
                 </span>
               </div>
 
               <h2
-                className={`text-3xl md:text-6xl lg:text-7xl font-extrabold text-white mb-2 md:mb-4 leading-snug drop-shadow-xl tracking-tight line-clamp-2 pb-1 transition-all duration-700 delay-200 ${isActive ? 'translate-y-0 opacity-100 blur-0' : 'translate-y-10 opacity-0 blur-sm'
+                className={`font-syne text-display-hero-mobile md:text-display-hero lg:text-7xl text-white mb-2 md:mb-4 drop-shadow-xl line-clamp-2 pb-1 transition-all duration-700 delay-200 ${isActive ? 'translate-y-0 opacity-100 blur-0' : 'translate-y-10 opacity-0 blur-sm'
                   }`}
                 style={{
                   transform: isActive ? `translate(${mousePos.x * -5}px, ${mousePos.y * -5}px)` : undefined
@@ -145,27 +148,27 @@ const HeroSection = ({ movies }: HeroSectionProps) => {
               </h2>
 
               <h3
-                className={`text-lg md:text-2xl text-gray-300 mb-4 md:mb-6 font-medium italic drop-shadow-md line-clamp-1 transition-all duration-700 delay-300 ${isActive ? 'translate-y-0 opacity-100 blur-0' : 'translate-y-10 opacity-0 blur-sm'
+                className={`text-body-lg md:text-headline-md text-cinema-muted mb-4 md:mb-6 font-medium drop-shadow-md line-clamp-1 transition-all duration-700 delay-300 ${isActive ? 'translate-y-0 opacity-100 blur-0' : 'translate-y-10 opacity-0 blur-sm'
                   }`}
               >
                 {movie.origin_name}
               </h3>
 
-              <div className={`flex flex-wrap gap-2 md:gap-3 lg:gap-4 mt-2 transition-all duration-700 delay-400 ${isActive ? 'translate-y-0 opacity-100' : 'translate-y-10 opacity-0'}`}>
+              <div className={`flex flex-wrap gap-3 md:gap-4 lg:gap-5 mt-4 transition-all duration-700 delay-400 ${isActive ? 'translate-y-0 opacity-100' : 'translate-y-10 opacity-0'}`}>
                 <Link
-                  href={`/phim/${movie.slug}`}
-                  className="group/btn flex items-center gap-1.5 md:gap-2 lg:gap-2.5 bg-red-600 hover:bg-red-700 text-white px-3 py-1.5 md:px-5 md:py-2.5 lg:px-7 lg:py-3 rounded-full font-bold transition-all transform hover:-translate-y-1 shadow-lg shadow-red-600/30 text-[11px] md:text-sm lg:text-base tracking-wide"
+                  href={movie.href ?? `/phim/${movie.slug}`}
+                  className="group/btn flex items-center gap-2 md:gap-3 bg-amber-primary text-black px-5 py-2.5 md:px-6 md:py-3 lg:px-8 lg:py-3.5 rounded-full font-mono text-label-md md:text-label-lg uppercase transition-all transform hover:-translate-y-1 shadow-amber-button hover:shadow-glow-lg"
                 >
-                  <div className="bg-white rounded-full p-1 group-hover/btn:scale-110 transition-transform">
-                    <Play fill="red" className="text-red-600 w-3 h-3 md:w-3 md:h-3" />
+                  <div className="bg-black rounded-full p-1.5 group-hover/btn:scale-110 transition-transform">
+                    <Play fill="currentColor" className="text-amber-gold w-4 h-4 md:w-5 md:h-5" />
                   </div>
                   XEM NGAY
                 </Link>
                 <Link
-                  href={`/phim/${movie.slug}`}
-                  className="flex items-center gap-1.5 md:gap-2 lg:gap-2.5 bg-white/10 hover:bg-white/20 text-white px-3 py-1.5 md:px-5 md:py-2.5 lg:px-7 lg:py-3 rounded-full font-bold backdrop-blur-md border border-white/10 transition-all hover:border-white/30 text-[11px] md:text-sm lg:text-base tracking-wide"
+                  href={movie.href ?? `/phim/${movie.slug}`}
+                  className="flex items-center gap-2 md:gap-3 glass-panel text-cinema-text px-5 py-2.5 md:px-6 md:py-3 lg:px-8 lg:py-3.5 rounded-full font-mono text-label-md md:text-label-lg uppercase hover:-translate-y-1 hover:border-amber-primary/50 transition-all"
                 >
-                  <Info size={12} className="md:w-4 md:h-4 lg:w-5 lg:h-5" />
+                  <Info className="w-5 h-5 md:w-6 md:h-6" />
                   CHI TIẾT
                 </Link>
               </div>
@@ -175,9 +178,9 @@ const HeroSection = ({ movies }: HeroSectionProps) => {
       })}
 
       {/* Progress Bar */}
-      <div className="absolute bottom-0 left-0 w-full h-1 bg-white/10 z-50">
+      <div className="absolute bottom-0 left-0 w-full h-1.5 bg-white/5 z-50">
         <div
-          className="h-full bg-red-600 shadow-[0_0_10px_rgba(220,38,38,0.8)] transition-all duration-100 ease-linear"
+          className="h-full bg-amber-primary shadow-[0_0_15px_rgba(245,158,11,0.8)] transition-all duration-100 ease-linear"
           style={{ width: `${progress}%` }}
         />
       </div>
@@ -185,14 +188,14 @@ const HeroSection = ({ movies }: HeroSectionProps) => {
       {/* Navigation Buttons (Hidden on mobile, visible on group hover) */}
       <button
         onClick={handlePrev}
-        className="absolute left-2 md:left-4 top-1/2 -translate-y-1/2 z-30 p-2 md:p-3 bg-black/30 hover:bg-red-600/80 text-white rounded-full backdrop-blur-sm opacity-100 md:opacity-0 md:group-hover:opacity-100 transition-all duration-300 block border border-white/10 hover:border-red-500 hover:shadow-lg hover:shadow-red-500/20"
+        className="absolute left-2 md:left-4 top-1/2 -translate-y-1/2 z-30 p-2 md:p-3 bg-black/40 hover:bg-amber-primary text-cinema-text hover:text-black rounded-full backdrop-blur-xl opacity-100 md:opacity-0 md:group-hover:opacity-100 transition-all duration-300 block border border-white/10 hover:border-amber-primary hover:shadow-amber-glow"
       >
         <ChevronLeft size={24} />
       </button>
 
       <button
         onClick={handleNext}
-        className="absolute right-2 md:right-4 top-1/2 -translate-y-1/2 z-30 p-2 md:p-3 bg-black/30 hover:bg-red-600/80 text-white rounded-full backdrop-blur-sm opacity-100 md:opacity-0 md:group-hover:opacity-100 transition-all duration-300 block border border-white/10 hover:border-red-500 hover:shadow-lg hover:shadow-red-500/20"
+        className="absolute right-2 md:right-4 top-1/2 -translate-y-1/2 z-30 p-2 md:p-3 bg-black/40 hover:bg-amber-primary text-cinema-text hover:text-black rounded-full backdrop-blur-xl opacity-100 md:opacity-0 md:group-hover:opacity-100 transition-all duration-300 block border border-white/10 hover:border-amber-primary hover:shadow-amber-glow"
       >
         <ChevronRight size={24} />
       </button>
@@ -211,9 +214,9 @@ const HeroSection = ({ movies }: HeroSectionProps) => {
                 setCurrentIndex(idx);
                 setProgress(0);
               }}
-              className={`relative overflow-hidden rounded-lg transition-all duration-300 border-2 group/thumb ${isActive
-                ? 'w-28 h-16 border-red-600 shadow-lg shadow-red-600/50 scale-110 z-10'
-                : 'w-16 h-10 border-white/30 grayscale hover:grayscale-0 hover:border-white opacity-70 hover:opacity-100'
+              className={`relative overflow-hidden rounded-2xl transition-all duration-500 border group/thumb ${isActive
+                ? 'w-32 h-20 border-amber-primary shadow-amber-glow scale-110 z-10'
+                : 'w-20 h-12 border-white/10 hover:border-amber-primary/50 opacity-50 hover:opacity-100'
                 }`}
             >
               <Image
@@ -225,7 +228,7 @@ const HeroSection = ({ movies }: HeroSectionProps) => {
               />
               {/* Progress overlay on thumbnail */}
               {isActive && (
-                <div className="absolute inset-0 bg-red-600/20" />
+                <div className="absolute inset-0 bg-amber-primary/20" />
               )}
             </button>
           );
@@ -241,7 +244,7 @@ const HeroSection = ({ movies }: HeroSectionProps) => {
               setCurrentIndex(idx);
               setProgress(0);
             }}
-            className={`h-1.5 rounded-full transition-all duration-300 ${idx === currentIndex ? 'bg-red-600 w-6 shadow shadow-red-600' : 'bg-gray-500/50 w-2'
+            className={`h-1.5 rounded-full transition-all duration-300 ${idx === currentIndex ? 'bg-amber-primary w-6 shadow-amber-glow' : 'bg-white/30 w-2'
               }`}
           />
         ))}

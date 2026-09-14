@@ -32,7 +32,7 @@ export default function UserMenu() {
 
   if (status === 'loading') {
     return (
-      <div className="w-8 h-8 rounded-full bg-gray-700 animate-pulse" />
+      <div className="w-8 h-8 rounded-full bg-surface-container-high animate-pulse" />
     );
   }
 
@@ -40,10 +40,10 @@ export default function UserMenu() {
     return (
       <Link
         href="/auth/login"
-        className="flex items-center gap-2 px-4 py-2 bg-red-600 hover:bg-red-700 rounded-full font-semibold transition-all transform hover:scale-105"
+        className="flex items-center gap-2 px-4 py-2 bg-amber-primary hover:bg-amber-600 rounded-full font-semibold transition-all transform hover:scale-105"
       >
         <User size={18} />
-        <span className="hidden md:inline">Đăng nhập</span>
+        <span className="hidden xl:inline">Đăng nhập</span>
       </Link>
     );
   }
@@ -55,7 +55,7 @@ export default function UserMenu() {
         onClick={() => setIsOpen(!isOpen)}
         className="flex items-center gap-2 hover:opacity-80 transition-opacity"
       >
-        <div className="relative w-10 h-10 rounded-full border-2 border-red-600 overflow-hidden bg-gray-800 flex items-center justify-center shrink-0">
+        <div className="relative w-10 h-10 rounded-full border-2 border-amber-primary overflow-hidden bg-surface-container flex items-center justify-center shrink-0">
           {!imageError && session.user.image ? (
             <Image
               src={session.user.image}
@@ -70,18 +70,18 @@ export default function UserMenu() {
             </span>
           )}
         </div>
-        <span className="hidden md:inline font-medium truncate max-w-[150px] text-left">
+        <span className="hidden xl:inline font-medium truncate max-w-[120px] text-left">
           {session.user.name}
         </span>
       </button>
 
       {/* Dropdown Menu */}
       {isOpen && (
-        <div className="absolute right-0 mt-2 w-56 bg-gray-900 border border-gray-700 rounded-lg shadow-2xl overflow-hidden z-50">
+        <div className="absolute right-0 mt-2 w-56 bg-surface-light border border-white/10 rounded-lg shadow-2xl overflow-hidden z-50">
           {/* User Info */}
-          <div className="px-4 py-3 border-b border-gray-700">
+          <div className="px-4 py-3 border-b border-white/10">
             <p className="font-semibold text-white">{session.user.name}</p>
-            <p className="text-sm text-gray-400">{session.user.email}</p>
+            <p className="text-sm text-cinema-subtle">{session.user.email}</p>
           </div>
 
           {/* Menu Items */}
@@ -89,16 +89,16 @@ export default function UserMenu() {
             <Link
               href="/favorites"
               onClick={() => setIsOpen(false)}
-              className="flex items-center gap-3 px-4 py-2 hover:bg-gray-800 transition-colors"
+              className="flex items-center gap-3 px-4 py-2 hover:bg-surface-container transition-colors"
             >
-              <Heart size={18} className="text-red-500" />
+              <Heart size={18} className="text-amber-gold" />
               <span>Phim yêu thích</span>
             </Link>
 
             <Link
               href="/history"
               onClick={() => setIsOpen(false)}
-              className="flex items-center gap-3 px-4 py-2 hover:bg-gray-800 transition-colors"
+              className="flex items-center gap-3 px-4 py-2 hover:bg-surface-container transition-colors"
             >
               <History size={18} className="text-blue-500" />
               <span>Lịch sử xem</span>
@@ -107,18 +107,18 @@ export default function UserMenu() {
             <Link
               href="/profile"
               onClick={() => setIsOpen(false)}
-              className="flex items-center gap-3 px-4 py-2 hover:bg-gray-800 transition-colors"
+              className="flex items-center gap-3 px-4 py-2 hover:bg-surface-container transition-colors"
             >
-              <Settings size={18} className="text-gray-400" />
+              <Settings size={18} className="text-cinema-subtle" />
               <span>Cài đặt</span>
             </Link>
           </div>
 
           {/* Logout */}
-          <div className="border-t border-gray-700">
+          <div className="border-t border-white/10">
             <button
               onClick={handleLogout}
-              className="w-full flex items-center gap-3 px-4 py-3 hover:bg-red-600 transition-colors text-left"
+              className="w-full flex items-center gap-3 px-4 py-3 hover:bg-amber-primary transition-colors text-left"
             >
               <LogOut size={18} />
               <span>Đăng xuất</span>

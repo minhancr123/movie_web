@@ -86,5 +86,15 @@ export const useWatchHistory = () => {
     setHistory((prevHistory) => prevHistory.filter(h => h.slug !== slug));
   }, [setHistory]);
 
-  return { history, addToHistory, removeFromHistory };
+  /** One-time repair: fill poster_url for rows saved before artwork was recorded. */
+  const patchHistoryPosters = useCallback((patches: Record<string, string>) => {
+    if (Object.keys(patches).length === 0) return;
+    setHistory((prevHistory) =>
+      prevHistory.map((h) =>
+        !h.poster_url && patches[h.slug] ? { ...h, poster_url: patches[h.slug] } : h
+      )
+    );
+  }, [setHistory]);
+
+  return { history, addToHistory, removeFromHistory, patchHistoryPosters };
 };

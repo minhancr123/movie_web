@@ -3,13 +3,13 @@
 import Link from 'next/link';
 import Image from 'next/image';
 import { Search, Menu, X, ChevronDown, Loader2, PlayCircle, Bell, User, Mic } from 'lucide-react';
-import { useState, useEffect, useRef } from 'react';
+import { useState, useEffect, useMemo, useRef } from 'react';
 import { useRouter, usePathname } from 'next/navigation';
 import { useSearchMovies } from '@/hooks/useSearchMovies';
 import { useDebounce } from '@/hooks/useDebounce';
-import { IMAGE_PREFIX } from '@/lib/api';
 import UserMenu from '@/components/UserMenu';
 import NotificationMenu from '@/components/NotificationMenu';
+import { catalogHref } from '@/lib/catalog';
 
 declare global {
     interface Window {
@@ -19,25 +19,25 @@ declare global {
 }
 
 
+// TMDB genre ids. The old phimapi slugs no longer identify anything.
 const GENRES = [
-    // ...existing code...
-    { name: 'Hành Động', slug: 'hanh-dong' },
-    { name: 'Tình Cảm', slug: 'tinh-cam' },
-    { name: 'Hài Hước', slug: 'hai-huoc' },
-    { name: 'Cổ Trang', slug: 'co-trang' },
-    { name: 'Tâm Lý', slug: 'tam-ly' },
-    { name: 'Hình Sự', slug: 'hinh-su' },
-    { name: 'Chiến Tranh', slug: 'chien-tranh' },
-    { name: 'Thể Thao', slug: 'the-thao' },
-    { name: 'Võ Thuật', slug: 'vo-thuat' },
-    { name: 'Viễn Tưởng', slug: 'vien-tuong' },
-    { name: 'Phiêu Lưu', slug: 'phieu-luu' },
-    { name: 'Khoa Học', slug: 'khoa-hoc' },
-    { name: 'Kinh Dị', slug: 'kinh-di' },
-    { name: 'Âm Nhạc', slug: 'am-nhac' },
-    { name: 'Thần Thoại', slug: 'than-thoai' },
-    { name: 'Tài Liệu', slug: 'tai-lieu' },
-    { name: 'Gia Đình', slug: 'gia-dinh' },
+    { name: 'Hành Động', id: 28 },
+    { name: 'Phiêu Lưu', id: 12 },
+    { name: 'Hoạt Hình', id: 16 },
+    { name: 'Hài Hước', id: 35 },
+    { name: 'Hình Sự', id: 80 },
+    { name: 'Tài Liệu', id: 99 },
+    { name: 'Chính Kịch', id: 18 },
+    { name: 'Gia Đình', id: 10751 },
+    { name: 'Giả Tưởng', id: 14 },
+    { name: 'Lịch Sử', id: 36 },
+    { name: 'Kinh Dị', id: 27 },
+    { name: 'Âm Nhạc', id: 10402 },
+    { name: 'Bí Ẩn', id: 9648 },
+    { name: 'Tình Cảm', id: 10749 },
+    { name: 'Khoa Học Viễn Tưởng', id: 878 },
+    { name: 'Gay Cấn', id: 53 },
+    { name: 'Chiến Tranh', id: 10752 },
 ];
 
 const Header = () => {
@@ -82,6 +82,30 @@ const Header = () => {
         setIsSearchOpen(false);
     }, [pathname]);
 
+    // Active-link detection that understands query strings (pathname alone
+    // can never equal '/kham-pha?type=movie'). Read from window.location on
+    // navigation instead of useSearchParams to avoid a Suspense boundary.
+    const [queryString, setQueryString] = useState('');
+    useEffect(() => {
+        setQueryString(window.location.search);
+    }, [pathname]);
+    const query = useMemo(() => new URLSearchParams(queryString), [queryString]);
+
+    const isLinkActive = (path: string) => {
+        if (path === '/') return pathname === '/';
+        if (path.startsWith('/kham-pha')) {
+            if (pathname !== '/kham-pha') return false;
+            const q = new URLSearchParams(path.split('?')[1] || '');
+            const type = query.get('type');
+            const genre = query.get('genre');
+            if (q.get('genre')) return type === q.get('type') && genre === q.get('genre');
+            if (q.get('type')) return type === q.get('type') && !genre;
+            return false;
+        }
+        return pathname === path || pathname.startsWith(path + '/');
+    };
+    const isGenreActive = () => pathname === '/kham-pha' && !!query.get('genre');
+
     const handleSearchSubmit = (e: React.FormEvent) => {
         e.preventDefault();
         if (searchQuery.trim()) {
@@ -125,41 +149,47 @@ const Header = () => {
         <>
             <header
                 className={`fixed w-full z-50 transition-all duration-500 ease-out ${isScrolled
-                    ? 'bg-black/80 backdrop-blur-xl border-b border-white/5 py-3 shadow-2xl'
-                    : 'bg-gradient-to-b from-black/90 via-black/50 to-transparent py-6'
+                    ? 'bg-[#121316]/80 backdrop-blur-2xl border-b border-white/10 py-3 shadow-[0_4px_30px_rgba(0,0,0,0.5)]'
+                    : 'bg-gradient-to-b from-[#0d0e11] via-[#0d0e11]/50 to-transparent py-6'
                     }`}
             >
-                <div className="container mx-auto px-4 md:px-8 flex justify-between items-center">
+                <div className="mx-auto w-full max-w-shell px-4 md:px-8 flex justify-between items-center gap-3">
                     {/* Logo */}
-                    <Link href="/" className="relative z-50 group flex items-center gap-2">
-                        <div className="w-10 h-10 rounded-xl bg-gradient-to-br from-red-600 to-rose-900 flex items-center justify-center shadow-lg shadow-red-900/20 group-hover:scale-110 transition-transform duration-300">
-                            <PlayCircle className="text-white fill-white/20" size={24} />
+                    <Link href="/" className="relative z-50 group flex items-center gap-3">
+                        <div className="w-10 h-10 rounded-xl bg-gradient-to-br from-amber-gold via-amber-primary to-amber-700 flex items-center justify-center shadow-amber-glow group-hover:scale-105 transition-all duration-300">
+                            <PlayCircle className="text-black" size={20} strokeWidth={2.5} />
                         </div>
-                        <span className="text-2xl md:text-3xl font-black bg-clip-text text-transparent bg-gradient-to-r from-white to-gray-400 tracking-tighter group-hover:to-white transition-all">
-                            MOVIE<span className="text-red-500">WEB</span>
-                        </span>
+                        <div className="flex flex-col">
+                            <span className="font-syne text-2xl md:text-3xl font-black tracking-tight text-white group-hover:text-amber-gold transition-colors">
+                                CineStream
+                            </span>
+                            <span className="hidden xl:block font-mono text-[9px] text-amber-gold tracking-[0.25em] -mt-1 uppercase font-bold">
+                                Spatial Cinema 4K
+                            </span>
+                        </div>
                     </Link>
 
                     {/* Desktop Nav */}
                     <nav
-                        className={`hidden lg:flex items-center gap-1 bg-white/5 p-1.5 rounded-full border border-white/5 backdrop-blur-md transition-all duration-500 ease-in-out transform origin-right ${isSearchOpen
+                        className={`hidden xl:flex shrink-0 items-center gap-0.5 glass-panel p-1.5 rounded-full shadow-glass-card transition-all duration-500 ease-in-out transform origin-right ${isSearchOpen
                             ? 'opacity-0 scale-90 translate-x-4 pointer-events-none blur-sm'
                             : 'opacity-100 scale-100 translate-x-0 blur-0'
                             }`}
                     >
                         {[
                             { name: 'Trang Chủ', path: '/' },
-                            { name: 'Phim Lẻ', path: '/danh-sach/phim-le' },
-                            { name: 'Phim Bộ', path: '/danh-sach/phim-bo' },
-                            { name: 'Hoạt Hình', path: '/danh-sach/hoat-hinh' },
+                            { name: 'Phim Lẻ', path: '/kham-pha?type=movie' },
+                            { name: 'Phim Bộ', path: '/kham-pha?type=tv' },
+                            { name: 'Hoạt Hình', path: '/kham-pha?type=movie&genre=16' },
                             { name: 'Công Chiếu', path: '/cong-chieu' },
+                            { name: 'Tải Xuống', path: '/tai-xuong' },
                         ].map((link) => (
                             <Link
                                 key={link.path}
                                 href={link.path}
-                                className={`relative px-5 py-2 rounded-full text-sm font-bold uppercase tracking-wide transition-all duration-300 ${pathname === link.path
-                                    ? 'bg-red-600 text-white shadow-lg shadow-red-900/20'
-                                    : 'text-gray-400 hover:text-white hover:bg-white/5'
+                                className={`relative whitespace-nowrap shrink-0 px-3.5 py-2 rounded-full font-mono text-label-md uppercase transition-all duration-300 ${isLinkActive(link.path)
+                                    ? 'bg-amber-primary text-black shadow-amber-button'
+                                    : 'text-cinema-subtle hover:text-cinema-text hover:bg-white/10'
                                     }`}
                             >
                                 {link.name}
@@ -168,19 +198,19 @@ const Header = () => {
 
                         <div className="relative group px-2">
                             <button
-                                className={`flex items-center gap-1.5 px-3 py-2 text-sm font-bold uppercase tracking-wide hover:text-white transition-colors ${pathname.startsWith('/the-loai') ? 'text-red-500' : 'text-gray-400'}`}
+                                className={`flex whitespace-nowrap shrink-0 items-center gap-1.5 px-2.5 py-2 font-mono text-label-md uppercase hover:text-cinema-text transition-colors ${isGenreActive() ? 'text-amber-gold' : 'text-cinema-subtle'}`}
                             >
                                 Thể Loại <ChevronDown size={14} className="group-hover:rotate-180 transition-transform duration-300" />
                             </button>
 
                             {/* Mega Menu Dropdown */}
-                            <div className="absolute top-full right-0 mt-6 w-[600px] bg-[#0a0a0a]/95 backdrop-blur-2xl border border-white/10 rounded-2xl shadow-2xl p-6 opacity-0 invisible group-hover:opacity-100 group-hover:visible transition-all duration-300 transform origin-top translate-y-4 group-hover:translate-y-0 grid grid-cols-4 gap-3 z-50">
-                                <div className="absolute -top-2 right-10 w-4 h-4 bg-[#0a0a0a]/95 border-t border-l border-white/10 rotate-45"></div>
+                            <div className="absolute top-full right-0 mt-6 w-[600px] glass-panel rounded-3xl shadow-amber-glow p-6 opacity-0 invisible group-hover:opacity-100 group-hover:visible transition-all duration-300 transform origin-top translate-y-4 group-hover:translate-y-0 grid grid-cols-4 gap-3 z-50">
+                                <div className="absolute -top-2 right-10 w-4 h-4 glass-panel border-b-0 border-r-0 rotate-45"></div>
                                 {GENRES.map((genre) => (
                                     <Link
-                                        key={genre.slug}
-                                        href={`/the-loai/${genre.slug}`}
-                                        className="text-gray-400 hover:text-white hover:bg-white/10 px-3 py-2.5 rounded-xl text-sm transition-all text-center block font-medium"
+                                        key={genre.id}
+                                        href={`/kham-pha?genre=${genre.id}`}
+                                        className="text-cinema-subtle hover:text-amber-gold hover:bg-amber-primary/10 px-3 py-2.5 rounded-xl text-body-sm transition-all text-center block font-medium border border-transparent hover:border-amber-primary/30"
                                     >
                                         {genre.name}
                                     </Link>
@@ -190,16 +220,16 @@ const Header = () => {
                     </nav>
 
                     {/* Right Actions */}
-                    <div className="flex items-center gap-3">
-                        {/* Search Bar - Desktop */}
-                        <div className="relative hidden md:block" ref={searchContainerRef}>
-                            <div className={`flex items-center bg-black/40 border border-white/10 rounded-full transition-all duration-300 ${isSearchOpen ? 'w-72 bg-black/80 border-red-500/50 shadow-lg shadow-red-900/10' : 'w-10 h-10 justify-center hover:bg-white/10 cursor-pointer overflow-hidden'}`}>
+                    <div className="flex shrink-0 items-center gap-2 md:gap-3">
+                        {/* Search Bar - Desktop (xl+: inline pill; below xl: full-width overlay to avoid crowding) */}
+                        <div className="relative hidden xl:block" ref={searchContainerRef}>
+                            <div className={`flex items-center transition-all duration-300 ${isSearchOpen ? 'w-72 glass-panel !border-amber-primary/60 shadow-amber-glow rounded-full' : 'w-10 h-10 justify-center glass-panel rounded-full cursor-pointer overflow-hidden hover:border-amber-primary/40'}`}>
                                 <button
                                     onClick={() => {
                                         setIsSearchOpen(true);
                                         // Focus input logic here if needed
                                     }}
-                                    className={`text-gray-400 hover:text-white transition-colors p-2.5 ${isSearchOpen ? 'cursor-default' : ''}`}
+                                    className={`text-cinema-subtle hover:text-amber-gold transition-colors p-2.5 ${isSearchOpen ? 'cursor-default' : ''}`}
                                 >
                                     <Search size={18} />
                                 </button>
@@ -208,7 +238,7 @@ const Header = () => {
                                     <input
                                         type="text"
                                         placeholder="Tìm kiếm phim..."
-                                        className="bg-transparent border-none outline-none text-sm text-white placeholder-gray-500 w-full px-2 h-9"
+                                        className="bg-transparent border-none outline-none focus:shadow-none text-body-md text-cinema-text placeholder-cinema-subtle w-full px-2 h-9"
                                         value={searchQuery}
                                         onChange={(e) => setSearchQuery(e.target.value)}
                                         autoFocus={isSearchOpen}
@@ -216,7 +246,7 @@ const Header = () => {
                                     <button
                                         type="button"
                                         onClick={startVoiceSearch}
-                                        className={`p-2 transition-colors ${isListening ? 'text-red-500 animate-pulse' : 'text-gray-400 hover:text-white'}`}
+                                        className={`p-2 transition-colors ${isListening ? 'text-wine-accent animate-pulse' : 'text-cinema-subtle hover:text-amber-gold'}`}
                                         title="Tìm kiếm bằng giọng nói"
                                     >
                                         <Mic size={16} />
@@ -225,9 +255,9 @@ const Header = () => {
 
                                 {isSearchOpen && (
                                     isSearching ? (
-                                        <Loader2 size={16} className="text-red-500 animate-spin mr-3" />
+                                        <Loader2 size={16} className="text-amber-primary animate-spin mr-3" />
                                     ) : searchQuery && (
-                                        <button onClick={() => { setSearchQuery(''); setIsSearchOpen(false) }} className="mr-3 text-gray-500 hover:text-white">
+                                        <button onClick={() => { setSearchQuery(''); setIsSearchOpen(false) }} className="mr-3 text-cinema-subtle hover:text-cinema-text">
                                             <X size={16} />
                                         </button>
                                     )
@@ -236,51 +266,51 @@ const Header = () => {
 
                             {/* Search Dropdown Results */}
                             {isSearchOpen && searchQuery.length >= 1 && (
-                                <div className="absolute top-full right-0 mt-4 w-96 bg-[#111] border border-white/10 rounded-2xl shadow-2xl overflow-hidden animate-in fade-in slide-in-from-top-2 duration-300">
-                                    <div className="absolute -top-2 right-4 w-4 h-4 bg-[#111] border-t border-l border-white/10 rotate-45"></div>
+                                <div className="absolute top-full right-0 mt-4 w-96 max-w-[calc(100vw-2rem)] glass-panel rounded-3xl shadow-glass-card overflow-hidden animate-in fade-in slide-in-from-top-2 duration-300">
+                                    <div className="absolute -top-2 right-4 w-4 h-4 bg-[#1b1b1f] border-t border-l border-white/10 rotate-45"></div>
                                     {isSearching ? (
-                                        <div className="p-8 text-center text-gray-500 text-sm flex flex-col items-center gap-3">
-                                            <Loader2 size={24} className="animate-spin text-red-500" />
+                                        <div className="p-8 text-center text-cinema-subtle text-body-md flex flex-col items-center gap-3">
+                                            <Loader2 size={24} className="animate-spin text-amber-primary" />
                                             <span>Đang tìm kiếm phim hay...</span>
                                         </div>
                                     ) : searchResults && searchResults.length > 0 ? (
                                         <div className="max-h-[60vh] overflow-y-auto custom-scrollbar">
-                                            <div className="p-4 text-xs font-bold text-gray-500 uppercase tracking-wider border-b border-white/5 bg-white/[0.02]">
+                                            <div className="p-4 font-mono text-label-sm text-amber-gold uppercase border-b border-white/10 bg-white/[0.02]">
                                                 Kết quả phù hợp nhất
                                             </div>
                                             {searchResults.slice(0, 5).map((movie: any) => (
                                                 <Link
-                                                    key={movie._id}
-                                                    href={`/phim/${movie.slug}`}
+                                                    key={movie.contentRef}
+                                                    href={catalogHref(movie)}
                                                     className="flex items-start gap-4 p-4 hover:bg-white/5 transition-colors group border-b border-white/5 last:border-0 relative overflow-hidden"
                                                     onClick={() => setIsSearchOpen(false)}
                                                 >
-                                                    <div className="absolute inset-0 bg-gradient-to-r from-transparent via-transparent to-red-500/5 opacity-0 group-hover:opacity-100 transition-opacity" />
-                                                    <div className="relative w-14 h-20 rounded-lg overflow-hidden shrink-0 shadow-lg border border-white/10 group-hover:border-red-500/30 transition-colors">
+                                                    <div className="absolute inset-0 bg-gradient-to-r from-transparent via-transparent to-amber-primary/10 opacity-0 group-hover:opacity-100 transition-opacity" />
+                                                    <div className="relative w-14 h-20 rounded-xl overflow-hidden shrink-0 shadow-lg border border-white/10 group-hover:border-amber-primary/40 transition-colors">
                                                         <Image
-                                                            src={movie.poster_url.startsWith('http') ? movie.poster_url : `${IMAGE_PREFIX}${movie.poster_url}`}
-                                                            alt={movie.name}
+                                                            src={movie.poster}
+                                                            alt={movie.title}
                                                             fill
                                                             className="object-cover group-hover:scale-110 transition-transform duration-700"
                                                         />
                                                     </div>
                                                     <div className="flex-1 min-w-0 z-10">
-                                                        <h4 className="text-sm font-bold text-gray-200 group-hover:text-red-500 truncate transition-colors">{movie.name}</h4>
-                                                        <p className="text-xs text-gray-500 truncate mt-0.5">{movie.origin_name}</p>
+                                                        <h4 className="font-syne text-headline-sm text-cinema-text group-hover:text-amber-gold truncate transition-colors">{movie.title}</h4>
+                                                        <p className="text-body-sm text-cinema-subtle truncate mt-0.5">{movie.originalTitle}</p>
                                                         <div className="mt-2 flex items-center gap-2">
-                                                            <span className="text-[10px] bg-red-500/10 text-red-500 px-2 py-0.5 rounded border border-red-500/20 font-medium">{movie.quality}</span>
-                                                            <span className="text-[10px] text-gray-500 font-medium bg-white/5 px-2 py-0.5 rounded border border-white/5">{movie.year}</span>
-                                                            <span className="text-[10px] text-yellow-500 flex items-center gap-0.5">★ {movie.vote_average || 'N/A'}</span>
+                                                            <span className="font-mono text-label-sm uppercase bg-amber-primary/15 text-amber-gold px-2 py-0.5 rounded-md border border-amber-primary/30">{movie.mediaType === 'tv' ? 'Phim bộ' : 'Phim lẻ'}</span>
+                                                            <span className="font-mono text-label-sm text-cinema-muted bg-white/5 px-2 py-0.5 rounded-md border border-white/10">{movie.year}</span>
+                                                            <span className="font-mono text-label-sm text-amber-gold flex items-center gap-0.5">★ {movie.voteAverage ? movie.voteAverage.toFixed(1) : 'N/A'}</span>
                                                         </div>
                                                     </div>
                                                 </Link>
                                             ))}
-                                            <Link href={`/search?keyword=${searchQuery}`} className="block p-4 text-center text-xs font-bold text-red-500 hover:text-red-400 hover:bg-white/5 transition-colors uppercase tracking-widest">
+                                            <Link href={`/search?keyword=${searchQuery}`} className="block p-4 text-center font-mono text-label-md text-amber-gold hover:text-amber-primary hover:bg-white/5 transition-colors uppercase">
                                                 Xem tất cả kết quả
                                             </Link>
                                         </div>
                                     ) : (
-                                        <div className="p-8 text-center text-gray-500 text-sm">
+                                        <div className="p-8 text-center text-cinema-subtle text-body-md">
                                             <span className="block mb-1 text-lg">😕</span>
                                             Không tìm thấy phim nào.
                                         </div>
@@ -289,9 +319,9 @@ const Header = () => {
                             )}
                         </div>
 
-                        {/* Mobile Search Button */}
+                        {/* Mobile/Tablet Search Button (toggles full-width overlay) */}
                         <button
-                            className="md:hidden text-gray-400 hover:text-white transition-colors p-2"
+                            className="xl:hidden text-cinema-subtle hover:text-amber-gold transition-colors p-2"
                             onClick={() => setIsMobileSearchVisible(!isMobileSearchVisible)}
                         >
                             <Search size={22} />
@@ -299,7 +329,7 @@ const Header = () => {
 
                         {/* Mobile Menu Button */}
                         <button
-                            className="lg:hidden text-white hover:text-red-500 transition-colors p-2"
+                            className="xl:hidden text-cinema-text hover:text-amber-gold transition-colors p-2"
                             onClick={() => setIsMobileMenuOpen(true)}
                         >
                             <Menu size={28} strokeWidth={2.5} />
@@ -315,26 +345,26 @@ const Header = () => {
                     </div>
                 </div>
 
-                {/* Mobile Search Bar Overlay */}
+                {/* Mobile/Tablet Search Bar Overlay */}
                 {isMobileSearchVisible && (
-                    <div className="absolute top-full left-0 w-full bg-[#111] border-b border-white/10 p-4 md:hidden animate-in slide-in-from-top-2 shadow-2xl">
+                    <div className="absolute top-full left-0 w-full bg-[#121316]/95 backdrop-blur-2xl border-b border-white/10 p-4 xl:hidden animate-in slide-in-from-top-2 shadow-glass-card">
                         <form onSubmit={handleSearchSubmit} className="relative">
                             <input
                                 type="text"
                                 placeholder="Tìm kiếm phim..."
-                                className="w-full bg-black border border-gray-800 rounded-xl px-4 py-3 text-white focus:border-red-500 focus:outline-none pl-11 pr-12"
+                                className="w-full bg-[#1b1b1f]/80 border border-white/10 rounded-2xl px-4 py-3 text-cinema-text placeholder-cinema-subtle focus:outline-none pl-11 pr-12"
                                 value={searchQuery}
                                 onChange={(e) => setSearchQuery(e.target.value)}
                                 autoFocus
                             />
-                            <Search className="absolute left-4 top-1/2 -translate-y-1/2 text-gray-500" size={18} />
+                            <Search className="absolute left-4 top-1/2 -translate-y-1/2 text-cinema-subtle" size={18} />
 
                             <div className="absolute right-3 top-1/2 -translate-y-1/2 flex items-center gap-2">
                                 {searchQuery ? (
                                     <button
                                         type="button"
                                         onClick={() => { setSearchQuery(''); }}
-                                        className="text-gray-500"
+                                        className="text-cinema-subtle hover:text-cinema-text"
                                     >
                                         <X size={18} />
                                     </button>
@@ -342,7 +372,7 @@ const Header = () => {
                                     <button
                                         type="button"
                                         onClick={startVoiceSearch}
-                                        className={`${isListening ? 'text-red-500 animate-pulse' : 'text-gray-500'}`}
+                                        className={`${isListening ? 'text-wine-accent animate-pulse' : 'text-cinema-subtle'}`}
                                     >
                                         <Mic size={20} />
                                     </button>
@@ -354,7 +384,7 @@ const Header = () => {
             </header>
 
             {/* Mobile Menu Overlay */}
-            <div className={`fixed inset-0 z-[60] lg:hidden transition-all duration-300 ${isMobileMenuOpen ? 'visible' : 'invisible'}`}>
+            <div className={`fixed inset-0 z-[60] xl:hidden transition-all duration-300 ${isMobileMenuOpen ? 'visible' : 'invisible'}`}>
                 {/* Backdrop */}
                 <div
                     className={`absolute inset-0 bg-black/60 backdrop-blur-sm transition-opacity duration-300 ${isMobileMenuOpen ? 'opacity-100' : 'opacity-0'}`}
@@ -362,12 +392,12 @@ const Header = () => {
                 />
 
                 {/* Menu Content */}
-                <div className={`absolute top-0 right-0 w-[85%] max-w-sm h-full bg-[#0a0a0a] border-l border-white/10 shadow-2xl p-6 transition-transform duration-300 transform ${isMobileMenuOpen ? 'translate-x-0' : 'translate-x-full'}`}>
+                <div className={`absolute top-0 right-0 w-[85%] max-w-sm h-full bg-[#0d0e11] border-l border-white/10 shadow-glass-card p-6 transition-transform duration-300 transform ${isMobileMenuOpen ? 'translate-x-0' : 'translate-x-full'}`}>
                     <div className="flex justify-between items-center mb-8">
-                        <span className="text-xl font-black text-white tracking-tighter">NAV<span className="text-red-600">IGATION</span></span>
+                        <span className="font-syne text-headline-lg text-white">Điều<span className="text-amber-gold"> Hướng</span></span>
                         <button
                             onClick={() => setIsMobileMenuOpen(false)}
-                            className="text-gray-400 hover:text-white bg-white/5 hover:bg-red-500 hover:rotate-90 transition-all duration-300 p-2 rounded-full"
+                            className="text-cinema-subtle hover:text-black bg-white/5 hover:bg-amber-primary hover:rotate-90 transition-all duration-300 p-2 rounded-full"
                         >
                             <X size={20} />
                         </button>
@@ -376,27 +406,27 @@ const Header = () => {
 
 
                     <div className="flex-1 overflow-y-auto space-y-2 pr-2 custom-scrollbar">
-                        <Link href="/" className="flex items-center gap-3 px-4 py-3.5 text-base font-bold text-gray-300 hover:text-white hover:bg-white/5 rounded-xl transition-all hover:pl-6 border border-transparent hover:border-white/5">
-                            <span className="w-1.5 h-1.5 rounded-full bg-red-500"></span> Trang Chủ
+                        <Link href="/" className={`flex items-center gap-3 px-4 py-3.5 font-syne text-headline-sm rounded-2xl transition-all hover:pl-6 border ${isLinkActive('/') ? 'text-amber-gold bg-white/5 border-amber-primary/20' : 'text-cinema-muted hover:text-amber-gold hover:bg-white/5 border-transparent hover:border-amber-primary/20'}`}>
+                            <span className="w-1.5 h-1.5 rounded-full bg-amber-primary"></span> Trang Chủ
                         </Link>
 
                         <div className="space-y-1">
                             <button
                                 onClick={() => setIsGenreOpen(!isGenreOpen)}
-                                className={`w-full flex justify-between items-center px-4 py-3.5 text-base font-bold rounded-xl transition-all border border-transparent ${isGenreOpen ? 'bg-white/5 text-white border-white/5' : 'text-gray-300 hover:text-white hover:bg-white/5 hover:pl-6 hover:border-white/5'}`}
+                                className={`w-full flex justify-between items-center px-4 py-3.5 font-syne text-headline-sm rounded-2xl transition-all border border-transparent ${isGenreOpen ? 'bg-white/5 text-amber-gold border-amber-primary/20' : 'text-cinema-muted hover:text-amber-gold hover:bg-white/5 hover:pl-6 hover:border-amber-primary/20'}`}
                             >
                                 <div className="flex items-center gap-3">
-                                    <span className="w-1.5 h-1.5 rounded-full bg-blue-500"></span> Thể Loại
+                                    <span className="w-1.5 h-1.5 rounded-full bg-cyan-accent"></span> Thể Loại
                                 </div>
-                                <ChevronDown size={18} className={`transition-transform duration-300 ${isGenreOpen ? 'rotate-180 text-white' : 'text-gray-500'}`} />
+                                <ChevronDown size={18} className={`transition-transform duration-300 ${isGenreOpen ? 'rotate-180 text-amber-gold' : 'text-cinema-subtle'}`} />
                             </button>
 
                             <div className={`grid grid-cols-2 gap-2 overflow-hidden transition-all duration-300 ${isGenreOpen ? 'max-h-[500px] mt-2 mb-2 p-1' : 'max-h-0'}`}>
                                 {GENRES.map((genre) => (
                                     <Link
-                                        key={genre.slug}
-                                        href={`/the-loai/${genre.slug}`}
-                                        className="text-xs font-medium text-gray-400 hover:text-white hover:bg-white/10 py-2.5 px-3 bg-white/[0.02] rounded-lg text-center border border-white/[0.02]"
+                                        key={genre.id}
+                                        href={`/kham-pha?genre=${genre.id}`}
+                                        className="text-body-sm font-medium text-cinema-subtle hover:text-amber-gold hover:bg-amber-primary/10 py-2.5 px-3 bg-white/[0.03] rounded-xl text-center border border-white/5 hover:border-amber-primary/30 transition-all"
                                     >
                                         {genre.name}
                                     </Link>
@@ -404,17 +434,20 @@ const Header = () => {
                             </div>
                         </div>
 
-                        <Link href="/danh-sach/phim-le" className="flex items-center gap-3 px-4 py-3.5 text-base font-bold text-gray-300 hover:text-white hover:bg-white/5 rounded-xl transition-all hover:pl-6 border border-transparent hover:border-white/5">
-                            <span className="w-1.5 h-1.5 rounded-full bg-green-500"></span> Phim Lẻ
+                        <Link href="/kham-pha?type=movie" className={`flex items-center gap-3 px-4 py-3.5 font-syne text-headline-sm rounded-2xl transition-all hover:pl-6 border ${isLinkActive('/kham-pha?type=movie') ? 'text-amber-gold bg-white/5 border-amber-primary/20' : 'text-cinema-muted hover:text-amber-gold hover:bg-white/5 border-transparent hover:border-amber-primary/20'}`}>
+                            <span className="w-1.5 h-1.5 rounded-full bg-amber-gold"></span> Phim Lẻ
                         </Link>
-                        <Link href="/danh-sach/phim-bo" className="flex items-center gap-3 px-4 py-3.5 text-base font-bold text-gray-300 hover:text-white hover:bg-white/5 rounded-xl transition-all hover:pl-6 border border-transparent hover:border-white/5">
-                            <span className="w-1.5 h-1.5 rounded-full bg-purple-500"></span> Phim Bộ
+                        <Link href="/kham-pha?type=tv" className={`flex items-center gap-3 px-4 py-3.5 font-syne text-headline-sm rounded-2xl transition-all hover:pl-6 border ${isLinkActive('/kham-pha?type=tv') ? 'text-amber-gold bg-white/5 border-amber-primary/20' : 'text-cinema-muted hover:text-amber-gold hover:bg-white/5 border-transparent hover:border-amber-primary/20'}`}>
+                            <span className="w-1.5 h-1.5 rounded-full bg-cyan-accent"></span> Phim Bộ
                         </Link>
-                        <Link href="/cong-chieu" className="flex items-center gap-3 px-4 py-3.5 text-base font-bold text-gray-300 hover:text-white hover:bg-white/5 rounded-xl transition-all hover:pl-6 border border-transparent hover:border-white/5">
-                            <span className="w-1.5 h-1.5 rounded-full bg-rose-500"></span> Công Chiếu
+                        <Link href="/cong-chieu" className={`flex items-center gap-3 px-4 py-3.5 font-syne text-headline-sm rounded-2xl transition-all hover:pl-6 border ${isLinkActive('/cong-chieu') ? 'text-amber-gold bg-white/5 border-amber-primary/20' : 'text-cinema-muted hover:text-amber-gold hover:bg-white/5 border-transparent hover:border-amber-primary/20'}`}>
+                            <span className="w-1.5 h-1.5 rounded-full bg-wine-accent"></span> Công Chiếu
                         </Link>
-                        <Link href="/danh-sach/hoat-hinh" className="flex items-center gap-3 px-4 py-3.5 text-base font-bold text-gray-300 hover:text-white hover:bg-white/5 rounded-xl transition-all hover:pl-6 border border-transparent hover:border-white/5">
-                            <span className="w-1.5 h-1.5 rounded-full bg-yellow-500"></span> Hoạt Hình
+                        <Link href="/kham-pha?type=movie&genre=16" className={`flex items-center gap-3 px-4 py-3.5 font-syne text-headline-sm rounded-2xl transition-all hover:pl-6 border ${isLinkActive('/kham-pha?type=movie&genre=16') ? 'text-amber-gold bg-white/5 border-amber-primary/20' : 'text-cinema-muted hover:text-amber-gold hover:bg-white/5 border-transparent hover:border-amber-primary/20'}`}>
+                            <span className="w-1.5 h-1.5 rounded-full bg-amber-primary"></span> Hoạt Hình
+                        </Link>
+                        <Link href="/tai-xuong" className={`flex items-center gap-3 px-4 py-3.5 font-syne text-headline-sm rounded-2xl transition-all hover:pl-6 border ${isLinkActive('/tai-xuong') ? 'text-amber-gold bg-white/5 border-amber-primary/20' : 'text-cinema-muted hover:text-amber-gold hover:bg-white/5 border-transparent hover:border-amber-primary/20'}`}>
+                            <span className="w-1.5 h-1.5 rounded-full bg-amber-primary"></span> Tải Xuống
                         </Link>
                     </div>
 

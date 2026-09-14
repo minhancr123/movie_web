@@ -133,24 +133,24 @@ export default function CommentsSection({ slug }: CommentsSectionProps) {
 
     return (
         <div className="mt-12 max-w-5xl mx-auto px-4">
-            <h3 className="text-xl font-bold border-l-4 border-red-600 pl-3 uppercase mb-6 flex items-center gap-2 text-white">
-                Bình luận <span className="text-sm font-normal text-gray-400 normal-case">({comments.length})</span>
+            <h3 className="text-xl font-bold border-l-4 border-amber-primary pl-3 uppercase mb-6 flex items-center gap-2 text-white">
+                Bình luận <span className="text-sm font-normal text-cinema-subtle normal-case">({comments.length})</span>
             </h3>
 
             <div className="grid grid-cols-1 md:grid-cols-3 gap-8">
                 {/* Comment Form */}
                 <div className="md:col-span-1">
-                    <div className="bg-[#111] p-6 rounded-xl border border-gray-800 sticky top-24">
+                    <div className="bg-surface-light p-6 rounded-xl border border-white/10 sticky top-24">
                         <h4 className="text-white font-bold mb-4 flex items-center gap-2">
                             <MessageIcon /> Để lại bình luận
                         </h4>
 
                         {!session ? (
                             <div className="text-center py-6">
-                                <p className="text-gray-400 mb-4 text-sm">Vui lòng đăng nhập để tham gia bình luận.</p>
+                                <p className="text-cinema-subtle mb-4 text-sm">Vui lòng đăng nhập để tham gia bình luận.</p>
                                 <Link
                                     href="/auth/login"
-                                    className="inline-block bg-red-600 hover:bg-red-700 text-white font-bold py-2 px-6 rounded-full transition-colors text-sm"
+                                    className="inline-block bg-amber-primary hover:bg-amber-600 text-white font-bold py-2 px-6 rounded-full transition-colors text-sm"
                                 >
                                     Đăng nhập ngay
                                 </Link>
@@ -159,12 +159,12 @@ export default function CommentsSection({ slug }: CommentsSectionProps) {
                             <form onSubmit={handleSubmit} className="space-y-4">
                                 <div>
                                     <div className="flex items-center gap-3 mb-3">
-                                        <div className="w-8 h-8 rounded-full overflow-hidden border border-gray-700">
+                                        <div className="w-8 h-8 rounded-full overflow-hidden border border-white/10">
                                             {session.user?.image ? (
                                                 <Image src={session.user.image} alt="Avatar" width={32} height={32} />
                                             ) : (
-                                                <div className="w-full h-full bg-gray-800 flex items-center justify-center">
-                                                    <User size={16} className="text-gray-400" />
+                                                <div className="w-full h-full bg-surface-container flex items-center justify-center">
+                                                    <User size={16} className="text-cinema-subtle" />
                                                 </div>
                                             )}
                                         </div>
@@ -176,18 +176,18 @@ export default function CommentsSection({ slug }: CommentsSectionProps) {
                                         placeholder="Chia sẻ cảm nghĩ của bạn về phim..."
                                         rows={4}
                                         required
-                                        className="w-full bg-black/50 border border-gray-700 rounded-lg px-4 py-2 text-white focus:border-red-600 focus:outline-none transition-colors text-sm resize-none"
+                                        className="w-full bg-black/50 border border-white/10 rounded-lg px-4 py-2 text-white focus:border-amber-primary focus:outline-none transition-colors text-sm resize-none"
                                     />
                                 </div>
                                 {error && (
-                                    <p className="text-red-500 text-xs flex items-center gap-1">
+                                    <p className="text-amber-gold text-xs flex items-center gap-1">
                                         <AlertCircle size={12} /> {error}
                                     </p>
                                 )}
                                 <button
                                     type="submit"
                                     disabled={isSubmitting || !content.trim()}
-                                    className="w-full bg-red-600 hover:bg-red-700 disabled:bg-gray-700 disabled:cursor-not-allowed text-white font-bold py-2.5 rounded-lg transition-all flex items-center justify-center gap-2"
+                                    className="w-full bg-amber-primary hover:bg-amber-600 disabled:bg-surface-container-high disabled:cursor-not-allowed text-white font-bold py-2.5 rounded-lg transition-all flex items-center justify-center gap-2"
                                 >
                                     {isSubmitting ? 'Đang gửi...' : <><Send size={16} /> Gửi bình luận</>}
                                 </button>
@@ -200,21 +200,21 @@ export default function CommentsSection({ slug }: CommentsSectionProps) {
                 <div className="md:col-span-2 space-y-4">
                     {isLoading ? (
                         <div className="text-center py-10">
-                            <div className="inline-block w-8 h-8 border-2 border-red-600 border-t-transparent rounded-full animate-spin"></div>
+                            <div className="inline-block w-8 h-8 border-2 border-amber-primary border-t-transparent rounded-full animate-spin"></div>
                         </div>
                     ) : comments.length === 0 ? (
-                        <div className="bg-[#111] p-8 rounded-xl border border-gray-800 text-center flex flex-col items-center justify-center min-h-[200px]">
-                            <div className="bg-gray-800/50 p-4 rounded-full mb-4">
-                                <MessageIcon size={32} className="text-gray-500" />
+                        <div className="bg-surface-light p-8 rounded-xl border border-white/10 text-center flex flex-col items-center justify-center min-h-[200px]">
+                            <div className="bg-surface-container/50 p-4 rounded-full mb-4">
+                                <MessageIcon size={32} className="text-cinema-subtle" />
                             </div>
-                            <p className="text-gray-300 font-medium">Chưa có bình luận nào.</p>
-                            <p className="text-gray-500 text-sm mt-1">Hãy là người đầu tiên chia sẻ cảm nghĩ!</p>
+                            <p className="text-cinema-muted font-medium">Chưa có bình luận nào.</p>
+                            <p className="text-cinema-subtle text-sm mt-1">Hãy là người đầu tiên chia sẻ cảm nghĩ!</p>
                         </div>
                     ) : (
                         comments.map((comment) => (
-                            <div key={comment._id} className="bg-[#111] p-5 rounded-xl border border-gray-800 hover:border-gray-700 transition-colors group">
+                            <div key={comment._id} className="bg-surface-light p-5 rounded-xl border border-white/10 hover:border-white/10 transition-colors group">
                                 <div className="flex items-start gap-4">
-                                    <div className="w-10 h-10 rounded-full border border-gray-700 overflow-hidden shrink-0">
+                                    <div className="w-10 h-10 rounded-full border border-white/10 overflow-hidden shrink-0">
                                         {comment.user?.avatar ? (
                                             <Image
                                                 src={comment.user.avatar}
@@ -224,15 +224,15 @@ export default function CommentsSection({ slug }: CommentsSectionProps) {
                                                 className="object-cover w-full h-full"
                                             />
                                         ) : (
-                                            <div className="w-full h-full bg-gray-800 flex items-center justify-center">
-                                                <User size={20} className="text-gray-400" />
+                                            <div className="w-full h-full bg-surface-container flex items-center justify-center">
+                                                <User size={20} className="text-cinema-subtle" />
                                             </div>
                                         )}
                                     </div>
                                     <div className="flex-1 min-w-0">
                                         <div className="flex flex-wrap items-center justify-between gap-2 mb-1">
-                                            <h5 className="font-bold text-gray-200 text-sm">{comment.user?.fullName || 'Người dùng'}</h5>
-                                            <span className="text-xs text-gray-500 flex items-center gap-1">
+                                            <h5 className="font-bold text-cinema-text text-sm">{comment.user?.fullName || 'Người dùng'}</h5>
+                                            <span className="text-xs text-cinema-subtle flex items-center gap-1">
                                                 <Clock size={12} /> {formatDate(comment.createdAt)}
                                             </span>
                                         </div>
@@ -242,13 +242,13 @@ export default function CommentsSection({ slug }: CommentsSectionProps) {
                                                 <textarea
                                                     value={editContent}
                                                     onChange={(e) => setEditContent(e.target.value)}
-                                                    className="w-full bg-black/50 border border-gray-700 rounded-lg px-3 py-2 text-white text-sm focus:border-blue-500 outline-none"
+                                                    className="w-full bg-black/50 border border-white/10 rounded-lg px-3 py-2 text-white text-sm focus:border-blue-500 outline-none"
                                                     rows={3}
                                                 />
                                                 <div className="flex gap-2 mt-2 justify-end">
                                                     <button
                                                         onClick={() => setEditingId(null)}
-                                                        className="text-xs text-gray-400 hover:text-white px-3 py-1"
+                                                        className="text-xs text-cinema-subtle hover:text-white px-3 py-1"
                                                     >
                                                         Hủy
                                                     </button>
@@ -261,7 +261,7 @@ export default function CommentsSection({ slug }: CommentsSectionProps) {
                                                 </div>
                                             </div>
                                         ) : (
-                                            <p className="text-gray-300 text-sm leading-relaxed whitespace-pre-wrap break-words">
+                                            <p className="text-cinema-muted text-sm leading-relaxed whitespace-pre-wrap break-words">
                                                 {comment.content}
                                             </p>
                                         )}
@@ -271,13 +271,13 @@ export default function CommentsSection({ slug }: CommentsSectionProps) {
                                             <div className="flex gap-4 mt-3 opacity-0 group-hover:opacity-100 transition-opacity">
                                                 <button
                                                     onClick={() => handleEdit(comment)}
-                                                    className="text-gray-500 hover:text-blue-400 text-xs flex items-center gap-1"
+                                                    className="text-cinema-subtle hover:text-blue-400 text-xs flex items-center gap-1"
                                                 >
                                                     <Edit2 size={12} /> Sửa
                                                 </button>
                                                 <button
                                                     onClick={() => handleDelete(comment._id)}
-                                                    className="text-gray-500 hover:text-red-400 text-xs flex items-center gap-1"
+                                                    className="text-cinema-subtle hover:text-amber-gold text-xs flex items-center gap-1"
                                                 >
                                                     <Trash2 size={12} /> Xóa
                                                 </button>

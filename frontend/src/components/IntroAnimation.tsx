@@ -8,7 +8,7 @@ const IntroAnimation = () => {
 
     useEffect(() => {
         // Use a versioned key so user sees the new intro immediately
-        const hasShown = sessionStorage.getItem('introShown_v3');
+        const hasShown = sessionStorage.getItem('introShown_v4');
         if (hasShown) {
             setShow(false);
             setRemove(true);
@@ -20,7 +20,7 @@ const IntroAnimation = () => {
         const timer = setTimeout(() => {
             setShow(false);
             setTimeout(() => setRemove(true), 1000); // Allow fade out time
-            sessionStorage.setItem('introShown_v3', 'true');
+            sessionStorage.setItem('introShown_v4', 'true');
         }, totalDuration);
 
         return () => clearTimeout(timer);
@@ -39,8 +39,8 @@ const IntroAnimation = () => {
                     100% { transform: translateY(0) scale(1); opacity: 1; filter: blur(0); }
                 }
                 @keyframes glow-pulse {
-                    0%, 100% { text-shadow: 0 0 10px rgba(220, 38, 38, 0.5); }
-                    50% { text-shadow: 0 0 30px rgba(220, 38, 38, 1), 0 0 60px rgba(220, 38, 38, 0.8); }
+                    0%, 100% { text-shadow: 0 0 10px rgba(245, 158, 11, 0.5); }
+                    50% { text-shadow: 0 0 30px rgba(245, 158, 11, 1), 0 0 60px rgba(245, 158, 11, 0.8); }
                 }
                 @keyframes zoom-out-fade {
                     0% { transform: scale(1); opacity: 1; }
@@ -71,10 +71,10 @@ const IntroAnimation = () => {
             <div className="intro-container relative flex flex-col items-center">
                 <div className="flex items-center gap-4 md:gap-8 mb-4">
                     <div className="flex glow-text">
-                        {"MOVIE".split('').map((char, i) => (
+                        {"CINE".split('').map((char, i) => (
                             <span
                                 key={`m-${i}`}
-                                className="letter text-5xl md:text-8xl font-black text-red-600 tracking-tighter"
+                                className="letter text-5xl md:text-8xl font-black text-amber-gold tracking-tighter"
                                 style={{ animationDelay: `${i * 100}ms` }}
                             >
                                 {char}
@@ -83,7 +83,7 @@ const IntroAnimation = () => {
                     </div>
 
                     <div className="flex glow-text">
-                        {"WEB".split('').map((char, i) => (
+                        {"STREAM".split('').map((char, i) => (
                             <span
                                 key={`w-${i}`}
                                 className="letter text-5xl md:text-8xl font-black text-white tracking-tighter"
@@ -97,7 +97,7 @@ const IntroAnimation = () => {
 
                 {/* Decorative Line aka "The Remote Beam" */}
                 <div
-                    className="h-1 bg-red-600 shadow-[0_0_20px_rgba(220,38,38,0.8)] rounded-full"
+                    className="h-1 bg-amber-primary shadow-[0_0_20px_rgba(245,158,11,0.8)] rounded-full"
                     style={{
                         animation: 'line-expand 2s ease-out forwards',
                         animationDelay: '1s'

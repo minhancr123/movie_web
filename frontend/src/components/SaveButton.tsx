@@ -4,6 +4,7 @@ import { useSavedMovies } from '@/hooks/useLocalStorage';
 import { useEffect, useState } from 'react';
 import { useSession } from 'next-auth/react';
 import { favoritesAPI } from '@/lib/api';
+import type { CatalogItem } from '@/lib/catalog';
 import { useRouter } from 'next/navigation';
 
 interface SaveButtonProps {
@@ -15,10 +16,14 @@ interface SaveButtonProps {
         origin_name?: string;
         quality?: string;
     };
+    item?: CatalogItem;
     iconOnly?: boolean;
 }
 
-export default function SaveButton({ movie, iconOnly = false }: SaveButtonProps) {
+export default function SaveButton({ movie, item, iconOnly = false }: SaveButtonProps) {
+    // contentRef doubles as the storage key so the existing unique index
+    // {userId, movieSlug} keeps working without a schema change.
+    const key = item ? item.contentRef : movie.slug;
     const { data: session, status } = useSession();
     const router = useRouter();
     const { isSaved, toggleSaveMovie: toggleLocal } = useSavedMovies(); // Keep local sync for guest/optimistic?
@@ -64,11 +69,11 @@ export default function SaveButton({ movie, iconOnly = false }: SaveButtonProps)
             // let's try to update backend if logged in.
             // If not logged in, we use local hook.
             toggleLocal({
-                id: movie._id,
+                id: key,
                 slug: movie.slug,
-                name: movie.name,
-                poster_url: movie.poster_url,
-                origin_name: movie.origin_name,
+                name: item?.title ?? movie.name,
+                poster_url: item?.poster ?? movie.poster_url,
+                origin_name: item?.originalTitle ?? movie.origin_name,
                 quality: movie.quality
             });
             setSaved(!saved);
@@ -80,18 +85,21 @@ export default function SaveButton({ movie, iconOnly = false }: SaveButtonProps)
 
         try {
             if (saved) {
-                await favoritesAPI.remove(movie.slug);
+                await favoritesAPI.remove(key);
                 setSaved(false);
             } else {
                 await favoritesAPI.add({
-                    movieSlug: movie.slug,
+                    movieSlug: key,
+                    contentRef: item?.contentRef,
+                    tmdbId: item?.tmdbId,
+                    mediaType: item?.mediaType,
                     movieData: {
-                        name: movie.name,
-                        originName: movie.origin_name,
-                        posterUrl: movie.poster_url,
-                        thumbUrl: movie.poster_url, // fallback
-                        year: 2024 // Default or pass prop
-                    }
+                        name: item?.title ?? movie.name,
+                        originName: item?.originalTitle ?? movie.origin_name,
+                        posterUrl: item?.poster ?? movie.poster_url,
+                        thumbUrl: item?.poster ?? movie.poster_url,
+                        year: item?.year ?? null,
+                    },
                 });
                 setSaved(true);
             }
@@ -107,7 +115,7 @@ export default function SaveButton({ movie, iconOnly = false }: SaveButtonProps)
             <button
                 onClick={handleToggle}
                 disabled={loading}
-                className={`p-2 rounded-full backdrop-blur-md transition-colors ${saved ? 'bg-red-600 text-white' : 'bg-black/40 text-white hover:bg-black/60'}`}
+                className={`p-2 rounded-full backdrop-blur-md transition-colors ${saved ? 'bg-amber-primary text-black' : 'bg-black/40 text-white hover:bg-black/60'}`}
                 title={saved ? "Bỏ lưu" : "Lưu phim"}
             >
                 {loading ? <Loader2 size={20} className="animate-spin" /> : <Heart size={20} fill={saved ? "currentColor" : "none"} />}
@@ -120,7 +128,7 @@ export default function SaveButton({ movie, iconOnly = false }: SaveButtonProps)
             onClick={handleToggle}
             disabled={loading}
             className={`flex items-center justify-center gap-2 px-6 py-3 rounded-full font-bold transition-all border ${saved
-                ? 'bg-black/50 border-red-600 text-red-500 hover:bg-red-900/20'
+                ? 'bg-black/50 border-amber-primary text-amber-gold hover:bg-wine-accent/15'
                 : 'bg-white/10 border-white/20 text-white hover:bg-white/20'
                 }`}
         >

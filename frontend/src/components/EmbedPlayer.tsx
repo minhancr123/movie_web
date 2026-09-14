@@ -44,7 +44,7 @@ export default function EmbedPlayer({ embedUrl, m3u8Url, movieName, startTime }:
       {loading && (
         <div className="absolute inset-0 flex items-center justify-center z-50 bg-black">
           <div className="text-center">
-            <div className="w-16 h-16 border-4 border-red-600 border-t-transparent rounded-full animate-spin mx-auto mb-4"></div>
+            <div className="w-16 h-16 border-4 border-amber-primary border-t-transparent rounded-full animate-spin mx-auto mb-4"></div>
             <p className="text-white text-lg">Đang tải player...</p>
           </div>
         </div>
@@ -52,7 +52,7 @@ export default function EmbedPlayer({ embedUrl, m3u8Url, movieName, startTime }:
 
       {/* Time sync indicator */}
       {startTime > 0 && !loading && (
-        <div className="absolute top-4 left-4 bg-red-600/90 backdrop-blur-sm px-4 py-2 rounded-lg z-40">
+        <div className="absolute top-4 left-4 bg-amber-primary/90 backdrop-blur-sm px-4 py-2 rounded-lg z-40">
           <p className="text-white text-xs font-bold">
             ⏱ Đồng bộ: {Math.floor(startTime / 60)}:{String(startTime % 60).padStart(2, '0')}
           </p>
@@ -65,7 +65,7 @@ export default function EmbedPlayer({ embedUrl, m3u8Url, movieName, startTime }:
           onClick={() => setPlayerType('embed')}
           className={`px-3 py-1 rounded text-xs font-semibold transition-colors ${
             playerType === 'embed' 
-              ? 'bg-red-600 text-white' 
+              ? 'bg-amber-primary text-black' 
               : 'bg-white/20 text-white hover:bg-white/30'
           }`}
         >
@@ -76,7 +76,7 @@ export default function EmbedPlayer({ embedUrl, m3u8Url, movieName, startTime }:
             onClick={() => setPlayerType('direct')}
             className={`px-3 py-1 rounded text-xs font-semibold transition-colors ${
               playerType === 'direct' 
-                ? 'bg-red-600 text-white' 
+                ? 'bg-amber-primary text-black' 
                 : 'bg-white/20 text-white hover:bg-white/30'
             }`}
           >
