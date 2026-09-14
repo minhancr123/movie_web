@@ -61,13 +61,36 @@ export function useAudioEnhancer(
 
         try {
             applyEnhancerSettings(graph, settings);
-            // The toggle that gets us here is itself a user gesture, so this is
-            // the one moment an autoplay-suspended context will actually resume.
-            const ctx = graph.ctx as AudioContext;
-            if (ctx.state === 'suspended') void ctx.resume();
         } catch {
             setFailed(true);
+            return;
         }
+
+        /*
+         * Resuming is not optional, and a toggle is not the only way in here.
+         *
+         * When the setting was saved from a previous visit the effect runs at
+         * mount, with no gesture behind it, so the context starts suspended —
+         * and because the element has already been tapped by then, suspended
+         * means the audio has nowhere to go. Not "no effect": silence.
+         *
+         * So try immediately for the toggle case, and otherwise wait for the
+         * first gesture of any kind and try again.
+         */
+        const ctx = graph.ctx as AudioContext;
+        if (ctx.state !== 'suspended') return undefined;
+
+        void ctx.resume();
+        const wake = () => { void ctx.resume(); };
+        const events = ['pointerdown', 'keydown', 'touchstart'] as const;
+        for (const event of events) {
+            document.addEventListener(event, wake, { once: true, capture: true });
+        }
+        return () => {
+            for (const event of events) {
+                document.removeEventListener(event, wake, { capture: true } as EventListenerOptions);
+            }
+        };
     }, [supported, failed, settings, settings.clarity, settings.widen, ensureGraph]);
 
     // The graph outlives src changes because the element is the same one, but a

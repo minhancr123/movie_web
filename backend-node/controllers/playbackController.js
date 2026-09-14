@@ -260,6 +260,32 @@ const rememberProbeFacts = (infoHash, probe) =>
     PROBE_FACTS_TTL,
   );
 
+/**
+ * Seconds of playable content a new remux must have before the player starts.
+ *
+ * This used to be 45, and resolve blocked until it was reached — measured at
+ * 23 s end to end, of which ~15 s was this wait and ~9 s was finding the source.
+ * The viewer saw one unchanging line of text for the whole of it, which reads
+ * as a hang rather than as work.
+ *
+ * 15 s is enough to absorb ordinary upstream jitter, and a source that stalls
+ * after that is caught by the player's own no-progress detector, which exists
+ * anyway and covers the case this wait was guarding against.
+ */
+const STARTUP_BUFFER_SECONDS = Math.max(
+  4,
+  Number(process.env.PLAYBACK_STARTUP_BUFFER_SECONDS) || 15,
+);
+
+/**
+ * How long resolve itself will wait before handing the session over.
+ *
+ * Past this it answers anyway, marked as still warming up, and the client polls
+ * for the rest. Blocking the whole time is what made progress impossible to
+ * show: with no session id in the client's hands there is nothing to ask about.
+ */
+const RESOLVE_BUFFER_WAIT_MS = 6000;
+
 const readPlaylistState = async (sessionId) => {
   try {
     const playlist = await fs.readFile(sessionPath(sessionId, 'index.m3u8'), 'utf8');
@@ -836,6 +862,7 @@ export const resolvePlayback = async (req, res) => {
       }
 
       // Remux: ffmpeg reads the URL in-process; the URL itself stays in memory.
+      let warmingUp = false;
       try {
         const session = await startRemuxSession({
           sessionId,
@@ -850,10 +877,15 @@ export const resolvePlayback = async (req, res) => {
         // A short, verified head start absorbs normal upstream jitter. More
         // importantly, a source which stops producing segments is rejected here
         // instead of leaving the player spinning forever.
-        const hasStartupBuffer = await waitForInitialBuffer(sessionId, 45, 45000);
-        if (!hasStartupBuffer) {
-          throw new Error('Nguồn remux không tạo đủ buffer khởi động trong 45 giây');
-        }
+        // Wait briefly for a head start, then hand over regardless: the client
+        // polls the session for the rest and can show real progress instead of
+        // a frozen caption. A source that never fills is caught by the poll,
+        // not by holding this request open.
+        warmingUp = !(await waitForInitialBuffer(
+          sessionId,
+          STARTUP_BUFFER_SECONDS,
+          RESOLVE_BUFFER_WAIT_MS,
+        ));
       } catch (error) {
         // A failed candidate must not keep consuming bandwidth/CPU while the
         // resolver tries the next candidate.
@@ -904,6 +936,10 @@ export const resolvePlayback = async (req, res) => {
           reason: decision.reason,
           fileName: file.name || '',
           audioIndex: decision.audioIndex ?? 0,
+          // Still filling: the client polls the session and shows real progress
+          // rather than guessing how long a frozen caption has left to run.
+          warmingUp,
+          startupTargetSeconds: STARTUP_BUFFER_SECONDS,
           candidate: sanitizeCandidateForResponse(candidate),
         },
       });
@@ -1519,6 +1555,28 @@ export const getPlaybackSession = async (req, res) => {
     if (!session) return fail(res, 404, 'Không tìm thấy phiên phát');
     if (!isSessionOwner(session, req.user.userId)) {
       return fail(res, 403, 'Không có quyền truy cập phiên phát này');
+    }
+
+    // A remux still filling its head start reports how far along it is, so the
+    // client can show progress that means something instead of a spinner.
+    if (session.mode === 'remux') {
+      const state = await readPlaylistState(session.sessionId);
+      const buffered = Math.round(state.duration || 0);
+      const live = getRemuxSession(session.sessionId);
+      return res.json({
+        success: true,
+        data: {
+          sessionId: session.sessionId,
+          mode: 'remux',
+          bufferedSeconds: buffered,
+          startupTargetSeconds: STARTUP_BUFFER_SECONDS,
+          ready: state.ended || buffered >= STARTUP_BUFFER_SECONDS,
+          // A writer that has exited without finishing means this will never
+          // fill, and the client should stop waiting rather than count forever.
+          writerAlive: live ? live.exitCode === undefined : !state.ended,
+          progress: Math.min(100, Math.round((buffered / STARTUP_BUFFER_SECONDS) * 100)),
+        },
+      });
     }
 
     // Downloading sessions refresh progress from TorBox on poll.

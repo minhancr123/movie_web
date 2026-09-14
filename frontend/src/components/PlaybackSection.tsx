@@ -7,6 +7,9 @@ import { useSession } from 'next-auth/react';
 import { Loader2, AlertCircle, Key, RefreshCw, CheckCircle2, Download, Film, Layers, PictureInPicture2 } from 'lucide-react';
 import VideoPlayer from '@/components/VideoPlayer';
 import CinemaLayer, { type CinemaMode } from '@/components/CinemaLayer';
+
+/** Mirrors PLAYBACK_STARTUP_BUFFER_SECONDS on the server, for the wait copy. */
+const STARTUP_BUFFER_HINT = 15;
 import { providerAPI, playbackAPI } from '@/lib/api';
 import { detectCapabilities } from '@/lib/capabilities';
 import type { PlayerEpisode } from '@/lib/catalog';
@@ -87,6 +90,15 @@ export default function PlaybackSection({
   const [durationSeconds, setDurationSeconds] = useState<number | null>(null);
   // Chosen inside the player, drawn here: the surround must escape the player's
   // own overflow-hidden frame to read as light spilling onto the page.
+  /**
+   * Seconds spent on the current resolve.
+   *
+   * A cold start is genuinely 10-20 s of work — finding a source, probing it,
+   * giving ffmpeg a head start — and the screen used to show one unchanging
+   * line for the whole of it, which reads as a hang. A counter is honest about
+   * the wait without pretending to know a percentage it cannot measure.
+   */
+  const [resolveElapsed, setResolveElapsed] = useState(0);
   const [cinemaMode, setCinemaMode] = useState<CinemaMode>('off');
   const [videoEl, setVideoEl] = useState<HTMLVideoElement | null>(null);
   const [candidate, setCandidate] = useState<SourceCandidate | null>(null);
@@ -198,6 +210,7 @@ export default function PlaybackSection({
 
     clearPoll();
     setErrorMessage('');
+    setResolveElapsed(0);
     setPlaybackStatus('resolving');
 
     try {
@@ -394,6 +407,13 @@ export default function PlaybackSection({
   }, [authStatus, startPlaybackResolution]);
 
   useEffect(() => {
+    if (playbackStatus !== 'resolving') return;
+    const started = Date.now();
+    const id = setInterval(() => setResolveElapsed(Math.round((Date.now() - started) / 1000)), 500);
+    return () => clearInterval(id);
+  }, [playbackStatus]);
+
+  useEffect(() => {
     checkProviderConnection();
   }, [checkProviderConnection]);
 
@@ -479,10 +499,37 @@ export default function PlaybackSection({
     return (
       <div className="aspect-video w-full rounded-xl bg-surface-dark flex flex-col items-center justify-center border border-white/5 p-6 text-center">
         <Film className="w-10 h-10 text-primary animate-pulse mb-3" />
-        <p className="text-cinema-text text-sm font-semibold mb-1">Đang phân tích & chọn nguồn tốt nhất…</p>
-        <p className="text-cinema-subtle text-xs max-w-sm">
-          Kiểm tra codec phần cứng, lọc bitrate 15-30 Mbps và cache TorBox để phát mượt mà nhất.
+        <p className="text-cinema-text text-sm font-semibold mb-1">
+          Đang chuẩn bị nguồn phát… <span className="font-mono text-amber-gold">{resolveElapsed}s</span>
         </p>
+        <p className="text-cinema-subtle text-xs max-w-sm mb-3">
+          Lần đầu mỗi phim mất khoảng 10–20 giây: tìm nguồn, kiểm codec, rồi dựng
+          sẵn {STARTUP_BUFFER_HINT}s đệm. Những lần sau gần như tức thì.
+        </p>
+        {/* Each step lights up as the elapsed time passes the point it usually
+            starts. Honest about being an estimate — the server does not report
+            its stage, so this is a guide, not a measurement. */}
+        <div className="flex items-center gap-2 text-[10px] font-mono">
+          {[
+            { at: 0, label: 'tìm nguồn' },
+            { at: 5, label: 'kiểm codec' },
+            { at: 9, label: 'dựng đệm' },
+          ].map((step) => (
+            <span
+              key={step.label}
+              className={`px-2 py-0.5 rounded border transition-colors ${resolveElapsed >= step.at
+                ? 'border-amber-primary/60 text-amber-gold bg-amber-primary/10'
+                : 'border-white/10 text-cinema-muted'}`}
+            >
+              {step.label}
+            </span>
+          ))}
+        </div>
+        {resolveElapsed > 35 && (
+          <p className="text-[10px] text-cinema-muted mt-3">
+            Lâu hơn thường lệ — nguồn này có thể chậm. Thử đổi nguồn nếu quá 60 giây.
+          </p>
+        )}
       </div>
     );
   }
