@@ -1,12 +1,14 @@
 'use client';
 
-import { useState } from 'react';
+import { useEffect, useState } from 'react';
 import { signIn } from 'next-auth/react';
 import { useRouter } from 'next/navigation';
 import Link from 'next/link';
 import { authAPI } from '@/lib/api';
-import { Eye, EyeOff, Film, Mail, Lock, User, ArrowRight, Loader2 } from 'lucide-react';
-import Image from 'next/image';
+import { Loader2 } from 'lucide-react';
+import SpatialShader from '@/components/SpatialShader';
+
+const REMEMBER_KEY = 'cine_remember_email';
 
 export default function AuthPage() {
   const router = useRouter();
@@ -15,6 +17,7 @@ export default function AuthPage() {
   const [loading, setLoading] = useState(false);
   const [googleLoading, setGoogleLoading] = useState(false);
   const [error, setError] = useState('');
+  const [remember, setRemember] = useState(true);
 
   const [formData, setFormData] = useState({
     email: '',
@@ -22,6 +25,15 @@ export default function AuthPage() {
     username: '',
     fullName: '',
   });
+
+  useEffect(() => {
+    try {
+      const saved = localStorage.getItem(REMEMBER_KEY);
+      if (saved) setFormData((prev) => ({ ...prev, email: saved }));
+    } catch {
+      // storage unavailable — ignore
+    }
+  }, []);
 
   const handleChange = (e: React.ChangeEvent<HTMLInputElement>) => {
     setFormData({
@@ -35,11 +47,25 @@ export default function AuthPage() {
     setGoogleLoading(true);
     try {
       await signIn('google', { callbackUrl: '/' });
-    } catch (error) {
-      console.error('Google login error:', error);
+    } catch (err) {
+      console.error('Google login error:', err);
       setError('Đăng nhập Google thất bại');
       setGoogleLoading(false);
     }
+  };
+
+  const handleAppleLogin = () => {
+    setError('Đăng nhập Apple chưa được hỗ trợ — vui lòng dùng Google hoặc email.');
+  };
+
+  const handleForgotPassword = () => {
+    setError('Chức năng đặt lại mật khẩu đang phát triển — vui lòng liên hệ hỗ trợ.');
+  };
+
+  const switchMode = (login: boolean) => {
+    setIsLogin(login);
+    setError('');
+    setFormData({ email: formData.email, password: '', username: '', fullName: '' });
   };
 
   const handleSubmit = async (e: React.FormEvent) => {
@@ -70,8 +96,15 @@ export default function AuthPage() {
               localStorage.setItem('token', response.data.token);
               localStorage.setItem('user', JSON.stringify(response.data.user));
             }
-          } catch (e) {
-            console.error('API login sync failed', e);
+          } catch (err) {
+            console.error('API login sync failed', err);
+          }
+
+          try {
+            if (remember) localStorage.setItem(REMEMBER_KEY, formData.email);
+            else localStorage.removeItem(REMEMBER_KEY);
+          } catch {
+            // storage unavailable — ignore
           }
 
           router.push('/');
@@ -101,233 +134,472 @@ export default function AuthPage() {
           router.refresh();
         }
       }
-    } catch (err: any) {
-      const message = err.response?.data?.message || err.message || 'Đã có lỗi xảy ra';
+    } catch (err: unknown) {
+      const message =
+        (err as { response?: { data?: { message?: string } }; message?: string })
+          ?.response?.data?.message ||
+        (err as { message?: string })?.message ||
+        'Đã có lỗi xảy ra';
       setError(message);
     } finally {
       setLoading(false);
     }
   };
 
+  const tabActive =
+    'py-3 text-center rounded-xl bg-gradient-to-r from-amber-gold/20 via-amber-primary/20 to-amber-gold/10 border border-amber-primary/40 text-amber-gold font-mono text-label-lg font-bold shadow-amber-glow transition-all';
+  const tabInactive =
+    'py-3 text-center rounded-xl text-cinema-muted hover:text-cinema-text font-mono text-label-lg transition-colors';
+
   return (
-    <div className="min-h-screen bg-gradient-to-br from-gray-900 via-black to-red-900 bg-[url('https://assets.nflxext.com/ffe/siteui/vlv3/c38a2d52-138e-48a3-ab68-36787ece46b3/eeb03fc9-99bf-44da-927e-0db4ad1a9e3e/VN-en-20240101-popsignuptwoweeks-perspective_alpha_website_large.jpg')] bg-cover bg-center bg-no-repeat relative flex items-center justify-center p-4 overflow-hidden">
-      {/* Overlay */}
-      <div className="absolute inset-0 bg-black/60 backdrop-blur-sm z-0"></div>
+    <div className="relative -mx-4 -mt-20 px-6 pb-12 pt-28 md:-mx-8 lg:px-12">
+      {/* Ambient Full Canvas Aurora & Cosmic Grain (Stitch) + realtime shader */}
+      <div className="pointer-events-none fixed inset-0 z-0">
+        <SpatialShader opacity={0.8} speed={1.8} />
+      </div>
+      <div className="aurora-gradient pointer-events-none fixed inset-0 z-0"></div>
+      <div className="stardust pointer-events-none fixed inset-0 z-0 opacity-40"></div>
 
-      {/* Dynamic Background Elements */}
-      <div className="absolute top-[-10%] left-[-10%] w-[40%] h-[40%] bg-red-600/20 rounded-full blur-[100px] animate-pulse"></div>
-      <div className="absolute bottom-[-10%] right-[-10%] w-[40%] h-[40%] bg-blue-600/10 rounded-full blur-[100px] animate-pulse delay-700"></div>
-
-      <div className="w-full max-w-[1000px] grid grid-cols-1 lg:grid-cols-2 bg-black/40 backdrop-blur-md rounded-3xl border border-white/10 shadow-2xl overflow-hidden relative z-10 min-h-[600px]">
-        {/* Left Side - Form */}
-        <div className="p-8 lg:p-12 flex flex-col justify-center relative">
-
-          {/* Logo Mobile */}
-          <div className="lg:hidden mb-8 text-center">
-            <Link href="/" className="inline-flex items-center gap-2 text-2xl font-bold text-white">
-              <Film className="w-8 h-8 text-red-600" />
-              <span>MovieWeb</span>
-            </Link>
-          </div>
-
-          <div className="mb-8">
-            <h2 className="text-3xl font-bold text-white mb-2">
-              {isLogin ? 'Chào mừng trở lại' : 'Tạo tài khoản'}
-            </h2>
-            <p className="text-gray-400">
-              {isLogin
-                ? 'Nhập thông tin để truy cập tài khoản của bạn'
-                : 'Điền thông tin bên dưới để bắt đầu trải nghiệm'}
-            </p>
-          </div>
-
-          {/* Google Login Button */}
-          <button
-            onClick={handleGoogleLogin}
-            disabled={googleLoading || loading}
-            type="button"
-            className="w-full bg-white text-gray-900 font-semibold py-3 px-4 rounded-xl flex items-center justify-center gap-3 hover:bg-gray-50 transition-all transform hover:scale-[1.01] active:scale-[0.98] mb-6"
-          >
-            {googleLoading ? (
-              <Loader2 className="animate-spin w-5 h-5 text-gray-600" />
-            ) : (
-              <svg className="w-5 h-5" viewBox="0 0 24 24">
-                <path
-                  d="M22.56 12.25c0-.78-.07-1.53-.2-2.25H12v4.26h5.92c-.26 1.37-1.04 2.53-2.21 3.31v2.77h3.57c2.08-1.92 3.28-4.74 3.28-8.09z"
-                  fill="#4285F4"
-                />
-                <path
-                  d="M12 23c2.97 0 5.46-.98 7.28-2.66l-3.57-2.77c-.98.66-2.23 1.06-3.71 1.06-2.86 0-5.29-1.93-6.16-4.53H2.18v2.84C3.99 20.53 7.7 23 12 23z"
-                  fill="#34A853"
-                />
-                <path
-                  d="M5.84 14.09c-.22-.66-.35-1.36-.35-2.09s.13-1.43.35-2.09V7.07H2.18C1.43 8.55 1 10.22 1 12s.43 3.45 1.18 4.93l2.85-2.22.81-.62z"
-                  fill="#FBBC05"
-                />
-                <path
-                  d="M12 5.38c1.62 0 3.06.56 4.21 1.64l3.15-3.15C17.45 2.09 14.97 1 12 1 7.7 1 3.99 3.47 2.18 7.07l3.66 2.84c.87-2.6 3.3-4.53 6.16-4.53z"
-                  fill="#EA4335"
-                />
-              </svg>
-            )}
-            <span>Đăng nhập bằng Google</span>
-          </button>
-
-          <div className="relative mb-6">
-            <div className="absolute inset-0 flex items-center">
-              <div className="w-full border-t border-white/10"></div>
-            </div>
-            <div className="relative flex justify-center text-sm">
-              <span className="px-2 bg-[#0a0a0a]/0 backdrop-blur-xl text-gray-500 bg-opacity-50">Hoặc tiếp tục với email</span>
-            </div>
-          </div>
-
-          <form onSubmit={handleSubmit} className="space-y-4">
-            {/* Input Groups */}
-            <div className="space-y-4">
-              {/* Email */}
-              <div className="group">
-                <div className="relative">
-                  <div className="absolute inset-y-0 left-0 pl-4 flex items-center pointer-events-none">
-                    <Mail className="h-5 w-5 text-gray-500 group-focus-within:text-red-500 transition-colors" />
-                  </div>
-                  <input
-                    type="email"
-                    name="email"
-                    value={formData.email}
-                    onChange={handleChange}
-                    required
-                    className="block w-full pl-11 pr-4 py-3.5 bg-white/5 border border-white/10 rounded-xl text-white placeholder-gray-500 focus:outline-none focus:border-red-500/50 focus:ring-4 focus:ring-red-500/10 transition-all"
-                    placeholder="Email của bạn"
-                  />
-                </div>
-              </div>
-
-              {/* Username & FullName (Register only) */}
-              {!isLogin && (
-                <>
-                  <div className="group animate-in fade-in slide-in-from-top-4 duration-300">
-                    <div className="relative">
-                      <div className="absolute inset-y-0 left-0 pl-4 flex items-center pointer-events-none">
-                        <User className="h-5 w-5 text-gray-500 group-focus-within:text-red-500 transition-colors" />
-                      </div>
-                      <input
-                        type="text"
-                        name="username"
-                        value={formData.username}
-                        onChange={handleChange}
-                        required={!isLogin}
-                        className="block w-full pl-11 pr-4 py-3.5 bg-white/5 border border-white/10 rounded-xl text-white placeholder-gray-500 focus:outline-none focus:border-red-500/50 focus:ring-4 focus:ring-red-500/10 transition-all"
-                        placeholder="Tên đăng nhập"
-                      />
-                    </div>
-                  </div>
-                  <div className="group animate-in fade-in slide-in-from-top-4 duration-300 delay-100">
-                    <div className="relative">
-                      <div className="absolute inset-y-0 left-0 pl-4 flex items-center pointer-events-none">
-                        <User className="h-5 w-5 text-gray-500 group-focus-within:text-red-500 transition-colors" />
-                      </div>
-                      <input
-                        type="text"
-                        name="fullName"
-                        value={formData.fullName}
-                        onChange={handleChange}
-                        className="block w-full pl-11 pr-4 py-3.5 bg-white/5 border border-white/10 rounded-xl text-white placeholder-gray-500 focus:outline-none focus:border-red-500/50 focus:ring-4 focus:ring-red-500/10 transition-all"
-                        placeholder="Họ và tên"
-                      />
-                    </div>
-                  </div>
-                </>
-              )}
-
-              {/* Password */}
-              <div className="group">
-                <div className="relative">
-                  <div className="absolute inset-y-0 left-0 pl-4 flex items-center pointer-events-none">
-                    <Lock className="h-5 w-5 text-gray-500 group-focus-within:text-red-500 transition-colors" />
-                  </div>
-                  <input
-                    type={showPassword ? 'text' : 'password'}
-                    name="password"
-                    value={formData.password}
-                    onChange={handleChange}
-                    required
-                    className="block w-full pl-11 pr-12 py-3.5 bg-white/5 border border-white/10 rounded-xl text-white placeholder-gray-500 focus:outline-none focus:border-red-500/50 focus:ring-4 focus:ring-red-500/10 transition-all"
-                    placeholder="Mật khẩu"
-                    minLength={6}
-                  />
-                  <button
-                    type="button"
-                    onClick={() => setShowPassword(!showPassword)}
-                    className="absolute inset-y-0 right-0 pr-4 flex items-center text-gray-500 hover:text-white transition-colors"
-                  >
-                    {showPassword ? <EyeOff className="h-5 w-5" /> : <Eye className="h-5 w-5" />}
-                  </button>
-                </div>
-              </div>
-            </div>
-
-            {/* Error Message */}
-            {error && (
-              <div className="bg-red-500/10 border border-red-500/20 text-red-400 px-4 py-3 rounded-xl text-sm flex items-center gap-2 animate-in fade-in slide-in-from-top-2">
-                <div className="w-1.5 h-1.5 rounded-full bg-red-400"></div>
-                {error}
-              </div>
-            )}
-
-            {/* Submit Button */}
-            <button
-              type="submit"
-              disabled={loading || googleLoading}
-              className="w-full bg-gradient-to-r from-red-600 to-red-500 hover:from-red-500 hover:to-red-400 text-white font-bold py-3.5 rounded-xl transition-all transform hover:scale-[1.02] active:scale-[0.98] disabled:opacity-50 disabled:cursor-not-allowed disabled:transform-none shadow-lg shadow-red-600/20 flex items-center justify-center gap-2"
-            >
-              {loading ? (
-                <Loader2 className="animate-spin" size={20} />
-              ) : (
-                <>
-                  <span>{isLogin ? 'Đăng nhập' : 'Đăng ký tài khoản'}</span>
-                  <ArrowRight size={18} />
-                </>
-              )}
-            </button>
-          </form>
-
-          {/* Toggle Login/Register */}
-          <div className="mt-8 text-center">
-            <p className="text-gray-400">
-              {isLogin ? 'Chưa có tài khoản? ' : 'Đã có tài khoản? '}
-              <button
-                onClick={() => {
-                  setIsLogin(!isLogin);
-                  setError('');
-                  setFormData({ email: '', password: '', username: '', fullName: '' });
-                }}
-                className="text-white font-semibold hover:text-red-400 transition-colors ml-1"
+      {/* Top Minimal Floating Header */}
+      <div className="relative z-10 mx-auto flex w-full max-w-[1400px] items-center justify-between pb-8">
+        <div className="flex items-center gap-3">
+          <Link href="/" className="group flex items-center gap-2">
+            <div className="flex h-9 w-9 items-center justify-center rounded-xl bg-gradient-to-tr from-amber-primary to-amber-gold shadow-amber-glow">
+              <span
+                className="material-symbols-outlined text-surface-dark"
+                style={{ fontVariationSettings: "'FILL' 1" }}
               >
-                {isLogin ? 'Đăng ký ngay' : 'Đăng nhập'}
-              </button>
-            </p>
+                movie_filter
+              </span>
+            </div>
+            <span className="font-syne text-headline-md font-extrabold uppercase tracking-tight text-amber-gold">
+              CineStream
+            </span>
+          </Link>
+          <span className="rounded-full border border-white/10 bg-surface-container-high/80 px-2.5 py-0.5 font-mono text-label-sm tracking-widest text-cyan-accent">
+            SPATIAL 3D CINEMA
+          </span>
+        </div>
+        <Link
+          href="/"
+          className="flex items-center gap-1.5 font-mono text-label-md text-cinema-muted transition-colors hover:text-amber-gold"
+        >
+          <span className="material-symbols-outlined text-[18px]">arrow_back</span>
+          <span>Quay lại trang chủ</span>
+        </Link>
+      </div>
+
+      {/* Main 2-Column Cinematic Layout */}
+      <div className="relative z-10 mx-auto grid w-full max-w-[1400px] grid-cols-1 items-center gap-8 lg:grid-cols-12 lg:gap-12">
+        {/* COLUMN 1: CINEMATIC AMBIANCE & IMMERSIVE BRANDING */}
+        <div className="relative flex min-h-[540px] flex-col justify-center overflow-hidden rounded-3xl p-8 lg:col-span-6 lg:min-h-[680px] lg:p-12 xl:col-span-7">
+          {/* Shader backdrop with deep OLED fade */}
+          <div className="absolute inset-0 z-0 overflow-hidden">
+            <SpatialShader opacity={1} speed={1.8} />
+            <div className="absolute inset-0 bg-gradient-to-t from-surface-dark via-surface-dark/45 to-transparent"></div>
+            <div className="absolute inset-0 bg-gradient-to-r from-surface-dark/60 via-transparent to-surface-dark/60"></div>
+            <div className="absolute inset-0 bg-[radial-gradient(ellipse_at_center,transparent_30%,#0d0e11_100%)]"></div>
+            <div className="pointer-events-none absolute -left-10 top-1/4 h-72 w-72 rounded-full bg-amber-primary/20 blur-[90px]"></div>
+            <div className="pointer-events-none absolute bottom-10 right-10 h-80 w-80 rounded-full bg-cyan-accent/15 blur-[100px]"></div>
+            <div className="pointer-events-none absolute right-1/3 top-20 h-60 w-60 rounded-full bg-wine-accent/15 blur-[90px]"></div>
+          </div>
+
+          {/* Foreground Content Layer */}
+          <div className="relative z-10 flex max-w-xl flex-col space-y-6">
+            <div className="flex flex-wrap items-center gap-2">
+              <span className="inline-flex items-center gap-1 rounded-full border border-amber-primary/40 bg-surface-dark/70 px-3 py-1 font-mono text-label-sm tracking-widest text-amber-gold shadow-amber-glow backdrop-blur-md">
+                <span
+                  className="material-symbols-outlined text-[14px]"
+                  style={{ fontVariationSettings: "'FILL' 1" }}
+                >
+                  theater_comedy
+                </span>
+                DỮ LIỆU TMDB
+              </span>
+              <span className="inline-flex items-center gap-1 rounded-full border border-cyan-accent/30 bg-surface-dark/70 px-3 py-1 font-mono text-label-sm tracking-widest text-cyan-accent backdrop-blur-md">
+                <span className="material-symbols-outlined text-[14px]">graphic_eq</span>
+                NGUỒN 4K CACHED
+              </span>
+              <span className="inline-flex items-center rounded-full border border-white/10 bg-surface-dark/70 px-2.5 py-1 font-mono text-label-sm tracking-widest text-cinema-muted backdrop-blur-md">
+                HLS REMUX
+              </span>
+            </div>
+
+            <div className="space-y-3">
+              <h1 className="font-syne text-display-hero-mobile font-extrabold leading-tight tracking-tight text-white lg:text-display-hero">
+                ĐẮM CHÌM TRONG KHÔNG GIAN <br />
+                <span className="bg-gradient-to-r from-amber-gold via-amber-primary to-cyan-accent bg-clip-text text-transparent drop-shadow-[0_4px_24px_rgba(245,158,11,0.35)]">
+                  ĐIỆN ẢNH VÔ TẬN
+                </span>
+              </h1>
+              <p className="text-body-lg font-light leading-relaxed text-cinema-muted/90">
+                Tổng hợp metadata phim từ TMDB, tự động chấm điểm và chọn nguồn
+                4K/HD đã lưu sẵn (cached) để phát mượt — lưu tiến độ, danh sách
+                xem sau và tùy chọn ngay trên thiết bị của bạn.
+              </p>
+            </div>
+
+            <div className="grid grid-cols-1 gap-3.5 pt-2">
+              <div className="group flex items-start gap-4 rounded-2xl border border-white/10 bg-surface-light/60 p-4 shadow-lg backdrop-blur-xl transition-all duration-300 hover:translate-x-1 hover:border-amber-primary/40">
+                <div className="flex h-11 w-11 items-center justify-center rounded-xl border border-amber-primary/30 bg-amber-primary/10 text-amber-gold shadow-[0_0_15px_rgba(245,158,11,0.2)] transition-all duration-300 group-hover:bg-amber-primary group-hover:text-surface-dark">
+                  <span className="material-symbols-outlined text-[24px]">movie_filter</span>
+                </div>
+                <div className="space-y-0.5">
+                  <div className="flex items-center gap-2">
+                    <h2 className="text-headline-sm font-semibold text-white">
+                      Tự chọn nguồn ngon nhất
+                    </h2>
+                    <span className="rounded bg-amber-primary/20 px-2 py-0.5 font-mono text-[11px] font-bold tracking-wider text-amber-gold">
+                      AUTO SCORE
+                    </span>
+                  </div>
+                  <p className="text-body-sm text-cinema-muted/80">
+                    Chấm điểm từng nguồn theo độ phân giải, seed và cache rồi tự
+                    phát bản tốt nhất — đổi nguồn 4K thủ công lúc nào cũng được.
+                  </p>
+                </div>
+              </div>
+
+              <div className="group flex items-start gap-4 rounded-2xl border border-white/10 bg-surface-light/60 p-4 shadow-lg backdrop-blur-xl transition-all duration-300 hover:translate-x-1 hover:border-cyan-accent/40">
+                <div className="flex h-11 w-11 items-center justify-center rounded-xl border border-cyan-accent/30 bg-cyan-accent/10 text-cyan-accent shadow-[0_0_15px_rgba(84,221,252,0.2)] transition-all duration-300 group-hover:bg-cyan-accent group-hover:text-surface-dark">
+                  <span className="material-symbols-outlined text-[24px]">history</span>
+                </div>
+                <div className="space-y-0.5">
+                  <div className="flex items-center gap-2">
+                    <h2 className="text-headline-sm font-semibold text-white">
+                      Xem dở, mở lại xem tiếp
+                    </h2>
+                    <span className="rounded bg-cyan-accent/20 px-2 py-0.5 font-mono text-[11px] font-bold tracking-wider text-cyan-accent">
+                      RESUME
+                    </span>
+                  </div>
+                  <p className="text-body-sm text-cinema-muted/80">
+                    Tiến độ từng tập được lưu tự động — thoát ra giữa chừng, hôm
+                    sau mở lại phát đúng chỗ đang xem.
+                  </p>
+                </div>
+              </div>
+
+              <div className="group flex items-start gap-4 rounded-2xl border border-white/10 bg-surface-light/60 p-4 shadow-lg backdrop-blur-xl transition-all duration-300 hover:translate-x-1 hover:border-wine-accent/40">
+                <div className="flex h-11 w-11 items-center justify-center rounded-xl border border-wine-accent/30 bg-wine-accent/20 text-rose-200 shadow-[0_0_15px_rgba(204,0,60,0.2)] transition-all duration-300 group-hover:bg-wine-accent group-hover:text-white">
+                  <span className="material-symbols-outlined text-[24px]">verified</span>
+                </div>
+                <div className="space-y-0.5">
+                  <div className="flex items-center gap-2">
+                    <h2 className="text-headline-sm font-semibold text-white">
+                      Không quảng cáo 100%
+                    </h2>
+                    <span className="rounded bg-wine-accent/30 px-2 py-0.5 font-mono text-[10px] font-bold uppercase tracking-wider text-rose-200">
+                      UNINTERRUPTED
+                    </span>
+                  </div>
+                  <p className="text-body-sm text-cinema-muted/80">
+                    Trải nghiệm liền mạch, đắm chìm trọn vẹn từng khung hình mà
+                    không bị ngắt quãng bất kỳ giây nào.
+                  </p>
+                </div>
+              </div>
+            </div>
+
+            <div className="flex items-center gap-2 pt-3 font-mono text-label-md text-cinema-muted">
+              <span
+                className="material-symbols-outlined text-[18px] text-amber-gold"
+                style={{ fontVariationSettings: "'FILL' 1" }}
+              >
+                stars
+              </span>
+              <span>
+                Miễn phí · Không quảng cáo · Lịch chiếu, công chiếu và thư viện
+                tải xuống đầy đủ
+              </span>
+            </div>
           </div>
         </div>
 
-        {/* Right Side - Image/Banner */}
-        <div className="hidden lg:flex relative bg-black items-center justify-center overflow-hidden">
-          <div className="absolute inset-0 bg-gradient-to-br from-red-900/40 to-black/60 z-10"></div>
-          {/* Use a placeholder image or a pattern if no specific image is available. 
-              Ideally this would be a movie poster collage. 
-              For now, using a nice gradient + text */}
-          <div className="absolute inset-0 bg-[url('https://assets.nflxext.com/ffe/siteui/vlv3/c38a2d52-138e-48a3-ab68-36787ece46b3/eeb03fc9-99bf-44da-927e-0db4ad1a9e3e/VN-en-20240101-popsignuptwoweeks-perspective_alpha_website_large.jpg')] bg-cover bg-center opacity-50"></div>
-
-          <div className="relative z-20 text-center p-12">
-            <div className="mb-6 flex justify-center">
-              <div className="w-20 h-20 bg-gradient-to-br from-red-600 to-red-800 rounded-2xl flex items-center justify-center shadow-2xl shadow-red-600/30">
-                <Film size={40} className="text-white" />
+        {/* COLUMN 2: AUTH FROSTED GLASS FORM CONTAINER */}
+        <div className="flex justify-center lg:col-span-6 xl:col-span-5">
+          <div className="glass-specular-card relative z-20 w-full max-w-[490px] rounded-3xl p-8 sm:p-10">
+            <div className="flex items-center justify-between border-b border-white/10 pb-6">
+              <div className="flex items-center gap-2.5">
+                <div className="flex h-8 w-8 items-center justify-center rounded-lg border border-amber-primary/40 bg-amber-primary/20 text-amber-gold">
+                  <span className="material-symbols-outlined text-[20px]">verified_user</span>
+                </div>
+                <span className="font-mono text-label-sm uppercase tracking-widest text-cinema-muted">
+                  XÁC THỰC THÀNH VIÊN CINESTREAM
+                </span>
               </div>
+              <span className="rounded border border-emerald-500/30 bg-emerald-500/10 px-2 py-0.5 font-mono text-[10px] font-bold tracking-wider text-emerald-400">
+                256-BIT SSL
+              </span>
             </div>
-            <h1 className="text-4xl font-bold text-white mb-4">MovieWeb</h1>
-            <p className="text-gray-300 text-lg max-w-sm mx-auto leading-relaxed">
-              Trải nghiệm thế giới điện ảnh với chất lượng đỉnh cao. Hàng ngàn bộ phim bom tấn đang chờ bạn khám phá.
-            </p>
+
+            {/* Dual Mode Toggle Tabs */}
+            <div className="mt-6 grid grid-cols-2 gap-1 rounded-2xl border border-white/10 bg-surface-dark/80 p-1.5 backdrop-blur-md">
+              <button
+                type="button"
+                onClick={() => switchMode(true)}
+                className={isLogin ? tabActive : tabInactive}
+              >
+                Đăng Nhập
+              </button>
+              <button
+                type="button"
+                onClick={() => switchMode(false)}
+                className={!isLogin ? tabActive : tabInactive}
+              >
+                Đăng Ký
+              </button>
+            </div>
+
+            <form className="mt-7 space-y-5" onSubmit={handleSubmit}>
+              {!isLogin && (
+                <>
+                  <div className="space-y-2">
+                    <label
+                      htmlFor="username"
+                      className="block font-mono text-label-sm uppercase tracking-widest text-cinema-muted"
+                    >
+                      TÊN ĐĂNG NHẬP
+                    </label>
+                    <div className="relative flex items-center rounded-xl border border-white/10 bg-surface-container/60 transition-all duration-200 hover:border-amber-primary/40 focus-within:border-amber-primary focus-within:ring-2 focus-within:ring-amber-primary/20">
+                      <span className="material-symbols-outlined pl-4 text-[20px] text-amber-gold">
+                        person
+                      </span>
+                      <input
+                        id="username"
+                        name="username"
+                        type="text"
+                        required={!isLogin}
+                        value={formData.username}
+                        onChange={handleChange}
+                        placeholder="cinephile_vn"
+                        className="w-full border-0 bg-transparent px-3.5 py-3.5 text-body-md text-white placeholder-cinema-subtle/40 focus:outline-none focus:ring-0"
+                      />
+                    </div>
+                  </div>
+                  <div className="space-y-2">
+                    <label
+                      htmlFor="fullName"
+                      className="block font-mono text-label-sm uppercase tracking-widest text-cinema-muted"
+                    >
+                      HỌ VÀ TÊN
+                    </label>
+                    <div className="relative flex items-center rounded-xl border border-white/10 bg-surface-container/60 transition-all duration-200 hover:border-amber-primary/40 focus-within:border-amber-primary focus-within:ring-2 focus-within:ring-amber-primary/20">
+                      <span className="material-symbols-outlined pl-4 text-[20px] text-amber-gold">
+                        badge
+                      </span>
+                      <input
+                        id="fullName"
+                        name="fullName"
+                        type="text"
+                        value={formData.fullName}
+                        onChange={handleChange}
+                        placeholder="Nguyễn Văn A"
+                        className="w-full border-0 bg-transparent px-3.5 py-3.5 text-body-md text-white placeholder-cinema-subtle/40 focus:outline-none focus:ring-0"
+                      />
+                    </div>
+                  </div>
+                </>
+              )}
+
+              <div className="space-y-2">
+                <label
+                  htmlFor="email"
+                  className="block font-mono text-label-sm uppercase tracking-widest text-cinema-muted"
+                >
+                  ĐỊA CHỈ EMAIL
+                </label>
+                <div className="relative flex items-center rounded-xl border border-white/10 bg-surface-container/60 transition-all duration-200 hover:border-amber-primary/40 focus-within:border-amber-primary focus-within:ring-2 focus-within:ring-amber-primary/20">
+                  <span className="material-symbols-outlined pl-4 text-[20px] text-amber-gold">
+                    mail
+                  </span>
+                  <input
+                    id="email"
+                    name="email"
+                    type="email"
+                    required
+                    value={formData.email}
+                    onChange={handleChange}
+                    placeholder="tenban@cinestream.vn"
+                    className="w-full border-0 bg-transparent px-3.5 py-3.5 text-body-md text-white placeholder-cinema-subtle/40 focus:outline-none focus:ring-0"
+                  />
+                </div>
+              </div>
+
+              <div className="space-y-2">
+                <div className="flex items-center justify-between">
+                  <label
+                    htmlFor="password"
+                    className="block font-mono text-label-sm uppercase tracking-widest text-cinema-muted"
+                  >
+                    MẬT KHẨU
+                  </label>
+                  <span className="font-mono text-[11px] text-cyan-accent/90">
+                    YÊU CẦU 6+ KÝ TỰ
+                  </span>
+                </div>
+                <div className="relative flex items-center rounded-xl border border-white/10 bg-surface-container/60 transition-all duration-200 hover:border-amber-primary/40 focus-within:border-amber-primary focus-within:ring-2 focus-within:ring-amber-primary/20">
+                  <span className="material-symbols-outlined pl-4 text-[20px] text-amber-gold">
+                    lock
+                  </span>
+                  <input
+                    id="password"
+                    name="password"
+                    type={showPassword ? 'text' : 'password'}
+                    required
+                    minLength={6}
+                    value={formData.password}
+                    onChange={handleChange}
+                    placeholder="••••••••••••"
+                    className="w-full border-0 bg-transparent px-3.5 py-3.5 text-body-md tracking-wider text-white placeholder-cinema-subtle/40 focus:outline-none focus:ring-0"
+                  />
+                  <button
+                    type="button"
+                    aria-label="Ẩn hoặc hiện mật khẩu"
+                    onClick={() => setShowPassword(!showPassword)}
+                    className="flex items-center justify-center pr-4 text-cinema-muted transition-colors hover:text-amber-gold"
+                  >
+                    <span className="material-symbols-outlined text-[20px]">
+                      {showPassword ? 'visibility_off' : 'visibility'}
+                    </span>
+                  </button>
+                </div>
+              </div>
+
+              <div className="flex items-center justify-between pt-1">
+                <label className="group flex cursor-pointer select-none items-center gap-2.5">
+                  <button
+                    type="button"
+                    role="checkbox"
+                    aria-checked={remember}
+                    onClick={() => setRemember(!remember)}
+                    className={`flex h-4 w-4 items-center justify-center rounded border shadow-sm transition-colors ${
+                      remember
+                        ? 'border-amber-primary bg-amber-primary'
+                        : 'border-white/20 bg-surface-container'
+                    }`}
+                  >
+                    {remember && (
+                      <span
+                        className="material-symbols-outlined text-[14px] font-bold text-surface-dark"
+                      >
+                        check
+                      </span>
+                    )}
+                  </button>
+                  <span className="text-body-sm text-cinema-muted transition-colors group-hover:text-white">
+                    Ghi nhớ tôi trên thiết bị này
+                  </span>
+                </label>
+                <button
+                  type="button"
+                  onClick={handleForgotPassword}
+                  className="font-mono text-label-md text-amber-gold transition-all hover:text-amber-primary hover:underline"
+                >
+                  Quên mật khẩu?
+                </button>
+              </div>
+
+              {error && (
+                <div className="flex items-center gap-2 rounded-xl border border-amber-primary/20 bg-amber-primary/10 px-4 py-3 text-sm text-amber-gold">
+                  <div className="h-1.5 w-1.5 rounded-full bg-amber-gold"></div>
+                  {error}
+                </div>
+              )}
+
+              <button
+                type="submit"
+                disabled={loading || googleLoading}
+                className="flex w-full items-center justify-center gap-2 rounded-xl bg-gradient-to-r from-amber-primary to-amber-gold px-6 py-4 text-headline-sm font-bold uppercase tracking-tight text-surface-dark shadow-[0_0_25px_rgba(245,158,11,0.45)] transition-all duration-200 hover:scale-[1.01] hover:shadow-[0_0_40px_rgba(245,158,11,0.7)] active:scale-[0.99] disabled:cursor-not-allowed disabled:opacity-50 disabled:transform-none"
+              >
+                {loading ? (
+                  <Loader2 className="animate-spin" size={20} />
+                ) : (
+                  <>
+                    <span
+                      className="material-symbols-outlined text-[22px]"
+                      style={{ fontVariationSettings: "'FILL' 1" }}
+                    >
+                      play_circle
+                    </span>
+                    <span>{isLogin ? 'ĐĂNG NHẬP VÀO CINESTREAM' : 'TẠO TÀI KHOẢN VIP CINESTREAM'}</span>
+                  </>
+                )}
+              </button>
+
+              <div className="relative flex items-center justify-center py-2">
+                <div className="w-full border-t border-white/10"></div>
+                <span className="absolute rounded-full border border-white/5 bg-surface-dark/90 px-4 font-mono text-label-sm uppercase tracking-widest text-cinema-muted backdrop-blur-md">
+                  HOẶC TIẾP TỤC VỚI
+                </span>
+              </div>
+
+              <div className="grid grid-cols-2 gap-3.5">
+                <button
+                  type="button"
+                  onClick={handleGoogleLogin}
+                  disabled={googleLoading || loading}
+                  className="group flex items-center justify-center gap-2.5 rounded-xl border border-white/10 bg-surface-container/40 px-4 py-3 transition-all hover:border-white/20 hover:bg-surface-container-high/60 disabled:opacity-50"
+                >
+                  {googleLoading ? (
+                    <Loader2 className="h-4 w-4 animate-spin text-cinema-muted" />
+                  ) : (
+                    <svg className="h-4 w-4" viewBox="0 0 24 24">
+                      <path
+                        d="M12 5c1.6 0 3 .6 4.1 1.6l3.1-3.1C17.3 1.7 14.8 1 12 1 7.4 1 3.5 3.6 1.6 7.4l3.7 2.9C6.2 7.3 8.9 5 12 5z"
+                        fill="#EA4335"
+                      ></path>
+                      <path
+                        d="M23.5 12.3c0-.8-.1-1.6-.2-2.3H12v4.6h6.5c-.3 1.5-1.1 2.8-2.4 3.7l3.7 2.9c2.2-2 3.7-5 3.7-8.9z"
+                        fill="#4285F4"
+                      ></path>
+                      <path
+                        d="M5.3 14.7c-.2-.7-.4-1.5-.4-2.4s.2-1.7.4-2.4L1.6 7c-.8 1.6-1.3 3.4-1.3 5.3s.5 3.7 1.3 5.3l3.7-2.9z"
+                        fill="#FBBC05"
+                      ></path>
+                      <path
+                        d="M12 23c3.2 0 6-1.1 8-3l-3.7-2.9c-1.1.7-2.5 1.2-4.3 1.2-3.1 0-5.8-2.3-6.7-5.3L1.6 16c1.9 3.8 5.8 6.4 10.4 6.4z"
+                        fill="#34A853"
+                      ></path>
+                    </svg>
+                  )}
+                  <span className="font-mono text-label-lg text-white transition-colors group-hover:text-amber-gold">
+                    Google
+                  </span>
+                </button>
+                <button
+                  type="button"
+                  onClick={handleAppleLogin}
+                  disabled={googleLoading || loading}
+                  className="group flex items-center justify-center gap-2.5 rounded-xl border border-white/10 bg-surface-container/40 px-4 py-3 transition-all hover:border-white/20 hover:bg-surface-container-high/60 disabled:opacity-50"
+                >
+                  <svg
+                    className="h-4 w-4 fill-current text-white transition-colors group-hover:text-amber-gold"
+                    viewBox="0 0 170 170"
+                  >
+                    <path d="M150.37 130.25c-2.45 5.66-5.35 10.87-8.71 15.66-4.58 6.53-8.33 11.05-11.22 13.56-4.48 4.12-9.28 6.23-14.42 6.35-3.69 0-8.14-1.05-13.32-3.18-5.19-2.12-9.97-3.17-14.34-3.17-4.58 0-9.49 1.05-14.74 3.17-5.26 2.13-9.5 3.24-12.74 3.35-4.35.13-9.16-1.9-14.42-6.08-3.69-3.04-7.69-7.86-12-14.47-6.09-9.35-10.8-19.86-14.15-31.54-3.35-11.68-5.03-22.95-5.03-33.81 0-14.36 3.63-26.43 10.88-36.21 7.26-9.78 16.55-14.77 27.87-14.98 5.66 0 11.96 1.54 18.9 4.62 6.94 3.08 11.07 4.67 12.39 4.77 1.8 0 6.28-1.74 13.43-5.22 7.15-3.48 13.43-4.99 18.84-4.52 14.15 1.16 25.13 6.94 32.94 17.34-11.5 6.94-17.15 16.63-16.94 29.07.21 10.15 4.17 18.59 11.88 25.33 7.71 6.74 17.06 10.51 28.05 11.31-2.22 6.94-5.08 14.4-8.58 22.38zM119.22 33.14c0-7.38 2.65-14.39 7.95-21.03 5.3-6.64 12.06-11.01 20.27-13.11-.21 1.06-.32 2.01-.32 2.86 0 7.39-2.81 14.48-8.44 21.27-5.63 6.79-12.57 11.19-20.82 13.2-.1-.85-.15-1.7-.15-2.55z"></path>
+                  </svg>
+                  <span className="font-mono text-label-lg text-white transition-colors group-hover:text-amber-gold">
+                    Apple
+                  </span>
+                </button>
+              </div>
+            </form>
+
+            <div className="mt-8 border-t border-white/10 pt-6 text-center">
+              <p className="text-body-md text-cinema-muted">
+                {isLogin ? 'Chưa có tài khoản CineStream?' : 'Đã có tài khoản CineStream?'}
+                <button
+                  type="button"
+                  onClick={() => switchMode(!isLogin)}
+                  className="ml-1 inline-block font-semibold text-amber-gold underline decoration-amber-primary/50 underline-offset-4 transition-all hover:text-amber-primary hover:decoration-amber-primary"
+                >
+                  {isLogin ? 'Đăng ký thành viên VIP ngay' : 'Đăng nhập ngay'}
+                </button>
+              </p>
+            </div>
+
+            <div className="absolute -bottom-px left-12 right-12 h-px bg-gradient-to-r from-transparent via-amber-primary/50 to-transparent"></div>
           </div>
         </div>
       </div>

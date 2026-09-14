@@ -123,7 +123,7 @@ export default function LivePremierePage() {
   if (loading) {
     return (
       <div className="min-h-screen flex items-center justify-center">
-        <Loader2 className="w-16 h-16 text-red-600 animate-spin" />
+        <Loader2 className="w-16 h-16 text-amber-gold animate-spin" />
       </div>
     );
   }
@@ -132,8 +132,8 @@ export default function LivePremierePage() {
     return (
       <div className="min-h-screen flex items-center justify-center">
         <div className="text-center">
-          <p className="text-gray-400 text-xl mb-4">Không tìm thấy sự kiện</p>
-          <Link href="/cong-chieu" className="text-red-500 hover:text-red-400">
+          <p className="text-cinema-subtle text-xl mb-4">Không tìm thấy sự kiện</p>
+          <Link href="/cong-chieu" className="text-amber-gold hover:text-amber-gold">
             ← Quay lại lịch công chiếu
           </Link>
         </div>
@@ -146,12 +146,12 @@ export default function LivePremierePage() {
       {/* Header - Responsive */}
       <div className="flex-shrink-0 z-[110] bg-gradient-to-b from-black/90 to-transparent p-3 md:p-4">
         <div className="flex items-center justify-between gap-2">
-          <Link href="/cong-chieu" className="flex items-center gap-1 md:gap-2 text-white hover:text-red-500 transition-colors">
+          <Link href="/cong-chieu" className="flex items-center gap-1 md:gap-2 text-white hover:text-amber-gold transition-colors">
             <ArrowLeft size={18} className="md:w-5 md:h-5" />
             <span className="font-semibold text-xs md:text-sm">Quay lại</span>
           </Link>
           <div className="flex items-center gap-2">
-            <div className="flex items-center gap-1.5 bg-red-600 px-2 md:px-3 py-1 md:py-1.5 rounded-full">
+            <div className="flex items-center gap-1.5 bg-amber-primary px-2 md:px-3 py-1 md:py-1.5 rounded-full">
               <div className="w-1.5 h-1.5 md:w-2 md:h-2 bg-white rounded-full animate-pulse"></div>
               <span className="text-white font-bold text-[10px] md:text-xs">LIVE</span>
             </div>
@@ -176,7 +176,7 @@ export default function LivePremierePage() {
           {/* Video Info Overlay - Responsive text sizes */}
           <div className="absolute bottom-0 left-0 right-0 p-3 md:p-6 bg-gradient-to-t from-black via-black/80 to-transparent pointer-events-none">
             <h1 className="text-white text-base md:text-2xl lg:text-3xl font-bold mb-1 md:mb-2 line-clamp-2">{event.name}</h1>
-            <div className="flex items-center gap-2 md:gap-4 text-xs md:text-sm text-gray-300">
+            <div className="flex items-center gap-2 md:gap-4 text-xs md:text-sm text-cinema-muted">
               <span className="hidden sm:inline">Công chiếu lúc: {new Date(event.startTime).toLocaleString('vi-VN')}</span>
               <span className="sm:hidden">{new Date(event.startTime).toLocaleString('vi-VN', { hour: '2-digit', minute: '2-digit', day: '2-digit', month: '2-digit' })}</span>
             </div>
@@ -184,10 +184,10 @@ export default function LivePremierePage() {
         </div>
 
         {/* Live Chat - Hidden on mobile, visible on desktop */}
-        <div className="hidden lg:flex w-80 xl:w-96 bg-gray-900 border-l border-white/10 flex-col">
+        <div className="hidden lg:flex w-80 xl:w-96 bg-surface-light border-l border-white/10 flex-col">
           <div className="p-3 border-b border-white/10 flex-shrink-0">
             <h2 className="text-white text-lg font-bold">Chat trực tiếp</h2>
-            <p className="text-gray-400 text-xs mt-1">
+            <p className="text-cinema-subtle text-xs mt-1">
               {messages.length} tin nhắn
             </p>
           </div>
@@ -203,13 +203,13 @@ export default function LivePremierePage() {
           >
             {messages.length === 0 ? (
               <div className="text-center py-16">
-                <p className="text-gray-500 text-sm">Chưa có tin nhắn nào</p>
-                <p className="text-gray-600 text-xs mt-2">Hãy là người đầu tiên chat!</p>
+                <p className="text-cinema-subtle text-sm">Chưa có tin nhắn nào</p>
+                <p className="text-cinema-subtle text-xs mt-2">Hãy là người đầu tiên chat!</p>
               </div>
             ) : (
               messages.map((msg, idx) => (
                 <div key={msg._id || idx} className="flex gap-2">
-                  <div className="w-7 h-7 bg-gradient-to-br from-red-500 to-pink-500 rounded-full flex items-center justify-center flex-shrink-0">
+                  <div className="w-7 h-7 bg-gradient-to-br from-amber-gold to-pink-500 rounded-full flex items-center justify-center flex-shrink-0">
                     <span className="text-white text-xs font-bold">
                       {msg.username[0].toUpperCase()}
                     </span>
@@ -219,11 +219,11 @@ export default function LivePremierePage() {
                       <span className="text-white font-semibold text-xs truncate">
                         {msg.username}
                       </span>
-                      <span className="text-gray-500 text-[10px]">
+                      <span className="text-cinema-subtle text-[10px]">
                         {formatTime(msg.timestamp)}
                       </span>
                     </div>
-                    <p className="text-gray-300 text-xs mt-0.5 break-words">
+                    <p className="text-cinema-muted text-xs mt-0.5 break-words">
                       {msg.message}
                     </p>
                   </div>
@@ -233,7 +233,7 @@ export default function LivePremierePage() {
           </div>
 
           {/* Message Input */}
-          <div className="p-3 border-t border-white/10 bg-gray-800 flex-shrink-0">
+          <div className="p-3 border-t border-white/10 bg-surface-container flex-shrink-0">
             {session ? (
               <form onSubmit={handleSendMessage} className="flex gap-2">
                 <input
@@ -241,14 +241,14 @@ export default function LivePremierePage() {
                   value={newMessage}
                   onChange={(e) => setNewMessage(e.target.value)}
                   placeholder="Nhập tin nhắn..."
-                  className="flex-1 bg-gray-700 text-white px-3 py-2 rounded-full text-sm focus:outline-none focus:ring-2 focus:ring-red-500"
+                  className="flex-1 bg-surface-container-high text-white px-3 py-2 rounded-full text-sm focus:outline-none focus:ring-2 focus:ring-amber-primary"
                   maxLength={200}
                   autoComplete="off"
                 />
                 <button
                   type="submit"
                   disabled={!newMessage.trim()}
-                  className="bg-red-600 hover:bg-red-700 disabled:bg-gray-600 disabled:cursor-not-allowed text-white p-2 rounded-full transition-colors flex-shrink-0"
+                  className="bg-amber-primary hover:bg-amber-600 disabled:bg-surface-bright disabled:cursor-not-allowed text-white p-2 rounded-full transition-colors flex-shrink-0"
                   aria-label="Gửi"
                 >
                   <Send size={16} />
@@ -256,10 +256,10 @@ export default function LivePremierePage() {
               </form>
             ) : (
               <div className="text-center">
-                <p className="text-gray-400 text-sm mb-3">Đăng nhập để chat</p>
+                <p className="text-cinema-subtle text-sm mb-3">Đăng nhập để chat</p>
                 <Link
                   href="/auth/login"
-                  className="inline-block bg-red-600 hover:bg-red-700 text-white px-6 py-2 rounded-full font-semibold transition-colors text-sm"
+                  className="inline-block bg-amber-primary hover:bg-amber-600 text-white px-6 py-2 rounded-full font-semibold transition-colors text-sm"
                 >
                   Đăng nhập
                 </Link>

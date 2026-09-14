@@ -3,9 +3,14 @@
 @tailwind utilities;
 
 :root {
-  --background: #141414;
-  --foreground: #ffffff;
-  --primary: #dc2626;
+  --background: #0d0e11;
+  --foreground: #e3e2e6;
+  --primary: #f59e0b;
+  --amber-gold: #ffc174;
+  --cyan-accent: #54ddfc;
+  --wine-accent: #cc003c;
+  --cinema-muted: #d8c3ad;
+  --cinema-subtle: #8e8f96;
 }
 
 html {
@@ -14,71 +19,32 @@ html {
 
 body {
   color: var(--foreground);
-  background: var(--background);
-  font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Oxygen, Ubuntu, Cantarell, 'Open Sans', 'Helvetica Neue', sans-serif;
+  background-color: #0d0e11;
+  background-image:
+    radial-gradient(circle at 50% 0%, rgba(245, 158, 11, 0.12) 0%, transparent 60%),
+    radial-gradient(circle at 10% 40%, rgba(84, 221, 252, 0.05) 0%, transparent 40%),
+    radial-gradient(circle at 90% 80%, rgba(204, 0, 60, 0.05) 0%, transparent 40%);
+  background-attachment: fixed;
   overflow-x: hidden;
 }
 
-/* Custom Scrollbar */
+/* Custom Premium Scrollbar */
 ::-webkit-scrollbar {
-  width: 8px;
-  height: 8px;
+  width: 6px;
+  height: 6px;
 }
 
 ::-webkit-scrollbar-track {
-  background: #0f0f0f;
+  background: #0d0e11;
 }
 
 ::-webkit-scrollbar-thumb {
-  background: #333;
-  border-radius: 4px;
+  background: rgba(245, 158, 11, 0.3);
+  border-radius: 9999px;
 }
 
 ::-webkit-scrollbar-thumb:hover {
-  background: #555;
-}
-
-/* Selection Color */
-::selection {
-  background: rgba(220, 38, 38, 0.3);
-  /* Red-500 with opacity */
-  color: white;
-}
-
-/* Utility Animations */
-@keyframes fadeIn {
-  from {
-    opacity: 0;
-  }
-
-  to {
-    opacity: 1;
-  }
-}
-
-.animate-fade-in {
-  animation: fadeIn 0.5s ease-in-out;
-}
-
-/* Glassmorphism Utilities */
-.glass {
-  background: rgba(0, 0, 0, 0.7);
-  backdrop-filter: blur(10px);
-  border: 1px solid rgba(255, 255, 255, 0.1);
-}
-
-.glass-red {
-  background: rgba(220, 38, 38, 0.1);
-  backdrop-filter: blur(8px);
-  border: 1px solid rgba(220, 38, 38, 0.2);
-}
-
-/* Base styling for inputs */
-input:focus,
-textarea:focus {
-  outline: none;
-  border-color: var(--primary);
-  box-shadow: 0 0 0 1px var(--primary);
+  background: rgba(245, 158, 11, 0.6);
 }
 
 /* Hide scrollbar for horizontal containers but keep functionality */
@@ -91,6 +57,201 @@ textarea:focus {
   scrollbar-width: none;
 }
 
+/* Glassmorphism Utilities */
+.glass-premium {
+  background: rgba(10, 10, 15, 0.65);
+  backdrop-filter: blur(20px);
+  -webkit-backdrop-filter: blur(20px);
+  border: 1px solid rgba(255, 255, 255, 0.08);
+}
+
+.glass-panel {
+  background: rgba(27, 27, 31, 0.65);
+  backdrop-filter: blur(20px);
+  -webkit-backdrop-filter: blur(20px);
+  border: 1px solid rgba(255, 255, 255, 0.08);
+}
+
+.glass-panel-hover {
+  transition: border-color 0.3s cubic-bezier(0.4, 0, 0.2, 1), transform 0.3s cubic-bezier(0.4, 0, 0.2, 1);
+}
+
+.glass-panel-hover:hover {
+  border-color: rgba(245, 158, 11, 0.5);
+  transform: translateY(-4px);
+}
+
+.hero-vignette {
+  background:
+    linear-gradient(180deg, rgba(13, 14, 17, 0.2) 0%, rgba(13, 14, 17, 0.7) 65%, #0d0e11 100%),
+    linear-gradient(90deg, #0d0e11 0%, rgba(13, 14, 17, 0.8) 35%, rgba(13, 14, 17, 0.2) 65%, transparent 100%);
+}
+
+.number-outline {
+  -webkit-text-stroke: 2px rgba(255, 255, 255, 0.25);
+  color: transparent;
+}
+
+.card-zoom:hover .poster-img {
+  transform: scale(1.08);
+}
+
+/* Spatial 3D (visionOS) Utilities */
+.spatial-stage {
+  perspective: 1400px;
+  perspective-origin: 50% 40%;
+}
+
+.spatial-stage-near {
+  perspective: 900px;
+  perspective-origin: 50% 50%;
+}
+
+.spatial-layer {
+  transform-style: preserve-3d;
+  will-change: transform;
+  transition: transform 0.5s cubic-bezier(0.16, 1, 0.3, 1);
+}
+
+.spatial-tilt {
+  transform-style: preserve-3d;
+  will-change: transform;
+  transition: transform 0.5s cubic-bezier(0.16, 1, 0.3, 1), box-shadow 0.5s cubic-bezier(0.16, 1, 0.3, 1);
+}
+
+.spatial-tilt:hover {
+  transform: rotateX(4deg) rotateY(-7deg) translateZ(28px) scale(1.03);
+  box-shadow: 0 30px 60px -15px rgba(0, 0, 0, 0.85), 0 0 30px rgba(245, 158, 11, 0.28);
+}
+
+.spatial-depth-1 {
+  transform: translateZ(24px);
+}
+
+.spatial-depth-2 {
+  transform: translateZ(48px);
+}
+
+.spatial-depth-3 {
+  transform: translateZ(76px);
+}
+
+.spatial-tilt:hover .spatial-float-pill {
+  transform: translateZ(64px) translateY(-4px);
+}
+
+.spatial-float-pill {
+  transform: translateZ(20px);
+  transition: transform 0.5s cubic-bezier(0.16, 1, 0.3, 1);
+}
+
+.spatial-sheen {
+  position: absolute;
+  inset: 0;
+  pointer-events: none;
+  opacity: 0;
+  background: linear-gradient(115deg, transparent 30%, rgba(255, 255, 255, 0.16) 48%, transparent 62%);
+  transition: opacity 0.5s cubic-bezier(0.16, 1, 0.3, 1);
+}
+
+.spatial-tilt:hover .spatial-sheen {
+  opacity: 1;
+}
+
+.spatial-horizon-line {
+  background: linear-gradient(90deg, transparent 0%, rgba(245, 158, 11, 0.9) 50%, transparent 100%);
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .spatial-tilt,
+  .spatial-layer,
+  .spatial-float-pill,
+  .spatial-sheen {
+    transition: none;
+  }
+
+  .spatial-tilt:hover {
+    transform: none;
+    box-shadow: none;
+  }
+
+  .spatial-tilt:hover .spatial-float-pill {
+    transform: none;
+  }
+}
+
+.glass-button {
+  background: rgba(255, 255, 255, 0.1);
+  backdrop-filter: blur(8px);
+  border: 1px solid rgba(255, 255, 255, 0.15);
+  transition: all 0.3s cubic-bezier(0.4, 0, 0.2, 1);
+}
+
+.glass-button:hover {
+  background: rgba(255, 255, 255, 0.2);
+  border-color: rgba(255, 255, 255, 0.3);
+}
+
+/* Material Symbols (Stitch screens use material-symbols-outlined spans; the
+   font stylesheet is loaded in layout.tsx <head>) */
+.material-symbols-outlined {
+  font-variation-settings: 'FILL' 0, 'wght' 400, 'GRAD' 0, 'opsz' 24;
+  display: inline-block;
+  vertical-align: middle;
+  line-height: 1;
+}
+
+/* Subtle Glass Card Specular Lighting (Stitch auth screen) */
+.glass-specular-card {
+  background: rgba(27, 27, 31, 0.65);
+  backdrop-filter: blur(28px);
+  -webkit-backdrop-filter: blur(28px);
+  border: 1px solid rgba(255, 255, 255, 0.12);
+  border-top: 1px solid rgba(255, 255, 255, 0.22);
+  box-shadow:
+    0 24px 60px -12px rgba(0, 0, 0, 0.85),
+    0 0 35px -5px rgba(245, 158, 11, 0.18),
+    inset 0 1px 0 rgba(255, 255, 255, 0.15);
+}
+
+/* Ambient Aurora Glow Field (Stitch auth screen) */
+.aurora-gradient {
+  background:
+    radial-gradient(circle at 15% 35%, rgba(245, 158, 11, 0.22) 0%, transparent 50%),
+    radial-gradient(circle at 85% 65%, rgba(84, 221, 252, 0.14) 0%, transparent 45%),
+    radial-gradient(circle at 50% 80%, rgba(204, 0, 60, 0.12) 0%, transparent 40%);
+}
+
+/* Cinematic Star Dust Particles (Stitch auth screen) */
+.stardust {
+  background-image:
+    radial-gradient(1.5px 1.5px at 20px 30px, #ffc174, rgba(0, 0, 0, 0)),
+    radial-gradient(1px 1px at 70px 140px, #54ddfc, rgba(0, 0, 0, 0)),
+    radial-gradient(1.5px 1.5px at 150px 80px, #ffffff, rgba(0, 0, 0, 0)),
+    radial-gradient(2px 2px at 240px 190px, #f59e0b, rgba(0, 0, 0, 0)),
+    radial-gradient(1px 1px at 310px 120px, #cc003c, rgba(0, 0, 0, 0)),
+    radial-gradient(1.5px 1.5px at 390px 240px, #acedff, rgba(0, 0, 0, 0));
+  background-repeat: repeat;
+  background-size: 420px 300px;
+}
+
+/* Text Glow Utilities */
+.text-glow {
+  text-shadow: 0 0 15px rgba(255, 255, 255, 0.5);
+}
+
+.text-glow-primary {
+  text-shadow: 0 0 20px rgba(245, 158, 11, 0.6);
+}
+
+/* Base styling for inputs */
+input:focus,
+textarea:focus {
+  outline: none;
+  border-color: rgba(245, 158, 11, 0.6);
+  box-shadow: 0 0 0 1px rgba(245, 158, 11, 0.4), 0 0 15px rgba(245, 158, 11, 0.25);
+}
+
 /* Datepicker dark mode support */
 input[type="datetime-local"] {
   color-scheme: dark;
@@ -100,21 +261,7 @@ input[type="datetime-local"] {
   filter: invert(1);
 }
 
-/* Custom Horizontal Scrollbar for specific sections */
-.custom-scrollbar::-webkit-scrollbar {
-  width: 6px;
-  height: 6px;
-}
-
-.custom-scrollbar::-webkit-scrollbar-track {
-  background: #111;
-}
-
-.custom-scrollbar::-webkit-scrollbar-thumb {
-  background: #333;
-  border-radius: 10px;
-}
-
-.custom-scrollbar::-webkit-scrollbar-thumb:hover {
-  background: #555;
-}
+/* Smooth Image Loading */
+img {
+  transition: opacity 0.3s ease-in-out;
+}

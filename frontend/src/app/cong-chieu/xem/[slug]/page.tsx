@@ -139,7 +139,7 @@ export default function LivePremierePage() {
   if (loading) {
     return (
       <div className="min-h-screen flex items-center justify-center">
-        <Loader2 className="w-16 h-16 text-red-600 animate-spin" />
+        <Loader2 className="w-16 h-16 text-amber-gold animate-spin" />
       </div>
     );
   }
@@ -148,8 +148,8 @@ export default function LivePremierePage() {
     return (
       <div className="min-h-screen flex items-center justify-center">
         <div className="text-center">
-          <p className="text-gray-400 text-xl mb-4">Không tìm thấy sự kiện</p>
-          <Link href="/cong-chieu" className="text-red-500 hover:text-red-400">
+          <p className="text-cinema-subtle text-xl mb-4">Không tìm thấy sự kiện</p>
+          <Link href="/cong-chieu" className="text-amber-gold hover:text-amber-gold">
             ← Quay lại lịch công chiếu
           </Link>
         </div>
@@ -162,13 +162,13 @@ export default function LivePremierePage() {
       {/* Header */}
       <div className="flex-shrink-0 z-[110] bg-gradient-to-b from-black/90 to-transparent p-3 md:p-4">
         <div className="flex items-center justify-between gap-2">
-          <Link href="/cong-chieu" className="flex items-center gap-1 md:gap-2 text-white hover:text-red-500 transition-colors">
+          <Link href="/cong-chieu" className="flex items-center gap-1 md:gap-2 text-white hover:text-amber-gold transition-colors">
             <ArrowLeft size={18} className="md:w-5 md:h-5" />
             <span className="font-semibold text-xs md:text-sm hidden sm:inline">Lịch công chiếu</span>
             <span className="font-semibold text-xs sm:hidden">Quay lại</span>
           </Link>
           <div className="flex items-center gap-2">
-            <div className="flex items-center gap-1.5 bg-red-600 px-2 md:px-3 py-1 md:py-1.5 rounded-full">
+            <div className="flex items-center gap-1.5 bg-amber-primary px-2 md:px-3 py-1 md:py-1.5 rounded-full">
               <div className="w-1.5 h-1.5 md:w-2 md:h-2 bg-white rounded-full animate-pulse"></div>
               <span className="text-white font-bold text-[10px] md:text-xs">LIVE</span>
             </div>
@@ -193,7 +193,7 @@ export default function LivePremierePage() {
           {/* Video Info Overlay */}
           <div className="absolute bottom-0 left-0 right-0 p-3 md:p-6 bg-gradient-to-t from-black via-black/80 to-transparent pointer-events-none z-10">
             <h1 className="text-white text-base md:text-2xl lg:text-3xl font-bold mb-1 md:mb-2 line-clamp-2">{event.name}</h1>
-            <div className="flex items-center gap-2 md:gap-4 text-xs md:text-sm text-gray-300">
+            <div className="flex items-center gap-2 md:gap-4 text-xs md:text-sm text-cinema-muted">
               <span className="hidden sm:inline">Công chiếu lúc: {new Date(event.startTime).toLocaleString('vi-VN')}</span>
               <span className="sm:hidden">{new Date(event.startTime).toLocaleString('vi-VN', { hour: '2-digit', minute: '2-digit', day: '2-digit', month: '2-digit' })}</span>
             </div>
@@ -203,13 +203,13 @@ export default function LivePremierePage() {
         {/* Mobile Chat Button */}
         <button
           onClick={() => setShowMobileChat(true)}
-          className="lg:hidden fixed bottom-20 right-4 z-40 w-14 h-14 bg-red-600 hover:bg-red-700 rounded-full shadow-lg flex items-center justify-center transition"
+          className="lg:hidden fixed bottom-20 right-4 z-40 w-14 h-14 bg-amber-primary hover:bg-amber-600 rounded-full shadow-lg flex items-center justify-center transition"
         >
           <svg className="w-6 h-6 text-white" fill="none" stroke="currentColor" viewBox="0 0 24 24">
             <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M8 12h.01M12 12h.01M16 12h.01M21 12c0 4.418-4.03 8-9 8a9.863 9.863 0 01-4.255-.949L3 20l1.395-3.72C3.512 15.042 3 13.574 3 12c0-4.418 4.03-8 9-8s9 3.582 9 8z" />
           </svg>
           {messages.length > 0 && (
-            <span className="absolute -top-1 -right-1 bg-yellow-400 text-black text-xs font-bold w-5 h-5 rounded-full flex items-center justify-center">
+            <span className="absolute -top-1 -right-1 bg-amber-gold text-black text-xs font-bold w-5 h-5 rounded-full flex items-center justify-center">
               {messages.length > 99 ? '99+' : messages.length}
             </span>
           )}
@@ -218,12 +218,12 @@ export default function LivePremierePage() {
         {/* Mobile Chat Overlay */}
         {showMobileChat && (
           <div className="lg:hidden fixed inset-0 z-50 bg-black/50 backdrop-blur-sm">
-            <div className="absolute bottom-0 left-0 right-0 h-[70vh] bg-gray-900 rounded-t-2xl flex flex-col">
+            <div className="absolute bottom-0 left-0 right-0 h-[70vh] bg-surface-light rounded-t-2xl flex flex-col">
               {/* Chat Header */}
               <div className="p-4 border-b border-white/10 flex items-center justify-between">
                 <div>
                   <h2 className="text-white text-lg font-bold">Chat trực tiếp</h2>
-                  <p className="text-gray-400 text-xs mt-1">{messages.length} tin nhắn</p>
+                  <p className="text-cinema-subtle text-xs mt-1">{messages.length} tin nhắn</p>
                 </div>
                 <button
                   onClick={() => setShowMobileChat(false)}
@@ -242,13 +242,13 @@ export default function LivePremierePage() {
               >
                 {messages.length === 0 ? (
                   <div className="text-center py-16">
-                    <p className="text-gray-500 text-sm">Chưa có tin nhắn nào</p>
-                    <p className="text-gray-600 text-xs mt-2">Hãy là người đầu tiên chat!</p>
+                    <p className="text-cinema-subtle text-sm">Chưa có tin nhắn nào</p>
+                    <p className="text-cinema-subtle text-xs mt-2">Hãy là người đầu tiên chat!</p>
                   </div>
                 ) : (
                   messages.map((msg, idx) => (
                     <div key={msg._id || idx} className="flex gap-2">
-                      <div className="w-8 h-8 bg-gradient-to-br from-red-500 to-pink-500 rounded-full flex items-center justify-center flex-shrink-0">
+                      <div className="w-8 h-8 bg-gradient-to-br from-amber-gold to-pink-500 rounded-full flex items-center justify-center flex-shrink-0">
                         <span className="text-white text-xs font-bold">
                           {msg.username[0].toUpperCase()}
                         </span>
@@ -258,11 +258,11 @@ export default function LivePremierePage() {
                           <span className="text-white font-semibold text-sm truncate">
                             {msg.username}
                           </span>
-                          <span className="text-gray-500 text-[10px]">
+                          <span className="text-cinema-subtle text-[10px]">
                             {formatTime(msg.timestamp)}
                           </span>
                         </div>
-                        <p className="text-gray-300 text-sm mt-0.5 break-words">
+                        <p className="text-cinema-muted text-sm mt-0.5 break-words">
                           {msg.message}
                         </p>
                       </div>
@@ -272,17 +272,17 @@ export default function LivePremierePage() {
               </div>
 
               {/* Message Input */}
-              <div className="p-4 border-t border-white/10 bg-gray-800">
+              <div className="p-4 border-t border-white/10 bg-surface-container">
                 {session ? (
                   <div className="space-y-2">
                     {/* Emoji Picker */}
                     {showEmojiPicker && (
-                      <div className="bg-gray-700 rounded-lg p-2 grid grid-cols-8 gap-1">
+                      <div className="bg-surface-container-high rounded-lg p-2 grid grid-cols-8 gap-1">
                         {emojis.map(emoji => (
                           <button
                             key={emoji}
                             onClick={() => addEmoji(emoji)}
-                            className="text-2xl hover:bg-gray-600 rounded p-1 transition"
+                            className="text-2xl hover:bg-surface-container-highest rounded p-1 transition"
                           >
                             {emoji}
                           </button>
@@ -294,7 +294,7 @@ export default function LivePremierePage() {
                       <button
                         type="button"
                         onClick={() => setShowEmojiPicker(!showEmojiPicker)}
-                        className="bg-gray-700 hover:bg-gray-600 text-white p-3 rounded-full transition"
+                        className="bg-surface-container-high hover:bg-surface-container-highest text-white p-3 rounded-full transition"
                       >
                         <span className="text-xl">😀</span>
                       </button>
@@ -303,14 +303,14 @@ export default function LivePremierePage() {
                         value={newMessage}
                         onChange={(e) => setNewMessage(e.target.value)}
                         placeholder="Nhập tin nhắn..."
-                        className="flex-1 bg-gray-700 text-white px-4 py-3 rounded-full text-sm focus:outline-none focus:ring-2 focus:ring-red-500"
+                        className="flex-1 bg-surface-container-high text-white px-4 py-3 rounded-full text-sm focus:outline-none focus:ring-2 focus:ring-amber-primary"
                         maxLength={200}
                         autoComplete="off"
                       />
                       <button
                         type="submit"
                         disabled={!newMessage.trim()}
-                        className="bg-red-600 hover:bg-red-700 disabled:bg-gray-600 disabled:cursor-not-allowed text-white p-3 rounded-full transition-colors"
+                        className="bg-amber-primary hover:bg-amber-600 disabled:bg-surface-bright disabled:cursor-not-allowed text-white p-3 rounded-full transition-colors"
                       >
                         <Send size={18} />
                       </button>
@@ -318,10 +318,10 @@ export default function LivePremierePage() {
                   </div>
                 ) : (
                   <div className="text-center">
-                    <p className="text-gray-400 text-sm mb-3">Đăng nhập để chat</p>
+                    <p className="text-cinema-subtle text-sm mb-3">Đăng nhập để chat</p>
                     <Link
                       href="/auth/login"
-                      className="inline-block bg-red-600 hover:bg-red-700 text-white px-6 py-2 rounded-full font-semibold transition-colors text-sm"
+                      className="inline-block bg-amber-primary hover:bg-amber-600 text-white px-6 py-2 rounded-full font-semibold transition-colors text-sm"
                     >
                       Đăng nhập
                     </Link>
@@ -333,10 +333,10 @@ export default function LivePremierePage() {
         )}
 
         {/* Live Chat - Desktop only */}
-        <div className="hidden lg:flex w-80 xl:w-96 bg-gray-900 border-l border-white/10 flex-col">
+        <div className="hidden lg:flex w-80 xl:w-96 bg-surface-light border-l border-white/10 flex-col">
           <div className="p-3 border-b border-white/10 flex-shrink-0">
             <h2 className="text-white text-lg font-bold">Chat trực tiếp</h2>
-            <p className="text-gray-400 text-xs mt-1">
+            <p className="text-cinema-subtle text-xs mt-1">
               {messages.length} tin nhắn
             </p>
           </div>
@@ -352,13 +352,13 @@ export default function LivePremierePage() {
           >
             {messages.length === 0 ? (
               <div className="text-center py-16">
-                <p className="text-gray-500 text-sm">Chưa có tin nhắn nào</p>
-                <p className="text-gray-600 text-xs mt-2">Hãy là người đầu tiên chat!</p>
+                <p className="text-cinema-subtle text-sm">Chưa có tin nhắn nào</p>
+                <p className="text-cinema-subtle text-xs mt-2">Hãy là người đầu tiên chat!</p>
               </div>
             ) : (
               messages.map((msg, idx) => (
                 <div key={msg._id || idx} className="flex gap-2">
-                  <div className="w-7 h-7 bg-gradient-to-br from-red-500 to-pink-500 rounded-full flex items-center justify-center flex-shrink-0">
+                  <div className="w-7 h-7 bg-gradient-to-br from-amber-gold to-pink-500 rounded-full flex items-center justify-center flex-shrink-0">
                     <span className="text-white text-xs font-bold">
                       {msg.username[0].toUpperCase()}
                     </span>
@@ -368,11 +368,11 @@ export default function LivePremierePage() {
                       <span className="text-white font-semibold text-xs truncate">
                         {msg.username}
                       </span>
-                      <span className="text-gray-500 text-[10px]">
+                      <span className="text-cinema-subtle text-[10px]">
                         {formatTime(msg.timestamp)}
                       </span>
                     </div>
-                    <p className="text-gray-300 text-xs mt-0.5 break-words">
+                    <p className="text-cinema-muted text-xs mt-0.5 break-words">
                       {msg.message}
                     </p>
                   </div>
@@ -382,17 +382,17 @@ export default function LivePremierePage() {
           </div>
 
           {/* Message Input */}
-          <div className="p-3 border-t border-white/10 bg-gray-800 flex-shrink-0">
+          <div className="p-3 border-t border-white/10 bg-surface-container flex-shrink-0">
             {session ? (
               <div className="space-y-2">
                 {/* Emoji Picker Desktop */}
                 {showEmojiPicker && (
-                  <div className="bg-gray-700 rounded-lg p-2 grid grid-cols-8 gap-1">
+                  <div className="bg-surface-container-high rounded-lg p-2 grid grid-cols-8 gap-1">
                     {emojis.map(emoji => (
                       <button
                         key={emoji}
                         onClick={() => addEmoji(emoji)}
-                        className="text-xl hover:bg-gray-600 rounded p-1 transition"
+                        className="text-xl hover:bg-surface-container-highest rounded p-1 transition"
                       >
                         {emoji}
                       </button>
@@ -404,7 +404,7 @@ export default function LivePremierePage() {
                   <button
                     type="button"
                     onClick={() => setShowEmojiPicker(!showEmojiPicker)}
-                    className="bg-gray-700 hover:bg-gray-600 text-white p-2 rounded-full transition flex-shrink-0"
+                    className="bg-surface-container-high hover:bg-surface-container-highest text-white p-2 rounded-full transition flex-shrink-0"
                   >
                     <span className="text-lg">😀</span>
                   </button>
@@ -413,14 +413,14 @@ export default function LivePremierePage() {
                     value={newMessage}
                     onChange={(e) => setNewMessage(e.target.value)}
                     placeholder="Nhập tin nhắn..."
-                    className="flex-1 bg-gray-700 text-white px-3 py-2 rounded-full text-sm focus:outline-none focus:ring-2 focus:ring-red-500"
+                    className="flex-1 bg-surface-container-high text-white px-3 py-2 rounded-full text-sm focus:outline-none focus:ring-2 focus:ring-amber-primary"
                     maxLength={200}
                     autoComplete="off"
                   />
                   <button
                     type="submit"
                     disabled={!newMessage.trim()}
-                    className="bg-red-600 hover:bg-red-700 disabled:bg-gray-600 disabled:cursor-not-allowed text-white p-2 rounded-full transition-colors flex-shrink-0"
+                    className="bg-amber-primary hover:bg-amber-600 disabled:bg-surface-bright disabled:cursor-not-allowed text-white p-2 rounded-full transition-colors flex-shrink-0"
                     aria-label="Gửi"
                   >
                     <Send size={16} />
@@ -429,10 +429,10 @@ export default function LivePremierePage() {
               </div>
             ) : (
               <div className="text-center">
-                <p className="text-gray-400 text-sm mb-3">Đăng nhập để tham gia bình luận</p>
+                <p className="text-cinema-subtle text-sm mb-3">Đăng nhập để tham gia bình luận</p>
                 <Link
                   href="/auth/login"
-                  className="inline-block bg-red-600 hover:bg-red-700 text-white px-6 py-2 rounded-full font-semibold transition-colors"
+                  className="inline-block bg-amber-primary hover:bg-amber-600 text-white px-6 py-2 rounded-full font-semibold transition-colors"
                 >
                   Đăng nhập
                 </Link>

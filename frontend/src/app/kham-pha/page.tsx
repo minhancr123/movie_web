@@ -1,238 +1,159 @@
-'use client';
-import { useState, useEffect } from 'react';
-import { useSearchParams, useRouter } from 'next/navigation'; // Changed from 'next/navigation' to 'next/navigation' per Next 13+ client component
-import MovieCard from '@/components/MovieCard';
-import { Filter, ChevronDown, Check } from 'lucide-react';
-import { moviesAPI } from '@/lib/api'; // Ensure this uses a capable endpoint or simulate filtering
+import Link from 'next/link';
+import { Filter } from 'lucide-react';
+import { discoverCatalog, getGenres, type MediaType } from '@/lib/catalog';
+import CatalogCard from '@/components/CatalogCard';
 
-// Mock data for filters since API might not support all
-const YEARS = Array.from({ length: 15 }, (_, i) => 2024 - i);
-const COUNTRIES = [
-    { name: 'Hàn Quốc', slug: 'han-quoc' },
-    { name: 'Trung Quốc', slug: 'trung-quoc' },
-    { name: 'Mỹ', slug: 'au-my' },
-    { name: 'Việt Nam', slug: 'viet-nam' },
-    { name: 'Nhật Bản', slug: 'nhat-ban' },
-    { name: 'Thái Lan', slug: 'thai-lan' },
-];
-const GENRES = [
-    { name: 'Hành Động', slug: 'hanh-dong' },
-    { name: 'Tình Cảm', slug: 'tinh-cam' },
-    { name: 'Hài Hước', slug: 'hai-huoc' },
-    { name: 'Cổ Trang', slug: 'co-trang' },
-    { name: 'Tâm Lý', slug: 'tam-ly' },
-    { name: 'Hình Sự', slug: 'hinh-su' },
-    { name: 'Chiến Tranh', slug: 'chien-tranh' },
-    { name: 'Thể Thao', slug: 'the-thao' },
-    { name: 'Võ Thuật', slug: 'vo-thuat' },
-    { name: 'Viễn Tưởng', slug: 'vien-tuong' },
+export const metadata = {
+  title: 'Khám phá phim',
+};
+
+interface DiscoverPageProps {
+  searchParams: { type?: string; genre?: string; year?: string; region?: string; page?: string };
+}
+
+const CURRENT_YEAR = new Date().getFullYear();
+const YEARS = Array.from({ length: 15 }, (_, i) => CURRENT_YEAR - i);
+
+// TMDB filters by ISO-3166-1 origin country, not by the old phimapi slugs.
+const REGIONS = [
+  { code: 'KR', name: 'Hàn Quốc' },
+  { code: 'CN', name: 'Trung Quốc' },
+  { code: 'US', name: 'Mỹ' },
+  { code: 'VN', name: 'Việt Nam' },
+  { code: 'JP', name: 'Nhật Bản' },
+  { code: 'TH', name: 'Thái Lan' },
 ];
 
-export default function FilterPage() {
-    const router = useRouter();
-    const searchParams = useSearchParams();
+export default async function DiscoverPage({ searchParams }: DiscoverPageProps) {
+  const type: MediaType = searchParams.type === 'tv' ? 'tv' : 'movie';
+  const genre = searchParams.genre || '';
+  const year = searchParams.year || '';
+  const region = searchParams.region || '';
+  const page = Number(searchParams.page) || 1;
 
-    // State for filters
-    const [year, setYear] = useState(searchParams.get('year') || '');
-    const [country, setCountry] = useState(searchParams.get('country') || '');
-    const [genre, setGenre] = useState(searchParams.get('genre') || '');
-    const [sort, setSort] = useState(searchParams.get('sort') || 'newest');
+  const [{ genres }, { items, pagination }] = await Promise.all([
+    getGenres(type),
+    discoverCatalog({ type, genre, year, region, page }),
+  ]);
 
-    const [movies, setMovies] = useState<any[]>([]);
-    const [loading, setLoading] = useState(true);
+  // Build a URL that keeps the other filters and resets paging.
+  const withParam = (key: string, value: string) => {
+    const next = new URLSearchParams({ type, genre, year, region });
+    if (value) next.set(key, value);
+    else next.delete(key);
+    if (key !== 'type') next.set('type', type);
+    Array.from(next.entries()).forEach(([k, v]) => {
+      if (!v) next.delete(k);
+    });
+    return `/kham-pha?${next.toString()}`;
+  };
 
-    // Apply filters function
-    const applyFilters = () => {
-        const params = new URLSearchParams();
-        if (year) params.set('year', year);
-        if (country) params.set('country', country);
-        if (genre) params.set('genre', genre);
-        if (sort) params.set('sort', sort);
+  const chip = (active: boolean) =>
+    `rounded-full px-3 py-1.5 text-xs font-semibold transition-colors ${
+      active ? 'bg-primary text-white' : 'bg-white/5 text-cinema-muted hover:bg-white/10'
+    }`;
 
-        router.push(`/kham-pha?${params.toString()}`);
-    };
+  return (
+    <div className="py-8">
+      <h1 className="mb-6 flex items-center gap-2 border-l-4 border-primary pl-3 text-2xl font-bold text-white text-glow">
+        <Filter size={22} /> Khám phá
+      </h1>
 
-    // Auto-fetch on param change
-    useEffect(() => {
-        fetchMovies();
-    }, [searchParams]);
-
-    const fetchMovies = async () => {
-        setLoading(true);
-        try {
-            // Priority: Genre > Country > Latest
-            // Note: If both Genre and Country are selected, we prioritize Genre API and filter Country client-side (best effort)
-
-            let response;
-            if (genre) {
-                response = await moviesAPI.getMoviesByGenre(genre, 1);
-            } else if (country) {
-                response = await moviesAPI.getMoviesByCountry(country, 1);
-            } else {
-                response = await moviesAPI.getLatestMovies(1);
-            }
-
-            if (response && (response.items || response.data?.items)) {
-                let data = response.items || response.data.items;
-
-                // Client-side filtering
-                if (data && data.length > 0) {
-                    // Filter by Year
-                    if (year) {
-                        data = data.filter((m: any) => m.year == year);
-                    }
-
-                    // Filter by Country (only if Genre was primary API call)
-                    if (genre && country) {
-                        // Note: API might return country in specific format, e.g. country: [{name: 'Mỹ', ...}]
-                        // We need to check if the movie's country list contains the selected country slug
-                        // Typically APIs return `country` array or `country` string. 
-                        // Let's assume structure. If not sure, we might skip strict filtering to avoid empty results.
-                        // But let's try strict:
-                        data = data.filter((m: any) => {
-                            if (Array.isArray(m.country)) {
-                                return m.country.some((c: any) => c.slug === country || c.name === country);
-                            }
-                            return true; // Keep if uncertain
-                        });
-                    }
-
-                    // Sort
-                    if (sort === 'name_asc') {
-                        data.sort((a: any, b: any) => a.name.localeCompare(b.name));
-                    } else if (sort === 'newest') {
-                        // Usually API returns newest first, but we can enforce if we have date
-                        // data.sort(...)
-                    }
-                }
-
-                setMovies(data || []);
-            } else {
-                setMovies([]);
-            }
-        } catch (error) {
-            console.error(error);
-            setMovies([]);
-        } finally {
-            setLoading(false);
-        }
-    };
-
-    return (
-        <div className="bg-[#0a0a0a] min-h-screen text-white pt-24 pb-12">
-            <div className="container mx-auto px-4">
-                <div className="flex flex-col md:flex-row items-center justify-between mb-8 gap-4">
-                    <h1 className="text-3xl font-bold uppercase border-l-4 border-red-600 pl-4">
-                        Bộ Lọc Phim
-                    </h1>
-                </div>
-
-                {/* Filter Bar */}
-                <div className="bg-[#111] p-6 rounded-xl border border-gray-800 mb-8 sticky top-20 z-30 shadow-2xl">
-                    <div className="grid grid-cols-2 md:grid-cols-5 gap-4">
-                        {/* Genre */}
-                        <div className="relative group">
-                            <label className="text-xs text-gray-500 font-bold uppercase mb-1 block">Thể loại</label>
-                            <select
-                                value={genre}
-                                onChange={(e) => setGenre(e.target.value)}
-                                className="w-full bg-black border border-gray-700 text-white rounded-lg px-3 py-2 focus:border-red-600 outline-none appearance-none"
-                            >
-                                <option value="">Tất cả</option>
-                                {GENRES.map(g => (
-                                    <option key={g.slug} value={g.slug}>{g.name}</option>
-                                ))}
-                            </select>
-                            <ChevronDown size={16} className="absolute right-3 top-8 text-gray-500 pointer-events-none" />
-                        </div>
-
-                        {/* Country */}
-                        <div className="relative group">
-                            <label className="text-xs text-gray-500 font-bold uppercase mb-1 block">Quốc gia</label>
-                            <select
-                                value={country}
-                                onChange={(e) => setCountry(e.target.value)}
-                                className="w-full bg-black border border-gray-700 text-white rounded-lg px-3 py-2 focus:border-red-600 outline-none appearance-none"
-                            >
-                                <option value="">Tất cả</option>
-                                {COUNTRIES.map(c => (
-                                    <option key={c.slug} value={c.slug}>{c.name}</option>
-                                ))}
-                            </select>
-                            <ChevronDown size={16} className="absolute right-3 top-8 text-gray-500 pointer-events-none" />
-                        </div>
-
-                        {/* Year */}
-                        <div className="relative group">
-                            <label className="text-xs text-gray-500 font-bold uppercase mb-1 block">Năm phát hành</label>
-                            <select
-                                value={year}
-                                onChange={(e) => setYear(e.target.value)}
-                                className="w-full bg-black border border-gray-700 text-white rounded-lg px-3 py-2 focus:border-red-600 outline-none appearance-none"
-                            >
-                                <option value="">Tất cả</option>
-                                {YEARS.map(y => (
-                                    <option key={y} value={y}>{y}</option>
-                                ))}
-                            </select>
-                            <ChevronDown size={16} className="absolute right-3 top-8 text-gray-500 pointer-events-none" />
-                        </div>
-
-                        {/* Sort */}
-                        <div className="relative group">
-                            <label className="text-xs text-gray-500 font-bold uppercase mb-1 block">Sắp xếp</label>
-                            <select
-                                value={sort}
-                                onChange={(e) => setSort(e.target.value)}
-                                className="w-full bg-black border border-gray-700 text-white rounded-lg px-3 py-2 focus:border-red-600 outline-none appearance-none"
-                            >
-                                <option value="newest">Mới nhất</option>
-                                <option value="popular">Xem nhiều nhất</option>
-                                <option value="name_asc">Tên A-Z</option>
-                            </select>
-                            <ChevronDown size={16} className="absolute right-3 top-8 text-gray-500 pointer-events-none" />
-                        </div>
-
-                        {/* Apply Button */}
-                        <div className="flex items-end">
-                            <button
-                                onClick={applyFilters}
-                                className="w-full bg-red-600 hover:bg-red-700 text-white font-bold py-2 px-4 rounded-lg flex items-center justify-center gap-2 transition-colors"
-                            >
-                                <Filter size={18} /> Lọc Phim
-                            </button>
-                        </div>
-                    </div>
-                </div>
-
-                {/* Results */}
-                {loading ? (
-                    <div className="grid grid-cols-2 md:grid-cols-4 lg:grid-cols-5 gap-6">
-                        {Array.from({ length: 10 }).map((_, i) => (
-                            <div key={i} className="aspect-[2/3] bg-gray-800 rounded-xl animate-pulse" />
-                        ))}
-                    </div>
-                ) : movies.length > 0 ? (
-                    <div className="grid grid-cols-2 md:grid-cols-4 lg:grid-cols-5 gap-6">
-                        {movies.map(movie => (
-                            <MovieCard key={movie.slug} movie={movie} />
-                        ))}
-                    </div>
-                ) : (
-                    <div className="text-center py-20 bg-[#111] rounded-xl border border-gray-800">
-                        <p className="text-gray-400 text-lg">Không tìm thấy phim nào phù hợp với điều kiện lọc.</p>
-                        <button
-                            onClick={() => {
-                                setYear(''); setCountry(''); setGenre(''); setSort('newest');
-                                router.push('/kham-pha');
-                            }}
-                            className="mt-4 text-red-500 underline hover:text-red-400"
-                        >
-                            Xóa bộ lọc
-                        </button>
-                    </div>
-                )}
-            </div>
+      <div className="mb-8 space-y-4 rounded-xl border border-white/5 bg-white/5 p-5">
+        <div>
+          <p className="mb-2 text-xs font-bold uppercase tracking-wider text-cinema-subtle">Loại</p>
+          <div className="flex flex-wrap gap-2">
+            <Link href={withParam('type', 'movie')} className={chip(type === 'movie')}>
+              Phim lẻ
+            </Link>
+            <Link href={withParam('type', 'tv')} className={chip(type === 'tv')}>
+              Phim bộ
+            </Link>
+          </div>
         </div>
-    );
+
+        <div>
+          <p className="mb-2 text-xs font-bold uppercase tracking-wider text-cinema-subtle">Thể loại</p>
+          <div className="flex flex-wrap gap-2">
+            <Link href={withParam('genre', '')} className={chip(!genre)}>
+              Tất cả
+            </Link>
+            {genres.map((g) => (
+              <Link
+                key={g.id}
+                href={withParam('genre', String(g.id))}
+                className={chip(genre === String(g.id))}
+              >
+                {g.name}
+              </Link>
+            ))}
+          </div>
+        </div>
+
+        <div>
+          <p className="mb-2 text-xs font-bold uppercase tracking-wider text-cinema-subtle">Quốc gia</p>
+          <div className="flex flex-wrap gap-2">
+            <Link href={withParam('region', '')} className={chip(!region)}>
+              Tất cả
+            </Link>
+            {REGIONS.map((r) => (
+              <Link key={r.code} href={withParam('region', r.code)} className={chip(region === r.code)}>
+                {r.name}
+              </Link>
+            ))}
+          </div>
+        </div>
+
+        <div>
+          <p className="mb-2 text-xs font-bold uppercase tracking-wider text-cinema-subtle">Năm</p>
+          <div className="flex flex-wrap gap-2">
+            <Link href={withParam('year', '')} className={chip(!year)}>
+              Tất cả
+            </Link>
+            {YEARS.map((y) => (
+              <Link key={y} href={withParam('year', String(y))} className={chip(year === String(y))}>
+                {y}
+              </Link>
+            ))}
+          </div>
+        </div>
+      </div>
+
+      {items.length > 0 ? (
+        <>
+          <div className="grid grid-cols-2 gap-4 md:grid-cols-4 lg:grid-cols-5 md:gap-6">
+            {items.map((item) => (
+              <CatalogCard key={item.contentRef} item={item} />
+            ))}
+          </div>
+
+          {pagination.totalPages > 1 && (
+            <div className="mt-10 flex items-center justify-center gap-3">
+              {page > 1 && (
+                <Link
+                  href={`${withParam('page', '')}&page=${page - 1}`}
+                  className="rounded-lg glass-button px-4 py-2 text-sm font-semibold text-white"
+                >
+                  Trang trước
+                </Link>
+              )}
+              <span className="text-sm text-cinema-subtle">
+                Trang {pagination.currentPage} / {pagination.totalPages}
+              </span>
+              {page < pagination.totalPages && (
+                <Link
+                  href={`${withParam('page', '')}&page=${page + 1}`}
+                  className="rounded-lg glass-button px-4 py-2 text-sm font-semibold text-white"
+                >
+                  Trang sau
+                </Link>
+              )}
+            </div>
+          )}
+        </>
+      ) : (
+        <p className="py-16 text-center text-cinema-subtle">Không có phim nào khớp bộ lọc này.</p>
+      )}
+    </div>
+  );
 }

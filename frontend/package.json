@@ -3,7 +3,11 @@
   "version": "0.1.0",
   "private": true,
   "scripts": {
-    "dev": "next dev",
+    "dev": "node -e \"require('fs').rmSync('.next',{recursive:true,force:true})\" && next dev",
+    "dev:fast": "next dev",
+    "test": "node --test tests/dev-cache-reset.test.mjs tests/audio-enhancer.test.mjs tests/ambilight.test.mjs",
+    "test:routes": "node --test tests/continue-watching-route.test.mjs",
+    "test:dev-cache": "node --test tests/dev-cache-reset.test.mjs",
     "build": "next build",
     "start": "next start",
     "lint": "next lint"

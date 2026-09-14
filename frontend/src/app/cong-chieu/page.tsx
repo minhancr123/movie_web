@@ -1,4 +1,4 @@
-﻿'use client';
+'use client';
 
 import { useState, useEffect } from 'react';
 import { premiereAPI } from '@/lib/api';
@@ -65,23 +65,23 @@ export default function PremierePage() {
   if (loading) {
     return (
       <div className="min-h-screen flex items-center justify-center">
-        <Loader2 className="w-16 h-16 text-red-600 animate-spin" />
+        <Loader2 className="w-16 h-16 text-amber-gold animate-spin" />
       </div>
     );
   }
 
   return (
     <div className="py-8">
-      <h1 className="text-4xl md:text-5xl font-bold bg-gradient-to-r from-red-500 to-pink-500 bg-clip-text text-transparent mb-4">
+      <h1 className="text-4xl md:text-5xl font-bold bg-gradient-to-r from-amber-gold to-pink-500 bg-clip-text text-transparent mb-4">
         Lịch Công Chiếu
       </h1>
-      <p className="text-gray-400 text-lg mb-8">
+      <p className="text-cinema-subtle text-lg mb-8">
         Đón xem những bộ phim mới nhất được công chiếu độc quyền
       </p>
       {events.length === 0 ? (
         <div className="text-center py-20">
-          <Users size={64} className="mx-auto text-gray-600 mb-4" />
-          <p className="text-gray-400 text-xl">Chưa có sự kiện công chiếu</p>
+          <Users size={64} className="mx-auto text-cinema-subtle mb-4" />
+          <p className="text-cinema-subtle text-xl">Chưa có sự kiện công chiếu</p>
         </div>
       ) : (
         <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-5 gap-4">
@@ -90,15 +90,15 @@ export default function PremierePage() {
             const ended = isEnded(e.startTime);
 
             return (
-              <div key={e._id} className="group relative bg-gray-900 rounded-xl overflow-hidden border border-white/10 hover:border-red-500/50 hover:shadow-lg hover:shadow-red-500/20 transition-all">
+              <div key={e._id} className="group relative bg-surface-light rounded-xl overflow-hidden border border-white/10 hover:border-amber-primary/50 hover:shadow-lg hover:shadow-amber-primary/20 transition-all">
                 {live && (
-                  <div className="absolute top-2 left-2 z-10 bg-red-600 px-3 py-1 rounded-full flex items-center gap-1 shadow-lg">
+                  <div className="absolute top-2 left-2 z-10 bg-amber-primary px-3 py-1 rounded-full flex items-center gap-1 shadow-lg">
                     <div className="w-2 h-2 bg-white rounded-full animate-pulse"></div>
                     <span className="text-xs font-bold text-white">LIVE</span>
                   </div>
                 )}
                 {ended && (
-                  <div className="absolute top-2 left-2 z-10 bg-gray-600 px-3 py-1 rounded-full flex items-center gap-1 shadow-lg">
+                  <div className="absolute top-2 left-2 z-10 bg-surface-bright px-3 py-1 rounded-full flex items-center gap-1 shadow-lg">
                     <span className="text-xs font-bold text-white">ĐÃ KẾT THÚC</span>
                   </div>
                 )}
@@ -107,21 +107,21 @@ export default function PremierePage() {
                   <div className="absolute inset-0 bg-gradient-to-t from-black via-transparent to-transparent" />
                 </div>
                 <div className="p-4 space-y-2">
-                  <h3 className="text-white font-bold line-clamp-2 text-sm group-hover:text-red-400 transition-colors">{e.name}</h3>
+                  <h3 className="text-white font-bold line-clamp-2 text-sm group-hover:text-amber-gold transition-colors">{e.name}</h3>
                   <div className="flex items-center gap-2 text-xs">
-                    <Clock size={12} className={live ? 'text-red-500' : ended ? 'text-gray-400' : 'text-yellow-500'} />
-                    <span className={live ? 'text-red-500 font-semibold' : ended ? 'text-gray-400' : 'text-yellow-500'}>
+                    <Clock size={12} className={live ? 'text-amber-gold' : ended ? 'text-cinema-subtle' : 'text-amber-gold'} />
+                    <span className={live ? 'text-amber-gold font-semibold' : ended ? 'text-cinema-subtle' : 'text-amber-gold'}>
                       {ended ? 'Đã chiếu xong' : getTime(e.startTime)}
                     </span>
                   </div>
 
                   {live ? (
-                    <Link href={`/cong-chieu/xem/${e.movieSlug}`} className="block text-center py-2 rounded-lg text-sm font-semibold transition-all bg-red-600 hover:bg-red-700 text-white shadow-lg shadow-red-600/50">
+                    <Link href={`/cong-chieu/xem/${e.movieSlug}`} className="block text-center py-2 rounded-lg text-sm font-semibold transition-all bg-amber-primary hover:bg-amber-600 text-white shadow-lg shadow-amber-button">
                       <Play size={14} className="inline mr-1" />
                       Xem ngay
                     </Link>
                   ) : ended ? (
-                    <Link href={`/phim/${e.movieSlug}`} className="block text-center py-2 rounded-lg text-sm font-semibold transition-all bg-gray-700 hover:bg-gray-600 text-white">
+                    <Link href={`/phim/${e.movieSlug}`} className="block text-center py-2 rounded-lg text-sm font-semibold transition-all bg-surface-container-high hover:bg-surface-container-highest text-white">
                       <Play size={14} className="inline mr-1" />
                       Xem lại
                     </Link>

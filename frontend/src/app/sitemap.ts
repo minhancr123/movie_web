@@ -1,41 +1,52 @@
-import { MetadataRoute } from 'next'
-import { moviesAPI } from '@/lib/api';
+import { MetadataRoute } from 'next';
+import { getHome, catalogHref } from '@/lib/catalog';
+
+const BASE_URL = process.env.NEXT_PUBLIC_SITE_URL || 'https://movieweb-ten.vercel.app';
 
 export default async function sitemap(): Promise<MetadataRoute.Sitemap> {
-    const baseUrl = 'https://movieweb-ten.vercel.app'; // Update with your actual domain
+  const now = new Date().toISOString();
 
-    // Static routes
-    const routes = [
-        '',
-        '/danh-sach-cua-toi',
-        '/kham-pha',
-        '/lich-chieu',
-        '/the-loai/hanh-dong',
-        '/the-loai/tinh-cam',
-        // Add more categories
-    ].map((route) => ({
-        url: `${baseUrl}${route}`,
-        lastModified: new Date().toISOString(),
-        changeFrequency: 'daily' as const,
-        priority: route === '' ? 1 : 0.8,
-    }));
+  const staticRoutes = [
+    '',
+    '/kham-pha',
+    '/kham-pha?type=tv',
+    '/lich-chieu',
+    '/cong-chieu',
+    '/danh-sach-cua-toi',
+  ].map((route) => ({
+    url: `${BASE_URL}${route}`,
+    lastModified: now,
+    changeFrequency: 'daily' as const,
+    priority: route === '' ? 1 : 0.8,
+  }));
 
-    // Dynamic routes (Movies)
-    // Fetch a list of movies to generate dynamic URLs
-    let movieRoutes: any[] = [];
-    try {
-        const response = await moviesAPI.getLatestMovies(1); // Page 1
-        if (response && response.items) {
-            movieRoutes = response.items.map((movie: any) => ({
-                url: `${baseUrl}/phim/${movie.slug}`,
-                lastModified: new Date(movie.modified?.time || new Date()).toISOString(),
-                changeFrequency: 'weekly' as const,
-                priority: 0.6,
-            }));
-        }
-    } catch (error) {
-        console.error("Sitemap generation error:", error);
-    }
+  // Seed the sitemap from whatever the home rows currently surface. TMDB has
+  // millions of titles, so enumerating everything is neither possible nor useful.
+  let contentRoutes: MetadataRoute.Sitemap = [];
+  try {
+    const home = await getHome();
+    const seen = new Set<string>();
 
-    return [...routes, ...movieRoutes];
+    contentRoutes = [
+      ...home.trending,
+      ...home.popularMovies,
+      ...home.popularTv,
+      ...home.topRatedMovies,
+    ]
+      .filter((item) => {
+        if (seen.has(item.contentRef)) return false;
+        seen.add(item.contentRef);
+        return true;
+      })
+      .map((item) => ({
+        url: `${BASE_URL}${catalogHref(item)}`,
+        lastModified: now,
+        changeFrequency: 'weekly' as const,
+        priority: 0.6,
+      }));
+  } catch (error) {
+    console.error('Sitemap generation error:', error);
+  }
+
+  return [...staticRoutes, ...contentRoutes];
 }

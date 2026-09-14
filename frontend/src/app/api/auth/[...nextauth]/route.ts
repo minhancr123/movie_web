@@ -90,6 +90,7 @@ const authOptions: NextAuthOptions = {
           try {
             // Call backend to login/register with Google
             const response = await authAPI.googleLogin({
+              idToken: account.id_token,
               email: user.email,
               name: user.name || "",
               avatar: user.image || "",

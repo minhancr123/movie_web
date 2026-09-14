@@ -3,8 +3,9 @@
 import { useEffect, useState } from 'react';
 import { useSession } from 'next-auth/react';
 import { useRouter } from 'next/navigation';
-import { watchHistoryAPI, Movie } from '@/lib/api';
-import MovieCard from '@/components/MovieCard';
+import { watchHistoryAPI } from '@/lib/api';
+import CatalogCard from '@/components/CatalogCard';
+import { fromStoredRecord } from '@/lib/catalog';
 import { Loader2, History, Trash2 } from 'lucide-react';
 import Link from 'next/link';
 
@@ -52,7 +53,7 @@ export default function HistoryPage() {
     if (status === 'loading' || loading) {
         return (
             <div className="min-h-[60vh] flex items-center justify-center">
-                <Loader2 className="animate-spin text-red-600" size={40} />
+                <Loader2 className="animate-spin text-amber-gold" size={40} />
             </div>
         );
     }
@@ -64,12 +65,12 @@ export default function HistoryPage() {
                     <History size={60} className="text-blue-500" />
                 </div>
                 <h1 className="text-2xl font-bold text-white mb-2">Chưa có lịch sử xem</h1>
-                <p className="text-gray-400 mb-8 max-w-md">
+                <p className="text-cinema-subtle mb-8 max-w-md">
                     Bạn chưa xem bộ phim nào. Hãy bắt đầu thưởng thức những bộ phim tuyệt vời ngay thôi!
                 </p>
                 <Link
                     href="/"
-                    className="bg-red-600 hover:bg-red-700 text-white font-semibold py-3 px-8 rounded-full transition-all hover:scale-105"
+                    className="bg-amber-primary hover:bg-amber-600 text-white font-semibold py-3 px-8 rounded-full transition-all hover:scale-105"
                 >
                     Xem phim ngay
                 </Link>
@@ -92,7 +93,7 @@ export default function HistoryPage() {
 
                 <button
                     onClick={clearHistory}
-                    className="flex items-center gap-2 text-gray-400 hover:text-red-500 transition-colors px-4 py-2 rounded-lg hover:bg-white/5"
+                    className="flex items-center gap-2 text-cinema-subtle hover:text-amber-gold transition-colors px-4 py-2 rounded-lg hover:bg-white/5"
                 >
                     <Trash2 size={18} />
                     <span className="hidden md:inline">Xóa lịch sử</span>
@@ -101,20 +102,15 @@ export default function HistoryPage() {
 
             <div className="grid grid-cols-2 md:grid-cols-4 lg:grid-cols-5 gap-4 md:gap-8">
                 {history.map((item) => {
-                    const movie: Movie = {
-                        _id: item._id || item.movieSlug,
-                        name: item.movieData.name,
-                        origin_name: item.movieData.originName,
-                        slug: item.movieSlug,
-                        poster_url: item.movieData.posterUrl,
-                        thumb_url: item.movieData.thumbUrl,
-                        year: item.movieData.year,
-                    };
+                    const catalogItem = fromStoredRecord(item);
+                    // Rows saved before the TMDB cutover carry a phimapi slug
+                    // that no longer resolves to anything, so there is no URL.
+                    if (!catalogItem) return null;
 
                     return (
                         <div key={item._id || item.movieSlug} className="relative group">
-                            <MovieCard movie={movie} />
-                            <div className="mt-2 flex items-center justify-between text-xs text-gray-500 px-1">
+                            <CatalogCard item={catalogItem} />
+                            <div className="mt-2 flex items-center justify-between text-xs text-cinema-subtle px-1">
                                 <span>
                                     {item.episode ? `Tập ${item.episode}` : 'Đang xem'}
                                 </span>
