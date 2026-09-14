@@ -339,13 +339,102 @@ const DIALOGUE_DOWNMIX = [
  */
 const isSurroundLayout = (channels) => Number(channels) >= 6;
 
-export const buildFfmpegArgs = ({ inputUrl, outputDir, audioCopy = false, segmentSeconds = 4, audioStreamIndex = null, audioChannels = null }) => [
+/**
+ * Which encoder is available, resolved once.
+ *
+ * Measured on an RTX 5070 against a 60 s 4K source: the full GPU path spends
+ * 1.1 s of CPU where libx264 spends 53.7 s for the same work. That ratio is the
+ * whole reason this exists — both finish faster than realtime on one stream,
+ * but only one of them leaves the box able to serve anybody else.
+ *
+ * Deployments without a GPU fall back silently. A missing encoder must degrade
+ * to software, never to a failed playback.
+ */
+let encoderCache = null;
+export const detectVideoEncoder = async () => {
+  if (encoderCache) return encoderCache;
+  const forced = process.env.VIDEO_ENCODER;
+  if (forced) {
+    encoderCache = { encoder: forced, hardware: forced.includes('nvenc') };
+    return encoderCache;
+  }
+  try {
+    const { stdout } = await run(FFMPEG_BIN, ['-hide_banner', '-encoders'], { timeoutMs: 10000 });
+    const hasNvenc = /h264_nvenc/.test(stdout);
+    encoderCache = hasNvenc
+      ? { encoder: 'h264_nvenc', hardware: true }
+      : { encoder: 'libx264', hardware: false };
+  } catch {
+    encoderCache = { encoder: 'libx264', hardware: false };
+  }
+  console.log(`[playback] video encoder: ${encoderCache.encoder}${encoderCache.hardware ? ' (GPU)' : ' (CPU)'}`);
+  return encoderCache;
+};
+
+/** Test seam: lets the suite exercise both branches without a GPU. */
+export const __setEncoderForTests = (value) => { encoderCache = value; };
+
+/**
+ * Video arguments for one delivery plan.
+ *
+ * `copy` is the remux path and costs nothing. The transcode path scales and
+ * re-encodes; on the NVENC pipeline the frame never leaves the GPU, which is
+ * where the CPU saving comes from — decoding to system memory first spends
+ * 22 s of CPU per minute of 4K instead of 1.1 s.
+ */
+export const buildVideoArgs = (video, encoder) => {
+  if (!video || video.mode !== 'transcode') return { input: [], output: ['-c:v', 'copy'] };
+
+  const height = Math.max(144, Math.round(video.height || 1080));
+  const kbps = Math.max(200, Math.round(video.kbps || 3000));
+  const hardware = encoder?.hardware && encoder.encoder.includes('nvenc');
+
+  if (hardware) {
+    return {
+      input: ['-hwaccel', 'cuda', '-hwaccel_output_format', 'cuda'],
+      output: [
+        // -2 keeps the aspect ratio and rounds to an even width, which the
+        // encoder requires; an odd width fails the whole command.
+        '-vf', `scale_cuda=-2:${height}`,
+        '-c:v', encoder.encoder,
+        '-preset', 'p4',
+        '-tune', 'hq',
+        '-rc', 'vbr',
+        '-b:v', `${kbps}k`,
+        '-maxrate', `${Math.round(kbps * 1.5)}k`,
+        '-bufsize', `${kbps * 2}k`,
+        // Every segment must start on a keyframe or seeking lands in the middle
+        // of a GOP and the player shows nothing until the next one.
+        '-g', '96',
+        '-no-scenecut', '1',
+      ],
+    };
+  }
+
+  return {
+    input: [],
+    output: [
+      '-vf', `scale=-2:${height}`,
+      '-c:v', encoder?.encoder || 'libx264',
+      '-preset', 'veryfast',
+      '-b:v', `${kbps}k`,
+      '-maxrate', `${Math.round(kbps * 1.5)}k`,
+      '-bufsize', `${kbps * 2}k`,
+      '-g', '96',
+      '-sc_threshold', '0',
+    ],
+  };
+};
+
+export const buildFfmpegArgs = ({ inputUrl, outputDir, audioCopy = false, segmentSeconds = 4, audioStreamIndex = null, audioChannels = null, video = null, encoder = null }) => [
   '-hide_banner',
   '-loglevel',
   'warning',
   '-nostdin',
   '-fflags',
   '+genpts',
+  // Hardware decode has to be declared before the input it applies to.
+  ...buildVideoArgs(video, encoder).input,
   '-i',
   inputUrl,
   '-map',
@@ -354,8 +443,7 @@ export const buildFfmpegArgs = ({ inputUrl, outputDir, audioCopy = false, segmen
   // Explicit choice maps that exact ffprobe stream; otherwise the default
   // first audio (legacy behavior, byte-identical command).
   Number.isInteger(audioStreamIndex) ? `0:${audioStreamIndex}?` : '0:a:0?',
-  '-c:v',
-  'copy',
+  ...buildVideoArgs(video, encoder).output,
   '-c:a',
   audioCopy ? 'copy' : 'aac',
   ...(audioCopy
@@ -407,7 +495,24 @@ export const redactSecrets = (text) =>
     .replace(/https?:\/\/\S+/gi, '[url-đã-ẩn]')
     .replace(/(api[_-]?key|token|password)=\S+/gi, '$1=[đã-ẩn]');
 
-export const startRemuxSession = async ({ sessionId, inputUrl, audioCopy = false, audioStreamIndex = null, audioChannels = null }) => {
+/**
+ * What remote viewers are currently costing the uplink, in kbps.
+ *
+ * LAN sessions are excluded on purpose: their bytes never cross it, and
+ * counting them would let someone watching in the next room lock out everyone
+ * outside the house.
+ */
+export const activeEgressKbps = () => {
+  let total = 0;
+  for (const session of sessions.values()) {
+    if (!session.process || session.exitCode !== undefined) continue;
+    if (session.lan) continue;
+    total += Number(session.kbps) || 0;
+  }
+  return total;
+};
+
+export const startRemuxSession = async ({ sessionId, inputUrl, audioCopy = false, audioStreamIndex = null, audioChannels = null, video = null }) => {
   const id = safeId(sessionId);
   if (!id) throw new Error('sessionId không hợp lệ');
 
@@ -418,7 +523,8 @@ export const startRemuxSession = async ({ sessionId, inputUrl, audioCopy = false
   await fs.rm(outputDir, { recursive: true, force: true });
   await fs.mkdir(outputDir, { recursive: true });
 
-  const args = buildFfmpegArgs({ inputUrl, outputDir, audioCopy, audioStreamIndex, audioChannels });
+  const encoder = video?.mode === 'transcode' ? await detectVideoEncoder() : null;
+  const args = buildFfmpegArgs({ inputUrl, outputDir, audioCopy, audioStreamIndex, audioChannels, video, encoder });
   // cwd must be outputDir: ffmpeg resolves -hls_fmp4_init_filename against the
   // process cwd, not the playlist dir, so init.mp4 would otherwise land in the
   // backend root and every segment request would 404 on a missing init map.
@@ -432,6 +538,10 @@ export const startRemuxSession = async ({ sessionId, inputUrl, audioCopy = false
     lastAccessAt: Date.now(),
     lastDiskTouchAt: 0,
     stderr: '',
+    // Carried so admission control can price the next request without going
+    // back to the database for sessions it already started.
+    lan: Boolean(video?.lan),
+    kbps: Number(video?.kbps) || 0,
   };
   sessions.set(id, session);
 
@@ -702,6 +812,9 @@ export default {
   decidePlaybackMode,
   buildFfmpegArgs,
   shouldReuseRemuxSession,
+  activeEgressKbps,
+  buildVideoArgs,
+  detectVideoEncoder,
   startRemuxSession,
   waitForPlaylist,
   getRemuxSession,

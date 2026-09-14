@@ -32,6 +32,7 @@ import {
   waitForPlaylist,
   getRemuxSession,
   stopRemuxSession,
+  activeEgressKbps,
   selectSupersededRemuxes,
   isRemuxSessionLive,
   touchTranscodeSession,
@@ -45,6 +46,8 @@ import {
   // that will be tightened in one of them and left leaking in the other.
   redactSecrets,
 } from '../services/playback/remuxService.js';
+import { isLanClient } from '../services/playback/clientNetwork.js';
+import { planAdmission } from '../services/playback/deliveryPlan.js';
 import { getDecryptedKey } from '../services/providers/connectionStore.js';
 import { computeOpenSubtitlesHash } from '../services/playback/opensubtitlesHash.js';
 import * as opensubtitles from '../services/playback/opensubtitles.js';
@@ -734,6 +737,21 @@ export const resolvePlayback = async (req, res) => {
         }
       }
 
+      // How the stream should be delivered, before deciding how to build it:
+      // a LAN viewer gets the source untouched, a remote one gets whatever the
+      // uplink can still afford, narrowed rather than refused where possible.
+      const lan = isLanClient(req);
+      const delivery = planAdmission({
+        activeKbps: activeEgressKbps(),
+        lan,
+        sourceHeight: probe.video?.height ?? null,
+        sourceKbps: probe.bitrate ? probe.bitrate / 1000 : null,
+      });
+      if (!delivery.admitted) {
+        lastError = new Error(delivery.reason);
+        continue;
+      }
+
       const decision = decidePlaybackMode(probe, caps, audioIdx);
       if (decision.mode === 'reject') {
         lastError = new Error(decision.reason);
@@ -741,6 +759,18 @@ export const resolvePlayback = async (req, res) => {
       }
 
       const sessionId = buildSessionId();
+
+      // Direct play hands the client the upstream URL and never touches ffmpeg,
+      // which means it also never touches the ladder or the egress budget. A
+      // remote viewer the planner sized for transcoding must go through the
+      // pipeline instead, or the whole accounting is a suggestion.
+      const mustTranscode = delivery.mode === 'transcode';
+      if (mustTranscode && decision.mode === 'direct') {
+        decision.mode = 'remux';
+        decision.videoCopy = false;
+        decision.audioCopy = false;
+        decision.reason = `${delivery.reason} (bỏ direct play để áp hạn mức)`;
+      }
 
       if (decision.mode === 'direct') {
         await saveSession(db, {
@@ -813,6 +843,7 @@ export const resolvePlayback = async (req, res) => {
           audioCopy: Boolean(decision.audioCopy),
           audioStreamIndex: decision.audioStreamIndex ?? null,
           audioChannels: decision.audioChannels ?? null,
+          video: delivery,
         });
         await waitForPlaylist(session);
         // Do not hand the browser a live playlist that has only a few segments.
