@@ -57,3 +57,6 @@ obj/
 
 # Deployment files (optional - remove if you want to commit them)
 # deploy.sh
+
+# graft's local graph cache — regenerable, not committed (run `graft build`).
+/graft/

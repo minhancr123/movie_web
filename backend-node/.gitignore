@@ -38,3 +38,8 @@ coverage/
 # Misc
 *.tmp
 .cache/
+
+# Transcode cache. One 4K film lands here as ~17 GB of fMP4 segments, and the
+# whole tree is regenerable: `*.tmp` above matches files with that extension,
+# not this directory, so without this rule `git add .` stages the lot.
+tmp/
