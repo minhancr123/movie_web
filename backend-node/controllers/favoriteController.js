@@ -1,6 +1,21 @@
 import { getDB } from '../config/database.js';
 import { ObjectId } from 'mongodb';
+import { parseContentRef } from '../services/contentRef.js';
 import { enqueueJob, JOBS } from '../config/queue.js';
+
+// Clients send contentRef explicitly, and movieSlug now carries the same value,
+// so parse whichever is present. Rows written before the TMDB cutover simply
+// resolve to nulls and keep working off movieSlug alone.
+const tmdbIdentity = (body = {}) => {
+  const parsed = parseContentRef(body.contentRef || body.movieSlug || '');
+  return {
+    contentRef: parsed?.contentRef ?? null,
+    tmdbId: body.tmdbId ?? parsed?.tmdbId ?? null,
+    mediaType: body.mediaType ?? parsed?.mediaType ?? null,
+    seasonNumber: body.seasonNumber ?? parsed?.seasonNumber ?? null,
+    episodeNumber: body.episodeNumber ?? parsed?.episodeNumber ?? null,
+  };
+};
 
 // Add to favorites
 export const addFavorite = async (req, res) => {
@@ -26,6 +41,7 @@ export const addFavorite = async (req, res) => {
     const favorite = {
       userId: new ObjectId(userId),
       movieSlug,
+      ...tmdbIdentity(req.body),
       movieData: {
         name: movieData.name,
         originName: movieData.originName,

@@ -6,6 +6,11 @@ const redisUrl = process.env.REDIS_URL || 'redis://127.0.0.1:6379';
 export const queueConnection = new IORedis(redisUrl, {
   maxRetriesPerRequest: null,
   enableReadyCheck: false,
+  maxLoadingRetryTime: 5000,
+  retryStrategy(times) {
+    if (times > 5) return null;
+    return Math.min(times * 1000, 3000);
+  },
 });
 
 const queueName = process.env.JOB_QUEUE_NAME || 'movieweb-jobs';
@@ -29,8 +34,6 @@ export const JOBS = {
   WATCH_HISTORY_SYNC: 'watch-history.sync',
   PREMIERE_NOTIFY_SEND: 'premiere.notify.send',
   ANALYTICS_TRACK: 'analytics.track',
-  CATALOG_REFRESH: 'catalog.refresh',
-  SEARCH_REINDEX_MOVIE: 'search.reindex.movie',
 };
 
 export const enqueueJob = async (name, payload = {}, options = {}) => {

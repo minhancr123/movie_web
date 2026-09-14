@@ -4,9 +4,6 @@ import { ObjectId } from 'mongodb';
 
 import { connectDB, getDB } from '../config/database.js';
 import { queueConnection, JOBS } from '../config/queue.js';
-import { ensureMovieIndex } from '../config/elasticsearch.js';
-import { fetchLatestCatalog } from '../services/movieSourceService.js';
-import { indexMovie, indexMoviesBulk } from '../services/searchIndexer.js';
 
 dotenv.config();
 
@@ -93,37 +90,12 @@ const handlers = {
     });
   },
 
-  [JOBS.CATALOG_REFRESH]: async (data) => {
-    const db = getDB();
-    const pages = Number(data?.pages || 2);
-    const movies = await fetchLatestCatalog(pages);
-    if (!movies.length) return;
 
-    await indexMoviesBulk(movies);
-
-    await db.collection('catalog_snapshots').insertOne({
-      source: 'phimapi',
-      pages,
-      movieCount: movies.length,
-      createdAt: new Date(),
-    });
-  },
-
-  [JOBS.SEARCH_REINDEX_MOVIE]: async (data) => {
-    if (!data?.movie) return;
-    await indexMovie(data.movie);
-  },
 };
 
 const start = async () => {
   await connectDB();
 
-  // Elasticsearch can come up later; worker should still run for non-search jobs.
-  try {
-    await ensureMovieIndex();
-  } catch (error) {
-    console.warn('[worker] ensureMovieIndex warning:', error.message);
-  }
 
   const worker = new Worker(
     queueName,

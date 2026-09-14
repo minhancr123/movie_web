@@ -6,20 +6,31 @@ import dotenv from 'dotenv';
 import { createServer } from 'http';
 import { Server } from 'socket.io';
 import { connectDB, getDB } from './config/database.js';
-import { ensureMovieIndex } from './config/elasticsearch.js';
 import { enqueueJob, JOBS } from './config/queue.js';
 
 // Import routes
 import authRoutes from './routes/auth.js';
 import { createDefaultAdmin } from './controllers/authController.js';
+import { startTranscodeCacheJanitor } from './services/playback/remuxService.js';
 import favoriteRoutes from './routes/favorites.js';
 import watchHistoryRoutes from './routes/watchHistory.js';
 import commentRoutes from './routes/comments.js';
 import premiereRoutes from './routes/premieres.js';
 import analyticsRoutes from './routes/analytics.js';
-import searchRoutes from './routes/search.js';
+import adminRoutes from './routes/admin.js';
+import catalogRoutes from './routes/catalog.js';
+import providerRoutes from './routes/providers.js';
+import playbackRoutes from './routes/playback.js';
+import { catalogRateLimit } from './middleware/rateLimit.js';
 
 dotenv.config();
+
+process.on('uncaughtException', (err) => {
+  console.error('[server] Uncaught exception:', err);
+});
+process.on('unhandledRejection', (reason) => {
+  console.error('[server] Unhandled rejection:', reason);
+});
 
 const app = express();
 const httpServer = createServer(app);
@@ -70,7 +81,10 @@ app.use('/api/watch-history', watchHistoryRoutes);
 app.use('/api/comments', commentRoutes);
 app.use('/api/premieres', premiereRoutes);
 app.use('/api/analytics', analyticsRoutes);
-app.use('/api/search', searchRoutes);
+app.use('/api/admin', adminRoutes);
+app.use('/api/catalog', catalogRateLimit, catalogRoutes);
+app.use('/api/providers', providerRoutes);
+app.use('/api/playback', playbackRoutes);
 
 // Socket.IO Logic
 const premiereViewers = new Map(); // Track viewers per premiere
@@ -185,18 +199,14 @@ const startServer = async () => {
     // Connect to MongoDB
     await connectDB();
 
-    // Elasticsearch can be temporarily unavailable during boot; do not block API startup.
-    try {
-      await ensureMovieIndex();
-    } catch (error) {
-      console.warn('ensureMovieIndex warning:', error.message);
-    }
 
     await createDefaultAdmin();
 
-    // Warm up queue with one refresh after boot (non-blocking).
-    enqueueJob(JOBS.CATALOG_REFRESH, { pages: Number(process.env.CATALOG_REFRESH_PAGES || 2) })
-      .catch((err) => console.error('catalog warmup enqueue error:', err.message));
+    const cacheCleanup = await startTranscodeCacheJanitor();
+    console.log(
+      `[transcode-cache] scanned=${cacheCleanup.scanned} removed=${cacheCleanup.deletedIds.length} retainedMB=${Math.round(cacheCleanup.retainedBytes / 1024 / 1024)}`,
+    );
+
 
     // Start listening
     httpServer.listen(PORT, () => {

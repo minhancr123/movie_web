@@ -1,5 +1,6 @@
 import { getDB } from '../config/database.js';
 import { ObjectId } from 'mongodb';
+import { parseContentRef } from '../services/contentRef.js';
 
 // Add comment
 export const addComment = async (req, res) => {
@@ -14,9 +15,16 @@ export const addComment = async (req, res) => {
       { projection: { username: 1, avatar: 1, fullName: 1 } }
     );
 
+    // movieSlug carries the contentRef since the TMDB cutover; store the parsed
+    // identity alongside it so comments can be queried by tmdbId later.
+    const identity = parseContentRef(req.body.contentRef || movieSlug || '');
+
     const comment = {
       userId: new ObjectId(userId),
       movieSlug,
+      contentRef: identity?.contentRef ?? null,
+      tmdbId: identity?.tmdbId ?? null,
+      mediaType: identity?.mediaType ?? null,
       content: content.trim(),
       parentId: parentId ? new ObjectId(parentId) : null,
       user: {

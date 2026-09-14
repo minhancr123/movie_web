@@ -3,6 +3,9 @@ import bcrypt from 'bcryptjs';
 import jwt from 'jsonwebtoken';
 import { body, validationResult } from 'express-validator';
 import { ObjectId } from 'mongodb';
+import { OAuth2Client } from 'google-auth-library';
+
+const googleClient = new OAuth2Client(process.env.GOOGLE_CLIENT_ID);
 
 // Validation rules
 export const registerValidation = [
@@ -197,12 +200,38 @@ export const getMe = async (req, res) => {
 // Google Login
 export const googleLogin = async (req, res) => {
   try {
-    const { email, name, avatar, googleId } = req.body;
+    const idToken = req.body.idToken || req.body.id_token;
+
+    if (!idToken) {
+      return res.status(400).json({
+        success: false,
+        message: 'idToken là bắt buộc'
+      });
+    }
+
+    let payload;
+    try {
+      const ticket = await googleClient.verifyIdToken({
+        idToken,
+        audience: process.env.GOOGLE_CLIENT_ID,
+      });
+      payload = ticket.getPayload();
+    } catch (err) {
+      return res.status(401).json({
+        success: false,
+        message: 'Token Google không hợp lệ'
+      });
+    }
+
+    const email = payload.email;
+    const name = payload.name || req.body.name;
+    const avatar = payload.picture || req.body.avatar;
+    const googleId = payload.sub || req.body.googleId;
 
     if (!email) {
       return res.status(400).json({
         success: false,
-        message: 'Email là bắt buộc'
+        message: 'Email không hợp lệ từ Token Google'
       });
     }
 

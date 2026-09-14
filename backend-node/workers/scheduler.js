@@ -8,15 +8,6 @@ dotenv.config();
 const run = async () => {
   await connectDB();
 
-  // Refresh catalog + ES index every hour.
-  cron.schedule('0 * * * *', async () => {
-    try {
-      await enqueueJob(JOBS.CATALOG_REFRESH, { pages: Number(process.env.CATALOG_REFRESH_PAGES || 3) });
-      console.log('[scheduler] queued catalog refresh');
-    } catch (error) {
-      console.error('[scheduler] catalog refresh enqueue error:', error.message);
-    }
-  });
 
   // Every minute, schedule reminder notifications for events starting in the next 10 minutes.
   cron.schedule('*/1 * * * *', async () => {
