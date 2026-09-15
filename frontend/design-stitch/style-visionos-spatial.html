@@ -1,0 +1,407 @@
+<!DOCTYPE html>
+
+<html class="dark" lang="vi"><head><meta charset="utf-8"/><meta content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no, viewport-fit=cover" name="viewport"/><link href="https://fonts.googleapis.com/css2?family=Plus+Jakarta+Sans:wght@400;600;700&amp;family=Space+Grotesk:wght@600;700&amp;family=Syne:wght@700;800&amp;display=swap" rel="stylesheet"/><link href="https://fonts.googleapis.com/css2?family=Material+Symbols+Outlined:opsz,wght,FILL,GRAD@24,400,0,0" rel="stylesheet"/>
+<link href="https://fonts.googleapis.com/css2?family=Material+Symbols+Outlined:wght,FILL@100..700,0..1&amp;display=swap" rel="stylesheet"/><style>@layer base{html,body{width:100vw;margin:0;padding:0;}body{overscroll-behavior:none;}.pb-safe{padding-bottom:env(safe-area-inset-bottom,0px);}.pt-safe{padding-top:env(safe-area-inset-top,0px);}main>:first-child{margin-top:0!important;}main>:last-child{margin-bottom:0!important;}}::-webkit-scrollbar{display:none;}</style><script src="https://cdn.tailwindcss.com"></script><script id="tailwind-config">tailwind.config = { darkMode: "class", theme: { extend: { colors: { "surface-container-highest": "#343538", "on-secondary-container": "#ffdcdc", "error": "#ffb4ab", "on-primary": "#472a00", "inverse-surface": "#e3e2e6", "surface-dim": "#121316", "secondary-fixed-dim": "#ffb3b6", "primary": "#ffc174", "tertiary-fixed-dim": "#4cd7f6", "on-primary-fixed-variant": "#653e00", "surface-container-high": "#292a2d", "outline": "#a08e7a", "on-tertiary-fixed": "#001f26", "surface-container-lowest": "#0d0e11", "on-tertiary-container": "#004b58", "tertiary-container": "#29c1df", "on-error": "#690005", "error-container": "#93000a", "surface-container-low": "#1b1b1f", "tertiary": "#54ddfc", "on-primary-container": "#613b00", "on-error-container": "#ffdad6", "on-tertiary": "#003640", "primary-fixed": "#ffddb8", "on-background": "#e3e2e6", "inverse-primary": "#855300", "primary-container": "#f59e0b", "on-tertiary-fixed-variant": "#004e5c", "secondary-container": "#cc003c", "outline-variant": "#534434", "surface-tint": "#ffb95f", "on-secondary": "#68001a", "on-secondary-fixed-variant": "#920028", "secondary-fixed": "#ffdada", "background": "#121316", "inverse-on-surface": "#2f3034", "surface-container": "#1f1f23", "on-surface": "#e3e2e6", "surface-bright": "#38393d", "on-primary-fixed": "#2a1700", "primary-fixed-dim": "#ffb95f", "on-secondary-fixed": "#40000c", "surface-variant": "#343538", "secondary": "#ffb3b6", "tertiary-fixed": "#acedff", "surface": "#121316", "on-surface-variant": "#d8c3ad" }, borderRadius: { "DEFAULT": "0.25rem", "lg": "0.5rem", "xl": "0.75rem", "full": "9999px" }, spacing: { "gutter-sm": "0.75rem", "margin-tablet": "2rem", "space-2xl": "3rem", "space-lg": "1.5rem", "gutter": "1rem", "space-2xs": "0.25rem", "gutter-lg": "1.5rem", "space-xl": "2rem", "space-xs": "0.5rem", "space-md": "1rem", "space-sm": "0.75rem", "margin": "1.25rem", "margin-mobile": "1rem" }, fontFamily: { "headline-lg": ["Syne"], "body-sm": ["Plus Jakarta Sans"], "display-hero": ["Syne"], "display-hero-mobile": ["Syne"], "label-lg": ["Space Grotesk"], "headline-xl-mobile": ["Syne"], "label-sm": ["Space Grotesk"], "headline-sm": ["Plus Jakarta Sans"], "label-md": ["Space Grotesk"], "badge-numeric": ["Space Grotesk"], "headline-xl": ["Syne"], "body-md": ["Plus Jakarta Sans"], "headline-md": ["Plus Jakarta Sans"], "body-lg": ["Plus Jakarta Sans"] }, fontSize: { "headline-lg": ["24px", { "lineHeight": "30px", "letterSpacing": "-0.01em", "fontWeight": "700" }], "body-sm": ["12px", { "lineHeight": "16px", "letterSpacing": "0.01em", "fontWeight": "400" }], "display-hero": ["52px", { "lineHeight": "58px", "letterSpacing": "-0.03em", "fontWeight": "800" }], "display-hero-mobile": ["36px", { "lineHeight": "42px", "letterSpacing": "-0.02em", "fontWeight": "800" }], "label-lg": ["14px", { "lineHeight": "18px", "letterSpacing": "0.04em", "fontWeight": "600" }], "headline-xl-mobile": ["26px", { "lineHeight": "32px", "letterSpacing": "-0.01em", "fontWeight": "700" }], "label-sm": ["10px", { "lineHeight": "12px", "letterSpacing": "0.08em", "fontWeight": "700" }], "headline-sm": ["18px", { "lineHeight": "24px", "letterSpacing": "0em", "fontWeight": "600" }], "label-md": ["12px", { "lineHeight": "16px", "letterSpacing": "0.06em", "fontWeight": "600" }], "badge-numeric": ["13px", { "lineHeight": "14px", "letterSpacing": "0.02em", "fontWeight": "700" }], "headline-xl": ["32px", { "lineHeight": "38px", "letterSpacing": "-0.02em", "fontWeight": "700" }], "body-md": ["14px", { "lineHeight": "20px", "letterSpacing": "0em", "fontWeight": "400" }], "headline-md": ["20px", { "lineHeight": "26px", "letterSpacing": "-0.01em", "fontWeight": "700" }], "body-lg": ["16px", { "lineHeight": "24px", "letterSpacing": "0em", "fontWeight": "400" }] } } } };</script><style>
+    body {
+      min-height: max(884px, 100dvh);
+    }
+  </style>
+</head><body class="bg-surface text-on-surface font-body-md text-body-md flex flex-col min-h-screen"><header class="fixed top-0 w-full z-50 pt-safe bg-surface/80 backdrop-blur-xl shadow-[0_1px_8px_rgba(0,0,0,0.04)]"><div class="h-28 px-margin flex flex-col justify-between py-space-xs"><div class="flex items-center justify-between gap-space-sm"><div class="flex items-center gap-space-xs"><img alt="CineStream Logo" class="h-8 w-auto object-contain" src="https://lh3.googleusercontent.com/aida/AEtjO1WGX1vbs_RHt9aQK8kmZQ2wBo3f0qT2bXw8ROHBB0g7FAtoC3_F7R0wB7LFybD_PoZBDi0gzrZOGaRtjTqmVGd3nmJ8APDVhw0qopIcQdtzgq9KmnLH18FQmH0DL0_nDOEp9SsCH64MPzjZ5LSYYUhS0Q0WRowxc5p3p9uomEm-YbtxPSg7GKfCjljKrEj4_c2Ll0ap1O1NXlnP6Uov82o7HreX98zuX-Ds5oKrFHjNCyq9l8B65eiAJ3Y"/><span class="font-headline-md text-headline-md text-primary tracking-tight font-bold">CineStream</span><span class="font-label-sm text-label-sm px-1.5 py-0.5 rounded-full bg-surface-container-highest text-on-surface-variant ml-1">Trang Chủ</span></div><div class="flex items-center gap-space-xs"><button aria-label="Tìm kiếm" class="min-w-[44px] min-h-[44px] w-11 h-11 rounded-full flex items-center justify-center text-on-surface-variant hover:text-on-surface hover:bg-surface-container transition-colors" type="button"><span class="material-symbols-outlined text-[22px]">search</span></button><button aria-label="Thông báo" class="min-w-[44px] min-h-[44px] w-11 h-11 rounded-full relative flex items-center justify-center text-on-surface-variant hover:text-on-surface hover:bg-surface-container transition-colors" type="button"><span class="material-symbols-outlined text-[22px]">notifications</span><span class="absolute top-2.5 right-2.5 w-2 h-2 rounded-full bg-secondary-container animate-pulse"></span></button><div class="w-8 h-8 rounded-full bg-primary flex items-center justify-center ml-1"><span class="material-symbols-outlined text-on-primary text-[18px]">person</span></div></div></div><div class="flex items-center gap-space-xs overflow-x-auto no-scrollbar py-0.5"><button class="px-3 py-1 rounded-full font-label-md text-label-md whitespace-nowrap bg-primary-container text-on-primary font-semibold shadow-[0_0_12px_rgba(245,158,11,0.3)]" type="button">Tất cả</button><button class="px-3 py-1 rounded-full font-label-md text-label-md whitespace-nowrap bg-surface-container-high text-on-surface-variant hover:text-on-surface transition-colors" type="button">Phim Lẻ</button><button class="px-3 py-1 rounded-full font-label-md text-label-md whitespace-nowrap bg-surface-container-high text-on-surface-variant hover:text-on-surface transition-colors" type="button">Phim Bộ</button><button class="px-3 py-1 rounded-full font-label-md text-label-md whitespace-nowrap bg-surface-container-high text-on-surface-variant hover:text-on-surface transition-colors" type="button">Anime</button><button class="px-3 py-1 rounded-full font-label-md text-label-md whitespace-nowrap bg-surface-container-high text-on-surface-variant hover:text-on-surface transition-colors" type="button">Chiếu Rạp</button></div></div></header><main class="flex flex-col relative w-full pt-28 pb-28 bg-surface"><div class="flex flex-col w-full relative overflow-hidden px-margin pb-space-2xl gap-space-xl">
+<!-- Dynamic Spatial Hologram Background Shader -->
+<!-- STITCH_SHADER_START:ANIMATION_11 class="absolute inset-0 w-full h-full -z-10 pointer-events-none opacity-85" -->
+<div class="absolute inset-0 w-full h-full -z-10 pointer-events-none opacity-85" style="display:block;">
+<canvas id="shader-canvas-ANIMATION_11" style="display:block;width:100%;height:100%"></canvas>
+<script>
+(function() {
+  const canvas = document.getElementById('shader-canvas-ANIMATION_11');
+
+  // Sync the WebGL drawing-buffer size with the CSS-driven layout size.
+  // This fires on initial layout and whenever the element is resized.
+  function syncSize() {
+    const w = canvas.clientWidth  || 1280;
+    const h = canvas.clientHeight || 720;
+    if (canvas.width !== w || canvas.height !== h) {
+      canvas.width  = w;
+      canvas.height = h;
+    }
+  }
+  if (typeof ResizeObserver !== 'undefined') {
+    new ResizeObserver(syncSize).observe(canvas);
+  }
+  syncSize();
+
+  const gl = canvas.getContext('webgl') || canvas.getContext('experimental-webgl');
+  if (!gl) return;
+  const vs = `attribute vec2 a_position;
+varying vec2 v_texCoord;
+void main() {
+  v_texCoord = a_position * 0.5 + 0.5;
+  gl_Position = vec4(a_position, 0.0, 1.0);
+}`;
+  const fs = `precision highp float;
+uniform float u_time;
+uniform vec2 u_resolution;
+uniform vec2 u_mouse;
+
+// Simplex/Perlin noise helper
+vec3 mod289(vec3 x) { return x - floor(x * (1.0 / 289.0)) * 289.0; }
+vec2 mod289(vec2 x) { return x - floor(x * (1.0 / 289.0)) * 289.0; }
+vec3 permute(vec3 x) { return mod289(((x*34.0)+1.0)*x); }
+
+float snoise(vec2 v) {
+  const vec4 C = vec4(0.211324865405187,  // (3.0-sqrt(3.0))/6.0
+                      0.366025403784439,  // 0.5*(sqrt(3.0)-1.0)
+                     -0.577350269189626,  // -1.0 + 2.0 * C.x
+                      0.024390243902439); // 1.0 / 41.0
+  vec2 i  = floor(v + dot(v, C.yy) );
+  vec2 x0 = v -   i + dot(i, C.xx);
+  vec2 i1  = (x0.x > x0.y) ? vec2(1.0, 0.0) : vec2(0.0, 1.0);
+  vec4 x12 = x0.xyxy + C.xxzz;
+  x12.xy -= i1;
+  i = mod289(i);
+  vec3 p = permute( permute( i.y + vec3(0.0, i1.y, 1.0 ))
+        + i.x + vec3(0.0, i1.x, 1.0 ));
+  vec3 m = max(0.5 - vec3(dot(x0,x0), dot(x12.xy,x12.xy), dot(x12.zw,x12.zw)), 0.0);
+  m = m*m ;
+  m = m*m ;
+  vec3 x = 2.0 * fract(p * C.www) - 1.0;
+  vec3 h = abs(x) - 0.5;
+  vec3 ox = floor(x + 0.5);
+  vec3 a0 = x - ox;
+  m *= 1.79284291400159 - 0.85373472095314 * ( a0*a0 + h*h );
+  vec3 g;
+  g.x  = a0.x  * x0.x  + h.x  * x0.y;
+  g.yz = a0.yz * x12.xz + h.yz * x12.yw;
+  return 130.0 * dot(m, g);
+}
+
+void main() {
+    vec2 st = gl_FragCoord.xy / u_resolution.xy;
+    st.y = 1.0 - st.y;
+    
+    float t = u_time * 0.25;
+    
+    // Spatial iridescent cinema light field
+    float n1 = snoise(st * 2.2 + vec2(t * 0.4, -t * 0.3));
+    float n2 = snoise(st * 3.5 - vec2(-t * 0.2, t * 0.35) + n1 * 0.5);
+    float n3 = snoise(st * 1.5 + vec2(t * 0.1, t * 0.15));
+    
+    // Core Cinema Palettes: Deep Space (#090A0F) -> Regal Amber Gold (#F59E0B) -> Electric Violet (#7C3AED) -> Cyan Laser (#06B6D4)
+    vec3 deepSpace = vec3(0.04, 0.045, 0.07);
+    vec3 amberGold = vec3(0.96, 0.62, 0.05);
+    vec3 electricViolet = vec3(0.48, 0.18, 0.93);
+    vec3 laserCyan = vec3(0.02, 0.71, 0.83);
+    
+    float auroraWeight1 = smoothstep(-0.2, 0.8, n1 + st.y * 0.5);
+    float auroraWeight2 = smoothstep(-0.1, 0.9, n2 - st.x * 0.3);
+    
+    vec3 col = deepSpace;
+    col = mix(col, electricViolet * 0.7, auroraWeight1 * 0.45);
+    col = mix(col, amberGold * 0.8, pow(auroraWeight2, 2.2) * 0.5);
+    col += laserCyan * pow(clamp(n3 * 0.6 + 0.4, 0.0, 1.0), 3.0) * 0.25;
+    
+    // Soft top-down vignette for readability
+    float vignette = smoothstep(1.3, 0.2, length(st - vec2(0.5, 0.4)));
+    col *= (0.7 + 0.3 * vignette);
+    
+    // Subtle star dust shimmer
+    float dust = fract(sin(dot(st.xy ,vec2(12.9898,78.233))) * 43758.5453);
+    if (dust > 0.992) {
+        col += vec3(1.0, 0.95, 0.8) * 0.35 * (0.5 + 0.5 * sin(u_time * 3.0 + dust * 100.0));
+    }
+
+    gl_FragColor = vec4(col, 1.0);
+}`;
+  function cs(type, src) {
+    const s = gl.createShader(type);
+    gl.shaderSource(s, src);
+    gl.compileShader(s);
+    return s;
+  }
+  const prog = gl.createProgram();
+  gl.attachShader(prog, cs(gl.VERTEX_SHADER, vs));
+  gl.attachShader(prog, cs(gl.FRAGMENT_SHADER, fs));
+  gl.linkProgram(prog);
+  gl.useProgram(prog);
+  const buf = gl.createBuffer();
+  gl.bindBuffer(gl.ARRAY_BUFFER, buf);
+  gl.bufferData(gl.ARRAY_BUFFER, new Float32Array([-1,-1, 1,-1, -1,1, 1,1]), gl.STATIC_DRAW);
+  const pos = gl.getAttribLocation(prog, 'a_position');
+  gl.enableVertexAttribArray(pos);
+  gl.vertexAttribPointer(pos, 2, gl.FLOAT, false, 0, 0);
+  const uTime = gl.getUniformLocation(prog, 'u_time');
+  const uRes = gl.getUniformLocation(prog, 'u_resolution');
+  const uMouse = gl.getUniformLocation(prog, 'u_mouse');
+
+  // u_mouse is in pixel coordinates matching u_resolution (ShaderToy convention).
+  // Shaders that need normalized coords should use: u_mouse / u_resolution.
+  let mouse = { x: canvas.width / 2, y: canvas.height / 2 };
+  window.addEventListener('mousemove', (event) => {
+    const rect = canvas.getBoundingClientRect();
+    if (rect.width && rect.height) {
+      const nx = (event.clientX - rect.left) / rect.width;
+      const ny = 1.0 - (event.clientY - rect.top) / rect.height;
+      mouse.x = nx * canvas.width;
+      mouse.y = ny * canvas.height;
+    }
+  });
+
+  function render(t) {
+    if (typeof ResizeObserver === 'undefined') syncSize();
+    gl.viewport(0, 0, canvas.width, canvas.height);
+    if (uTime) gl.uniform1f(uTime, t * 0.001);
+    if (uRes) gl.uniform2f(uRes, canvas.width, canvas.height);
+    if (uMouse) gl.uniform2f(uMouse, mouse.x, mouse.y);
+    gl.drawArrays(gl.TRIANGLE_STRIP, 0, 4);
+    requestAnimationFrame(render);
+  }
+  render(0);
+})();
+</script>
+</div>
+<!-- STITCH_SHADER_END:ANIMATION_11 -->
+<!-- Ambient Glow Orbs behind content -->
+<div class="absolute -top-10 -left-16 w-72 h-72 rounded-full bg-primary/15 blur-3xl pointer-events-none -z-10"></div>
+<div class="absolute top-96 -right-20 w-80 h-80 rounded-full bg-tertiary/15 blur-3xl pointer-events-none -z-10"></div>
+<!-- Hero Card 3D Spatial "Parallax Floating Stage" -->
+<section class="relative w-full rounded-3xl bg-surface-container-low/60 backdrop-blur-2xl p-space-md shadow-[0_24px_50px_rgba(0,0,0,0.7)] flex flex-col gap-space-md">
+<!-- Visual Iridescent Horizon Light Line -->
+<div class="absolute top-0 inset-x-8 h-px bg-gradient-to-r from-transparent via-primary to-transparent opacity-80"></div>
+<div class="absolute bottom-0 inset-x-12 h-px bg-gradient-to-r from-transparent via-tertiary to-transparent opacity-40"></div>
+<!-- Poster Frame with Spatial Depth Vignette -->
+<div class="relative w-full h-96 rounded-2xl overflow-hidden shadow-[0_16px_36px_rgba(245,158,11,0.22)] group">
+<div class="w-full h-full bg-cover bg-center transition-transform duration-700 ease-out group-hover:scale-105" data-alt="Avatar The Way of Water sci-fi theatrical landscape with glowing bioluminescent deep ocean creatures, floating Pandora reefs, Na'vi diver gliding through crystal clear neon turquoise water with golden cinematic sunbeams piercing through the surface, ultra photorealistic 8k IMAX render." style="background-image: url('https://lh3.googleusercontent.com/aida-public/AB6AXuCsyHQ9s2VnZyT9Q_GZeMXQVQY8z-Kr86A0xf5kb7UG9L5QCBCOZuaAhmAEJo_UysH_FSrr6ckwdIZxVUe6xq9-y2AsyzQddfbb8KimehXEc24yXMZPZTG9T-KmsMDCDmZIuN2jghAwZaWec0DeVW4vO1iyS_OpQ67UwtgrOiT4D9sVgGNuMozv6cFPAhO24tNdtJekVGNcXeWQrjryohpfkhhQC687QuFEt8vRHLzZ1hPen2c3V_ZX')">
+</div>
+<!-- Scrims & Hologram Gradients -->
+<div class="absolute inset-0 bg-gradient-to-t from-surface-container-lowest via-surface-container-lowest/30 to-transparent"></div>
+<div class="absolute inset-0 bg-gradient-to-r from-surface-container-lowest/70 via-transparent to-surface-container-lowest/30"></div>
+<!-- Floating Telemetry Pills Top Row -->
+<div class="absolute top-3 inset-x-3 flex items-center justify-between pointer-events-none">
+<div class="px-2.5 py-1 rounded-full bg-surface-container-lowest/80 backdrop-blur-md flex items-center gap-1.5 shadow-sm">
+<span class="w-2 h-2 rounded-full bg-tertiary animate-ping"></span>
+<span class="font-label-sm text-label-sm text-tertiary uppercase tracking-wider">Spatial 3D Vision</span>
+</div>
+<div class="px-2.5 py-1 rounded-full bg-surface-container-lowest/80 backdrop-blur-md flex items-center gap-1 shadow-sm">
+<span class="material-symbols-outlined text-primary text-[14px]">local_fire_department</span>
+<span class="font-badge-numeric text-badge-numeric text-primary">TOP #1 TOÀN CẦU</span>
+</div>
+</div>
+<!-- Floating Tech Badges (Middle Stage) -->
+<div class="absolute bottom-4 inset-x-3 flex flex-wrap gap-1.5">
+<div class="px-2.5 py-1 rounded-lg bg-surface-container-highest/80 backdrop-blur-md flex items-center gap-1.5 text-on-surface">
+<span class="material-symbols-outlined text-[15px] text-tertiary">graphic_eq</span>
+<span class="font-label-sm text-label-sm font-semibold tracking-wide">360° AUDIO</span>
+</div>
+<div class="px-2.5 py-1 rounded-lg bg-surface-container-highest/80 backdrop-blur-md flex items-center gap-1 text-on-surface">
+<span class="material-symbols-outlined text-[15px] text-primary">speed</span>
+<span class="font-label-sm text-label-sm font-semibold tracking-wide">120 FPS HFR</span>
+</div>
+<div class="px-2 py-1 rounded-lg bg-surface-container-highest/80 backdrop-blur-md flex items-center gap-1 text-on-surface">
+<span class="material-symbols-outlined text-[15px] text-secondary">hdr_on</span>
+<span class="font-label-sm text-label-sm font-semibold tracking-wide">DOLBY VISION</span>
+</div>
+</div>
+</div>
+<!-- Title & Narrative Block -->
+<div class="flex flex-col gap-space-2xs">
+<div class="flex items-center gap-space-xs">
+<span class="font-label-sm text-label-sm text-primary uppercase font-bold tracking-widest">James Cameron Tác Phẩm</span>
+<span class="w-1 h-1 rounded-full bg-outline"></span>
+<span class="font-label-sm text-label-sm text-on-surface-variant">3h 12m • 2024 Remastered</span>
+</div>
+<h2 class="font-headline-xl-mobile text-headline-xl-mobile text-on-surface font-extrabold tracking-tight">
+        AVATAR: DÒNG CHẢY CỦA NƯỚC
+      </h2>
+<p class="font-body-sm text-body-sm text-on-surface-variant line-clamp-2">
+        Trải nghiệm chiều sâu không gian Pandora vượt ngoài màn hình phẳng thông thường với công nghệ hiển thị Spatial Reality 3D thế hệ mới.
+      </p>
+</div>
+<!-- Spatial Action Deck -->
+<div class="flex flex-col gap-space-xs pt-space-2xs">
+<button class="w-full py-3.5 px-space-md rounded-2xl bg-gradient-to-r from-primary-container via-primary to-primary-fixed text-on-primary font-label-lg text-label-lg font-bold flex items-center justify-center gap-2 shadow-[0_0_24px_rgba(245,158,11,0.45)] active:scale-[0.98] transition-all" type="button">
+<span class="material-symbols-outlined text-[22px]" style="font-variation-settings: 'FILL' 1;">play_arrow</span>
+        TRẢI NGHIỆM PHÒNG CHIẾU ẢO SPATIAL
+      </button>
+<div class="grid grid-cols-2 gap-space-xs">
+<button class="py-2.5 px-space-xs rounded-xl bg-surface-container-high/90 text-on-surface font-label-md text-label-md flex items-center justify-center gap-1.5 shadow-sm hover:bg-surface-container-highest transition-colors" type="button">
+<span class="material-symbols-outlined text-tertiary text-[18px]">view_in_ar</span>
+          Góc Nhìn 3D
+        </button>
+<button class="py-2.5 px-space-xs rounded-xl bg-surface-container-high/90 text-on-surface font-label-md text-label-md flex items-center justify-center gap-1.5 shadow-sm hover:bg-surface-container-highest transition-colors" type="button">
+<span class="material-symbols-outlined text-secondary text-[18px]">bookmark_add</span>
+          Lưu Phòng Chiếu
+        </button>
+</div>
+</div>
+</section>
+<!-- Immersive Sense Mode (Chế Độ Đa Giác Quan) -->
+<section class="flex flex-col gap-space-sm">
+<div class="flex items-center justify-between">
+<div class="flex items-center gap-2">
+<span class="material-symbols-outlined text-primary text-[22px]">tune</span>
+<h3 class="font-headline-sm text-headline-sm text-on-surface font-bold">Chế Độ Môi Trường Ảo</h3>
+</div>
+<span class="font-label-sm text-label-sm text-tertiary uppercase tracking-wider">VisionOS 2.2</span>
+</div>
+<!-- Interactive Segmented Pill Bar -->
+<div class="w-full p-1 rounded-2xl bg-surface-container-lowest/90 backdrop-blur-xl flex items-center gap-1 overflow-x-auto no-scrollbar shadow-inner">
+<button class="flex-1 min-w-[100px] py-2 px-3 rounded-xl bg-surface-container-highest text-primary font-label-sm text-label-sm font-bold flex items-center justify-center gap-1.5 shadow-[0_2px_12px_rgba(255,193,116,0.18)] whitespace-nowrap" type="button">
+<span class="material-symbols-outlined text-[16px]">theaters</span>
+        IMAX Dome
+      </button>
+<button class="flex-1 min-w-[110px] py-2 px-3 rounded-xl text-on-surface-variant hover:text-on-surface font-label-sm text-label-sm flex items-center justify-center gap-1.5 whitespace-nowrap transition-colors" type="button">
+<span class="material-symbols-outlined text-[16px]">stars</span>
+        Không Trọng Lực
+      </button>
+<button class="flex-1 min-w-[105px] py-2 px-3 rounded-xl text-on-surface-variant hover:text-on-surface font-label-sm text-label-sm flex items-center justify-center gap-1.5 whitespace-nowrap transition-colors" type="button">
+<span class="material-symbols-outlined text-[16px]">local_bar</span>
+        Cinema Lounge
+      </button>
+<button class="flex-1 min-w-[95px] py-2 px-3 rounded-xl text-on-surface-variant hover:text-on-surface font-label-sm text-label-sm flex items-center justify-center gap-1.5 whitespace-nowrap transition-colors" type="button">
+<span class="material-symbols-outlined text-[16px]">visibility_off</span>
+        Riêng Tư
+      </button>
+</div>
+</section>
+<!-- 3D Depth Holographic Carousel -->
+<section class="flex flex-col gap-space-sm">
+<div class="flex items-center justify-between">
+<div class="flex items-center gap-2">
+<span class="material-symbols-outlined text-tertiary text-[22px]">layers</span>
+<h3 class="font-headline-sm text-headline-sm text-on-surface font-bold">Holographic Carousel</h3>
+</div>
+<a class="font-label-md text-label-md text-primary flex items-center gap-0.5" href="#">
+        Xem tất cả
+        <span class="material-symbols-outlined text-[16px]">chevron_right</span>
+</a>
+</div>
+<!-- Scrollable Hologram Cards -->
+<div class="flex gap-space-md overflow-x-auto no-scrollbar -mx-margin px-margin py-2">
+<!-- Card 1: Dune Part Two -->
+<div class="w-60 shrink-0 rounded-2xl bg-surface-container-low/75 backdrop-blur-lg p-2.5 flex flex-col gap-space-xs shadow-[0_12px_28px_rgba(0,0,0,0.5)] group">
+<div class="relative w-full h-80 rounded-xl overflow-hidden shadow-md">
+<div class="w-full h-full bg-cover bg-center transition-transform duration-500 group-hover:scale-105" data-alt="Dune Part Two cinematic dramatic poster with Paul Atreides and Chani standing against colossal spice sand dunes, glowing blue within blue eyes, two giant twin suns burning on the horizon, sci-fi atmospheric masterpiece with warm deep golden and orange lighting." style="background-image: url('https://lh3.googleusercontent.com/aida-public/AB6AXuDZ_5gpJ9kzIZxFzgwNb7OQImuhXlrY9gB-JFTsImmoMecE74X3DhAcd2Z8kaGoAD6-X7mAlWqgPnvpC23A6GFt0zgxHUyM5vDjw0jgUjrrCZ2RG8miNSqWEPrxeg_Zeyh9YONX0sfTfRfcz_Foq7kBWSJKUFBrDWRDxbt7UsnNoo74hVMhw5KbC7ohZPQhbiBtjUtyP0qEHvxdhPs_jqQ9hfaYAJwTpUoG_nfnIGWdUUflRkpzroWa')">
+</div>
+<div class="absolute inset-0 bg-gradient-to-t from-surface-container-lowest via-transparent to-transparent"></div>
+<!-- Hologram Floating Depth Pill -->
+<div class="absolute top-2 right-2 px-2 py-0.5 rounded-full bg-surface-container-lowest/80 backdrop-blur-md flex items-center gap-1">
+<span class="material-symbols-outlined text-primary text-[12px]">auto_awesome</span>
+<span class="font-badge-numeric text-badge-numeric text-primary font-bold">99.8% WOW</span>
+</div>
+<!-- Format Tag from Image 2 Asset Inspiration -->
+<div class="absolute bottom-2 left-2 px-2 py-0.5 rounded-md bg-surface-container-lowest/90 backdrop-blur-md flex items-center gap-1.5">
+<span class="font-label-sm text-label-sm text-tertiary font-bold tracking-wider">IMAX</span>
+<span class="font-label-sm text-label-sm text-on-surface-variant">LASER 70MM</span>
+</div>
+</div>
+<div class="flex flex-col">
+<span class="font-headline-sm text-headline-sm text-on-surface font-bold truncate">Dune: Hành Tinh Cát 2</span>
+<span class="font-body-sm text-body-sm text-on-surface-variant truncate">Hành trình huyền thoại Arrakis</span>
+</div>
+</div>
+<!-- Card 2: Spider-Man Across The Spider-Verse -->
+<div class="w-60 shrink-0 rounded-2xl bg-surface-container-low/75 backdrop-blur-lg p-2.5 flex flex-col gap-space-xs shadow-[0_12px_28px_rgba(0,0,0,0.5)] group">
+<div class="relative w-full h-80 rounded-xl overflow-hidden shadow-md">
+<div class="w-full h-full bg-cover bg-center transition-transform duration-500 group-hover:scale-105" data-alt="Spider-Man Across the Spider-Verse vibrant neon multiverse portal with Miles Morales free falling upside down across dimensional geometric skyscrapers, vivid magenta, electric cyan, and deep comic book ink textures, hyper dynamic futuristic animation." style="background-image: url('https://lh3.googleusercontent.com/aida-public/AB6AXuAVx3PNa8biw3KegVVhhv-TJBE_hTDEaIhtnZ519AVp3ecTiIgmC5TewNKW9lW7Z9y1wBiF3oP06kVR4r7URahgqb81PrrVC-K_Qiqut-BIuf2cZzPAHA5ECDAT9N8C3nSKgYatprUSQk7bNDW-ZRKKIIDqLG1bUnD6cVQQUlniTVbR8WFukDO7gzkaVqmg41llrGFgwmNTCkSAatzfd6CMAsyB9TfahRgoMxHFBwWK1h3Xuvbmx1CR')">
+</div>
+<div class="absolute inset-0 bg-gradient-to-t from-surface-container-lowest via-transparent to-transparent"></div>
+<div class="absolute top-2 right-2 px-2 py-0.5 rounded-full bg-surface-container-lowest/80 backdrop-blur-md flex items-center gap-1">
+<span class="material-symbols-outlined text-secondary text-[12px]">auto_awesome</span>
+<span class="font-badge-numeric text-badge-numeric text-secondary font-bold">98.9% WOW</span>
+</div>
+<div class="absolute bottom-2 left-2 px-2 py-0.5 rounded-md bg-surface-container-lowest/90 backdrop-blur-md flex items-center gap-1.5">
+<span class="font-label-sm text-label-sm text-primary font-bold tracking-wider">DOLBY</span>
+<span class="font-label-sm text-label-sm text-on-surface-variant">ATMOS 3D</span>
+</div>
+</div>
+<div class="flex flex-col">
+<span class="font-headline-sm text-headline-sm text-on-surface font-bold truncate">Du Hành Đa Vũ Trụ</span>
+<span class="font-body-sm text-body-sm text-on-surface-variant truncate">Đồ họa phá vỡ mọi giới hạn</span>
+</div>
+</div>
+<!-- Card 3: Oppenheimer -->
+<div class="w-60 shrink-0 rounded-2xl bg-surface-container-low/75 backdrop-blur-lg p-2.5 flex flex-col gap-space-xs shadow-[0_12px_28px_rgba(0,0,0,0.5)] group">
+<div class="relative w-full h-80 rounded-xl overflow-hidden shadow-md">
+<div class="w-full h-full bg-cover bg-center transition-transform duration-500 group-hover:scale-105" data-alt="Oppenheimer cinematic historical drama poster showing close up of the physicist in a fedora hat looking forward, dramatic firestorm embers and nuclear shockwave glowing in deep obsidian black and intense fiery amber background, 70mm large format photography style." style="background-image: url('https://lh3.googleusercontent.com/aida-public/AB6AXuDgDDOFJaCK23SyjBf_ZKmdGKJ-QjHqKJUkTjzA3vq-fbzePPxp2Y1EA0i0jpYYRNwMfiDi_YGm5hHfEZ7IevPvmnBbsKUDI4sq_J72-e1XOq0Jah8UzefSJK2dYEm_m9dIjhcA2PvIcpIDa40mRkn47P4459m9mVQjyU_7F47m7jGk3k12N9KvhCPlDarFEEC-RLbdpRYTaj8_sHnpcRcj28mIperdA183_-CnneoMKGePjkPBbvur')">
+</div>
+<div class="absolute inset-0 bg-gradient-to-t from-surface-container-lowest via-transparent to-transparent"></div>
+<div class="absolute top-2 right-2 px-2 py-0.5 rounded-full bg-surface-container-lowest/80 backdrop-blur-md flex items-center gap-1">
+<span class="material-symbols-outlined text-primary text-[12px]">auto_awesome</span>
+<span class="font-badge-numeric text-badge-numeric text-primary font-bold">99.4% WOW</span>
+</div>
+<div class="absolute bottom-2 left-2 px-2 py-0.5 rounded-md bg-surface-container-lowest/90 backdrop-blur-md flex items-center gap-1.5">
+<span class="font-label-sm text-label-sm text-on-surface font-bold tracking-wider">4K UHD</span>
+<span class="font-label-sm text-label-sm text-on-surface-variant">MASTER TAPE</span>
+</div>
+</div>
+<div class="flex flex-col">
+<span class="font-headline-sm text-headline-sm text-on-surface font-bold truncate">Oppenheimer</span>
+<span class="font-body-sm text-body-sm text-on-surface-variant truncate">Kiệt tác 7 giải Oscar</span>
+</div>
+</div>
+</div>
+</section>
+<!-- Cinema Lounge Trực Tiếp (Spatial Watch Party) -->
+<section class="w-full rounded-3xl bg-surface-container-low/80 backdrop-blur-2xl p-space-md shadow-[0_16px_40px_rgba(0,0,0,0.6)] flex flex-col gap-space-md">
+<div class="flex items-center justify-between">
+<div class="flex flex-col">
+<div class="flex items-center gap-1.5">
+<span class="w-2.5 h-2.5 rounded-full bg-secondary-container animate-pulse"></span>
+<span class="font-label-sm text-label-sm text-secondary uppercase font-bold tracking-wider">Trực Tiếp Metaverse</span>
+</div>
+<h3 class="font-headline-sm text-headline-sm text-on-surface font-bold">Phòng Chiếu Cùng Bạn Bè</h3>
+</div>
+<div class="px-3 py-1 rounded-full bg-surface-container-highest text-on-surface-variant font-badge-numeric text-badge-numeric">
+        1,420 đang xem
+      </div>
+</div>
+<!-- Virtual Room Simulation Surface -->
+<div class="relative w-full h-44 rounded-2xl bg-surface-container-lowest/90 overflow-hidden flex flex-col items-center justify-center p-space-sm">
+<!-- Curved Cinema Screen Neon Arc -->
+<div class="absolute top-3 w-4/5 h-6 rounded-t-[100px] border-t-2 border-primary/70 shadow-[0_-8px_20px_rgba(245,158,11,0.5)]"></div>
+<span class="absolute top-6 font-label-sm text-label-sm text-primary/80 uppercase tracking-widest">Màn Chiếu Vòm Spatial 8K</span>
+<!-- Floating Reaction Bubbles -->
+<div class="absolute top-12 left-10 px-2 py-1 rounded-full bg-surface-container-high/90 text-on-surface text-body-sm shadow-md animate-bounce">
+        🔥 Siêu nét!
+      </div>
+<div class="absolute top-14 right-12 px-2 py-1 rounded-full bg-surface-container-high/90 text-on-surface text-body-sm shadow-md animate-pulse">
+        ❤️ Âm thanh đỉnh quá
+      </div>
+<!-- Friends Floating Avatars Arc -->
+<div class="mt-8 flex items-center justify-center gap-3">
+<div class="relative flex flex-col items-center">
+<div class="w-12 h-12 rounded-full bg-surface-container-highest overflow-hidden shadow-[0_0_12px_rgba(84,221,252,0.5)]">
+<img class="w-full h-full object-cover" data-alt="Cyberpunk stylized 3D avatar of a Vietnamese young girl with neon purple headset and warm ambient smiling expression, futuristic metaverse profile portrait." src="https://lh3.googleusercontent.com/aida-public/AB6AXuBP1fWyHcK2Ieg8d10sEzEvwW7r14EoOqaJysYmZAXyWGqQxuGpXco7xLHoyyzDK5Qfgm0ANd6YiprNXEuT6GPjLN-kl2nxeeJCB4tf-DW6gcqYT7W0feq17XVdaODltJEQU0Ddz_dT1_sS-RBys6-Hn-VbE8kLUICQWcNGTRp7uMcpfq9omdQK0p7aLIvTCBtcDz5EU3O0m8jz5iAFYP66LBI3DQtYJB2AHIpKDamZLRROmdo-9Zvu"/>
+</div>
+<span class="font-label-sm text-label-sm text-on-surface mt-1">Linh Miu</span>
+</div>
+<div class="relative flex flex-col items-center -translate-y-2">
+<div class="w-14 h-14 rounded-full bg-surface-container-highest overflow-hidden shadow-[0_0_16px_rgba(255,193,116,0.6)]">
+<img class="w-full h-full object-cover" data-alt="Futuristic digital 3D avatar of a stylish young male wearing spatial audio visor with golden glowing reflections, highly detailed photorealistic character render." src="https://lh3.googleusercontent.com/aida-public/AB6AXuAC8I48kmRKyKZDgNTHotSZNWO689FZe18YtaaeFy8dXmBOJ7Nrp46iS4C1I-1UOLjfIc2oMAiQvdlB7Fem1m7_WWgISBOIrfWoax7x5Eif42M1_-5cf9ynmPu8ITDZBT59mDrLvCW6jv1iZbtZIcveeWIL3ioElJXNRwUtJPotjOmuBG9-9kpcwqKg2DqCJyQnJHJUwxDmxcP4EJInnE3cB0t5610lDNUh0aerdjjXyNpm8MLGEEJl"/>
+</div>
+<span class="font-label-sm text-label-sm text-primary font-bold mt-1">Bạn (Host)</span>
+</div>
+<div class="relative flex flex-col items-center">
+<div class="w-12 h-12 rounded-full bg-surface-container-highest overflow-hidden shadow-[0_0_12px_rgba(255,179,182,0.5)]">
+<img class="w-full h-full object-cover" data-alt="Futuristic 3D metaverse avatar portrait of a creative man with subtle glowing cyan holographic glasses, deep cinematic lighting." src="https://lh3.googleusercontent.com/aida-public/AB6AXuBNupRGPHsqGkEP0wJOmlQ4_sFzjfl1iSgpapi_puTuS8gE2N1C4v5qTzkU7CHknyRLdUp4OuSwAuphwTCmGI2-RFPq5zWpkjsqduRC_NHwghsKT2KwhQUDGT0pEy6otjX3pzedt6voyDP18uOOzKvTfrp4XhTTjvCDS3dX_4H96v0VpYx-w3uAiJQk-35gxXbt9oB8kIR9dqGztUjRHua7SWgPNkCzi3nuTInTxv9Jq_3ItEsNNQx5"/>
+</div>
+<span class="font-label-sm text-label-sm text-on-surface mt-1">Hoàng Nam</span>
+</div>
+<button aria-label="Mời bạn bè" class="w-11 h-11 rounded-full bg-surface-container-high text-primary flex items-center justify-center shadow-md hover:bg-surface-container-highest transition-transform active:scale-95" type="button">
+<span class="material-symbols-outlined text-[20px]">person_add</span>
+</button>
+</div>
+</div>
+<!-- Quick Party Launch Row -->
+<div class="flex items-center justify-between gap-space-sm pt-space-2xs">
+<div class="flex items-center gap-2">
+<span class="material-symbols-outlined text-tertiary text-[20px]">mic</span>
+<span class="font-body-sm text-body-sm text-on-surface-variant">Micro không gian: <b class="text-on-surface font-semibold">Bật tự động</b></span>
+</div>
+<button class="px-4 py-2 rounded-xl bg-surface-container-highest text-primary font-label-md text-label-md font-bold flex items-center gap-1.5 shadow-sm hover:bg-surface-bright transition-colors" type="button">
+<span class="material-symbols-outlined text-[16px]">groups</span>
+        Tham Gia Ngay
+      </button>
+</div>
+</section>
+</div></main><div class="fixed bottom-0 w-full z-50 pb-safe pointer-events-none flex justify-center px-margin mb-3"><nav class="pointer-events-auto w-full max-w-md h-16 rounded-full bg-surface-container-lowest/85 backdrop-blur-2xl shadow-[0_12px_32px_rgba(0,0,0,0.6)] px-space-xs flex items-center justify-around" data-active-classes="text-primary [&amp;&gt;div]:bg-primary/20 [&amp;&gt;div]:shadow-[0_0_16px_rgba(255,193,116,0.35)]"><a class="group flex flex-col items-center justify-center min-w-[44px] min-h-[44px] px-3 py-1 text-on-surface-variant hover:text-on-surface transition-colors" data-path="trang-chu" href="#"><div class="w-10 h-7 rounded-full flex items-center justify-center transition-all"><span class="material-symbols-outlined text-[20px]">home</span></div><span class="font-label-sm text-label-sm tracking-wide mt-0.5">Trang chủ</span></a><a class="group flex flex-col items-center justify-center min-w-[44px] min-h-[44px] px-3 py-1 text-on-surface-variant hover:text-on-surface transition-colors" data-path="kham-pha" href="#"><div class="w-10 h-7 rounded-full flex items-center justify-center transition-all"><span class="material-symbols-outlined text-[20px]">explore</span></div><span class="font-label-sm text-label-sm tracking-wide mt-0.5">Khám phá</span></a><a class="group flex flex-col items-center justify-center min-w-[44px] min-h-[44px] px-3 py-1 text-on-surface-variant hover:text-on-surface transition-colors" data-path="tai-ve" href="#"><div class="w-10 h-7 rounded-full flex items-center justify-center transition-all"><span class="material-symbols-outlined text-[20px]">download_for_offline</span></div><span class="font-label-sm text-label-sm tracking-wide mt-0.5">Tải về</span></a><a class="group flex flex-col items-center justify-center min-w-[44px] min-h-[44px] px-3 py-1 text-on-surface-variant hover:text-on-surface transition-colors" data-path="ho-so" href="#"><div class="w-10 h-7 rounded-full flex items-center justify-center transition-all"><span class="material-symbols-outlined text-[20px]">account_circle</span></div><span class="font-label-sm text-label-sm tracking-wide mt-0.5">Hồ sơ</span></a></nav></div></body></html>

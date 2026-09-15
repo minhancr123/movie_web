@@ -85,6 +85,17 @@ export default function PlaybackSection({
   const [errorMessage, setErrorMessage] = useState<string>('');
   const [downloadProgress, setDownloadProgress] = useState<number>(0);
   const [playUrl, setPlayUrl] = useState<string>('');
+  const playUrlRef = useRef<string>('');
+  // Forces VideoPlayer to rebuild its hls.js pipeline even when resolve
+  // returns the identical URL (reused session): React bails out on an
+  // unchanged src, so without this the stuck player is never destroyed and
+  // the stall watchdog never re-arms.
+  const [reloadKey, setReloadKey] = useState<number>(0);
+  const applyPlayUrl = useCallback((url: string) => {
+    if (url && url === playUrlRef.current) setReloadKey((k) => k + 1);
+    playUrlRef.current = url;
+    setPlayUrl(url);
+  }, []);
   const [fileName, setFileName] = useState<string>('');
   const [playMode, setPlayMode] = useState<string>('');
   const [durationSeconds, setDurationSeconds] = useState<number | null>(null);
@@ -245,7 +256,7 @@ export default function PlaybackSection({
       }
 
       if (data.mode === 'direct' && data.url) {
-        setPlayUrl(data.url);
+        applyPlayUrl(data.url);
         setFileName(data.fileName || '');
         setPlayMode('direct');
         setDurationSeconds(null);
@@ -256,7 +267,7 @@ export default function PlaybackSection({
           ? data.playlistUrl
           : `${backendBase.replace(/\/api\/?$/, '')}${data.playlistUrl}`;
 
-        setPlayUrl(absoluteUrl);
+        applyPlayUrl(absoluteUrl);
         setFileName(data.fileName || '');
         setPlayMode('remux');
         setDurationSeconds(typeof data.durationSeconds === 'number' ? data.durationSeconds : null);
@@ -283,7 +294,7 @@ export default function PlaybackSection({
                   const absoluteUrl = sessionData.playlistUrl.startsWith('http')
                     ? sessionData.playlistUrl
                     : `${backendBase.replace(/\/api\/?$/, '')}${sessionData.playlistUrl}`;
-                  setPlayUrl(absoluteUrl);
+                  applyPlayUrl(absoluteUrl);
                   setPlaybackSessionId(
                     typeof sessionData.sessionId === 'string' ? sessionData.sessionId : pollId,
                   );
@@ -699,11 +710,12 @@ export default function PlaybackSection({
       <div className="w-full space-y-2">
         <div className="relative">
           <CinemaLayer mode={cinemaMode} video={videoEl} />
-          <div className="relative aspect-video w-full rounded-xl overflow-hidden shadow-2xl bg-black border border-white/5">
+          <div className="relative w-full rounded-xl overflow-hidden shadow-2xl bg-black border border-white/5 min-h-[70vh]">
           <VideoPlayer
             onCinemaChange={setCinemaMode}
             onVideoReady={setVideoEl}
             src={playUrl}
+            reloadKey={reloadKey}
             movie={movieData}
             episode={episodeData}
             authToken={(session?.user as any)?.accessToken}

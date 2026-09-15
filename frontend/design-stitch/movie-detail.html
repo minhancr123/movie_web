@@ -1,0 +1,767 @@
+<!DOCTYPE html>
+
+<html class="dark scroll-smooth" lang="vi"><head>
+<meta charset="utf-8"/>
+<meta content="width=device-width, initial-scale=1.0, viewport-fit=cover" name="viewport"/>
+<title>Dune: Hành Tinh Cát II | Chi Tiết Phim Cinema Spatial</title>
+<!-- Fonts -->
+<link href="https://fonts.googleapis.com" rel="preconnect"/>
+<link crossorigin="" href="https://fonts.gstatic.com" rel="preconnect"/>
+<link href="https://fonts.googleapis.com/css2?family=Plus+Jakarta+Sans:wght@300;400;500;600;700&amp;family=Syne:wght@500;700;800&amp;display=swap" rel="stylesheet"/>
+<!-- Tailwind CSS v3 with Plugins -->
+<script src="https://cdn.tailwindcss.com?plugins=forms,container-queries"></script>
+<!-- Tailwind Configuration -->
+<script>
+    tailwind.config = {
+      darkMode: 'class',
+      theme: {
+        extend: {
+          colors: {
+            amber: {
+              450: '#f59e0b',
+              550: '#d97706',
+            },
+            surface: {
+              DEFAULT: '#090a0f',
+              dim: '#07080c',
+              elevated: '#12131a',
+              card: 'rgba(255, 255, 255, 0.035)',
+              border: 'rgba(255, 255, 255, 0.1)',
+            }
+          },
+          fontFamily: {
+            syne: ['Syne', 'sans-serif'],
+            sans: ['"Plus Jakarta Sans"', 'sans-serif'],
+          },
+          boxShadow: {
+            'amber-glow': '0 0 35px -5px rgba(245, 158, 11, 0.45)',
+            'spatial': '0 20px 40px -15px rgba(0, 0, 0, 0.8), 0 0 20px rgba(245, 158, 11, 0.15)',
+            'glass': 'inset 0 1px 1px 0 rgba(255, 255, 255, 0.15), 0 10px 25px -5px rgba(0, 0, 0, 0.5)',
+          }
+        }
+      }
+    }
+  </script>
+<!-- BEGIN: Custom Glass & Cinema Styles -->
+<style data-purpose="cinema-glass">
+    body {
+      background-color: #090a0f;
+      color: #f3f4f6;
+      font-family: 'Plus Jakarta Sans', sans-serif;
+      -webkit-font-smoothing: antialiased;
+      -webkit-tap-highlight-color: transparent;
+      user-select: none;
+    }
+
+    .font-syne {
+      font-family: 'Syne', sans-serif;
+    }
+
+    /* Spatial Glassmorphism base */
+    .glass-panel {
+      background: rgba(18, 19, 26, 0.65);
+      backdrop-filter: blur(24px) saturate(180%);
+      -webkit-backdrop-filter: blur(24px) saturate(180%);
+      border: 1px solid rgba(255, 255, 255, 0.08);
+    }
+
+    .glass-pill {
+      background: rgba(255, 255, 255, 0.05);
+      backdrop-filter: blur(16px);
+      -webkit-backdrop-filter: blur(16px);
+      border: 1px solid rgba(255, 255, 255, 0.12);
+    }
+
+    /* Shimmering Gold Border Effect */
+    .spatial-gold-rim {
+      position: relative;
+    }
+    .spatial-gold-rim::after {
+      content: '';
+      position: absolute;
+      inset: -1px;
+      border-radius: inherit;
+      padding: 1.5px;
+      background: linear-gradient(135deg, rgba(245, 158, 11, 0.8), rgba(255, 255, 255, 0.1), rgba(168, 85, 247, 0.4));
+      -webkit-mask: linear-gradient(#fff 0 0) content-box, linear-gradient(#fff 0 0);
+      -webkit-mask-composite: xor;
+      mask-composite: exclude;
+      pointer-events: none;
+    }
+
+    /* Hide standard scrollbar but allow horizontal slide */
+    .no-scrollbar::-webkit-scrollbar {
+      display: none;
+    }
+    .no-scrollbar {
+      -ms-overflow-style: none;
+      scrollbar-width: none;
+    }
+
+    /* Tab Switch transition */
+    .tab-content {
+      display: none;
+      animation: fadeIn 0.25s ease forwards;
+    }
+    .tab-content.active {
+      display: block;
+    }
+
+    @keyframes fadeIn {
+      from { opacity: 0; transform: translateY(6px); }
+      to { opacity: 1; transform: translateY(0); }
+    }
+  </style>
+<!-- END: Custom Glass & Cinema Styles -->
+</head>
+<body class="relative min-h-screen bg-[#090a0f] text-slate-100 antialiased overflow-x-hidden pb-28">
+<!-- BEGIN: WebGL Canvas Shader Background -->
+<!-- Ambient slow-motion procedural cosmic dust & amber light waves -->
+<canvas class="fixed inset-0 w-full h-full pointer-events-none z-0 opacity-40" data-purpose="spatial-ambient-canvas" id="shader-canvas"></canvas>
+<!-- END: WebGL Canvas Shader Background -->
+<!-- App Wrapper constrained to standard high-end iOS frame (~390px on mobile, centered on larger viewports) -->
+<div class="relative z-10 max-w-[430px] mx-auto min-h-screen flex flex-col bg-[#090a0f]/80 shadow-2xl overflow-hidden">
+<!-- BEGIN: Top Floating Navigation Bar -->
+<header class="fixed top-0 left-0 right-0 max-w-[430px] mx-auto z-50 px-4 pt-3 pb-3 flex items-center justify-between pointer-events-auto transition-all duration-300" id="main-header">
+<!-- Back button -->
+<button aria-label="Quay lại" class="w-10 h-10 rounded-full glass-panel flex items-center justify-center text-white/90 hover:text-amber-400 hover:border-amber-400/40 transition-colors shadow-lg active:scale-95" type="button">
+<svg class="w-5 h-5" fill="none" stroke="currentColor" stroke-width="2.5" viewbox="0 0 24 24" xmlns="http://www.w3.org/2000/svg">
+<path d="M15 19l-7-7 7-7" stroke-linecap="round" stroke-linejoin="round"></path>
+</svg>
+</button>
+<!-- Scrolled Title Fade-in Indicator -->
+<div class="opacity-0 transition-opacity duration-300 font-syne font-bold text-xs uppercase tracking-widest text-amber-300/90 truncate max-w-[170px] text-center" id="nav-title">
+        Dune: Part Two
+      </div>
+<!-- Action Icons (Share, VisionOS, Favorite) -->
+<div class="flex items-center space-x-2">
+<!-- VisionOS Mode Toggle -->
+<button class="w-10 h-10 rounded-full glass-panel flex items-center justify-center text-amber-400 hover:scale-105 active:scale-95 transition-all shadow-lg border-amber-500/30" title="Chế độ Spatial 3D" type="button">
+<svg class="w-5 h-5" fill="none" stroke="currentColor" stroke-width="1.8" viewbox="0 0 24 24">
+<path d="M3 9a2 2 0 012-2h14a2 2 0 012 2v6a2 2 0 01-2 2H5a2 2 0 01-2-2V9z" stroke-linecap="round" stroke-linejoin="round"></path>
+<circle class="opacity-40" cx="9" cy="12" fill="currentColor" r="2"></circle>
+<circle class="opacity-40" cx="15" cy="12" fill="currentColor" r="2"></circle>
+<path d="M11 12h2" stroke-linecap="round"></path>
+</svg>
+</button>
+<!-- Bookmark Button -->
+<button aria-label="Lưu phim" class="w-10 h-10 rounded-full glass-panel flex items-center justify-center text-white/90 hover:text-amber-400 active:scale-95 transition-all shadow-lg" id="favorite-btn" type="button">
+<svg class="w-5 h-5" fill="none" stroke="currentColor" stroke-width="2" viewbox="0 0 24 24">
+<path d="M5 5a2 2 0 012-2h10a2 2 0 012 2v16l-7-3.5L5 21V5z" stroke-linecap="round" stroke-linejoin="round"></path>
+</svg>
+</button>
+</div>
+</header>
+<!-- END: Top Floating Navigation Bar -->
+<main class="flex-1 w-full flex flex-col">
+<!-- BEGIN: Hero Backdrop & 3D Spatial Poster -->
+<section class="relative w-full overflow-hidden" data-purpose="movie-hero">
+<!-- Cinematic Landscape Backdrop with Parallax fade -->
+<div class="relative w-full h-80 overflow-hidden">
+<img alt="Dune Arrakis Desert Ornithopter flight cinematic frame" class="w-full h-full object-cover object-center transform scale-105 filter brightness-90 contrast-110" src="https://lh3.googleusercontent.com/aida-public/AB6AXuC-WuxVn_uzv0CiGydIXLMpZvK5fZKT1YQO0umcr9sBLIQppyF3B1cZ9rxwcf-zFhLQhsYmetvzFxYAIiLRmlLayC9oQ9f1_KusMWxuC572JwQZbZ1Cs5uHOo9urzfQhHu848RBgRei1QGUe-_vdSj6gfaznpKfsEsSPoOxy0Wk0JFysOuwk7nml60F0Ag-BxetfhRSav29fC5XNQ46Ci-mz1FeNsmte45jCNVcISIobs3W0hQzfbTv"/>
+<!-- Multi-stage radial & linear gradients for deep cinema immersion -->
+<div class="absolute inset-0 bg-gradient-to-t from-[#090a0f] via-[#090a0f]/60 to-transparent"></div>
+<div class="absolute inset-0 bg-radial-at-c from-transparent via-[#090a0f]/40 to-[#090a0f]"></div>
+<div class="absolute top-0 inset-x-0 h-28 bg-gradient-to-b from-black/80 to-transparent"></div>
+</div>
+<!-- Overlapping 3D Floating Poster and Holographic Specs -->
+<div class="relative px-5 -mt-36 flex flex-col items-center text-center">
+<!-- Poster Container with spatial amber rim -->
+<div class="relative w-44 rounded-2xl p-[1px] spatial-gold-rim shadow-spatial transition-transform duration-500 hover:scale-[1.02]">
+<img alt="Dune: Part Two Official Movie Poster" class="w-full rounded-2xl object-cover aspect-[2/3] block shadow-2xl" src="https://lh3.googleusercontent.com/aida-public/AB6AXuAQOCVVu3cEyCc2PnHJmSBrtBWod4dKEvoqqUgs7fKIEbheqb1CGWBwN733CKE01fA2LLUjvoqxg4s924-OEa8Avv4nGBJrfsRWo-SgGTNEVku7hxk6JkVk3UtFMNoHlHnAgNBgduGZmspz68A60ienumnrV7lNDEfA2rO_XkcM3KCpWYWEytlfm0PgIU8yO-isUwJzyj8bLV7e54KgXZpu9cjgYtOc1NhPgjPZtw04WOO6-Wd1Juu9"/>
+<!-- Spatial Tech Floating Badges -->
+<div class="absolute -top-3 -right-3 bg-gradient-to-r from-amber-500 to-amber-600 text-black text-[10px] font-extrabold uppercase px-2.5 py-1 rounded-full shadow-lg tracking-wider border border-amber-300/40 flex items-center gap-1">
+<span class="w-1.5 h-1.5 rounded-full bg-black animate-pulse"></span>
+              IMAX 70MM
+            </div>
+<div class="absolute -bottom-2 -left-2 bg-black/85 backdrop-blur-md text-cyan-300 text-[9px] font-semibold tracking-wider px-2 py-0.5 rounded-md border border-cyan-400/30 flex items-center gap-1 shadow-md">
+<svg class="w-3 h-3 text-cyan-400" fill="currentColor" viewbox="0 0 24 24">
+<circle cx="12" cy="12" r="3"></circle>
+<path d="M12 2C6.48 2 2 6.48 2 12s4.48 10 10 10 10-4.48 10-10S17.52 2 12 2zm0 18c-4.41 0-8-3.59-8-8s3.59-8 8-8 8 3.59 8 8-3.59 8-8 8z" opacity="0.3"></path>
+</svg>
+              Dolby Atmos 9.1.4
+            </div>
+</div>
+<!-- Movie Title & Master Typography -->
+<div class="mt-5 space-y-1">
+<h1 class="font-syne font-extrabold text-2xl uppercase tracking-[0.18em] text-transparent bg-clip-text bg-gradient-to-r from-amber-200 via-amber-400 to-yellow-100 drop-shadow-sm">
+              Dune: Hành Tinh Cát II
+            </h1>
+<p class="text-xs font-medium text-amber-500/90 tracking-widest uppercase">
+              Bản Chiếu Chuẩn Không Gian VisionOS
+            </p>
+</div>
+<!-- Metadata Tags Badges -->
+<div class="flex flex-wrap items-center justify-center gap-2 mt-3 text-[11px] text-slate-300 font-medium">
+<span class="px-2 py-0.5 rounded glass-pill text-amber-300 border-amber-500/20 font-bold">2024</span>
+<span>•</span>
+<span>2g 46p</span>
+<span>•</span>
+<span>Sci-Fi / Sử Thi</span>
+<span>•</span>
+<span class="px-1.5 py-0.5 rounded bg-white/10 text-[10px] font-bold border border-white/20">16+</span>
+<span>•</span>
+<span class="text-amber-400 font-semibold tracking-tight">4K Ultra HDR</span>
+</div>
+<!-- Prestige Ratings Grid (Glass Matrix) -->
+<div class="w-full grid grid-cols-4 gap-2 mt-5" data-purpose="ratings-grid">
+<!-- IMDb -->
+<div class="glass-panel rounded-xl p-2 flex flex-col items-center justify-center border-white/[0.08] hover:border-amber-400/30 transition-all">
+<span class="text-[10px] font-bold text-amber-400 flex items-center gap-0.5">
+                ★ <span class="text-slate-400">IMDb</span>
+</span>
+<span class="text-sm font-extrabold font-syne text-white mt-0.5">9.2</span>
+<span class="text-[8px] text-slate-400 tracking-tight">580k lượt</span>
+</div>
+<!-- Rotten Tomatoes -->
+<div class="glass-panel rounded-xl p-2 flex flex-col items-center justify-center border-white/[0.08] hover:border-red-400/30 transition-all">
+<span class="text-[10px] font-bold text-red-400 flex items-center gap-0.5">
+                🍅 <span class="text-slate-400">Fresh</span>
+</span>
+<span class="text-sm font-extrabold font-syne text-white mt-0.5">95%</span>
+<span class="text-[8px] text-slate-400 tracking-tight">Chuyên gia</span>
+</div>
+<!-- Oscars -->
+<div class="glass-panel rounded-xl p-2 flex flex-col items-center justify-center border-white/[0.08] hover:border-amber-400/30 transition-all">
+<span class="text-[10px] font-bold text-yellow-300 flex items-center gap-0.5">
+                🏆 <span class="text-slate-400">Oscar</span>
+</span>
+<span class="text-sm font-extrabold font-syne text-amber-300 mt-0.5">6 Giải</span>
+<span class="text-[8px] text-slate-400 tracking-tight">Hạng mục chính</span>
+</div>
+<!-- Spatial WOW Score -->
+<div class="glass-panel rounded-xl p-2 flex flex-col items-center justify-center border-cyan-400/20 bg-cyan-950/20 hover:border-cyan-400/50 transition-all">
+<span class="text-[10px] font-bold text-cyan-300 flex items-center gap-0.5">
+                ✦ <span class="text-cyan-400">WOW</span>
+</span>
+<span class="text-sm font-extrabold font-syne text-cyan-200 mt-0.5">99.8%</span>
+<span class="text-[8px] text-cyan-400/80 tracking-tight">Đắm chìm 3D</span>
+</div>
+</div>
+</div>
+</section>
+<!-- END: Hero Backdrop & 3D Spatial Poster -->
+<!-- BEGIN: Main CTA Buttons Suite -->
+<section class="px-5 mt-6 space-y-3" data-purpose="cinema-action-suite">
+<!-- Primary Action: Big Glowing Amber Play Button -->
+<button class="w-full relative group overflow-hidden rounded-2xl bg-gradient-to-r from-amber-500 via-amber-400 to-amber-500 p-4 text-black font-syne font-bold text-sm tracking-wider uppercase flex items-center justify-center space-x-2 shadow-amber-glow active:scale-[0.98] transition-all duration-200" type="button">
+<span class="absolute inset-0 bg-white/20 translate-y-full group-hover:translate-y-0 transition-transform duration-300"></span>
+<svg class="w-5 h-5 fill-current" viewbox="0 0 24 24">
+<path d="M8 5v14l11-7z"></path>
+</svg>
+<span class="relative z-10">Xem Phim Ngay (4K HDR)</span>
+<span class="relative z-10 text-[10px] bg-black/20 text-black px-2 py-0.5 rounded-full font-sans lowercase font-normal ml-1">rạp gia đình</span>
+</button>
+<!-- Secondary Action Row: VisionOS Virtual Screening & Watch Party -->
+<div class="grid grid-cols-2 gap-2.5">
+<button class="glass-panel rounded-xl p-3 flex items-center justify-center space-x-2 hover:bg-white/[0.08] active:scale-95 transition-all text-xs font-semibold text-slate-200 border border-white/10 hover:border-amber-400/40" type="button">
+<span class="text-base">👓</span>
+<span>Phòng Chiếu Ảo</span>
+</button>
+<button class="glass-panel rounded-xl p-3 flex items-center justify-center space-x-2 hover:bg-white/[0.08] active:scale-95 transition-all text-xs font-semibold text-slate-200 border border-white/10 hover:border-violet-400/40" type="button">
+<span class="text-base">👥</span>
+<span>Xem Chung (Party)</span>
+</button>
+</div>
+<!-- Quick Action Utility Row -->
+<div class="flex items-center justify-between pt-1 px-1 text-xs text-slate-400">
+<button class="flex items-center space-x-1.5 hover:text-amber-400 transition-colors" type="button">
+<svg class="w-4 h-4" fill="none" stroke="currentColor" viewbox="0 0 24 24">
+<path d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-4l-4 4m0 0l-4-4m4 4V4" stroke-linecap="round" stroke-linejoin="round" stroke-width="2"></path>
+</svg>
+<span>Tải về (12.4GB)</span>
+</button>
+<span class="text-white/20">|</span>
+<button class="flex items-center space-x-1.5 hover:text-amber-400 transition-colors" type="button">
+<svg class="w-4 h-4" fill="none" stroke="currentColor" viewbox="0 0 24 24">
+<path d="M14.752 11.168l-3.197-2.132A1 1 0 0010 9.87v4.263a1 1 0 001.555.832l3.197-2.132a1 1 0 000-1.664z" stroke-linecap="round" stroke-linejoin="round" stroke-width="2"></path>
+<path d="M21 12a9 9 0 11-18 0 9 9 0 0118 0z" stroke-linecap="round" stroke-linejoin="round" stroke-width="2"></path>
+</svg>
+<span>Trailer 4K (2:45)</span>
+</button>
+<span class="text-white/20">|</span>
+<button class="flex items-center space-x-1.5 hover:text-amber-400 transition-colors" type="button">
+<svg class="w-4 h-4" fill="none" stroke="currentColor" viewbox="0 0 24 24">
+<path d="M8.684 13.342C8.886 12.938 9 12.482 9 12c0-.482-.114-.938-.316-1.342m0 2.684a3 3 0 110-2.684m0 2.684l6.632 3.316m-6.632-6l6.632-3.316m0 0a3 3 0 105.367-2.684 3 3 0 00-5.367 2.684zm0 9.316a3 3 0 105.368 2.684 3 3 0 00-5.368-2.684z" stroke-linecap="round" stroke-linejoin="round" stroke-width="2"></path>
+</svg>
+<span>Chia sẻ</span>
+</button>
+</div>
+</section>
+<!-- END: Main CTA Buttons Suite -->
+<!-- BEGIN: Tabbed Content Navigation (Glass Segmented Bar) -->
+<section class="mt-8 px-5" data-purpose="tab-navigation">
+<div class="glass-panel p-1 rounded-2xl flex items-center overflow-x-auto no-scrollbar space-x-1 border border-white/10">
+<button class="tab-btn active flex-shrink-0 px-3.5 py-2 rounded-xl text-xs font-semibold tracking-wide transition-all bg-gradient-to-r from-amber-500/20 to-amber-600/20 text-amber-300 border border-amber-400/30" data-tab="tab-overview">
+            Tổng Quan
+          </button>
+<button class="tab-btn flex-shrink-0 px-3.5 py-2 rounded-xl text-xs font-medium tracking-wide text-slate-400 hover:text-white transition-all" data-tab="tab-cast">
+            Diễn Viên
+          </button>
+<button class="tab-btn flex-shrink-0 px-3.5 py-2 rounded-xl text-xs font-medium tracking-wide text-slate-400 hover:text-white transition-all" data-tab="tab-spatial">
+            Phòng Chiếu Ảo
+          </button>
+<button class="tab-btn flex-shrink-0 px-3.5 py-2 rounded-xl text-xs font-medium tracking-wide text-slate-400 hover:text-white transition-all" data-tab="tab-imax">
+            Hậu Trường IMAX
+          </button>
+</div>
+</section>
+<!-- END: Tabbed Content Navigation -->
+<!-- BEGIN: Tab 1: Tổng Quan (Overview) -->
+<div class="tab-content active px-5 mt-5 space-y-6" id="tab-overview">
+<!-- Storyline synopsis -->
+<article class="glass-panel rounded-2xl p-4 border border-white/[0.07] space-y-2.5">
+<div class="flex items-center justify-between">
+<h3 class="text-xs font-bold uppercase tracking-wider text-amber-400 font-syne">Cốt Truyện Sử Thi</h3>
+<span class="text-[10px] text-slate-400">Chính Thức từ Warner Bros.</span>
+</div>
+<p class="text-xs leading-relaxed text-slate-300 font-normal">
+            Hành trình định mệnh của <strong class="text-white font-medium">Paul Atreides</strong> khi anh hợp nhất với Chani và tộc người bản địa Fremen để thực hiện cuộc báo thù tàn khốc chống lại những kẻ đã hủy diệt hoàng tộc mình. Đứng trước viễn cảnh khải huyền về một cuộc thánh chiến vũ trụ đẫm máu, Paul buộc phải đưa ra lựa chọn giữa tình yêu duy nhất của cuộc đời và vận mệnh của toàn bộ vũ trụ đã biết.
+          </p>
+<!-- Audio & Subtitle Chips -->
+<div class="pt-3 border-t border-white/5 grid grid-cols-2 gap-2 text-[11px]">
+<div class="space-y-1">
+<span class="text-[10px] text-slate-400 uppercase tracking-wider block">Âm thanh gốc</span>
+<span class="text-slate-200 font-medium flex items-center gap-1">
+<span class="w-1.5 h-1.5 rounded-full bg-emerald-400"></span>
+                Tiếng Anh (Dolby Atmos 9.1)
+              </span>
+</div>
+<div class="space-y-1">
+<span class="text-[10px] text-slate-400 uppercase tracking-wider block">Phụ đề &amp; Lồng tiếng</span>
+<span class="text-slate-200 font-medium flex items-center gap-1">
+<span class="w-1.5 h-1.5 rounded-full bg-amber-400"></span>
+                Tiếng Việt (Rạp IMAX Chuẩn)
+              </span>
+</div>
+</div>
+</article>
+<!-- Technical Specification Badge Deck -->
+<div class="glass-panel rounded-2xl p-4 border border-white/[0.07] space-y-3">
+<h3 class="text-xs font-bold uppercase tracking-wider text-amber-400 font-syne">Thông Số Trình Chiếu Chuẩn Rạp</h3>
+<div class="grid grid-cols-2 gap-3 text-xs">
+<div class="bg-white/[0.03] p-2.5 rounded-xl border border-white/5">
+<p class="text-[10px] text-slate-400 uppercase">Tỉ lệ khung hình</p>
+<p class="text-slate-100 font-semibold mt-0.5">1.43:1 (IMAX Expanded)</p>
+</div>
+<div class="bg-white/[0.03] p-2.5 rounded-xl border border-white/5">
+<p class="text-[10px] text-slate-400 uppercase">Định dạng màu</p>
+<p class="text-slate-100 font-semibold mt-0.5">Dolby Vision • 12-bit</p>
+</div>
+<div class="bg-white/[0.03] p-2.5 rounded-xl border border-white/5">
+<p class="text-[10px] text-slate-400 uppercase">Tần số khung hình</p>
+<p class="text-slate-100 font-semibold mt-0.5">4K UHD @ 60 FPS Spatial</p>
+</div>
+<div class="bg-white/[0.03] p-2.5 rounded-xl border border-white/5">
+<p class="text-[10px] text-slate-400 uppercase">Âm thanh định vị</p>
+<p class="text-slate-100 font-semibold mt-0.5">Spatial Head-Tracking</p>
+</div>
+</div>
+</div>
+</div>
+<!-- END: Tab 1 -->
+<!-- BEGIN: Tab 2: Diễn Viên & Đạo Diễn (Cast & Crew) -->
+<div class="tab-content px-5 mt-5 space-y-4" id="tab-cast">
+<div class="flex items-center justify-between">
+<h3 class="text-xs font-bold uppercase tracking-wider text-amber-400 font-syne">Dàn Diễn Viên &amp; Đạo Diễn</h3>
+<span class="text-[11px] text-slate-400">12 Diễn viên chính</span>
+</div>
+<!-- Horizontal Cast Scroll -->
+<div class="flex space-x-3.5 overflow-x-auto no-scrollbar py-2 -mx-5 px-5">
+<!-- Denis Villeneuve -->
+<div class="flex-shrink-0 w-24 text-center group cursor-pointer">
+<div class="relative w-20 h-20 mx-auto rounded-full p-0.5 bg-gradient-to-tr from-amber-500 to-violet-500 shadow-md">
+<div class="w-full h-full rounded-full overflow-hidden bg-slate-800 flex items-center justify-center text-amber-300 font-syne font-bold text-lg">
+                DV
+              </div>
+</div>
+<p class="mt-2 text-xs font-bold text-white group-hover:text-amber-400 truncate">Denis Villeneuve</p>
+<p class="text-[10px] text-amber-400/80 truncate">Đạo diễn &amp; Kịch bản</p>
+</div>
+<!-- Timothée Chalamet -->
+<div class="flex-shrink-0 w-24 text-center group cursor-pointer">
+<div class="relative w-20 h-20 mx-auto rounded-full p-0.5 bg-gradient-to-tr from-amber-500 to-amber-200 shadow-md">
+<div class="w-full h-full rounded-full overflow-hidden bg-slate-800 flex items-center justify-center text-amber-300 font-syne font-bold text-lg">
+                TC
+              </div>
+</div>
+<p class="mt-2 text-xs font-bold text-white group-hover:text-amber-400 truncate">Timothée Chalamet</p>
+<p class="text-[10px] text-slate-400 truncate">Paul Atreides</p>
+</div>
+<!-- Zendaya -->
+<div class="flex-shrink-0 w-24 text-center group cursor-pointer">
+<div class="relative w-20 h-20 mx-auto rounded-full p-0.5 bg-gradient-to-tr from-amber-500 to-pink-500 shadow-md">
+<div class="w-full h-full rounded-full overflow-hidden bg-slate-800 flex items-center justify-center text-pink-300 font-syne font-bold text-lg">
+                Z
+              </div>
+</div>
+<p class="mt-2 text-xs font-bold text-white group-hover:text-amber-400 truncate">Zendaya</p>
+<p class="text-[10px] text-slate-400 truncate">Chani</p>
+</div>
+<!-- Rebecca Ferguson -->
+<div class="flex-shrink-0 w-24 text-center group cursor-pointer">
+<div class="relative w-20 h-20 mx-auto rounded-full p-0.5 bg-gradient-to-tr from-blue-500 to-purple-500 shadow-md">
+<div class="w-full h-full rounded-full overflow-hidden bg-slate-800 flex items-center justify-center text-blue-300 font-syne font-bold text-lg">
+                RF
+              </div>
+</div>
+<p class="mt-2 text-xs font-bold text-white group-hover:text-amber-400 truncate">Rebecca Ferguson</p>
+<p class="text-[10px] text-slate-400 truncate">Lady Jessica</p>
+</div>
+<!-- Austin Butler -->
+<div class="flex-shrink-0 w-24 text-center group cursor-pointer">
+<div class="relative w-20 h-20 mx-auto rounded-full p-0.5 bg-gradient-to-tr from-red-500 to-amber-500 shadow-md">
+<div class="w-full h-full rounded-full overflow-hidden bg-slate-800 flex items-center justify-center text-red-300 font-syne font-bold text-lg">
+                AB
+              </div>
+</div>
+<p class="mt-2 text-xs font-bold text-white group-hover:text-amber-400 truncate">Austin Butler</p>
+<p class="text-[10px] text-slate-400 truncate">Feyd-Rautha</p>
+</div>
+<!-- Florence Pugh -->
+<div class="flex-shrink-0 w-24 text-center group cursor-pointer">
+<div class="relative w-20 h-20 mx-auto rounded-full p-0.5 bg-gradient-to-tr from-yellow-500 to-amber-400 shadow-md">
+<div class="w-full h-full rounded-full overflow-hidden bg-slate-800 flex items-center justify-center text-yellow-300 font-syne font-bold text-lg">
+                FP
+              </div>
+</div>
+<p class="mt-2 text-xs font-bold text-white group-hover:text-amber-400 truncate">Florence Pugh</p>
+<p class="text-[10px] text-slate-400 truncate">Princess Irulan</p>
+</div>
+</div>
+<!-- Hans Zimmer Music Feature -->
+<div class="glass-panel p-3.5 rounded-2xl flex items-center space-x-3.5 border border-amber-500/20 bg-amber-950/15">
+<div class="w-10 h-10 rounded-xl bg-amber-500/20 border border-amber-400/30 flex items-center justify-center text-amber-400">
+<svg class="w-5 h-5" fill="none" stroke="currentColor" viewbox="0 0 24 24">
+<path d="M9 19V6l12-3v13M9 19c0 1.105-1.343 2-3 2s-3-.895-3-2 1.343-2 3-2 3 .895 3 2zm12-3c0 1.105-1.343 2-3 2s-3-.895-3-2 1.343-2 3-2 3 .895 3 2zM9 10l12-3" stroke-linecap="round" stroke-linejoin="round" stroke-width="2"></path>
+</svg>
+</div>
+<div class="flex-1">
+<p class="text-xs font-bold text-white">Nhạc Phim Độc Bản Bởi Hans Zimmer</p>
+<p class="text-[11px] text-slate-300 mt-0.5">Âm thanh bộ gõ sa mạc và thánh ca Fremen Spatial Audio</p>
+</div>
+</div>
+</div>
+<!-- END: Tab 2 -->
+<!-- BEGIN: Tab 3: Môi Trường Chiếu Ảo (Spatial Environments) -->
+<div class="tab-content px-5 mt-5 space-y-4" id="tab-spatial">
+<div class="space-y-1">
+<h3 class="text-xs font-bold uppercase tracking-wider text-amber-400 font-syne">Môi Trường Chiếu VisionOS 3D</h3>
+<p class="text-[11px] text-slate-300">Biến không gian xung quanh bạn thành thế giới Arrakis nguyên bản.</p>
+</div>
+<!-- Spatial Environment Cards -->
+<div class="space-y-3">
+<!-- Env 1 -->
+<div class="glass-panel p-3.5 rounded-2xl border border-amber-500/30 relative overflow-hidden group cursor-pointer hover:border-amber-400 transition-all">
+<div class="flex items-start justify-between">
+<div class="space-y-1">
+<div class="flex items-center space-x-2">
+<span class="w-2 h-2 rounded-full bg-amber-400 animate-ping"></span>
+<span class="text-xs font-bold text-white">Arrakis Sunset Desert Dunes</span>
+</div>
+<p class="text-[11px] text-slate-300 leading-relaxed">
+                  Hiệu ứng cát sa mạc lộng gió 360°, ánh hoàng hôn hai mặt trời phản chiếu khắp căn phòng.
+                </p>
+</div>
+<span class="px-2 py-1 bg-amber-500/20 text-amber-300 rounded text-[9px] font-bold uppercase tracking-wider border border-amber-400/30">Mặc định</span>
+</div>
+</div>
+<!-- Env 2 -->
+<div class="glass-panel p-3.5 rounded-2xl border border-white/10 hover:border-cyan-400/50 transition-all cursor-pointer">
+<div class="flex items-start justify-between">
+<div class="space-y-1">
+<div class="flex items-center space-x-2">
+<span class="w-2 h-2 rounded-full bg-cyan-400"></span>
+<span class="text-xs font-bold text-white">IMAX Laser Dome 180° Khổng Lồ</span>
+</div>
+<p class="text-[11px] text-slate-300 leading-relaxed">
+                  Màn chiếu vòm vô cực giả lập tại bán kính 30 mét, độ tương phản tuyệt đối màu đen OLED.
+                </p>
+</div>
+</div>
+</div>
+<!-- Env 3 -->
+<div class="glass-panel p-3.5 rounded-2xl border border-white/10 hover:border-purple-400/50 transition-all cursor-pointer">
+<div class="flex items-start justify-between">
+<div class="space-y-1">
+<div class="flex items-center space-x-2">
+<span class="w-2 h-2 rounded-full bg-purple-400"></span>
+<span class="text-xs font-bold text-white">Trạm Không Gian Highliner Vô Trọng Lực</span>
+</div>
+<p class="text-[11px] text-slate-300 leading-relaxed">
+                  Trôi nổi lơ lửng trong buồng lái tàu mẹ Spacing Guild ngắm nhìn dải ngân hà Arrakis.
+                </p>
+</div>
+</div>
+</div>
+</div>
+</div>
+<!-- END: Tab 3 -->
+<!-- BEGIN: Tab 4: Hậu Trường & IMAX (Behind the Scenes) -->
+<div class="tab-content px-5 mt-5 space-y-4" id="tab-imax">
+<h3 class="text-xs font-bold uppercase tracking-wider text-amber-400 font-syne">Thước Phim Hậu Trường Độc Quyền</h3>
+<!-- Video Card: Behind the lens -->
+<div class="relative rounded-2xl overflow-hidden glass-panel border border-white/10 group cursor-pointer shadow-lg">
+<div class="relative h-40 w-full overflow-hidden">
+<img alt="Quay phim IMAX sa mạc Abu Dhabi" class="w-full h-full object-cover group-hover:scale-105 transition-transform duration-500 opacity-80" src="https://lh3.googleusercontent.com/aida-public/AB6AXuC-WuxVn_uzv0CiGydIXLMpZvK5fZKT1YQO0umcr9sBLIQppyF3B1cZ9rxwcf-zFhLQhsYmetvzFxYAIiLRmlLayC9oQ9f1_KusMWxuC572JwQZbZ1Cs5uHOo9urzfQhHu848RBgRei1QGUe-_vdSj6gfaznpKfsEsSPoOxy0Wk0JFysOuwk7nml60F0Ag-BxetfhRSav29fC5XNQ46Ci-mz1FeNsmte45jCNVcISIobs3W0hQzfbTv"/>
+<div class="absolute inset-0 bg-black/40 flex items-center justify-center">
+<div class="w-12 h-12 rounded-full bg-amber-500/90 text-black flex items-center justify-center shadow-amber-glow group-hover:scale-110 transition-transform">
+<svg class="w-6 h-6 fill-current translate-x-0.5" viewbox="0 0 24 24">
+<path d="M8 5v14l11-7z"></path>
+</svg>
+</div>
+</div>
+<span class="absolute bottom-2 right-2 bg-black/80 px-2 py-0.5 rounded text-[10px] font-mono text-amber-400 border border-white/10">14:20</span>
+</div>
+<div class="p-3">
+<p class="text-xs font-bold text-white">Behind the Lens: 100% Ghi hình bằng máy quay IMAX tại Abu Dhabi &amp; Jordan</p>
+<p class="text-[10px] text-slate-400 mt-1">Khám phá cách Denis Villeneuve đưa đại cảnh sâu bọ khổng lồ lên màn ảnh chuẩn mực.</p>
+</div>
+</div>
+</div>
+<!-- END: Tab 4 -->
+<!-- BEGIN: Phim Tương Tự Đề Xuất (Related Sci-Fi Epics) -->
+<section class="mt-8 px-5" data-purpose="related-movies">
+<div class="flex items-center justify-between mb-3">
+<h3 class="font-syne font-bold text-xs uppercase tracking-wider text-slate-200">Cùng Vũ Trụ Sci-Fi Đỉnh Cao</h3>
+<a class="text-[11px] text-amber-400 hover:underline" href="#">Xem tất cả</a>
+</div>
+<!-- Horizontal Scroll of Similar Titles -->
+<div class="grid grid-cols-3 gap-3">
+<!-- Movie 1: Interstellar -->
+<div class="group cursor-pointer">
+<div class="relative rounded-xl overflow-hidden aspect-[2/3] bg-white/5 border border-white/10 group-hover:border-amber-400/50 transition-all shadow-md">
+<img alt="Interstellar preview" class="w-full h-full object-cover filter brightness-75 group-hover:brightness-100 transition-all" src="https://lh3.googleusercontent.com/aida-public/AB6AXuC-WuxVn_uzv0CiGydIXLMpZvK5fZKT1YQO0umcr9sBLIQppyF3B1cZ9rxwcf-zFhLQhsYmetvzFxYAIiLRmlLayC9oQ9f1_KusMWxuC572JwQZbZ1Cs5uHOo9urzfQhHu848RBgRei1QGUe-_vdSj6gfaznpKfsEsSPoOxy0Wk0JFysOuwk7nml60F0Ag-BxetfhRSav29fC5XNQ46Ci-mz1FeNsmte45jCNVcISIobs3W0hQzfbTv"/>
+<div class="absolute top-1 left-1 bg-black/70 backdrop-blur-sm text-amber-400 text-[9px] font-bold px-1.5 py-0.5 rounded">★ 8.7</div>
+</div>
+<p class="mt-1.5 text-xs font-semibold text-white truncate">Interstellar</p>
+<p class="text-[10px] text-slate-400">Christopher Nolan</p>
+</div>
+<!-- Movie 2: Blade Runner 2049 -->
+<div class="group cursor-pointer">
+<div class="relative rounded-xl overflow-hidden aspect-[2/3] bg-white/5 border border-white/10 group-hover:border-amber-400/50 transition-all shadow-md">
+<img alt="Blade Runner 2049 preview" class="w-full h-full object-cover filter brightness-75 group-hover:brightness-100 transition-all" src="https://lh3.googleusercontent.com/aida-public/AB6AXuAQOCVVu3cEyCc2PnHJmSBrtBWod4dKEvoqqUgs7fKIEbheqb1CGWBwN733CKE01fA2LLUjvoqxg4s924-OEa8Avv4nGBJrfsRWo-SgGTNEVku7hxk6JkVk3UtFMNoHlHnAgNBgduGZmspz68A60ienumnrV7lNDEfA2rO_XkcM3KCpWYWEytlfm0PgIU8yO-isUwJzyj8bLV7e54KgXZpu9cjgYtOc1NhPgjPZtw04WOO6-Wd1Juu9"/>
+<div class="absolute top-1 left-1 bg-black/70 backdrop-blur-sm text-amber-400 text-[9px] font-bold px-1.5 py-0.5 rounded">★ 8.0</div>
+</div>
+<p class="mt-1.5 text-xs font-semibold text-white truncate">Blade Runner 2049</p>
+<p class="text-[10px] text-slate-400">Denis Villeneuve</p>
+</div>
+<!-- Movie 3: Oppenheimer -->
+<div class="group cursor-pointer">
+<div class="relative rounded-xl overflow-hidden aspect-[2/3] bg-white/5 border border-white/10 group-hover:border-amber-400/50 transition-all shadow-md">
+<img alt="Oppenheimer preview" class="w-full h-full object-cover filter brightness-75 group-hover:brightness-100 transition-all" src="https://lh3.googleusercontent.com/aida-public/AB6AXuC-WuxVn_uzv0CiGydIXLMpZvK5fZKT1YQO0umcr9sBLIQppyF3B1cZ9rxwcf-zFhLQhsYmetvzFxYAIiLRmlLayC9oQ9f1_KusMWxuC572JwQZbZ1Cs5uHOo9urzfQhHu848RBgRei1QGUe-_vdSj6gfaznpKfsEsSPoOxy0Wk0JFysOuwk7nml60F0Ag-BxetfhRSav29fC5XNQ46Ci-mz1FeNsmte45jCNVcISIobs3W0hQzfbTv"/>
+<div class="absolute top-1 left-1 bg-black/70 backdrop-blur-sm text-amber-400 text-[9px] font-bold px-1.5 py-0.5 rounded">★ 8.9</div>
+</div>
+<p class="mt-1.5 text-xs font-semibold text-white truncate">Oppenheimer</p>
+<p class="text-[10px] text-slate-400">IMAX 70mm</p>
+</div>
+</div>
+</section>
+<!-- END: Phim Tương Tự Đề Xuất -->
+</main>
+<!-- BEGIN: Bottom Navigation Dock (Cinematic Glass Dock) -->
+<nav class="fixed bottom-3 inset-x-0 max-w-[390px] mx-auto z-50 px-4 pointer-events-none" data-purpose="bottom-navigation">
+<div class="glass-panel py-2 px-6 rounded-full flex items-center justify-between border border-white/15 shadow-2xl backdrop-blur-2xl pointer-events-auto bg-[#12131a]/85">
+<!-- Home Item -->
+<button class="flex flex-col items-center justify-center text-slate-400 hover:text-amber-400 transition-colors py-1 group" type="button">
+<svg class="w-5 h-5 group-hover:scale-110 transition-transform" fill="none" stroke="currentColor" viewbox="0 0 24 24">
+<path d="M3 12l2-2m0 0l7-7 7 7M5 10v10a1 1 0 001 1h3m10-11l2 2m-2-2v10a1 1 0 01-1 1h-3m-6 0a1 1 0 001-1v-4a1 1 0 011-1h2a1 1 0 011 1v4a1 1 0 001 1m-6 0h6" stroke-linecap="round" stroke-linejoin="round" stroke-width="2"></path>
+</svg>
+<span class="text-[9px] font-medium mt-0.5">Trang chủ</span>
+</button>
+<!-- Explore Item (Active with gold accent) -->
+<button class="flex flex-col items-center justify-center text-amber-400 transition-colors py-1" type="button">
+<div class="relative">
+<svg class="w-5 h-5" fill="none" stroke="currentColor" viewbox="0 0 24 24">
+<path d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z" stroke-linecap="round" stroke-linejoin="round" stroke-width="2.2"></path>
+</svg>
+<span class="absolute -top-0.5 -right-0.5 w-1.5 h-1.5 rounded-full bg-amber-400"></span>
+</div>
+<span class="text-[9px] font-bold mt-0.5">Khám phá</span>
+</button>
+<!-- Spatial Hub -->
+<button class="flex flex-col items-center justify-center text-slate-400 hover:text-cyan-400 transition-colors py-1 group" type="button">
+<svg class="w-5 h-5 group-hover:scale-110 transition-transform" fill="none" stroke="currentColor" stroke-width="2" viewbox="0 0 24 24">
+<path d="M12 2L2 7l10 5 10-5-10-5zM2 17l10 5 10-5M2 12l10 5 10-5"></path>
+</svg>
+<span class="text-[9px] font-medium mt-0.5">Spatial VR</span>
+</button>
+<!-- Downloads -->
+<button class="flex flex-col items-center justify-center text-slate-400 hover:text-amber-400 transition-colors py-1 group" type="button">
+<svg class="w-5 h-5 group-hover:scale-110 transition-transform" fill="none" stroke="currentColor" viewbox="0 0 24 24">
+<path d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-4l-4 4m0 0l-4-4m4 4V4" stroke-linecap="round" stroke-linejoin="round" stroke-width="2"></path>
+</svg>
+<span class="text-[9px] font-medium mt-0.5">Tải về</span>
+</button>
+<!-- Profile -->
+<button class="flex flex-col items-center justify-center text-slate-400 hover:text-amber-400 transition-colors py-1 group" type="button">
+<div class="w-5 h-5 rounded-full border border-slate-500 overflow-hidden flex items-center justify-center text-[10px] text-amber-300 font-bold bg-slate-800">
+            A
+          </div>
+<span class="text-[9px] font-medium mt-0.5">Hồ sơ</span>
+</button>
+</div>
+</nav>
+<!-- END: Bottom Navigation Dock -->
+</div>
+<!-- BEGIN: WebGL Canvas Shader Script -->
+<!-- Renders realistic subtle slow-moving cosmic dust & ambient Arrakis aurora wave -->
+<script data-purpose="webgl-ambient-shader">
+    (function () {
+      const canvas = document.getElementById('shader-canvas');
+      const gl = canvas.getContext('webgl');
+      if (!gl) return;
+
+      function resize() {
+        canvas.width = window.innerWidth;
+        canvas.height = window.innerHeight;
+        gl.viewport(0, 0, canvas.width, canvas.height);
+      }
+      window.addEventListener('resize', resize);
+      resize();
+
+      const vsSource = `
+        attribute vec2 position;
+        void main() {
+          gl_Position = vec4(position, 0.0, 1.0);
+        }
+      `;
+
+      // GLSL Fragment Shader: Golden Amber & Violet Slow Cosmic Ambient Glow
+      const fsSource = `
+        precision mediump float;
+        uniform vec2 u_resolution;
+        uniform float u_time;
+
+        void main() {
+          vec2 uv = gl_FragCoord.xy / u_resolution.xy;
+          float t = u_time * 0.15;
+
+          // Gentle undulating wave
+          float wave1 = sin(uv.x * 2.5 + t + sin(uv.y * 2.0 + t * 0.8)) * 0.5 + 0.5;
+          float wave2 = cos(uv.y * 3.0 - t * 0.6 + sin(uv.x * 2.5)) * 0.5 + 0.5;
+
+          // Arrakis Gold + Deep Space Violet colors
+          vec3 amber = vec3(0.96, 0.62, 0.04);
+          vec3 violet = vec3(0.35, 0.12, 0.55);
+          vec3 darkSpace = vec3(0.035, 0.039, 0.06);
+
+          vec3 color = mix(darkSpace, violet * 0.35, wave2 * 0.4);
+          color = mix(color, amber * 0.4, pow(wave1 * wave2, 2.0) * 0.7);
+
+          // Subtle vignette
+          float vignette = uv.x * (1.0 - uv.x) * uv.y * (1.0 - uv.y) * 16.0;
+          color *= clamp(vignette, 0.3, 1.0);
+
+          gl_FragColor = vec4(color, 0.45);
+        }
+      `;
+
+      function createShader(gl, type, source) {
+        const shader = gl.createShader(type);
+        gl.shaderSource(shader, source);
+        gl.compileShader(shader);
+        return shader;
+      }
+
+      const vs = createShader(gl, gl.VERTEX_SHADER, vsSource);
+      const fs = createShader(gl, gl.FRAGMENT_SHADER, fsSource);
+      const program = gl.createProgram();
+      gl.attachShader(program, vs);
+      gl.attachShader(program, fs);
+      gl.linkProgram(program);
+      gl.useProgram(program);
+
+      const buffer = gl.createBuffer();
+      gl.bindBuffer(gl.ARRAY_BUFFER, buffer);
+      gl.bufferData(gl.ARRAY_BUFFER, new Float32Array([
+        -1, -1,  1, -1, -1,  1,
+        -1,  1,  1, -1,  1,  1
+      ]), gl.STATIC_DRAW);
+
+      const posLoc = gl.getAttribLocation(program, 'position');
+      gl.enableVertexAttribArray(posLoc);
+      gl.vertexAttribPointer(posLoc, 2, gl.FLOAT, false, 0, 0);
+
+      const resLoc = gl.getUniformLocation(program, 'u_resolution');
+      const timeLoc = gl.getUniformLocation(program, 'u_time');
+
+      let startTime = performance.now();
+      function render() {
+        const time = (performance.now() - startTime) * 0.001;
+        gl.uniform2f(resLoc, canvas.width, canvas.height);
+        gl.uniform1f(timeLoc, time);
+        gl.drawArrays(gl.TRIANGLES, 0, 6);
+        requestAnimationFrame(render);
+      }
+      render();
+    })();
+  </script>
+<!-- END: WebGL Canvas Shader Script -->
+<!-- BEGIN: UI Interactivity Script -->
+<script data-purpose="tab-and-nav-events">
+    document.addEventListener('DOMContentLoaded', () => {
+      // 1. Tab Navigation switching logic
+      const tabButtons = document.querySelectorAll('.tab-btn');
+      const tabContents = document.querySelectorAll('.tab-content');
+
+      tabButtons.forEach(btn => {
+        btn.addEventListener('click', () => {
+          const targetId = btn.getAttribute('data-tab');
+
+          tabButtons.forEach(b => {
+            b.classList.remove('active', 'bg-gradient-to-r', 'from-amber-500/20', 'to-amber-600/20', 'text-amber-300', 'border', 'border-amber-400/30');
+            b.classList.add('text-slate-400', 'font-medium');
+            b.classList.remove('font-semibold');
+          });
+
+          btn.classList.add('active', 'bg-gradient-to-r', 'from-amber-500/20', 'to-amber-600/20', 'text-amber-300', 'border', 'border-amber-400/30');
+          btn.classList.remove('text-slate-400', 'font-medium');
+          btn.classList.add('font-semibold');
+
+          tabContents.forEach(content => {
+            if (content.id === targetId) {
+              content.classList.add('active');
+            } else {
+              content.classList.remove('active');
+            }
+          });
+        });
+      });
+
+      // 2. Favorite toggle animation
+      const favBtn = document.getElementById('favorite-btn');
+      let isFav = false;
+      if (favBtn) {
+        favBtn.addEventListener('click', () => {
+          isFav = !isFav;
+          const svg = favBtn.querySelector('svg');
+          if (isFav) {
+            svg.setAttribute('fill', '#f59e0b');
+            svg.setAttribute('stroke', '#f59e0b');
+            favBtn.classList.add('border-amber-400/50');
+          } else {
+            svg.setAttribute('fill', 'none');
+            svg.setAttribute('stroke', 'currentColor');
+            favBtn.classList.remove('border-amber-400/50');
+          }
+        });
+      }
+
+      // 3. Scroll Header Effect: reveal movie title smoothly on scroll
+      const headerTitle = document.getElementById('nav-title');
+      const header = document.getElementById('main-header');
+      window.addEventListener('scroll', () => {
+        const scrolled = window.scrollY;
+        if (scrolled > 140) {
+          headerTitle.style.opacity = '1';
+          header.classList.add('bg-[#090a0f]/90', 'backdrop-blur-xl', 'border-b', 'border-white/10');
+        } else {
+          headerTitle.style.opacity = '0';
+          header.classList.remove('bg-[#090a0f]/90', 'backdrop-blur-xl', 'border-b', 'border-white/10');
+        }
+      });
+    });
+  </script>
+<!-- END: UI Interactivity Script -->
+</body></html>

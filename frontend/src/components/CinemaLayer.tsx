@@ -52,13 +52,23 @@ const GLOW_H = 54;
  */
 const PAINT_INTERVAL_MS = 33;
 /** How far the glow reaches past the player, in rem, split evenly per side. */
-const SPREAD_REM = 10;
+const SPREAD_REM = 18;
+/**
+ * Fades the wash to transparent before the canvas edge.
+ *
+ * The canvas is a rectangle; without this the light stops in a straight line
+ * and reads as a box on the wall. An elliptical mask makes the falloff organic
+ * — full strength around the bezel, gone well inside the border — which is the
+ * whole difference between a TV backlight photo and an LED strip outline.
+ */
+const EDGE_FADE_MASK =
+    'radial-gradient(ellipse at 50% 50%, rgba(0,0,0,1) 22%, rgba(0,0,0,0) 85%)';
 /**
  * Peak alpha of one light blob. They are composited additively, so overlapping
  * neighbours build up; this leaves headroom for four or five to sum without
  * clipping to white.
  */
-const BLOB_ALPHA = 0.5;
+const BLOB_ALPHA = 0.65;
 
 type Props = {
     mode: CinemaMode;
@@ -145,7 +155,17 @@ export default function CinemaLayer({ mode, video }: Props) {
             const right = GLOW_W - gx;
             const top = gy;
             const bottom = GLOW_H - gy;
-            const radius = Math.max(gx, gy) * 2.6;
+            const radius = Math.max(gx, gy) * 3.4;
+            /**
+             * Pushes each blob centre outward, off the bezel, by this share of
+             * the overhang.
+             *
+             * Centres sitting exactly on the player edges put the brightness
+             * peak on the bezel line itself (the inner half hides behind the
+             * opaque player), which reads as a lit picture frame. Peaks floating
+             * outside the frame dissolve the rectangle into a spill of light.
+             */
+            const OUT = 0.7;
 
             glowCtx.clearRect(0, 0, GLOW_W, GLOW_H);
             // Light adds; it does not paint over. Corners lit from two edges
@@ -162,10 +182,10 @@ export default function CinemaLayer({ mode, video }: Props) {
             };
 
             const along = (n: number, i: number, a: number, b: number) => a + ((i + 0.5) / n) * (b - a);
-            zones.top.forEach((c, i) => blob(along(zones.top.length, i, left, right), top, c));
-            zones.bottom.forEach((c, i) => blob(along(zones.bottom.length, i, left, right), bottom, c));
-            zones.left.forEach((c, i) => blob(left, along(zones.left.length, i, top, bottom), c));
-            zones.right.forEach((c, i) => blob(right, along(zones.right.length, i, top, bottom), c));
+            zones.top.forEach((c, i) => blob(along(zones.top.length, i, left, right), top - gy * OUT, c));
+            zones.bottom.forEach((c, i) => blob(along(zones.bottom.length, i, left, right), bottom + gy * OUT, c));
+            zones.left.forEach((c, i) => blob(left - gx * OUT, along(zones.left.length, i, top, bottom), c));
+            zones.right.forEach((c, i) => blob(right + gx * OUT, along(zones.right.length, i, top, bottom), c));
 
             glowCtx.globalCompositeOperation = 'source-over';
         };
@@ -335,6 +355,8 @@ export default function CinemaLayer({ mode, video }: Props) {
 
     // One small canvas stretched over the surround. The browser's own upscaling
     // is what softens it, so there is no filter to re-rasterise per frame.
+    // The elliptical mask (EDGE_FADE_MASK) kills the canvas rectangle: light
+    // must dissolve into the dark, never stop at a border.
     return (
         <canvas
             aria-hidden
@@ -347,6 +369,8 @@ export default function CinemaLayer({ mode, video }: Props) {
                 left: `-${SPREAD_REM / 2}rem`,
                 width: `calc(100% + ${SPREAD_REM}rem)`,
                 height: `calc(100% + ${SPREAD_REM}rem)`,
+                maskImage: EDGE_FADE_MASK,
+                WebkitMaskImage: EDGE_FADE_MASK,
             }}
         />
     );

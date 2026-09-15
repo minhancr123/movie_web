@@ -1,0 +1,348 @@
+<!DOCTYPE html>
+
+<html class="dark" lang="vi"><head><meta charset="utf-8"/><meta content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no, viewport-fit=cover" name="viewport"/><link href="https://fonts.googleapis.com" rel="preconnect"/><link crossorigin="" href="https://fonts.gstatic.com" rel="preconnect"/><link href="https://fonts.googleapis.com/css2?family=Plus+Jakarta+Sans:wght@400;600;700&amp;family=Space+Grotesk:wght@600;700&amp;family=Syne:wght@700;800&amp;display=swap" rel="stylesheet"/><link href="https://fonts.googleapis.com/css2?family=Material+Symbols+Outlined:opsz,wght,FILL,GRAD@20..48,100..700,0..1,-50..200" rel="stylesheet"/>
+<link href="https://fonts.googleapis.com/css2?family=Material+Symbols+Outlined:wght,FILL@100..700,0..1&amp;display=swap" rel="stylesheet"/><script src="https://cdn.tailwindcss.com"></script><script id="tailwind-config">tailwind.config = { darkMode: "class", theme: { extend: { "colors": { "surface-bright": "#38393d", "background": "#121316", "on-primary-container": "#613b00", "error": "#ffb4ab", "on-tertiary": "#003640", "on-secondary-container": "#ffdcdc", "on-surface": "#e3e2e6", "secondary-fixed": "#ffdada", "surface-container-highest": "#343538", "surface-container-lowest": "#0d0e11", "surface-variant": "#343538", "primary-fixed-dim": "#ffb95f", "on-secondary": "#68001a", "inverse-surface": "#e3e2e6", "on-secondary-fixed": "#40000c", "error-container": "#93000a", "on-error-container": "#ffdad6", "tertiary-fixed": "#acedff", "secondary": "#ffb3b6", "inverse-primary": "#855300", "on-background": "#e3e2e6", "surface-container-low": "#1b1b1f", "on-secondary-fixed-variant": "#920028", "surface-container-high": "#292a2d", "primary-fixed": "#ffddb8", "secondary-container": "#cc003c", "surface": "#121316", "on-tertiary-fixed-variant": "#004e5c", "outline-variant": "#534434", "tertiary-container": "#29c1df", "surface-dim": "#121316", "on-primary-fixed": "#2a1700", "on-surface-variant": "#d8c3ad", "primary": "#ffc174", "outline": "#a08e7a", "inverse-on-surface": "#2f3034", "tertiary-fixed-dim": "#4cd7f6", "on-error": "#690005", "tertiary": "#54ddfc", "on-tertiary-container": "#004b58", "primary-container": "#f59e0b", "surface-container": "#1f1f23", "secondary-fixed-dim": "#ffb3b6", "surface-tint": "#ffb95f", "on-primary-fixed-variant": "#653e00", "on-tertiary-fixed": "#001f26", "on-primary": "#472a00" }, "borderRadius": { "DEFAULT": "0.25rem", "lg": "0.5rem", "xl": "0.75rem", "full": "9999px" }, "spacing": { "space-lg": "1.5rem", "gutter-lg": "1.5rem", "space-2xl": "3rem", "space-xl": "2rem", "margin-tablet": "2rem", "gutter": "1rem", "space-2xs": "0.25rem", "space-md": "1rem", "space-xs": "0.5rem", "gutter-sm": "0.75rem", "margin": "1.25rem", "space-sm": "0.75rem", "margin-mobile": "1rem" }, "fontFamily": { "headline-sm": ["Plus Jakarta Sans"], "headline-lg": ["Syne"], "body-md": ["Plus Jakarta Sans"], "body-sm": ["Plus Jakarta Sans"], "display-hero-mobile": ["Syne"], "headline-xl": ["Syne"], "label-md": ["Space Grotesk"], "label-sm": ["Space Grotesk"], "headline-xl-mobile": ["Syne"], "badge-numeric": ["Space Grotesk"], "display-hero": ["Syne"], "body-lg": ["Plus Jakarta Sans"], "headline-md": ["Plus Jakarta Sans"], "label-lg": ["Space Grotesk"] }, "fontSize": { "headline-sm": ["18px", { "lineHeight": "24px", "letterSpacing": "0em", "fontWeight": "600" }], "headline-lg": ["24px", { "lineHeight": "30px", "letterSpacing": "-0.01em", "fontWeight": "700" }], "body-md": ["14px", { "lineHeight": "20px", "letterSpacing": "0em", "fontWeight": "400" }], "body-sm": ["12px", { "lineHeight": "16px", "letterSpacing": "0.01em", "fontWeight": "400" }], "display-hero-mobile": ["36px", { "lineHeight": "42px", "letterSpacing": "-0.02em", "fontWeight": "800" }], "headline-xl": ["32px", { "lineHeight": "38px", "letterSpacing": "-0.02em", "fontWeight": "700" }], "label-md": ["12px", { "lineHeight": "16px", "letterSpacing": "0.06em", "fontWeight": "600" }], "label-sm": ["10px", { "lineHeight": "12px", "letterSpacing": "0.08em", "fontWeight": "700" }], "headline-xl-mobile": ["26px", { "lineHeight": "32px", "letterSpacing": "-0.01em", "fontWeight": "700" }], "badge-numeric": ["13px", { "lineHeight": "14px", "letterSpacing": "0.02em", "fontWeight": "700" }], "display-hero": ["52px", { "lineHeight": "58px", "letterSpacing": "-0.03em", "fontWeight": "800" }], "body-lg": ["16px", { "lineHeight": "24px", "letterSpacing": "0em", "fontWeight": "400" }], "headline-md": ["20px", { "lineHeight": "26px", "letterSpacing": "-0.01em", "fontWeight": "700" }], "label-lg": ["14px", { "lineHeight": "18px", "letterSpacing": "0.04em", "fontWeight": "600" }] } } } }</script><style>@layer base{html,body{width:100%;margin:0;padding:0;}body{overscroll-behavior-y:none;}.pb-safe{padding-bottom:env(safe-area-inset-bottom,0px);}.pt-safe{padding-top:env(safe-area-inset-top,0px);}main>:first-child{margin-top:0!important;}main>:last-child{margin-bottom:0!important;}}::-webkit-scrollbar{display:none;}</style><style>
+    body {
+      min-height: max(884px, 100dvh);
+    }
+  </style>
+  </head><body class="bg-surface text-on-surface font-body-md text-body-md flex flex-col min-h-screen"><header class="fixed top-0 w-full z-50 pt-safe bg-surface/80 backdrop-blur-xl shadow-[0_4px_20px_rgba(0,0,0,0.4)]"><div class="h-16 px-margin flex items-center justify-between gap-space-sm"><div class="flex items-center gap-space-sm"><img alt="Brand logo. - Primary color: #f59e0b
+- Font: syne
+- Mode: dark
+- Roundness: rounded-md
+" class="h-8 w-auto object-contain" src="https://lh3.googleusercontent.com/aida/AEtjO1X7fxMzztb60EUwsJeiJMPgXTtXsaCe82s698s7mF2XTd-mvsVc_Vrjj7pdQ2MsqwhjjdwoIbRLNJPdpx0uk_SHrMfTMD-l4-cWVjeKq8sIfFVR8bVTFyifye6bARFLb2iwOKigDCqmvf6c7FrwXiAVVsZEEgiaLm0F_dg9hb6rJP3hkCarYdZwrmxHQqiqUE4T1aQQj-ELFp3RSo0H9jD76rMhCXWm6icKe_Czj3MOlE0K2nB9LxdsGq0"/><span class="font-headline-lg text-headline-lg tracking-tight text-on-surface">CineStream</span></div><div class="flex items-center gap-space-2xs"><button aria-label="Search" class="w-11 h-11 flex items-center justify-center rounded-full text-on-surface-variant hover:text-primary transition-colors"><span class="material-symbols-outlined text-[24px]">search</span></button><button aria-label="Notifications" class="w-11 h-11 flex items-center justify-center rounded-full text-on-surface-variant hover:text-primary transition-colors relative"><span class="material-symbols-outlined text-[24px]">notifications</span><span class="absolute top-2.5 right-2.5 w-2 h-2 rounded-full bg-primary-container ring-2 ring-surface"></span></button><div class="w-8 h-8 rounded-full bg-primary flex items-center justify-center ml-space-2xs"><span class="material-symbols-outlined text-on-primary text-[18px]">person</span></div></div></div></header><main class="flex flex-col relative w-full pt-16 pb-28 bg-surface"><div class="flex flex-col w-full">
+<!-- Storage Overview & Telemetry Card -->
+<section class="px-margin pt-space-md">
+<div class="p-space-md rounded-xl bg-surface-container/90 backdrop-blur-xl shadow-xl flex flex-col gap-space-sm relative overflow-hidden">
+<!-- Ambient Glow Pod Background -->
+<div class="absolute -right-10 -top-10 w-36 h-36 rounded-full bg-primary/10 blur-3xl pointer-events-none"></div>
+<div class="flex items-center justify-between">
+<div class="flex items-center gap-space-xs">
+<span class="material-symbols-outlined text-primary text-[22px]">sd_card</span>
+<span class="font-headline-sm text-headline-sm text-on-surface">Bộ nhớ ngoại tuyến</span>
+</div>
+<span class="font-badge-numeric text-badge-numeric px-space-xs py-0.5 rounded-full bg-surface-container-high text-primary">
+          128 GB Tổng
+        </span>
+</div>
+<!-- Storage Breakdown Info -->
+<div class="flex items-baseline justify-between pt-space-2xs">
+<div class="flex items-baseline gap-1.5">
+<span class="font-headline-xl-mobile text-headline-xl-mobile text-primary font-bold">48.6</span>
+<span class="font-label-md text-label-md text-on-surface-variant">GB đã tải</span>
+</div>
+<span class="font-label-sm text-label-sm text-on-surface-variant uppercase tracking-wider">
+          Còn trống 79.4 GB
+        </span>
+</div>
+<!-- Segmented Multi-color Visual Bar -->
+<div class="w-full h-2.5 rounded-full bg-surface-container-highest overflow-hidden flex">
+<div class="h-full bg-primary-container transition-all duration-500" style="width: 32%;" title="Phim 4K HDR"></div>
+<div class="h-full bg-tertiary transition-all duration-500" style="width: 8%;" title="Dolby Atmos 9.1.4"></div>
+<div class="h-full bg-secondary transition-all duration-500" style="width: 5%;" title="Phụ đề &amp; Dữ liệu"></div>
+</div>
+<!-- Storage Legend & Quick Action Pills -->
+<div class="flex items-center justify-between pt-space-2xs text-on-surface-variant font-label-sm text-label-sm">
+<div class="flex items-center gap-space-sm flex-wrap">
+<div class="flex items-center gap-1">
+<span class="w-2 h-2 rounded-full bg-primary-container"></span>
+<span>4K HDR (40.2 GB)</span>
+</div>
+<div class="flex items-center gap-1">
+<span class="w-2 h-2 rounded-full bg-tertiary"></span>
+<span>Dolby Atmos (6.4 GB)</span>
+</div>
+</div>
+</div>
+<!-- Quick Telemetry Actions -->
+<div class="grid grid-cols-2 gap-space-xs pt-space-xs">
+<button class="h-10 px-space-sm rounded-lg bg-surface-container-highest hover:bg-surface-bright text-on-surface flex items-center justify-center gap-space-xs transition-all active:scale-98" type="button">
+<span class="material-symbols-outlined text-primary text-[18px]">cleaning_services</span>
+<span class="font-label-md text-label-md">Tối ưu dung lượng</span>
+</button>
+<button class="h-10 px-space-sm rounded-lg bg-surface-container-highest hover:bg-surface-bright text-on-surface flex items-center justify-center gap-space-xs transition-all active:scale-98" type="button">
+<span class="material-symbols-outlined text-tertiary text-[18px]">wifi</span>
+<span class="font-label-md text-label-md">Wi-Fi 6 Cực nhanh</span>
+</button>
+</div>
+</div>
+</section>
+<!-- Horizontal Sticky Filter Carousel -->
+<section class="mt-space-md w-full overflow-x-auto no-scrollbar">
+<div class="flex items-center gap-space-xs px-margin min-w-max pb-space-2xs">
+<button class="h-9 px-space-md rounded-full bg-primary-container text-on-primary font-label-md text-label-md shadow-md flex items-center gap-1.5 transition-all" type="button">
+<span class="material-symbols-outlined text-[16px]">file_download_done</span>
+<span>Đã tải về (5)</span>
+</button>
+<button class="h-9 px-space-md rounded-full bg-surface-container hover:bg-surface-container-high text-on-surface-variant hover:text-on-surface font-label-md text-label-md flex items-center gap-1.5 transition-all" type="button">
+<span class="material-symbols-outlined text-[16px]">play_circle</span>
+<span>Xem dở dang (3)</span>
+</button>
+<button class="h-9 px-space-md rounded-full bg-surface-container hover:bg-surface-container-high text-on-surface-variant hover:text-on-surface font-label-md text-label-md flex items-center gap-1.5 transition-all" type="button">
+<span class="material-symbols-outlined text-[16px]">bookmark</span>
+<span>Xem sau (12)</span>
+</button>
+<button class="h-9 px-space-md rounded-full bg-surface-container hover:bg-surface-container-high text-on-surface-variant hover:text-on-surface font-label-md text-label-md flex items-center gap-1.5 transition-all" type="button">
+<span class="material-symbols-outlined text-[16px]">video_library</span>
+<span>Bộ sưu tập (2)</span>
+</button>
+</div>
+</section>
+<!-- Section Header -->
+<div class="px-margin mt-space-lg flex items-center justify-between">
+<div class="flex items-center gap-space-xs">
+<span class="font-headline-md text-headline-md text-on-surface">Phim Sẵn Sàng Ngoại Tuyến</span>
+<span class="w-2 h-2 rounded-full bg-primary animate-pulse"></span>
+</div>
+<button class="font-label-md text-label-md text-primary hover:underline" type="button">
+      Chỉnh sửa
+    </button>
+</div>
+<!-- Media Library Cards -->
+<section class="px-margin mt-space-sm flex flex-col gap-space-sm">
+<!-- Card 1: Dune: Part Two (Featured IMAX 70mm) -->
+<div class="p-space-sm rounded-xl bg-surface-container/85 backdrop-blur-xl shadow-lg flex gap-space-sm relative overflow-hidden transition-transform duration-200 active:scale-[0.99]">
+<div class="relative w-24 h-36 rounded-lg overflow-hidden flex-shrink-0 bg-surface-container-highest shadow-md">
+<img alt="Dune: Hành Tinh Cát II" class="w-full h-full object-cover" data-alt="Dune Part Two cinematic movie poster featuring Paul Atreides and Chani standing in the glowing sunset desert sands of Arrakis under two suns, worn stillsuits, warm amber tones, Denis Villeneuve science fiction film aesthetics" src="https://lh3.googleusercontent.com/aida-public/AB6AXuDMQzTSywJi14c4h7IKqhpUNiAkpynuKNbrYyJL8u9w2cjPFm9YVWlut6JESUSKdwBL470syAr37tMcs3-3aQbTFs80CGFiE8uhDUOCy5aovLucO3DBS8Nk9Le3I-cdp09UsGif136SZU_dyxP87456w7EeJ3nKRKZdqiJ0fpjy8tZHOHbN1Oxf9OyTuoAsewPK1PIIxOl6B5uQ7CzyQgv-eGZzQPNQZuVnHc3blLjaGdTmlivu1_BW"/>
+<!-- Offline Ready Badge Overlay -->
+<div class="absolute bottom-1 left-1 right-1 px-1 py-0.5 rounded bg-surface-container-lowest/80 backdrop-blur-md flex items-center justify-center gap-1">
+<span class="material-symbols-outlined text-primary text-[12px]">cloud_done</span>
+<span class="font-label-sm text-label-sm text-primary uppercase">100% Sẵn sàng</span>
+</div>
+</div>
+<div class="flex flex-col justify-between flex-1 min-w-0 py-0.5">
+<div>
+<div class="flex items-start justify-between gap-1">
+<h3 class="font-headline-sm text-headline-sm text-on-surface truncate">Dune: Hành Tinh Cát II</h3>
+<button aria-label="Tùy chọn tải" class="text-on-surface-variant hover:text-on-surface p-1 -mr-1">
+<span class="material-symbols-outlined text-[18px]">more_vert</span>
+</button>
+</div>
+<div class="flex flex-wrap items-center gap-1 mt-1">
+<span class="font-label-sm text-label-sm px-1.5 py-0.5 rounded bg-primary/15 text-primary">IMAX 70mm</span>
+<span class="font-label-sm text-label-sm px-1.5 py-0.5 rounded bg-surface-container-highest text-on-surface">4K HDR</span>
+<span class="font-label-sm text-label-sm px-1.5 py-0.5 rounded bg-tertiary/15 text-tertiary">Dolby Atmos</span>
+</div>
+<div class="flex items-center gap-space-xs mt-2 text-on-surface-variant font-body-sm text-body-sm">
+<span>2g 46p</span>
+<span>•</span>
+<span class="font-badge-numeric text-badge-numeric text-on-surface">14.2 GB</span>
+</div>
+</div>
+<div class="flex items-center justify-between gap-space-xs mt-3 pt-space-xs">
+<div class="flex items-center gap-1 text-on-surface-variant font-label-sm text-label-sm">
+<span class="material-symbols-outlined text-primary text-[16px]">check_circle</span>
+<span>Đã kiểm định</span>
+</div>
+<button class="h-8 px-space-md rounded-full bg-primary-container hover:bg-primary text-on-primary font-label-md text-label-md flex items-center gap-1 shadow-md transition-all" type="button">
+<span class="material-symbols-outlined text-[16px]">play_arrow</span>
+<span>Phát ngay</span>
+</button>
+</div>
+</div>
+</div>
+<!-- Card 2: Oppenheimer -->
+<div class="p-space-sm rounded-xl bg-surface-container/85 backdrop-blur-xl shadow-lg flex gap-space-sm relative overflow-hidden transition-transform duration-200 active:scale-[0.99]">
+<div class="relative w-24 h-36 rounded-lg overflow-hidden flex-shrink-0 bg-surface-container-highest shadow-md">
+<img alt="Oppenheimer" class="w-full h-full object-cover" data-alt="Oppenheimer movie poster art with dramatic nuclear explosion fire glow reflecting in J. Robert Oppenheimer's eyes wearing a fedora hat, deep cinematic contrast, high quality movie visual" src="https://lh3.googleusercontent.com/aida-public/AB6AXuBhSe-Bqa6-hbhQkDucRr8ujarRxxULctuHFvvAi7MY085ai3EgxS3RAQ0GFngFdCMv-Zz_HcvmQLJWWAbPAKNvK9LaLV_lEuzCRliEhqC0shr36Urfonl8_i4k_XzUvV0Wh5EmtDMwdKGumPu-LIFm31SodVr_x5fMAnxGqOwDGl9FS3goxGgDsuuvkRmjoKo59NfNHgMwRKSq9B2T3UEAXT6pOY6IjKVni4IP48WgCzPN2pmlu-Vi"/>
+<div class="absolute bottom-1 left-1 right-1 px-1 py-0.5 rounded bg-surface-container-lowest/80 backdrop-blur-md flex items-center justify-center gap-1">
+<span class="material-symbols-outlined text-primary text-[12px]">cloud_done</span>
+<span class="font-label-sm text-label-sm text-primary uppercase">100% Sẵn sàng</span>
+</div>
+</div>
+<div class="flex flex-col justify-between flex-1 min-w-0 py-0.5">
+<div>
+<div class="flex items-start justify-between gap-1">
+<h3 class="font-headline-sm text-headline-sm text-on-surface truncate">Oppenheimer</h3>
+<button aria-label="Tùy chọn tải" class="text-on-surface-variant hover:text-on-surface p-1 -mr-1">
+<span class="material-symbols-outlined text-[18px]">more_vert</span>
+</button>
+</div>
+<div class="flex flex-wrap items-center gap-1 mt-1">
+<span class="font-label-sm text-label-sm px-1.5 py-0.5 rounded bg-surface-container-highest text-on-surface">Director's Cut</span>
+<span class="font-label-sm text-label-sm px-1.5 py-0.5 rounded bg-primary/15 text-primary">4K HDR</span>
+</div>
+<div class="flex items-center gap-space-xs mt-2 text-on-surface-variant font-body-sm text-body-sm">
+<span>3g 00p</span>
+<span>•</span>
+<span class="font-badge-numeric text-badge-numeric text-on-surface">11.8 GB</span>
+</div>
+</div>
+<div class="flex items-center justify-between gap-space-xs mt-3 pt-space-xs">
+<div class="flex items-center gap-1 text-on-surface-variant font-label-sm text-label-sm">
+<span class="material-symbols-outlined text-primary text-[16px]">check_circle</span>
+<span>Hết hạn: 28 ngày</span>
+</div>
+<button class="h-8 px-space-md rounded-full bg-primary-container hover:bg-primary text-on-primary font-label-md text-label-md flex items-center gap-1 shadow-md transition-all" type="button">
+<span class="material-symbols-outlined text-[16px]">play_arrow</span>
+<span>Phát ngay</span>
+</button>
+</div>
+</div>
+</div>
+<!-- Card 3: Interstellar -->
+<div class="p-space-sm rounded-xl bg-surface-container/85 backdrop-blur-xl shadow-lg flex gap-space-sm relative overflow-hidden transition-transform duration-200 active:scale-[0.99]">
+<div class="relative w-24 h-36 rounded-lg overflow-hidden flex-shrink-0 bg-surface-container-highest shadow-md">
+<img alt="Interstellar" class="w-full h-full object-cover" data-alt="Interstellar movie poster with astronaut exploring icy alien planet surface with massive accretion disk black hole Gargantua towering in deep space, atmospheric cosmic visual" src="https://lh3.googleusercontent.com/aida-public/AB6AXuAVXuhP1FWAXrp4FHJZRXoEYcFVg7nwywgQZLbhprU_AI7E08REvXeqWjz-n6xzWRmgYGCvF-Y1LUL_PC9DULqhfR0ePLHnbXqfLMcGI0-p6JqJIGyYTP6KdiVbCVEXuhF7Lt2caTqkOjowtCQpkz0A1m-udd9M8GwEwiX4bj0Jobcd1Nes9Po73XIazibjlJDeweteE4NAuwKyeCSslzH8gtJtfK4_bx7ph8D19FS1sE98d0bSeO-c"/>
+<div class="absolute bottom-1 left-1 right-1 px-1 py-0.5 rounded bg-surface-container-lowest/80 backdrop-blur-md flex items-center justify-center gap-1">
+<span class="material-symbols-outlined text-primary text-[12px]">cloud_done</span>
+<span class="font-label-sm text-label-sm text-primary uppercase">100% Sẵn sàng</span>
+</div>
+</div>
+<div class="flex flex-col justify-between flex-1 min-w-0 py-0.5">
+<div>
+<div class="flex items-start justify-between gap-1">
+<h3 class="font-headline-sm text-headline-sm text-on-surface truncate">Interstellar</h3>
+<button aria-label="Tùy chọn tải" class="text-on-surface-variant hover:text-on-surface p-1 -mr-1">
+<span class="material-symbols-outlined text-[18px]">more_vert</span>
+</button>
+</div>
+<div class="flex flex-wrap items-center gap-1 mt-1">
+<span class="font-label-sm text-label-sm px-1.5 py-0.5 rounded bg-primary/15 text-primary">IMAX Expanded</span>
+<span class="font-label-sm text-label-sm px-1.5 py-0.5 rounded bg-tertiary/15 text-tertiary">DTS:X Sound</span>
+</div>
+<div class="flex items-center gap-space-xs mt-2 text-on-surface-variant font-body-sm text-body-sm">
+<span>2g 49p</span>
+<span>•</span>
+<span class="font-badge-numeric text-badge-numeric text-on-surface">12.5 GB</span>
+</div>
+</div>
+<div class="flex items-center justify-between gap-space-xs mt-3 pt-space-xs">
+<div class="flex items-center gap-1 text-on-surface-variant font-label-sm text-label-sm">
+<span class="material-symbols-outlined text-primary text-[16px]">check_circle</span>
+<span>Đã kiểm định</span>
+</div>
+<button class="h-8 px-space-md rounded-full bg-primary-container hover:bg-primary text-on-primary font-label-md text-label-md flex items-center gap-1 shadow-md transition-all" type="button">
+<span class="material-symbols-outlined text-[16px]">play_arrow</span>
+<span>Phát ngay</span>
+</button>
+</div>
+</div>
+</div>
+<!-- Card 4: Blade Runner 2049 -->
+<div class="p-space-sm rounded-xl bg-surface-container/85 backdrop-blur-xl shadow-lg flex gap-space-sm relative overflow-hidden transition-transform duration-200 active:scale-[0.99]">
+<div class="relative w-24 h-36 rounded-lg overflow-hidden flex-shrink-0 bg-surface-container-highest shadow-md">
+<img alt="Blade Runner 2049" class="w-full h-full object-cover" data-alt="Blade Runner 2049 poster featuring officer K walking in a hazy orange dusty apocalyptic cityscape with giant holographic statues and futuristic flying spinner car, cyberpunk lighting" src="https://lh3.googleusercontent.com/aida-public/AB6AXuBykO1Ddp-klkVUHUugqTLynQY4APu5jP4o6Yji8uf1nPThVJYiuiY4y_sPHuaDaQZcAvup_IyL7x7O4T9ub6_JALAqAzUrPY9FSFVVtEDCNO1akywZJy_FTTfCa9n5tThtz7tTwoUosef4Rkl-lgOgJ5Dy8U5RnJhMrrKe4a1gilY1m6c8F-eneNREynuhx75bYwWsuX-VW24gCI7Jvg2Ap7AoKX1GbkPqDCxHBA2WM5I6tDJ2HWUv"/>
+<div class="absolute bottom-1 left-1 right-1 px-1 py-0.5 rounded bg-surface-container-lowest/80 backdrop-blur-md flex items-center justify-center gap-1">
+<span class="material-symbols-outlined text-primary text-[12px]">cloud_done</span>
+<span class="font-label-sm text-label-sm text-primary uppercase">100% Sẵn sàng</span>
+</div>
+</div>
+<div class="flex flex-col justify-between flex-1 min-w-0 py-0.5">
+<div>
+<div class="flex items-start justify-between gap-1">
+<h3 class="font-headline-sm text-headline-sm text-on-surface truncate">Blade Runner 2049</h3>
+<button aria-label="Tùy chọn tải" class="text-on-surface-variant hover:text-on-surface p-1 -mr-1">
+<span class="material-symbols-outlined text-[18px]">more_vert</span>
+</button>
+</div>
+<div class="flex flex-wrap items-center gap-1 mt-1">
+<span class="font-label-sm text-label-sm px-1.5 py-0.5 rounded bg-primary/15 text-primary">Dolby Vision</span>
+<span class="font-label-sm text-label-sm px-1.5 py-0.5 rounded bg-surface-container-highest text-on-surface">Master Audio</span>
+</div>
+<div class="flex items-center gap-space-xs mt-2 text-on-surface-variant font-body-sm text-body-sm">
+<span>2g 44p</span>
+<span>•</span>
+<span class="font-badge-numeric text-badge-numeric text-on-surface">10.1 GB</span>
+</div>
+</div>
+<div class="flex items-center justify-between gap-space-xs mt-3 pt-space-xs">
+<div class="flex items-center gap-1 text-on-surface-variant font-label-sm text-label-sm">
+<span class="material-symbols-outlined text-primary text-[16px]">check_circle</span>
+<span>Đã kiểm định</span>
+</div>
+<button class="h-8 px-space-md rounded-full bg-primary-container hover:bg-primary text-on-primary font-label-md text-label-md flex items-center gap-1 shadow-md transition-all" type="button">
+<span class="material-symbols-outlined text-[16px]">play_arrow</span>
+<span>Phát ngay</span>
+</button>
+</div>
+</div>
+</div>
+</section>
+<!-- Offline Playback Banner Experience (Inspired by Desert Ornithopter Flight) -->
+<section class="px-margin mt-space-lg">
+<div class="relative w-full rounded-xl overflow-hidden bg-surface-container shadow-xl">
+<div class="w-full h-36 bg-cover bg-center" data-alt="Majestic wide aerial shot of a Dragonfly Ornithopter flying over vast sand dunes at golden hour sunset in Dune universe, cinematic sweeping sand ridges, glowing warm amber rays, cinematic scale" style="background-image: url('https://lh3.googleusercontent.com/aida-public/AB6AXuDgpbmN8dCnHjOwOa4nNpXzPV8tlFiycEE4z09OeCh3P4uONQSOeX-opY3nkHuRo_TKudP8JHF0qffQjEDW40jNZbsJYvuZe2GRjvMzZrXAHiubVQ1gVwMS57yxgI_dUwG1sZouHqQfOPJSKznCghNI3pn-JJ_sWFqs9rJm5HxsPqJiXag2wMy47hvv7C4Bnio14R_3UrmxZzsG2fBC85o4pO36X2QnArCoDv-0_JPo3qgFhYiRSnnF')"></div>
+<div class="absolute inset-0 bg-gradient-to-t from-surface-container-lowest via-surface-container-lowest/60 to-transparent flex flex-col justify-end p-space-md">
+<span class="font-label-sm text-label-sm uppercase tracking-widest text-primary font-bold">Chế độ máy bay &amp; du lịch</span>
+<h4 class="font-headline-sm text-headline-sm text-on-surface mt-0.5">Trải nghiệm rạp chiếu bỏ túi</h4>
+<p class="font-body-sm text-body-sm text-on-surface-variant line-clamp-1 mt-1">Âm thanh vòm không gian Spatial Audio giữ trọn chất lượng không cần mạng Internet.</p>
+</div>
+</div>
+</section>
+<!-- Advanced Download Preferences & Settings Section -->
+<section class="px-margin mt-space-lg pb-space-lg">
+<div class="flex items-center justify-between mb-space-xs">
+<h3 class="font-headline-sm text-headline-sm text-on-surface">Cài đặt tải xuống cao cấp</h3>
+<span class="material-symbols-outlined text-on-surface-variant text-[20px]">tune</span>
+</div>
+<div class="rounded-xl bg-surface-container/90 divide-y-0 flex flex-col shadow-lg overflow-hidden">
+<!-- Setting 1 -->
+<div class="p-space-md flex items-center justify-between gap-space-sm">
+<div class="flex items-center gap-space-sm min-w-0">
+<div class="w-10 h-10 rounded-lg bg-surface-container-highest flex items-center justify-center text-primary flex-shrink-0">
+<span class="material-symbols-outlined text-[22px]">auto_mode</span>
+</div>
+<div class="min-w-0">
+<div class="font-body-lg text-body-lg text-on-surface font-semibold truncate">Tự động tải tập tiếp theo</div>
+<div class="font-body-sm text-body-sm text-on-surface-variant truncate">Tải sẵn 1 tập tiếp theo khi kết nối Wi-Fi</div>
+</div>
+</div>
+<button aria-checked="true" class="w-12 h-6 rounded-full bg-primary-container p-0.5 flex items-center justify-end transition-colors cursor-pointer flex-shrink-0" role="switch" type="button">
+<span class="w-5 h-5 rounded-full bg-on-primary-container shadow-sm block"></span>
+</button>
+</div>
+<!-- Divider -->
+<div class="h-[1px] bg-surface-container-highest mx-space-md"></div>
+<!-- Setting 2 -->
+<div class="p-space-md flex items-center justify-between gap-space-sm">
+<div class="flex items-center gap-space-sm min-w-0">
+<div class="w-10 h-10 rounded-lg bg-surface-container-highest flex items-center justify-center text-secondary flex-shrink-0">
+<span class="material-symbols-outlined text-[22px]">timer_off</span>
+</div>
+<div class="min-w-0">
+<div class="font-body-lg text-body-lg text-on-surface font-semibold truncate">Xóa sau 48h khi xem xong</div>
+<div class="font-body-sm text-body-sm text-on-surface-variant truncate">Tự động giải phóng dung lượng máy</div>
+</div>
+</div>
+<button aria-checked="true" class="w-12 h-6 rounded-full bg-primary-container p-0.5 flex items-center justify-end transition-colors cursor-pointer flex-shrink-0" role="switch" type="button">
+<span class="w-5 h-5 rounded-full bg-on-primary-container shadow-sm block"></span>
+</button>
+</div>
+<!-- Divider -->
+<div class="h-[1px] bg-surface-container-highest mx-space-md"></div>
+<!-- Setting 3 -->
+<div class="p-space-md flex items-center justify-between gap-space-sm">
+<div class="flex items-center gap-space-sm min-w-0">
+<div class="w-10 h-10 rounded-lg bg-surface-container-highest flex items-center justify-center text-tertiary flex-shrink-0">
+<span class="material-symbols-outlined text-[22px]">high_quality</span>
+</div>
+<div class="min-w-0">
+<div class="font-body-lg text-body-lg text-on-surface font-semibold truncate">Chất lượng tải mặc định</div>
+<div class="font-body-sm text-body-sm text-on-surface-variant truncate">Cực đại 4K HDR &amp; Spatial Audio</div>
+</div>
+</div>
+<div class="flex items-center gap-1 text-primary font-label-md text-label-md flex-shrink-0">
+<span>4K Ultra</span>
+<span class="material-symbols-outlined text-[18px]">chevron_right</span>
+</div>
+</div>
+</div>
+</section>
+</div>
+<script>
+  // Simple micro-interactions for toggles and play actions
+  document.querySelectorAll('button[role="switch"]').forEach(toggle => {
+    toggle.addEventListener('click', () => {
+      const isChecked = toggle.getAttribute('aria-checked') === 'true';
+      toggle.setAttribute('aria-checked', (!isChecked).toString());
+      if (!isChecked) {
+        toggle.classList.remove('bg-surface-container-highest', 'justify-start');
+        toggle.classList.add('bg-primary-container', 'justify-end');
+      } else {
+        toggle.classList.remove('bg-primary-container', 'justify-end');
+        toggle.classList.add('bg-surface-container-highest', 'justify-start');
+      }
+    });
+  });
+</script></main><nav class="fixed bottom-0 w-full z-50 pb-safe pointer-events-none" data-active-classes="text-primary-container font-bold scale-105"><div class="max-w-md mx-auto px-margin pb-space-sm pt-space-2xs pointer-events-auto"><div class="h-16 px-space-sm rounded-full bg-surface-container-lowest/85 backdrop-blur-2xl shadow-[0_10px_32px_rgba(0,0,0,0.6)] flex items-center justify-around"><a class="flex flex-col items-center justify-center gap-0.5 min-w-[56px] h-12 text-on-surface-variant hover:text-on-surface transition-all" data-path="trang-chu" href="#"><span class="material-symbols-outlined text-[22px]">home</span><span class="font-label-sm text-label-sm uppercase tracking-wider">Trang chủ</span></a><a class="flex flex-col items-center justify-center gap-0.5 min-w-[56px] h-12 text-on-surface-variant hover:text-on-surface transition-all" data-path="kham-pha" href="#"><span class="material-symbols-outlined text-[22px]">explore</span><span class="font-label-sm text-label-sm uppercase tracking-wider">Khám phá</span></a><a class="flex flex-col items-center justify-center gap-0.5 min-w-[56px] h-12 text-on-surface-variant hover:text-on-surface transition-all" data-path="tai-ve" href="#"><span class="material-symbols-outlined text-[22px]">download_for_offline</span><span class="font-label-sm text-label-sm uppercase tracking-wider">Tải về</span></a><a class="flex flex-col items-center justify-center gap-0.5 min-w-[56px] h-12 text-on-surface-variant hover:text-on-surface transition-all" data-path="ho-so" href="#"><span class="material-symbols-outlined text-[22px]">account_circle</span><span class="font-label-sm text-label-sm uppercase tracking-wider">Hồ sơ</span></a></div></div></nav></body></html>

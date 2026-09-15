@@ -2,11 +2,12 @@
 
 import Link from 'next/link';
 import Image from 'next/image';
-import { Search, Menu, X, ChevronDown, Loader2, PlayCircle, Bell, User, Mic } from 'lucide-react';
+import { Search, Menu, X, ChevronDown, Loader2, PlayCircle, Bell, User, Mic, History, Trash2 } from 'lucide-react';
 import { useState, useEffect, useMemo, useRef } from 'react';
 import { useRouter, usePathname } from 'next/navigation';
 import { useSearchMovies } from '@/hooks/useSearchMovies';
 import { useDebounce } from '@/hooks/useDebounce';
+import { useLocalStorage } from '@/hooks/useLocalStorage';
 import UserMenu from '@/components/UserMenu';
 import NotificationMenu from '@/components/NotificationMenu';
 import { catalogHref } from '@/lib/catalog';
@@ -48,6 +49,16 @@ const Header = () => {
     const [isMobileSearchVisible, setIsMobileSearchVisible] = useState(false);
     const [searchQuery, setSearchQuery] = useState('');
     const searchContainerRef = useRef<HTMLDivElement>(null);
+    const searchInputRef = useRef<HTMLInputElement>(null);
+    const mobileSearchInputRef = useRef<HTMLInputElement>(null);
+    // Recent searches, newest first, max 8.
+    const [searchHistory, setSearchHistory] = useLocalStorage<string[]>('cine_search_history', []);
+
+    const saveSearchHistory = (q: string) => {
+        const term = q.trim();
+        if (!term) return;
+        setSearchHistory((prev) => [term, ...prev.filter((h) => h.toLowerCase() !== term.toLowerCase())].slice(0, 8));
+    };
 
     const pathname = usePathname();
     const router = useRouter();
@@ -82,6 +93,51 @@ const Header = () => {
         setIsSearchOpen(false);
     }, [pathname]);
 
+    // Auto-focus the input whenever a search UI opens (desktop autoFocus
+    // alone can't do this: that input stays mounted and is only hidden).
+    useEffect(() => {
+        if (isSearchOpen) searchInputRef.current?.focus();
+    }, [isSearchOpen]);
+
+    useEffect(() => {
+        if (isMobileSearchVisible) mobileSearchInputRef.current?.focus();
+    }, [isMobileSearchVisible]);
+
+    // Global search shortcuts: Ctrl/Cmd+K opens search, ESC closes it.
+    useEffect(() => {
+        const onKey = (e: KeyboardEvent) => {
+            if ((e.ctrlKey || e.metaKey) && e.key.toLowerCase() === 'k') {
+                e.preventDefault();
+                if (window.innerWidth >= 1280) setIsSearchOpen(true);
+                else setIsMobileSearchVisible(true);
+            }
+            if (e.key === 'Escape') {
+                setIsSearchOpen(false);
+                setIsMobileSearchVisible(false);
+                setIsMobileMenuOpen(false);
+            }
+        };
+        window.addEventListener('keydown', onKey);
+        return () => window.removeEventListener('keydown', onKey);
+    }, []);
+
+    // Highlight the typed keyword inside a result title.
+    const highlightMatch = (text: string, q: string) => {
+        const needle = q.trim();
+        if (!needle || !text) return text;
+        const idx = text.toLowerCase().indexOf(needle.toLowerCase());
+        if (idx === -1) return text;
+        return (
+            <>
+                {text.slice(0, idx)}
+                <mark className="bg-amber-primary/40 text-amber-gold rounded-sm px-0.5">
+                    {text.slice(idx, idx + needle.length)}
+                </mark>
+                {text.slice(idx + needle.length)}
+            </>
+        );
+    };
+
     // Active-link detection that understands query strings (pathname alone
     // can never equal '/kham-pha?type=movie'). Read from window.location on
     // navigation instead of useSearchParams to avoid a Suspense boundary.
@@ -109,6 +165,7 @@ const Header = () => {
     const handleSearchSubmit = (e: React.FormEvent) => {
         e.preventDefault();
         if (searchQuery.trim()) {
+            saveSearchHistory(searchQuery);
             router.push(`/search?keyword=${encodeURIComponent(searchQuery)}`);
             setIsSearchOpen(false);
             setIsMobileMenuOpen(false);
@@ -137,6 +194,7 @@ const Header = () => {
         recognition.onresult = (event: any) => {
             const transcript = event.results[0][0].transcript;
             setSearchQuery(transcript);
+            saveSearchHistory(transcript);
             router.push(`/search?keyword=${encodeURIComponent(transcript)}`);
             setIsSearchOpen(false);
             setIsMobileSearchVisible(false);
@@ -227,8 +285,8 @@ const Header = () => {
                                 <button
                                     onClick={() => {
                                         setIsSearchOpen(true);
-                                        // Focus input logic here if needed
                                     }}
+                                    title="Tìm kiếm (Ctrl+K)"
                                     className={`text-cinema-subtle hover:text-amber-gold transition-colors p-2.5 ${isSearchOpen ? 'cursor-default' : ''}`}
                                 >
                                     <Search size={18} />
@@ -236,12 +294,12 @@ const Header = () => {
 
                                 <form onSubmit={handleSearchSubmit} className={`flex-1 flex items-center ${isSearchOpen ? 'block mr-1' : 'hidden'}`}>
                                     <input
+                                        ref={searchInputRef}
                                         type="text"
-                                        placeholder="Tìm kiếm phim..."
+                                        placeholder="Tìm kiếm phim... (Ctrl+K)"
                                         className="bg-transparent border-none outline-none focus:shadow-none text-body-md text-cinema-text placeholder-cinema-subtle w-full px-2 h-9"
                                         value={searchQuery}
                                         onChange={(e) => setSearchQuery(e.target.value)}
-                                        autoFocus={isSearchOpen}
                                     />
                                     <button
                                         type="button"
@@ -295,8 +353,8 @@ const Header = () => {
                                                         />
                                                     </div>
                                                     <div className="flex-1 min-w-0 z-10">
-                                                        <h4 className="font-syne text-headline-sm text-cinema-text group-hover:text-amber-gold truncate transition-colors">{movie.title}</h4>
-                                                        <p className="text-body-sm text-cinema-subtle truncate mt-0.5">{movie.originalTitle}</p>
+                                                        <h4 className="font-syne text-headline-sm text-cinema-text group-hover:text-amber-gold truncate transition-colors">{highlightMatch(movie.title, searchQuery)}</h4>
+                                                        <p className="text-body-sm text-cinema-subtle truncate mt-0.5">{highlightMatch(movie.originalTitle || '', searchQuery)}</p>
                                                         <div className="mt-2 flex items-center gap-2">
                                                             <span className="font-mono text-label-sm uppercase bg-amber-primary/15 text-amber-gold px-2 py-0.5 rounded-md border border-amber-primary/30">{movie.mediaType === 'tv' ? 'Phim bộ' : 'Phim lẻ'}</span>
                                                             <span className="font-mono text-label-sm text-cinema-muted bg-white/5 px-2 py-0.5 rounded-md border border-white/10">{movie.year}</span>
@@ -306,7 +364,7 @@ const Header = () => {
                                                 </Link>
                                             ))}
                                             <Link href={`/search?keyword=${searchQuery}`} className="block p-4 text-center font-mono text-label-md text-amber-gold hover:text-amber-primary hover:bg-white/5 transition-colors uppercase">
-                                                Xem tất cả kết quả
+                                                Xem tất cả {searchResults.length} kết quả
                                             </Link>
                                         </div>
                                     ) : (
@@ -315,6 +373,41 @@ const Header = () => {
                                             Không tìm thấy phim nào.
                                         </div>
                                     )}
+                                </div>
+                            )}
+
+                            {/* Search history (desktop): shown when the box is open but empty */}
+                            {isSearchOpen && searchQuery.trim().length === 0 && searchHistory.length > 0 && (
+                                <div className="absolute top-full right-0 mt-4 w-96 max-w-[calc(100vw-2rem)] glass-panel rounded-3xl shadow-glass-card overflow-hidden animate-in fade-in slide-in-from-top-2 duration-300">
+                                    <div className="absolute -top-2 right-4 w-4 h-4 bg-[#1b1b1f] border-t border-l border-white/10 rotate-45"></div>
+                                    <div className="flex items-center justify-between p-4 border-b border-white/10 bg-white/[0.02]">
+                                        <div className="flex items-center gap-2 font-mono text-label-sm text-amber-gold uppercase">
+                                            <History size={14} /> Lịch sử tìm kiếm
+                                        </div>
+                                        <button onClick={() => setSearchHistory([])} className="flex items-center gap-1 text-body-sm text-cinema-subtle hover:text-wine-accent transition-colors">
+                                            <Trash2 size={14} /> Xóa tất cả
+                                        </button>
+                                    </div>
+                                    <div className="max-h-[40vh] overflow-y-auto custom-scrollbar p-2">
+                                        {searchHistory.map((term) => (
+                                            <div key={term} className="group flex items-center rounded-xl hover:bg-white/5 transition-colors">
+                                                <button
+                                                    onClick={() => { setSearchQuery(term); searchInputRef.current?.focus(); }}
+                                                    className="flex flex-1 min-w-0 items-center gap-3 p-2.5 text-left text-body-md text-cinema-muted hover:text-cinema-text transition-colors"
+                                                >
+                                                    <History size={16} className="shrink-0 text-cinema-subtle" />
+                                                    <span className="truncate">{term}</span>
+                                                </button>
+                                                <button
+                                                    onClick={() => setSearchHistory((prev) => prev.filter((h) => h !== term))}
+                                                    title="Xóa mục này"
+                                                    className="p-2.5 text-cinema-subtle opacity-0 group-hover:opacity-100 hover:text-wine-accent transition-all"
+                                                >
+                                                    <X size={15} />
+                                                </button>
+                                            </div>
+                                        ))}
+                                    </div>
                                 </div>
                             )}
                         </div>
@@ -350,9 +443,10 @@ const Header = () => {
                     <div className="absolute top-full left-0 w-full bg-[#121316]/95 backdrop-blur-2xl border-b border-white/10 p-4 xl:hidden animate-in slide-in-from-top-2 shadow-glass-card">
                         <form onSubmit={handleSearchSubmit} className="relative">
                             <input
+                                ref={mobileSearchInputRef}
                                 type="text"
                                 placeholder="Tìm kiếm phim..."
-                                className="w-full bg-[#1b1b1f]/80 border border-white/10 rounded-2xl px-4 py-3 text-cinema-text placeholder-cinema-subtle focus:outline-none pl-11 pr-12"
+                                className="w-full bg-[#1b1b1f]/80 border border-white/10 rounded-2xl px-4 py-3 text-cinema-text placeholder-cinema-subtle focus:outline-none focus:border-amber-primary/60 pl-11 pr-12"
                                 value={searchQuery}
                                 onChange={(e) => setSearchQuery(e.target.value)}
                                 autoFocus
@@ -379,6 +473,80 @@ const Header = () => {
                                 )}
                             </div>
                         </form>
+
+                        {/* Search history (mobile/tablet): shown when the box is empty */}
+                        {searchQuery.trim().length === 0 && searchHistory.length > 0 && (
+                            <div className="mt-3 rounded-2xl border border-white/10 bg-[#1b1b1f]/80 p-3">
+                                <div className="flex items-center justify-between mb-2 px-1">
+                                    <div className="flex items-center gap-2 font-mono text-label-sm text-amber-gold uppercase">
+                                        <History size={14} /> Lịch sử tìm kiếm
+                                    </div>
+                                    <button onClick={() => setSearchHistory([])} className="flex items-center gap-1 text-body-sm text-cinema-subtle hover:text-wine-accent transition-colors">
+                                        <Trash2 size={13} /> Xóa tất cả
+                                    </button>
+                                </div>
+                                <div className="flex flex-wrap gap-2">
+                                    {searchHistory.map((term) => (
+                                        <div key={term} className="flex items-center gap-1 rounded-full bg-white/5 border border-white/10 pl-3 pr-1 py-1 hover:border-amber-primary/40 transition-colors">
+                                            <button onClick={() => setSearchQuery(term)} className="text-body-sm text-cinema-muted hover:text-cinema-text max-w-[40vw] truncate">
+                                                {term}
+                                            </button>
+                                            <button
+                                                onClick={() => setSearchHistory((prev) => prev.filter((h) => h !== term))}
+                                                title="Xóa mục này"
+                                                className="p-1 text-cinema-subtle hover:text-wine-accent transition-colors"
+                                            >
+                                                <X size={13} />
+                                            </button>
+                                        </div>
+                                    ))}
+                                </div>
+                            </div>
+                        )}
+
+                        {/* Live results (mobile/tablet) */}
+                        {searchQuery.length >= 1 && (
+                            <div className="mt-3 max-h-[50vh] overflow-y-auto custom-scrollbar rounded-2xl border border-white/10 bg-[#1b1b1f]/80">
+                                {isSearching ? (
+                                    <div className="p-6 text-center text-cinema-subtle text-body-md flex flex-col items-center gap-3">
+                                        <Loader2 size={24} className="animate-spin text-amber-primary" />
+                                        <span>Đang tìm kiếm phim hay...</span>
+                                    </div>
+                                ) : searchResults && searchResults.length > 0 ? (
+                                    <>
+                                        {searchResults.slice(0, 5).map((movie: any) => (
+                                            <Link
+                                                key={movie.contentRef}
+                                                href={catalogHref(movie)}
+                                                className="flex items-center gap-3 p-3 hover:bg-white/5 transition-colors border-b border-white/5 last:border-0"
+                                                onClick={() => setIsMobileSearchVisible(false)}
+                                            >
+                                                <div className="relative w-10 h-14 rounded-lg overflow-hidden shrink-0 border border-white/10">
+                                                    <Image
+                                                        src={movie.poster}
+                                                        alt={movie.title}
+                                                        fill
+                                                        className="object-cover"
+                                                    />
+                                                </div>
+                                                <div className="flex-1 min-w-0">
+                                                    <h4 className="text-cinema-text truncate font-medium">{highlightMatch(movie.title, searchQuery)}</h4>
+                                                    <p className="text-body-sm text-cinema-subtle truncate">{movie.year} · {movie.mediaType === 'tv' ? 'Phim bộ' : 'Phim lẻ'} · ★ {movie.voteAverage ? movie.voteAverage.toFixed(1) : 'N/A'}</p>
+                                                </div>
+                                            </Link>
+                                        ))}
+                                        <Link href={`/search?keyword=${searchQuery}`} onClick={() => setIsMobileSearchVisible(false)} className="block p-3 text-center font-mono text-label-md text-amber-gold hover:bg-white/5 transition-colors uppercase">
+                                            Xem tất cả {searchResults.length} kết quả
+                                        </Link>
+                                    </>
+                                ) : (
+                                    <div className="p-6 text-center text-cinema-subtle text-body-md">
+                                        <span className="block mb-1 text-lg">😕</span>
+                                        Không tìm thấy phim nào.
+                                    </div>
+                                )}
+                            </div>
+                        )}
                     </div>
                 )}
             </header>

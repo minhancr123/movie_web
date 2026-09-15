@@ -72,6 +72,10 @@ interface VideoPlayerProps {
     activeAudioIndex?: number | null;
     /** Ask the parent resolver for a fresh URL/session after local recovery is exhausted. */
     onPlaybackFailure?: (reason: string) => void;
+    /** Bumped by the parent when a recovery resolves the identical URL.
+        React bails out on an unchanged src, so this forces the pipeline below
+        to tear down and rebuild (fresh hls.js + resume from history). */
+    reloadKey?: number;
     /**
      * The surround mode and the element to sample. Both are emitted rather than
      * used here: the player's own box clips its overflow, so the light has to be
@@ -81,7 +85,7 @@ interface VideoPlayerProps {
     onVideoReady?: (el: HTMLVideoElement | null) => void;
 }
 
-export default function VideoPlayer({ src, movie, episode, authToken, durationSeconds, onNextEpisode, subContext, onPickAudio, activeAudioIndex, onPlaybackFailure, onCinemaChange, onVideoReady }: VideoPlayerProps) {
+export default function VideoPlayer({ src, movie, episode, authToken, durationSeconds, onNextEpisode, subContext, onPickAudio, activeAudioIndex, onPlaybackFailure, reloadKey = 0, onCinemaChange, onVideoReady }: VideoPlayerProps) {
     const videoRef = useRef<HTMLVideoElement>(null);
     const containerRef = useRef<HTMLDivElement>(null);
 
@@ -278,13 +282,19 @@ export default function VideoPlayer({ src, movie, episode, authToken, durationSe
         no-progress stall quickly and ask the parent to resolve a fresh session. */
     const STALL_TIMEOUT_MS = 20000;
     const armStallTimer = () => {
-        if (stallTimerRef.current) return;
+        // This is a rolling deadline, not a one-shot "waiting" alarm. Browsers
+        // can report playing/canplay and keep readyState > 0 while currentTime
+        // is frozen, so progress itself must keep renewing the watchdog.
+        if (stallTimerRef.current) clearTimeout(stallTimerRef.current);
         lastProgressRef.current = videoRef.current?.currentTime ?? 0;
         stallTimerRef.current = setTimeout(() => {
             stallTimerRef.current = undefined;
             const video = videoRef.current;
             if (video && !video.paused && !video.ended) {
-                if (video.currentTime > lastProgressRef.current + 0.25) return;
+                if (video.currentTime > lastProgressRef.current + 0.25) {
+                    armStallTimer();
+                    return;
+                }
                 setIsLoading(false);
                 const reason = 'Luồng phát không tiến triển trong 20 giây.';
                 if (onPlaybackFailure) onPlaybackFailure(reason);
@@ -771,7 +781,7 @@ export default function VideoPlayer({ src, movie, episode, authToken, durationSe
                 hlsRef.current = null;
             }
         };
-    }, [src, movie.slug, episode.slug, authToken, retryKey, onPlaybackFailure]);
+    }, [src, movie.slug, episode.slug, authToken, retryKey, reloadKey, onPlaybackFailure]);
 
     // History Saver
     useEffect(() => {
@@ -847,7 +857,9 @@ export default function VideoPlayer({ src, movie, episode, authToken, durationSe
 
         const handleTimeUpdate = () => {
             if (video.paused) setCurrentTime(video.currentTime);
-            if (video.currentTime > lastProgressRef.current + 0.25) clearStallTimer();
+            if (video.currentTime > lastProgressRef.current + 0.25) {
+                armStallTimer();
+            }
             if (video.buffered.length > 0) {
                 const bufferedEnd = video.buffered.end(video.buffered.length - 1);
                 const duration = video.duration;
@@ -858,7 +870,10 @@ export default function VideoPlayer({ src, movie, episode, authToken, durationSe
         };
 
         const handleDurationChange = () => setDuration(durationSeconds || video.duration);
-        const handlePlay = () => setIsPlaying(true);
+        const handlePlay = () => {
+            setIsPlaying(true);
+            armStallTimer();
+        };
         const handlePause = () => {
             clearStallTimer();
             setIsPlaying(false);
@@ -872,7 +887,7 @@ export default function VideoPlayer({ src, movie, episode, authToken, durationSe
             }, 600);
         };
         const handlePlaying = () => {
-            clearStallTimer();
+            armStallTimer();
             if (loadingTimeoutRef.current) {
                 clearTimeout(loadingTimeoutRef.current);
                 loadingTimeoutRef.current = undefined;
@@ -880,7 +895,7 @@ export default function VideoPlayer({ src, movie, episode, authToken, durationSe
             setIsLoading(false);
         };
         const handleCanPlay = () => {
-            clearStallTimer();
+            armStallTimer();
             if (loadingTimeoutRef.current) {
                 clearTimeout(loadingTimeoutRef.current);
                 loadingTimeoutRef.current = undefined;

@@ -1,0 +1,495 @@
+<!DOCTYPE html>
+
+<html class="dark" lang="vi"><head>
+<meta charset="utf-8"/>
+<meta content="width=device-width, initial-scale=1.0" name="viewport"/>
+<title>CineStream - Đăng Nhập &amp; Đăng Ký Hội Viên Điện Ảnh</title>
+<!-- Material Symbols Outlined -->
+<link href="https://fonts.googleapis.com/css2?family=Material+Symbols+Outlined:wght,FILL@100..700,0..1&amp;display=swap" rel="stylesheet"/>
+<!-- Google Fonts: Syne, Plus Jakarta Sans, Space Grotesk -->
+<link href="https://fonts.googleapis.com" rel="preconnect"/>
+<link crossorigin="" href="https://fonts.gstatic.com" rel="preconnect"/>
+<link href="https://fonts.googleapis.com/css2?family=Plus+Jakarta+Sans:wght@300;400;500;600;700;800&amp;family=Space+Grotesk:wght@400;500;600;700&amp;family=Syne:wght@700;800&amp;display=swap" rel="stylesheet"/>
+<link href="https://fonts.googleapis.com/css2?family=Material+Symbols+Outlined:wght,FILL@100..700,0..1&amp;display=swap" rel="stylesheet"/>
+<!-- Tailwind CSS CDN -->
+<script src="https://cdn.tailwindcss.com?plugins=forms,container-queries"></script>
+<!-- Tailwind Theme Config -->
+<script id="tailwind-config">
+    tailwind.config = {
+      darkMode: "class",
+      theme: {
+        extend: {
+          "colors": {
+            "tertiary-fixed-dim": "#4cd7f6",
+            "secondary-fixed-dim": "#ffb3b6",
+            "primary-container": "#f59e0b",
+            "error-container": "#93000a",
+            "tertiary-fixed": "#acedff",
+            "on-surface": "#e3e2e6",
+            "secondary-fixed": "#ffdada",
+            "primary-fixed-dim": "#ffb95f",
+            "on-secondary-fixed": "#40000c",
+            "surface": "#121316",
+            "surface-tint": "#ffb95f",
+            "on-primary-fixed": "#2a1700",
+            "tertiary": "#54ddfc",
+            "on-primary": "#472a00",
+            "secondary": "#ffb3b6",
+            "inverse-surface": "#e3e2e6",
+            "on-surface-variant": "#d8c3ad",
+            "surface-container-highest": "#343538",
+            "on-primary-container": "#613b00",
+            "on-error": "#690005",
+            "inverse-primary": "#855300",
+            "on-secondary-fixed-variant": "#920028",
+            "surface-variant": "#343538",
+            "surface-container-high": "#292a2d",
+            "surface-dim": "#121316",
+            "tertiary-container": "#29c1df",
+            "surface-bright": "#38393d",
+            "on-error-container": "#ffdad6",
+            "primary": "#ffc174",
+            "on-tertiary-fixed-variant": "#004e5c",
+            "on-tertiary": "#003640",
+            "on-secondary-container": "#ffdcdc",
+            "surface-container-lowest": "#0d0e11",
+            "outline-variant": "#534434",
+            "on-tertiary-container": "#004b58",
+            "outline": "#a08e7a",
+            "on-background": "#e3e2e6",
+            "on-primary-fixed-variant": "#653e00",
+            "error": "#ffb4ab",
+            "surface-container": "#1f1f23",
+            "inverse-on-surface": "#2f3034",
+            "secondary-container": "#cc003c",
+            "primary-fixed": "#ffddb8",
+            "on-tertiary-fixed": "#001f26",
+            "surface-container-low": "#1b1b1f",
+            "on-secondary": "#68001a",
+            "background": "#121316"
+          },
+          "borderRadius": {
+            "DEFAULT": "0.25rem",
+            "lg": "0.5rem",
+            "xl": "0.75rem",
+            "full": "9999px"
+          },
+          "spacing": {
+            "space-xl": "2rem",
+            "space-md": "1rem",
+            "space-xs": "0.5rem",
+            "margin-tablet": "2rem",
+            "space-2xl": "3rem",
+            "space-lg": "1.5rem",
+            "gutter-sm": "0.75rem",
+            "space-sm": "0.75rem",
+            "margin": "1.25rem",
+            "gutter-lg": "1.5rem",
+            "margin-mobile": "1rem",
+            "space-2xs": "0.25rem",
+            "gutter": "1rem"
+          },
+          "fontFamily": {
+            "body-lg": ["Plus Jakarta Sans", "sans-serif"],
+            "display-hero-mobile": ["Syne", "sans-serif"],
+            "display-hero": ["Syne", "sans-serif"],
+            "body-sm": ["Plus Jakarta Sans", "sans-serif"],
+            "badge-numeric": ["Space Grotesk", "sans-serif"],
+            "label-md": ["Space Grotesk", "sans-serif"],
+            "headline-sm": ["Plus Jakarta Sans", "sans-serif"],
+            "headline-md": ["Plus Jakarta Sans", "sans-serif"],
+            "headline-xl-mobile": ["Syne", "sans-serif"],
+            "headline-xl": ["Syne", "sans-serif"],
+            "label-lg": ["Space Grotesk", "sans-serif"],
+            "headline-lg": ["Syne", "sans-serif"],
+            "body-md": ["Plus Jakarta Sans", "sans-serif"],
+            "label-sm": ["Space Grotesk", "sans-serif"]
+          },
+          "fontSize": {
+            "body-lg": ["16px", { "lineHeight": "24px", "letterSpacing": "0em", "fontWeight": "400" }],
+            "display-hero-mobile": ["36px", { "lineHeight": "42px", "letterSpacing": "-0.02em", "fontWeight": "800" }],
+            "display-hero": ["52px", { "lineHeight": "58px", "letterSpacing": "-0.03em", "fontWeight": "800" }],
+            "body-sm": ["12px", { "lineHeight": "16px", "letterSpacing": "0.01em", "fontWeight": "400" }],
+            "badge-numeric": ["13px", { "lineHeight": "14px", "letterSpacing": "0.02em", "fontWeight": "700" }],
+            "label-md": ["12px", { "lineHeight": "16px", "letterSpacing": "0.06em", "fontWeight": "600" }],
+            "headline-sm": ["18px", { "lineHeight": "24px", "letterSpacing": "0em", "fontWeight": "600" }],
+            "headline-md": ["20px", { "lineHeight": "26px", "letterSpacing": "-0.01em", "fontWeight": "700" }],
+            "headline-xl-mobile": ["26px", { "lineHeight": "32px", "letterSpacing": "-0.01em", "fontWeight": "700" }],
+            "headline-xl": ["32px", { "lineHeight": "38px", "letterSpacing": "-0.02em", "fontWeight": "700" }],
+            "label-lg": ["14px", { "lineHeight": "18px", "letterSpacing": "0.04em", "fontWeight": "600" }],
+            "headline-lg": ["24px", { "lineHeight": "30px", "letterSpacing": "-0.01em", "fontWeight": "700" }],
+            "body-md": ["14px", { "lineHeight": "20px", "letterSpacing": "0em", "fontWeight": "400" }],
+            "label-sm": ["10px", { "lineHeight": "12px", "letterSpacing": "0.08em", "fontWeight": "700" }]
+          }
+        }
+      }
+    }
+  </script>
+<style>
+    .material-symbols-outlined {
+      font-variation-settings: 'FILL' 0, 'wght' 400, 'GRAD' 0, 'opsz' 24;
+      display: inline-block;
+      vertical-align: middle;
+      line-height: 1;
+    }
+    
+    /* Cinematic Star Dust Particles */
+    .stardust {
+      background-image: 
+        radial-gradient(1.5px 1.5px at 20px 30px, #ffc174, rgba(0,0,0,0)),
+        radial-gradient(1px 1px at 70px 140px, #54ddfc, rgba(0,0,0,0)),
+        radial-gradient(1.5px 1.5px at 150px 80px, #ffffff, rgba(0,0,0,0)),
+        radial-gradient(2px 2px at 240px 190px, #f59e0b, rgba(0,0,0,0)),
+        radial-gradient(1px 1px at 310px 120px, #cc003c, rgba(0,0,0,0)),
+        radial-gradient(1.5px 1.5px at 390px 240px, #acedff, rgba(0,0,0,0));
+      background-repeat: repeat;
+      background-size: 420px 300px;
+    }
+
+    /* Subtle Glass Card Specular Lighting */
+    .glass-specular-card {
+      background: rgba(27, 27, 31, 0.65);
+      backdrop-filter: blur(28px);
+      -webkit-backdrop-filter: blur(28px);
+      border: 1px solid rgba(255, 255, 255, 0.12);
+      border-top: 1px solid rgba(255, 255, 255, 0.22);
+      box-shadow: 
+        0 24px 60px -12px rgba(0, 0, 0, 0.85),
+        0 0 35px -5px rgba(245, 158, 11, 0.18),
+        inset 0 1px 0 rgba(255, 255, 255, 0.15);
+    }
+
+    /* Ambient Aurora Glow Field */
+    .aurora-gradient {
+      background: radial-gradient(circle at 15% 35%, rgba(245, 158, 11, 0.22) 0%, transparent 50%),
+                  radial-gradient(circle at 85% 65%, rgba(84, 221, 252, 0.14) 0%, transparent 45%),
+                  radial-gradient(circle at 50% 80%, rgba(204, 0, 60, 0.12) 0%, transparent 40%);
+    }
+
+    /* Hide standard scrollbars */
+    ::-webkit-scrollbar {
+      width: 6px;
+      height: 6px;
+    }
+    ::-webkit-scrollbar-track {
+      background: #0d0e11;
+    }
+    ::-webkit-scrollbar-thumb {
+      background: #343538;
+      border-radius: 9999px;
+    }
+  </style>
+</head>
+<body class="bg-surface-container-lowest text-on-surface font-body-md antialiased min-h-screen relative overflow-x-hidden selection:bg-primary selection:text-on-primary-container">
+<!-- Ambient Full Canvas Aurora & Cosmic Grain -->
+<div class="fixed inset-0 pointer-events-none z-0 aurora-gradient"></div>
+<div class="fixed inset-0 pointer-events-none z-0 opacity-40 stardust"></div>
+<!-- Top Minimal Floating Header (Nav Suppression Context: Task-Focused Linear Screen, Brand Anchor Preserved) -->
+<header class="fixed top-0 left-0 right-0 z-40 px-8 py-5 flex items-center justify-between max-w-[1440px] mx-auto">
+<div class="flex items-center gap-3">
+<a class="flex items-center gap-2 group" href="#">
+<div class="w-9 h-9 rounded-xl bg-gradient-to-tr from-primary-container to-primary flex items-center justify-center shadow-[0_0_20px_rgba(245,158,11,0.5)]">
+<span class="material-symbols-outlined text-on-primary-container" style="font-variation-settings: 'FILL' 1;">movie_filter</span>
+</div>
+<span class="font-headline-md text-headline-md font-extrabold tracking-tight text-primary uppercase">CineStream</span>
+</a>
+<span class="px-2.5 py-0.5 rounded-full bg-surface-container-high/80 border border-outline-variant/30 text-tertiary font-label-sm text-label-sm tracking-widest">SPATIAL 3D CINEMA</span>
+</div>
+<!-- Quick Back to Catalog -->
+<a class="flex items-center gap-1.5 text-on-surface-variant hover:text-primary transition-colors text-label-md font-label-md" href="#">
+<span class="material-symbols-outlined text-[18px]">arrow_back</span>
+<span>Quay lại trang chủ</span>
+</a>
+</header>
+<!-- Main 1440px Symmetrical 2-Column Cinematic Layout -->
+<main class="relative z-10 w-full min-h-screen flex items-center justify-center pt-20 pb-12 px-6 lg:px-12">
+<div class="w-full max-w-[1400px] mx-auto grid grid-cols-1 lg:grid-cols-12 gap-8 lg:gap-12 items-center">
+<!-- ========================================================================= -->
+<!-- COLUMN 1: CINEMATIC AMBIANCE & IMMERSIVE BRANDING (Col Span 6 / 7)      -->
+<!-- ========================================================================= -->
+<div class="lg:col-span-6 xl:col-span-7 flex flex-col justify-center relative rounded-3xl overflow-hidden min-h-[660px] lg:min-h-[720px] p-8 lg:p-12">
+<!-- Desert Arrakis Cinematic Backdrop with Deep OLED Fade -->
+<div class="absolute inset-0 z-0 overflow-hidden">
+<img alt="Cinematic Arrakis Desert Landscape" class="w-full h-full object-cover object-center scale-105 transform hover:scale-100 transition-transform duration-1000 ease-out brightness-90 contrast-110" src="https://lh3.googleusercontent.com/aida/AEtjO1WLfSUwkM5b1daO5vTTZZyKOdGV5UcLPgz7578FDUD21rrkdgth0mcNFPxxXsTJhSQS3GvdwhynjHOx_xaDkgOyphli14Hmckhp755sEbCr8HZpIzg_YHCBx0sZQKZ0RRqAD28oXpW-mN0t5wQFH_GdNu0E142uqaX5HCP0YHnZxqAyxMqo7npt85oIO5zaq7eJS5lXKHrNLbkUjAUiLJNnLXiIvk9TrKE8MW_nJ2Qj5Ds2_9ignu0EtHc"/>
+<!-- Vignette Gradients: Vertical and Horizontal to Melt into Dark Canvas -->
+<div class="absolute inset-0 bg-gradient-to-t from-surface-container-lowest via-surface-container-lowest/80 to-transparent"></div>
+<div class="absolute inset-0 bg-gradient-to-r from-surface-container-lowest/90 via-surface-container-lowest/40 to-surface-container-lowest/90"></div>
+<div class="absolute inset-0 bg-[radial-gradient(ellipse_at_center,transparent_0%,#0d0e11_95%)]"></div>
+<!-- Atmospheric Cinematic Colored Sheen -->
+<div class="absolute top-1/4 -left-10 w-72 h-72 rounded-full bg-primary-container/20 blur-[90px] pointer-events-none"></div>
+<div class="absolute bottom-10 right-10 w-80 h-80 rounded-full bg-tertiary/15 blur-[100px] pointer-events-none"></div>
+<div class="absolute top-20 right-1/3 w-60 h-60 rounded-full bg-secondary-container/15 blur-[90px] pointer-events-none"></div>
+</div>
+<!-- Foreground Content Layer -->
+<div class="relative z-10 flex flex-col max-w-xl space-y-6">
+<!-- Cinema Technology Pill Group -->
+<div class="flex flex-wrap items-center gap-2">
+<span class="inline-flex items-center gap-1 px-3 py-1 rounded-full bg-surface-container-lowest/70 backdrop-blur-md border border-primary/40 text-primary font-label-sm text-label-sm tracking-widest shadow-[0_0_12px_rgba(245,158,11,0.25)]">
+<span class="material-symbols-outlined text-[14px]" style="font-variation-settings: 'FILL' 1;">theater_comedy</span>
+              IMAX® 70MM ENHANCED
+            </span>
+<span class="inline-flex items-center gap-1 px-3 py-1 rounded-full bg-surface-container-lowest/70 backdrop-blur-md border border-tertiary/30 text-tertiary font-label-sm text-label-sm tracking-widest">
+<span class="material-symbols-outlined text-[14px]">graphic_eq</span>
+              DOLBY ATMOS 9.1.4
+            </span>
+<span class="inline-flex items-center px-2.5 py-1 rounded-full bg-surface-container-lowest/70 backdrop-blur-md border border-white/10 text-on-surface-variant font-label-sm text-label-sm tracking-widest">
+              DOLBY VISION HDR
+            </span>
+</div>
+<!-- Hero Theatrical Slogan -->
+<div class="space-y-3">
+<h1 class="font-display-hero text-display-hero text-on-surface font-extrabold tracking-tight leading-tight">
+              ĐẮM CHÌM TRONG KHÔNG GIAN <br/>
+<span class="text-transparent bg-clip-text bg-gradient-to-r from-primary via-primary-container to-tertiary drop-shadow-[0_4px_24px_rgba(245,158,11,0.35)]">
+                ĐIỆN ẢNH VÔ TẬN
+              </span>
+</h1>
+<p class="font-body-lg text-body-lg text-on-surface-variant/90 font-light leading-relaxed">
+              Nền tảng phát trực tuyến chuẩn rạp IMAX 70mm, Dolby Vision và hệ thống tái định vị âm thanh Spatial Audio 3D thế hệ mới đầu tiên tại Việt Nam.
+            </p>
+</div>
+<!-- Three Distinct Frosted Glass Feature Cards -->
+<div class="grid grid-cols-1 gap-3.5 pt-2">
+<!-- Card 1: 4K High-Bitrate -->
+<div class="flex items-start gap-4 p-4 rounded-2xl bg-surface-container-low/60 backdrop-blur-xl border border-white/10 hover:border-primary/40 transition-all duration-300 group hover:translate-x-1 shadow-lg">
+<div class="w-11 h-11 rounded-xl bg-primary/10 border border-primary/30 flex items-center justify-center text-primary group-hover:bg-primary-container group-hover:text-on-primary-container transition-all duration-300 shadow-[0_0_15px_rgba(245,158,11,0.2)]">
+<span class="material-symbols-outlined text-[24px]">movie_filter</span>
+</div>
+<div class="space-y-0.5">
+<div class="flex items-center gap-2">
+<h2 class="font-headline-sm text-headline-sm text-on-surface font-semibold">Thư viện 4K HDR khổng lồ</h2>
+<span class="px-2 py-0.5 rounded bg-primary-container/20 text-primary font-badge-numeric text-[11px] tracking-wider font-bold">120 Mbps</span>
+</div>
+<p class="font-body-sm text-body-sm text-on-surface-variant/80">
+                  Hơn 10,000+ kiệt tác điện ảnh không nén bitrate cao, nguyên bản sắc thái hình ảnh của đạo diễn.
+                </p>
+</div>
+</div>
+<!-- Card 2: Spatial Watch Party -->
+<div class="flex items-start gap-4 p-4 rounded-2xl bg-surface-container-low/60 backdrop-blur-xl border border-white/10 hover:border-tertiary/40 transition-all duration-300 group hover:translate-x-1 shadow-lg">
+<div class="w-11 h-11 rounded-xl bg-tertiary/10 border border-tertiary/30 flex items-center justify-center text-tertiary group-hover:bg-tertiary group-hover:text-on-tertiary transition-all duration-300 shadow-[0_0_15px_rgba(84,221,252,0.2)]">
+<span class="material-symbols-outlined text-[24px]">groups</span>
+</div>
+<div class="space-y-0.5">
+<div class="flex items-center gap-2">
+<h2 class="font-headline-sm text-headline-sm text-on-surface font-semibold">Xem chung cùng bạn bè</h2>
+<span class="px-2 py-0.5 rounded bg-tertiary/20 text-tertiary font-badge-numeric text-[11px] tracking-wider font-bold">SPATIAL VR</span>
+</div>
+<p class="font-body-sm text-body-sm text-on-surface-variant/80">
+                  Phòng chiếu ảo Spatial Watch Party đồng bộ 0ms với công nghệ tương tác âm thanh vòm 3D tự nhiên.
+                </p>
+</div>
+</div>
+<!-- Card 3: 100% Ad-Free -->
+<div class="flex items-start gap-4 p-4 rounded-2xl bg-surface-container-low/60 backdrop-blur-xl border border-white/10 hover:border-secondary/40 transition-all duration-300 group hover:translate-x-1 shadow-lg">
+<div class="w-11 h-11 rounded-xl bg-secondary-container/20 border border-secondary/30 flex items-center justify-center text-secondary group-hover:bg-secondary-container group-hover:text-on-secondary transition-all duration-300 shadow-[0_0_15px_rgba(204,0,60,0.2)]">
+<span class="material-symbols-outlined text-[24px]">verified</span>
+</div>
+<div class="space-y-0.5">
+<div class="flex items-center gap-2">
+<h2 class="font-headline-sm text-headline-sm text-on-surface font-semibold">Không quảng cáo 100%</h2>
+<span class="px-2 py-0.5 rounded bg-secondary-container/30 text-secondary font-label-sm text-[10px] uppercase font-bold tracking-wider">UNINTERRUPTED</span>
+</div>
+<p class="font-body-sm text-body-sm text-on-surface-variant/80">
+                  Trải nghiệm liền mạch, đắm chìm trọn vẹn từng khung hình mà không bị ngắt quãng bất kỳ giây nào.
+                </p>
+</div>
+</div>
+</div>
+<!-- Cinephile Social Proof Badge -->
+<div class="pt-3 flex items-center gap-3">
+<div class="flex -space-x-2.5 overflow-hidden">
+<div class="inline-block h-8 w-8 rounded-full ring-2 ring-surface-container-lowest bg-primary-container flex items-center justify-center font-bold text-xs text-on-primary-container">K</div>
+<div class="inline-block h-8 w-8 rounded-full ring-2 ring-surface-container-lowest bg-tertiary flex items-center justify-center font-bold text-xs text-on-tertiary">M</div>
+<div class="inline-block h-8 w-8 rounded-full ring-2 ring-surface-container-lowest bg-secondary-container flex items-center justify-center font-bold text-xs text-on-secondary">T</div>
+<div class="inline-block h-8 w-8 rounded-full ring-2 ring-surface-container-lowest bg-surface-bright flex items-center justify-center text-on-surface font-badge-numeric text-[11px] font-bold">+1.2M</div>
+</div>
+<div class="flex items-center gap-1.5 text-on-surface-variant font-label-md text-label-md">
+<span class="material-symbols-outlined text-primary text-[18px]" style="font-variation-settings: 'FILL' 1;">stars</span>
+<span>Được tin chọn bởi hơn <strong class="text-on-surface font-semibold">1.2 triệu tín đồ</strong> điện ảnh Cinephile</span>
+</div>
+</div>
+</div>
+</div>
+<!-- ========================================================================= -->
+<!-- COLUMN 2: AUTH FROSTED GLASS FORM CONTAINER (Col Span 6 / 5)            -->
+<!-- ========================================================================= -->
+<div class="lg:col-span-6 xl:col-span-5 flex justify-center">
+<div class="w-full max-w-[490px] glass-specular-card rounded-3xl p-8 sm:p-10 relative z-20">
+<!-- Top Form Anchor Brand / Security Protocol -->
+<div class="flex items-center justify-between pb-6 border-b border-white/10">
+<div class="flex items-center gap-2.5">
+<div class="w-8 h-8 rounded-lg bg-primary-container/20 border border-primary/40 flex items-center justify-center text-primary">
+<span class="material-symbols-outlined text-[20px]">verified_user</span>
+</div>
+<span class="font-label-sm text-label-sm tracking-widest uppercase text-on-surface-variant">XÁC THỰC THÀNH VIÊN CINESTREAM</span>
+</div>
+<span class="px-2 py-0.5 rounded bg-emerald-500/10 border border-emerald-500/30 text-emerald-400 font-label-sm text-[10px] tracking-wider font-bold">256-BIT SSL</span>
+</div>
+<!-- Dual Mode Toggle Tabs: ĐĂNG NHẬP / ĐĂNG KÝ -->
+<div class="grid grid-cols-2 p-1.5 mt-6 rounded-2xl bg-surface-container-lowest/80 border border-white/10 backdrop-blur-md">
+<!-- Active Login Tab -->
+<button class="py-3 text-center rounded-xl bg-gradient-to-r from-primary/20 via-primary-container/20 to-primary/10 border border-primary/40 text-primary font-label-lg text-label-lg font-bold shadow-[0_0_15px_rgba(245,158,11,0.25)] transition-all" id="tab-login" type="button">
+              Đăng Nhập
+            </button>
+<!-- Inactive Register Tab -->
+<button class="py-3 text-center rounded-xl text-on-surface-variant hover:text-on-surface font-label-lg text-label-lg transition-colors" id="tab-register" type="button">
+              Đăng Ký
+            </button>
+</div>
+<!-- Authentication Form Container -->
+<form class="mt-7 space-y-5" id="auth-form" onsubmit="event.preventDefault();">
+<!-- Email Input Field -->
+<div class="space-y-2">
+<label class="block font-label-sm text-label-sm tracking-widest text-on-surface-variant uppercase" for="email">
+                ĐỊA CHỈ EMAIL
+              </label>
+<div class="relative flex items-center rounded-xl bg-surface-container/60 border border-white/10 hover:border-primary/40 focus-within:border-primary focus-within:ring-2 focus-within:ring-primary/20 transition-all duration-200">
+<span class="material-symbols-outlined text-primary pl-4 text-[20px]">mail</span>
+<input class="w-full bg-transparent border-0 text-on-surface font-body-md text-body-md placeholder-on-surface-variant/40 px-3.5 py-3.5 focus:ring-0 focus:outline-none" id="email" name="email" placeholder="tenban@cinestream.vn" required="" type="email"/>
+</div>
+</div>
+<!-- Password Input Field with Interactive Eye Toggle -->
+<div class="space-y-2">
+<div class="flex items-center justify-between">
+<label class="block font-label-sm text-label-sm tracking-widest text-on-surface-variant uppercase" for="password">
+                  MẬT KHẨU
+                </label>
+<span class="font-label-sm text-[11px] text-tertiary/90">YÊU CẦU 8+ KÝ TỰ</span>
+</div>
+<div class="relative flex items-center rounded-xl bg-surface-container/60 border border-white/10 hover:border-primary/40 focus-within:border-primary focus-within:ring-2 focus-within:ring-primary/20 transition-all duration-200">
+<span class="material-symbols-outlined text-primary pl-4 text-[20px]">lock</span>
+<input class="w-full bg-transparent border-0 text-on-surface font-body-md text-body-md placeholder-on-surface-variant/40 px-3.5 py-3.5 focus:ring-0 focus:outline-none tracking-wider" id="password" name="password" placeholder="••••••••••••" required="" type="password"/>
+<button aria-label="Ẩn hoặc hiện mật khẩu" class="pr-4 text-on-surface-variant hover:text-primary transition-colors flex items-center justify-center" id="toggle-password" type="button">
+<span class="material-symbols-outlined text-[20px]" id="eye-icon">visibility</span>
+</button>
+</div>
+</div>
+<!-- Utility Checkbox and Forgot Password Row -->
+<div class="flex items-center justify-between pt-1">
+<label class="flex items-center gap-2.5 cursor-pointer group select-none">
+<div class="relative">
+<input checked="" class="peer sr-only" id="remember-me" type="checkbox"/>
+<div class="w-4 h-4 rounded bg-surface-container border border-white/20 peer-checked:bg-primary-container peer-checked:border-primary transition-colors flex items-center justify-center shadow-sm">
+<span class="material-symbols-outlined text-[14px] text-on-primary-container hidden peer-checked:block font-bold">check</span>
+</div>
+</div>
+<span class="font-body-sm text-body-sm text-on-surface-variant group-hover:text-on-surface transition-colors">
+                  Ghi nhớ tôi trên thiết bị này
+                </span>
+</label>
+<a class="font-label-md text-label-md text-primary hover:text-primary-fixed hover:underline transition-all" href="#">
+                Quên mật khẩu?
+              </a>
+</div>
+<!-- Primary Master CTA: Radiant Amber Glow Button -->
+<button class="w-full py-4 px-6 rounded-xl bg-gradient-to-r from-primary-container to-primary text-on-primary-container font-headline-sm text-headline-sm font-bold tracking-tight uppercase flex items-center justify-center gap-2 shadow-[0_0_25px_rgba(245,158,11,0.45)] hover:shadow-[0_0_40px_rgba(245,158,11,0.7)] hover:scale-[1.01] active:scale-[0.99] transition-all duration-200" type="submit">
+<span class="material-symbols-outlined text-[22px]" style="font-variation-settings: 'FILL' 1;">play_circle</span>
+<span id="btn-submit-text">ĐĂNG NHẬP VÀO CINESTREAM</span>
+</button>
+<!-- Metallic Gradient Divider -->
+<div class="relative flex items-center justify-center py-2">
+<div class="w-full border-t border-white/10"></div>
+<span class="absolute px-4 bg-surface-container-lowest/90 font-label-sm text-label-sm tracking-widest text-on-surface-variant uppercase backdrop-blur-md rounded-full border border-white/5">
+                HOẶC TIẾP TỤC VỚI
+              </span>
+</div>
+<!-- Dual Social Auth Buttons (Google & Apple) -->
+<div class="grid grid-cols-2 gap-3.5">
+<!-- Google Button -->
+<button class="py-3 px-4 rounded-xl bg-surface-container/40 hover:bg-surface-container-high/60 border border-white/10 hover:border-white/20 transition-all flex items-center justify-center gap-2.5 group" type="button">
+<svg class="w-4 h-4" viewbox="0 0 24 24">
+<path d="M12 5c1.6 0 3 .6 4.1 1.6l3.1-3.1C17.3 1.7 14.8 1 12 1 7.4 1 3.5 3.6 1.6 7.4l3.7 2.9C6.2 7.3 8.9 5 12 5z" fill="#EA4335"></path>
+<path d="M23.5 12.3c0-.8-.1-1.6-.2-2.3H12v4.6h6.5c-.3 1.5-1.1 2.8-2.4 3.7l3.7 2.9c2.2-2 3.7-5 3.7-8.9z" fill="#4285F4"></path>
+<path d="M5.3 14.7c-.2-.7-.4-1.5-.4-2.4s.2-1.7.4-2.4L1.6 7c-.8 1.6-1.3 3.4-1.3 5.3s.5 3.7 1.3 5.3l3.7-2.9z" fill="#FBBC05"></path>
+<path d="M12 23c3.2 0 6-1.1 8-3l-3.7-2.9c-1.1.7-2.5 1.2-4.3 1.2-3.1 0-5.8-2.3-6.7-5.3L1.6 16c1.9 3.8 5.8 6.4 10.4 6.4z" fill="#34A853"></path>
+</svg>
+<span class="font-label-lg text-label-lg text-on-surface group-hover:text-primary transition-colors">Google</span>
+</button>
+<!-- Apple Button -->
+<button class="py-3 px-4 rounded-xl bg-surface-container/40 hover:bg-surface-container-high/60 border border-white/10 hover:border-white/20 transition-all flex items-center justify-center gap-2.5 group" type="button">
+<svg class="w-4 h-4 fill-current text-on-surface group-hover:text-primary transition-colors" viewbox="0 0 170 170">
+<path d="M150.37 130.25c-2.45 5.66-5.35 10.87-8.71 15.66-4.58 6.53-8.33 11.05-11.22 13.56-4.48 4.12-9.28 6.23-14.42 6.35-3.69 0-8.14-1.05-13.32-3.18-5.19-2.12-9.97-3.17-14.34-3.17-4.58 0-9.49 1.05-14.74 3.17-5.26 2.13-9.5 3.24-12.74 3.35-4.35.13-9.16-1.9-14.42-6.08-3.69-3.04-7.69-7.86-12-14.47-6.09-9.35-10.8-19.86-14.15-31.54-3.35-11.68-5.03-22.95-5.03-33.81 0-14.36 3.63-26.43 10.88-36.21 7.26-9.78 16.55-14.77 27.87-14.98 5.66 0 11.96 1.54 18.9 4.62 6.94 3.08 11.07 4.67 12.39 4.77 1.8 0 6.28-1.74 13.43-5.22 7.15-3.48 13.43-4.99 18.84-4.52 14.15 1.16 25.13 6.94 32.94 17.34-11.5 6.94-17.15 16.63-16.94 29.07.21 10.15 4.17 18.59 11.88 25.33 7.71 6.74 17.06 10.51 28.05 11.31-2.22 6.94-5.08 14.4-8.58 22.38zM119.22 33.14c0-7.38 2.65-14.39 7.95-21.03 5.3-6.64 12.06-11.01 20.27-13.11-.21 1.06-.32 2.01-.32 2.86 0 7.39-2.81 14.48-8.44 21.27-5.63 6.79-12.57 11.19-20.82 13.2-.1-.85-.15-1.7-.15-2.55z"></path>
+</svg>
+<span class="font-label-lg text-label-lg text-on-surface group-hover:text-primary transition-colors">Apple</span>
+</button>
+</div>
+</form>
+<!-- VIP Member Registration Anchor Callout -->
+<div class="mt-8 pt-6 border-t border-white/10 text-center">
+<p class="font-body-md text-body-md text-on-surface-variant">
+              Chưa có tài khoản CineStream? 
+              <button class="text-primary hover:text-primary-fixed font-semibold underline underline-offset-4 decoration-primary/50 hover:decoration-primary transition-all ml-1 inline-block" id="link-register" type="button">
+                Đăng ký thành viên VIP ngay
+              </button>
+</p>
+</div>
+<!-- Cinema Projection Specular Reflection Rim Light Bottom Decor -->
+<div class="absolute -bottom-px left-12 right-12 h-px bg-gradient-to-r from-transparent via-primary/50 to-transparent"></div>
+</div>
+</div>
+</div>
+</main>
+<!-- ========================================================================= -->
+<!-- PREDICTED SHARED COMPONENT: FOOTER (From Shared Components JSON)          -->
+<!-- ========================================================================= -->
+<footer class="w-full py-8 px-8 flex flex-col md:flex-row justify-between items-center gap-4 max-w-7xl mx-auto border-t border-outline-variant/15 text-body-sm font-body-sm text-on-surface-variant/80 relative z-20">
+<div class="flex items-center gap-3">
+<span class="text-headline-sm font-headline-sm font-bold text-primary">CineStream</span>
+<span class="hidden sm:inline text-outline-variant/40">|</span>
+<p class="text-center md:text-left">
+        © 2025 CineStream Việt Nam. Bảo lưu mọi quyền. Nền tảng điện ảnh và phát trực tuyến thế hệ mới.
+      </p>
+</div>
+<div class="flex flex-wrap justify-center gap-6 text-label-md font-label-md">
+<a class="text-on-surface-variant/80 hover:text-on-surface hover:text-primary transition-colors duration-200" href="#">Điều khoản dịch vụ</a>
+<a class="text-on-surface-variant/80 hover:text-on-surface hover:text-primary transition-colors duration-200" href="#">Chính sách bảo mật</a>
+<a class="text-on-surface-variant/80 hover:text-on-surface hover:text-primary transition-colors duration-200" href="#">Trung tâm trợ giúp</a>
+<a class="text-on-surface-variant/80 hover:text-on-surface hover:text-primary transition-colors duration-200" href="#">Liên hệ hợp tác</a>
+</div>
+</footer>
+<!-- Interactive JavaScript for micro-interactions -->
+<script>
+    document.addEventListener('DOMContentLoaded', () => {
+      // Toggle Password Visibility
+      const passwordInput = document.getElementById('password');
+      const togglePasswordBtn = document.getElementById('toggle-password');
+      const eyeIcon = document.getElementById('eye-icon');
+
+      if (togglePasswordBtn && passwordInput && eyeIcon) {
+        togglePasswordBtn.addEventListener('click', () => {
+          const isPassword = passwordInput.getAttribute('type') === 'password';
+          passwordInput.setAttribute('type', isPassword ? 'text' : 'password');
+          eyeIcon.textContent = isPassword ? 'visibility_off' : 'visibility';
+        });
+      }
+
+      // Toggle Login / Register UI state
+      const tabLogin = document.getElementById('tab-login');
+      const tabRegister = document.getElementById('tab-register');
+      const btnSubmitText = document.getElementById('btn-submit-text');
+      const linkRegister = document.getElementById('link-register');
+
+      function activateLogin() {
+        tabLogin.className = "py-3 text-center rounded-xl bg-gradient-to-r from-primary/20 via-primary-container/20 to-primary/10 border border-primary/40 text-primary font-label-lg text-label-lg font-bold shadow-[0_0_15px_rgba(245,158,11,0.25)] transition-all";
+        tabRegister.className = "py-3 text-center rounded-xl text-on-surface-variant hover:text-on-surface font-label-lg text-label-lg transition-colors";
+        btnSubmitText.textContent = "ĐĂNG NHẬP VÀO CINESTREAM";
+      }
+
+      function activateRegister() {
+        tabRegister.className = "py-3 text-center rounded-xl bg-gradient-to-r from-primary/20 via-primary-container/20 to-primary/10 border border-primary/40 text-primary font-label-lg text-label-lg font-bold shadow-[0_0_15px_rgba(245,158,11,0.25)] transition-all";
+        tabLogin.className = "py-3 text-center rounded-xl text-on-surface-variant hover:text-on-surface font-label-lg text-label-lg transition-colors";
+        btnSubmitText.textContent = "TẠO TÀI KHOẢN VIP CINESTREAM";
+      }
+
+      if (tabLogin && tabRegister && btnSubmitText) {
+        tabLogin.addEventListener('click', activateLogin);
+        tabRegister.addEventListener('click', activateRegister);
+      }
+
+      if (linkRegister) {
+        linkRegister.addEventListener('click', activateRegister);
+      }
+    });
+  </script>
+</body></html>

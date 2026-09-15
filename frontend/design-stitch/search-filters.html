@@ -1,0 +1,368 @@
+<!DOCTYPE html>
+
+<html class="dark" lang="vi"><head><meta charset="utf-8"/><meta content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no, viewport-fit=cover" name="viewport"/><link href="https://fonts.googleapis.com" rel="preconnect"/><link crossorigin="" href="https://fonts.gstatic.com" rel="preconnect"/><link href="https://fonts.googleapis.com/css2?family=Plus+Jakarta+Sans:wght@400;600;700&amp;family=Space+Grotesk:wght@600;700&amp;family=Syne:wght@700;800&amp;display=swap" rel="stylesheet"/><link href="https://fonts.googleapis.com/css2?family=Material+Symbols+Outlined:opsz,wght,FILL,GRAD@20..48,100..700,0..1,-50..200" rel="stylesheet"/>
+<link href="https://fonts.googleapis.com/css2?family=Material+Symbols+Outlined:wght,FILL@100..700,0..1&amp;display=swap" rel="stylesheet"/><script src="https://cdn.tailwindcss.com"></script><script id="tailwind-config">tailwind.config = { darkMode: "class", theme: { extend: { "colors": { "surface-bright": "#38393d", "background": "#121316", "on-primary-container": "#613b00", "error": "#ffb4ab", "on-tertiary": "#003640", "on-secondary-container": "#ffdcdc", "on-surface": "#e3e2e6", "secondary-fixed": "#ffdada", "surface-container-highest": "#343538", "surface-container-lowest": "#0d0e11", "surface-variant": "#343538", "primary-fixed-dim": "#ffb95f", "on-secondary": "#68001a", "inverse-surface": "#e3e2e6", "on-secondary-fixed": "#40000c", "error-container": "#93000a", "on-error-container": "#ffdad6", "tertiary-fixed": "#acedff", "secondary": "#ffb3b6", "inverse-primary": "#855300", "on-background": "#e3e2e6", "surface-container-low": "#1b1b1f", "on-secondary-fixed-variant": "#920028", "surface-container-high": "#292a2d", "primary-fixed": "#ffddb8", "secondary-container": "#cc003c", "surface": "#121316", "on-tertiary-fixed-variant": "#004e5c", "outline-variant": "#534434", "tertiary-container": "#29c1df", "surface-dim": "#121316", "on-primary-fixed": "#2a1700", "on-surface-variant": "#d8c3ad", "primary": "#ffc174", "outline": "#a08e7a", "inverse-on-surface": "#2f3034", "tertiary-fixed-dim": "#4cd7f6", "on-error": "#690005", "tertiary": "#54ddfc", "on-tertiary-container": "#004b58", "primary-container": "#f59e0b", "surface-container": "#1f1f23", "secondary-fixed-dim": "#ffb3b6", "surface-tint": "#ffb95f", "on-primary-fixed-variant": "#653e00", "on-tertiary-fixed": "#001f26", "on-primary": "#472a00" }, "borderRadius": { "DEFAULT": "0.25rem", "lg": "0.5rem", "xl": "0.75rem", "full": "9999px" }, "spacing": { "space-lg": "1.5rem", "gutter-lg": "1.5rem", "space-2xl": "3rem", "space-xl": "2rem", "margin-tablet": "2rem", "gutter": "1rem", "space-2xs": "0.25rem", "space-md": "1rem", "space-xs": "0.5rem", "gutter-sm": "0.75rem", "margin": "1.25rem", "space-sm": "0.75rem", "margin-mobile": "1rem" }, "fontFamily": { "headline-sm": ["Plus Jakarta Sans"], "headline-lg": ["Syne"], "body-md": ["Plus Jakarta Sans"], "body-sm": ["Plus Jakarta Sans"], "display-hero-mobile": ["Syne"], "headline-xl": ["Syne"], "label-md": ["Space Grotesk"], "label-sm": ["Space Grotesk"], "headline-xl-mobile": ["Syne"], "badge-numeric": ["Space Grotesk"], "display-hero": ["Syne"], "body-lg": ["Plus Jakarta Sans"], "headline-md": ["Plus Jakarta Sans"], "label-lg": ["Space Grotesk"] }, "fontSize": { "headline-sm": ["18px", { "lineHeight": "24px", "letterSpacing": "0em", "fontWeight": "600" }], "headline-lg": ["24px", { "lineHeight": "30px", "letterSpacing": "-0.01em", "fontWeight": "700" }], "body-md": ["14px", { "lineHeight": "20px", "letterSpacing": "0em", "fontWeight": "400" }], "body-sm": ["12px", { "lineHeight": "16px", "letterSpacing": "0.01em", "fontWeight": "400" }], "display-hero-mobile": ["36px", { "lineHeight": "42px", "letterSpacing": "-0.02em", "fontWeight": "800" }], "headline-xl": ["32px", { "lineHeight": "38px", "letterSpacing": "-0.02em", "fontWeight": "700" }], "label-md": ["12px", { "lineHeight": "16px", "letterSpacing": "0.06em", "fontWeight": "600" }], "label-sm": ["10px", { "lineHeight": "12px", "letterSpacing": "0.08em", "fontWeight": "700" }], "headline-xl-mobile": ["26px", { "lineHeight": "32px", "letterSpacing": "-0.01em", "fontWeight": "700" }], "badge-numeric": ["13px", { "lineHeight": "14px", "letterSpacing": "0.02em", "fontWeight": "700" }], "display-hero": ["52px", { "lineHeight": "58px", "letterSpacing": "-0.03em", "fontWeight": "800" }], "body-lg": ["16px", { "lineHeight": "24px", "letterSpacing": "0em", "fontWeight": "400" }], "headline-md": ["20px", { "lineHeight": "26px", "letterSpacing": "-0.01em", "fontWeight": "700" }], "label-lg": ["14px", { "lineHeight": "18px", "letterSpacing": "0.04em", "fontWeight": "600" }] } } } }</script><style>@layer base{html,body{width:100%;margin:0;padding:0;}body{overscroll-behavior-y:none;}.pb-safe{padding-bottom:env(safe-area-inset-bottom,0px);}.pt-safe{padding-top:env(safe-area-inset-top,0px);}main>:first-child{margin-top:0!important;}main>:last-child{margin-bottom:0!important;}}::-webkit-scrollbar{display:none;}</style><style>
+    body {
+      min-height: max(884px, 100dvh);
+    }
+  </style>
+  </head><body class="bg-surface text-on-surface font-body-md text-body-md flex flex-col min-h-screen"><header class="fixed top-0 w-full z-50 pt-safe bg-surface/80 backdrop-blur-xl shadow-[0_4px_20px_rgba(0,0,0,0.4)]"><div class="h-16 px-margin flex items-center justify-between gap-space-sm"><div class="flex items-center gap-space-sm"><img alt="Brand logo. - Primary color: #f59e0b
+- Font: syne
+- Mode: dark
+- Roundness: rounded-md
+" class="h-8 w-auto object-contain" src="https://lh3.googleusercontent.com/aida/AEtjO1X7fxMzztb60EUwsJeiJMPgXTtXsaCe82s698s7mF2XTd-mvsVc_Vrjj7pdQ2MsqwhjjdwoIbRLNJPdpx0uk_SHrMfTMD-l4-cWVjeKq8sIfFVR8bVTFyifye6bARFLb2iwOKigDCqmvf6c7FrwXiAVVsZEEgiaLm0F_dg9hb6rJP3hkCarYdZwrmxHQqiqUE4T1aQQj-ELFp3RSo0H9jD76rMhCXWm6icKe_Czj3MOlE0K2nB9LxdsGq0"/><span class="font-headline-lg text-headline-lg tracking-tight text-on-surface">CineStream</span></div><div class="flex items-center gap-space-2xs"><button aria-label="Search" class="w-11 h-11 flex items-center justify-center rounded-full text-on-surface-variant hover:text-primary transition-colors"><span class="material-symbols-outlined text-[24px]">search</span></button><button aria-label="Notifications" class="w-11 h-11 flex items-center justify-center rounded-full text-on-surface-variant hover:text-primary transition-colors relative"><span class="material-symbols-outlined text-[24px]">notifications</span><span class="absolute top-2.5 right-2.5 w-2 h-2 rounded-full bg-primary-container ring-2 ring-surface"></span></button><div class="w-8 h-8 rounded-full bg-primary flex items-center justify-center ml-space-2xs"><span class="material-symbols-outlined text-on-primary text-[18px]">person</span></div></div></div></header><main class="flex flex-col relative w-full pt-16 pb-28 bg-surface"><div class="flex flex-col w-full text-on-surface">
+<!-- Dynamic Ambient Backlight Atmosphere -->
+<div class="fixed inset-x-0 top-16 h-80 bg-gradient-to-b from-primary-container/15 via-primary-container/5 to-transparent pointer-events-none -z-10 blur-3xl"></div>
+<!-- Search Hero Command Bar -->
+<section class="px-margin pt-space-xs pb-space-sm flex flex-col gap-space-xs">
+<div class="relative w-full flex items-center group">
+<!-- Glow Underlay -->
+<div class="absolute -inset-0.5 bg-gradient-to-r from-primary-container/40 via-tertiary-container/20 to-primary/30 rounded-full blur-md opacity-75 group-focus-within:opacity-100 transition-opacity"></div>
+<!-- Input Wrapper -->
+<div class="relative w-full flex items-center bg-surface-container-low/90 backdrop-blur-2xl rounded-full px-space-md py-space-xs shadow-xl">
+<span class="material-symbols-outlined text-primary text-[22px] mr-space-xs">search</span>
+<input class="w-full bg-transparent font-body-md text-body-md text-on-surface placeholder:text-outline focus:outline-none tracking-normal" id="cinemaSearchInput" placeholder="Tìm tên phim, diễn viên, đạo diễn Denis..." type="text" value="Dune: Part Two"/>
+<div class="flex items-center gap-space-2xs ml-space-xs">
+<!-- Voice Recognition Button -->
+<button aria-label="Tìm kiếm giọng nói" class="w-9 h-9 rounded-full bg-surface-container-highest/60 hover:bg-primary/20 flex items-center justify-center text-on-surface transition-all active:scale-95" type="button">
+<span class="material-symbols-outlined text-[18px]">mic</span>
+</button>
+<!-- Sound Signature / Shazam Feature -->
+<button aria-label="Nhận diện âm thanh phim" class="w-9 h-9 rounded-full bg-primary-container text-on-primary-container flex items-center justify-center shadow-[0_0_12px_rgba(245,158,11,0.5)] transition-all active:scale-90" type="button">
+<span class="material-symbols-outlined text-[18px]">graphic_eq</span>
+</button>
+</div>
+</div>
+</div>
+<!-- Live Dynamic Query Counter -->
+<div class="flex items-center justify-between px-space-2xs text-on-surface-variant">
+<div class="flex items-center gap-space-2xs">
+<span class="w-1.5 h-1.5 rounded-full bg-primary-container animate-ping"></span>
+<span class="font-label-sm text-label-sm uppercase tracking-wider text-primary">Bộ lọc điện ảnh đang kích hoạt</span>
+</div>
+<span class="font-label-sm text-label-sm">42 Kết quả tìm thấy</span>
+</div>
+</section>
+<!-- Cinema Technology Format Badges Carousel -->
+<section class="w-full pb-space-sm">
+<div class="flex items-center gap-space-xs overflow-x-auto px-margin scrollbar-none snap-x">
+<!-- Tag: All -->
+<button class="shrink-0 snap-start px-space-md py-space-2xs rounded-full bg-primary text-on-primary font-label-md text-label-md uppercase tracking-wider shadow-[0_4px_16px_rgba(245,158,11,0.3)] transition-all">
+        Tất cả
+      </button>
+<!-- Tag: IMAX 70MM -->
+<button class="shrink-0 snap-start flex items-center gap-1.5 px-space-md py-space-2xs rounded-full bg-surface-container-high/80 backdrop-blur-md text-on-surface hover:bg-surface-container-highest font-label-md text-label-md tracking-wider transition-all">
+<span class="material-symbols-outlined text-[15px] text-primary">camera_roll</span>
+<span>IMAX 70MM</span>
+</button>
+<!-- Tag: Dolby Atmos 9.1 -->
+<button class="shrink-0 snap-start flex items-center gap-1.5 px-space-md py-space-2xs rounded-full bg-surface-container-high/80 backdrop-blur-md text-on-surface hover:bg-surface-container-highest font-label-md text-label-md tracking-wider transition-all">
+<span class="material-symbols-outlined text-[15px] text-tertiary">surround_sound</span>
+<span>Dolby Vision • Atmos</span>
+</button>
+<!-- Tag: Spatial 3D -->
+<button class="shrink-0 snap-start flex items-center gap-1.5 px-space-md py-space-2xs rounded-full bg-surface-container-high/80 backdrop-blur-md text-on-surface hover:bg-surface-container-highest font-label-md text-label-md tracking-wider transition-all">
+<span class="material-symbols-outlined text-[15px] text-secondary">view_in_ar</span>
+<span>Spatial 3D VisionOS</span>
+</button>
+<!-- Tag: 4K UHD HDR -->
+<button class="shrink-0 snap-start flex items-center gap-1.5 px-space-md py-space-2xs rounded-full bg-surface-container-high/80 backdrop-blur-md text-on-surface hover:bg-surface-container-highest font-label-md text-label-md tracking-wider transition-all">
+<span class="material-symbols-outlined text-[15px] text-primary-fixed-dim">hdr_on</span>
+<span>4K UHD HDR</span>
+</button>
+<!-- Tag: 60FPS -->
+<button class="shrink-0 snap-start flex items-center gap-1.5 px-space-md py-space-2xs rounded-full bg-surface-container-high/80 backdrop-blur-md text-on-surface hover:bg-surface-container-highest font-label-md text-label-md tracking-wider transition-all">
+<span class="material-symbols-outlined text-[15px] text-on-surface-variant">motion_mode</span>
+<span>60 FPS High-Frame</span>
+</button>
+</div>
+</section>
+<!-- Featured Theatrical Spotlight (Dune Style Cinematic Card) -->
+<section class="px-margin mb-space-lg">
+<div class="relative w-full rounded-2xl overflow-hidden bg-surface-container shadow-[0_16px_36px_rgba(0,0,0,0.7)] group">
+<!-- Backdrop Key Visual -->
+<div class="w-full h-56 bg-cover bg-center transition-transform duration-700 group-hover:scale-105" data-alt="An expansive dramatic cinematic landscape of the desert planet Arrakis at twilight sunset, golden orange sand dunes rolling infinitely, an ornithopter flying towards the double moons with warm amber theatrical lighting in 70mm film grain." style="background-image: url('https://lh3.googleusercontent.com/aida-public/AB6AXuDtoJTAaXRvwJR-McBHFCwdRe3dq6aLpBZwkIuJtyiaFKPr7efWquDQ7P6GCcpTcXG7KwHIC63qiOExWabNQsl0BGvJg0RkVleRrdW4YZS333f7BmNW22JZ5UBUezoKJnrcMGQMS0Jke4LZ5KKdT9fCheuzpejQkSslT8WIJxE436cakBItAHGQYwpkWtKerUYWS7dBVU1Xl8AMszln2iqmHBrXxHISd7ElxqrysGV4Id8BilZegrSq')"></div>
+<!-- Gradient Scrims -->
+<div class="absolute inset-0 bg-gradient-to-t from-surface-container-lowest via-surface-container-lowest/60 to-transparent"></div>
+<div class="absolute inset-0 bg-gradient-to-r from-surface-container-lowest/90 via-transparent to-transparent"></div>
+<!-- Content Layer -->
+<div class="absolute inset-0 p-space-md flex flex-col justify-end">
+<div class="flex items-center gap-space-xs mb-space-2xs">
+<span class="px-space-xs py-0.5 rounded-full bg-primary-container text-on-primary-container font-label-sm text-label-sm uppercase tracking-widest font-bold">
+            Tiêu Điểm Trực Tuyến
+          </span>
+<span class="flex items-center gap-1 px-space-xs py-0.5 rounded-full bg-surface-bright/70 backdrop-blur-md font-badge-numeric text-badge-numeric text-primary">
+<span class="material-symbols-outlined text-[13px]" style="font-variation-settings: 'FILL' 1;">star</span> 9.2 IMDb
+          </span>
+<span class="font-label-sm text-label-sm text-on-surface-variant">IMAX 70MM Laser</span>
+</div>
+<h2 class="font-headline-xl-mobile text-headline-xl-mobile text-on-surface tracking-tight leading-tight mb-1 font-bold drop-shadow-md">
+          Dune: Hành Tinh Cát - Phần 2
+        </h2>
+<p class="font-body-sm text-body-sm text-on-surface-variant line-clamp-2 max-w-[90%] mb-space-sm">
+          Hành trình thần thánh của Paul Atreides khi hợp nhất cùng Chani và tộc Fremen để đòi lại công lý cho gia tộc trên hoang mạc Arrakis.
+        </p>
+<!-- Action Row -->
+<div class="flex items-center gap-space-xs">
+<button class="flex-1 flex items-center justify-center gap-space-2xs py-2.5 px-space-md rounded-xl bg-primary-container text-on-primary-container font-label-lg text-label-lg uppercase tracking-wider font-bold shadow-[0_4px_20px_rgba(245,158,11,0.4)] active:scale-98 transition-all">
+<span class="material-symbols-outlined text-[20px]" style="font-variation-settings: 'FILL' 1;">play_arrow</span>
+<span>Xem Ngay</span>
+</button>
+<button aria-label="Đặt vé rạp" class="flex items-center justify-center gap-space-2xs py-2.5 px-space-md rounded-xl bg-surface-container-highest/80 backdrop-blur-xl text-on-surface font-label-lg text-label-lg active:scale-98 transition-all">
+<span class="material-symbols-outlined text-[20px]">confirmation_number</span>
+<span class="font-label-md text-label-md">Đặt Vé Rạp</span>
+</button>
+<button aria-label="Thêm vào danh sách yêu thích" class="w-11 h-11 flex items-center justify-center rounded-xl bg-surface-container-highest/80 backdrop-blur-xl text-on-surface hover:text-primary active:scale-95 transition-all">
+<span class="material-symbols-outlined text-[20px]">bookmark</span>
+</button>
+</div>
+</div>
+</div>
+</section>
+<!-- Filter by Mood & Cinematic Genres -->
+<section class="px-margin mb-space-lg">
+<div class="flex items-center justify-between mb-space-sm">
+<div class="flex items-center gap-space-2xs">
+<span class="material-symbols-outlined text-primary text-[20px]">tune</span>
+<h3 class="font-headline-sm text-headline-sm text-on-surface">Thể Loại &amp; Tâm Trạng Điện Ảnh</h3>
+</div>
+<button class="font-label-sm text-label-sm text-primary uppercase tracking-wider">Xem Tất Cả</button>
+</div>
+<div class="grid grid-cols-2 gap-space-xs">
+<!-- Genre Card 1: Sci-Fi -->
+<div class="relative h-24 rounded-xl overflow-hidden p-space-sm flex flex-col justify-between bg-surface-container shadow-md group cursor-pointer">
+<div class="absolute inset-0 bg-cover bg-center transition-transform duration-500 group-hover:scale-110" data-alt="Futuristic sci-fi deep space station orbiting a glowing gold-amber nebula with sleek geometry and cosmic starlight." style="background-image: url('https://lh3.googleusercontent.com/aida-public/AB6AXuD9t_0QoImFrmLKNl84gdrklKyUPCDmkJsinMahBHYWVvawnUESWFPg5utCXyYSVf3qwRHF678py61E5fR64qy0cDNZB7VIVP0-N9OpO0JUJ0zfaDOg_t2YTybFZncECSSOwuGc1v4fz8XjKPrrYN_6Kc4xJkObelVrNqxRf7jaJzhFfRLUj1IrZ1oP7UiFVdcl6HY8Lm13OPecshDs5euVvBFIkqQK1ZoE19Hh6aCnFXs0-IBGXL9v')"></div>
+<div class="absolute inset-0 bg-gradient-to-t from-surface-container-lowest via-surface-container-lowest/70 to-transparent"></div>
+<div class="relative z-10 flex items-center justify-between">
+<span class="px-2 py-0.5 rounded bg-primary/20 backdrop-blur-md text-primary font-label-sm text-label-sm">Top 1</span>
+<span class="material-symbols-outlined text-on-surface-variant text-[18px]">rocket_launch</span>
+</div>
+<div class="relative z-10">
+<p class="font-headline-sm text-headline-sm text-on-surface font-bold leading-none">Khoa Học Viễn Tưởng</p>
+<p class="font-body-sm text-body-sm text-outline mt-0.5">248 tác phẩm</p>
+</div>
+</div>
+<!-- Genre Card 2: Cyberpunk Anime -->
+<div class="relative h-24 rounded-xl overflow-hidden p-space-sm flex flex-col justify-between bg-surface-container shadow-md group cursor-pointer">
+<div class="absolute inset-0 bg-cover bg-center transition-transform duration-500 group-hover:scale-110" data-alt="Vibrant cyberpunk city at rain night with neon magenta and electric cyan reflections on wet asphalt." style="background-image: url('https://lh3.googleusercontent.com/aida-public/AB6AXuBljRgVaXHn3EZ69rdYxh7IAg9sz6gImY0RDGio8KXvnCAQHc0bS7Vq9y7GUS-woOR6Gn1N6gVVP4vc9tQtKEv7Kie6oua_MAFMBuEBoZIY7ErlsiUVl2Scen-oEZ7_M4FkuDsKEPLaMq_BKRG9e6rurYwwbyX0R7OdLXCCbxi8J7lN4SRlcczPp_FkNPxVmjI0EnQDOvbr3cctn3d11w7C2jVhSf4biB70cAQciL30SRCy_5BNpNlz')"></div>
+<div class="absolute inset-0 bg-gradient-to-t from-surface-container-lowest via-surface-container-lowest/70 to-transparent"></div>
+<div class="relative z-10 flex items-center justify-between">
+<span class="px-2 py-0.5 rounded bg-tertiary/20 backdrop-blur-md text-tertiary font-label-sm text-label-sm">Trending</span>
+<span class="material-symbols-outlined text-on-surface-variant text-[18px]">bolt</span>
+</div>
+<div class="relative z-10">
+<p class="font-headline-sm text-headline-sm text-on-surface font-bold leading-none">Cyberpunk &amp; Anime</p>
+<p class="font-body-sm text-body-sm text-outline mt-0.5">115 tác phẩm</p>
+</div>
+</div>
+<!-- Genre Card 3: Oscar Winners -->
+<div class="relative h-24 rounded-xl overflow-hidden p-space-sm flex flex-col justify-between bg-surface-container shadow-md group cursor-pointer">
+<div class="absolute inset-0 bg-cover bg-center transition-transform duration-500 group-hover:scale-110" data-alt="Golden prestigious academy award statues arranged in an elegant cinematic dark hall with soft gold backlight." style="background-image: url('https://lh3.googleusercontent.com/aida-public/AB6AXuBfR93KWXkeu_OMq9WGdGGHu44_Ehkz8WD52K9iTjPSoZ2coKDVdJcdix8eOxVYZ70GTXEcJkMuAxkePCnlYufgzXzyThm1ZkxXXawAEo6FgShgEoC1kCe6vFTreSWkm5ql9AZ78b1Ax9Yt23YWW3C7NPRcDyAXFJkC0C4iAdoux-LgMY1CpvDsUGlMabzNLpQXW65yDYUWwZCFn2TmC7wSyCpC_vax3y-6-eUnicmNdsMZOkiNZKHp')"></div>
+<div class="absolute inset-0 bg-gradient-to-t from-surface-container-lowest via-surface-container-lowest/70 to-transparent"></div>
+<div class="relative z-10 flex items-center justify-between">
+<span class="px-2 py-0.5 rounded bg-primary-container/30 backdrop-blur-md text-primary-fixed-dim font-label-sm text-label-sm">Viện Hàn Lâm</span>
+<span class="material-symbols-outlined text-on-surface-variant text-[18px]">workspace_premium</span>
+</div>
+<div class="relative z-10">
+<p class="font-headline-sm text-headline-sm text-on-surface font-bold leading-none">Đoạt Giải Oscar</p>
+<p class="font-body-sm text-body-sm text-outline mt-0.5">86 kiệt tác</p>
+</div>
+</div>
+<!-- Genre Card 4: Psychological Thriller -->
+<div class="relative h-24 rounded-xl overflow-hidden p-space-sm flex flex-col justify-between bg-surface-container shadow-md group cursor-pointer">
+<div class="absolute inset-0 bg-cover bg-center transition-transform duration-500 group-hover:scale-110" data-alt="A shadowy surreal psychological hallway with moody dramatic chiaroscuro lighting and velvet crimson shadows." style="background-image: url('https://lh3.googleusercontent.com/aida-public/AB6AXuCtefjO41jOjQm1BFm_VALgrB6TK3o67HuHoAvQrex7yBegnwkzhfOgA3vOR9-tLFYZlHWMfV3tO4bOseciEzU8Mc_QyZ3P2XRzB8KxSd7BNV91QPNPfaj7ckvR5IoY1O3MC3L8XBFYn1Va_rbcrJZ-o99_gO22R3pB6gs0DF057HTJ_ju0CWPfDKNRs7FuKEatiEvVBBwWjTIhS0f9mxD4QaCJ79Rns5sMbBIEdUX_8oE6HVVeCewy')"></div>
+<div class="absolute inset-0 bg-gradient-to-t from-surface-container-lowest via-surface-container-lowest/70 to-transparent"></div>
+<div class="relative z-10 flex items-center justify-between">
+<span class="px-2 py-0.5 rounded bg-secondary-container/30 backdrop-blur-md text-secondary font-label-sm text-label-sm">Căng Thẳng</span>
+<span class="material-symbols-outlined text-on-surface-variant text-[18px]">psychology</span>
+</div>
+<div class="relative z-10">
+<p class="font-headline-sm text-headline-sm text-on-surface font-bold leading-none">Tâm Lý Siêu Thực</p>
+<p class="font-body-sm text-body-sm text-outline mt-0.5">94 tác phẩm</p>
+</div>
+</div>
+</div>
+</section>
+<!-- Results 2-Column Poster Grid -->
+<section class="px-margin mb-space-xl">
+<div class="flex items-center justify-between mb-space-sm">
+<div>
+<h3 class="font-headline-sm text-headline-sm text-on-surface">Kết Quả Phổ Biến</h3>
+<p class="font-body-sm text-body-sm text-on-surface-variant">Phù hợp với tìm kiếm vũ trụ Denis Villeneuve</p>
+</div>
+<div class="flex items-center gap-1 bg-surface-container-high px-space-xs py-1 rounded-full">
+<button aria-label="Chế độ lưới" class="w-7 h-7 rounded-full bg-surface-bright flex items-center justify-center text-primary">
+<span class="material-symbols-outlined text-[16px]">grid_view</span>
+</button>
+<button aria-label="Chế độ danh sách" class="w-7 h-7 rounded-full flex items-center justify-center text-on-surface-variant">
+<span class="material-symbols-outlined text-[16px]">view_list</span>
+</button>
+</div>
+</div>
+<!-- 2 Column Uniform Grid -->
+<div class="grid grid-cols-2 gap-space-sm">
+<!-- Movie Card 1: Dune Part Two (Poster Style) -->
+<div class="flex flex-col bg-surface-container-low rounded-2xl overflow-hidden shadow-lg group">
+<div class="relative aspect-[2/3] w-full overflow-hidden bg-surface-container">
+<img class="w-full h-full object-cover transition-transform duration-500 group-hover:scale-105" data-alt="Dune Part Two vertical poster art with Timothee Chalamet and Zendaya standing in stillsuits holding crysknives under two blazing suns on the sand dunes." src="https://lh3.googleusercontent.com/aida-public/AB6AXuDUcLEfDXefTclGouC8f89c2ozqIEoYTMVIb8yHuuaBWPv1OLUvd_BaFy28QV7KjQCjIyizdIImhVrW583KoofGOWgnAzwoMrBIoCx6NFNMO--ZUXjaBEvBrT8YconihyMefTuYv9RJ-rNG9Wt_oD_qEyicKwxoEepFElz17u4ZxvOfwtpEc6gX9KeXq4HHsdIFkDTJWg5yvDrbmkOm7j_bHuDYjONpO1RignxsDbXNsdn7jjZAPvgF"/>
+<div class="absolute inset-0 bg-gradient-to-t from-surface-container-low via-transparent to-transparent"></div>
+<!-- Score Badge -->
+<div class="absolute top-2 left-2 flex items-center gap-1 px-2 py-0.5 rounded-full bg-surface-container-lowest/80 backdrop-blur-md">
+<span class="material-symbols-outlined text-primary text-[12px]" style="font-variation-settings: 'FILL' 1;">star</span>
+<span class="font-badge-numeric text-badge-numeric text-on-surface">8.8</span>
+</div>
+<!-- Format Tag -->
+<div class="absolute top-2 right-2 px-1.5 py-0.5 rounded bg-primary-container text-on-primary-container font-label-sm text-label-sm font-bold uppercase">
+            IMAX 70MM
+          </div>
+<!-- Quick Bookmark Floating Action -->
+<button aria-label="Lưu phim" class="absolute bottom-2 right-2 w-8 h-8 rounded-full bg-surface-container-highest/80 backdrop-blur-md text-on-surface flex items-center justify-center hover:text-primary transition-colors">
+<span class="material-symbols-outlined text-[16px]">bookmark_add</span>
+</button>
+</div>
+<!-- Meta -->
+<div class="p-space-xs flex flex-col flex-1 justify-between">
+<div>
+<h4 class="font-headline-sm text-headline-sm text-on-surface truncate">Dune: Part Two</h4>
+<p class="font-body-sm text-body-sm text-on-surface-variant truncate">Đạo diễn: Denis Villeneuve</p>
+</div>
+<div class="flex items-center justify-between pt-space-2xs mt-space-2xs text-outline">
+<span class="font-label-sm text-label-sm">2g 46p • 2024</span>
+<span class="font-label-sm text-label-sm text-tertiary">Dolby Atmos</span>
+</div>
+</div>
+</div>
+<!-- Movie Card 2: Blade Runner 2049 -->
+<div class="flex flex-col bg-surface-container-low rounded-2xl overflow-hidden shadow-lg group">
+<div class="relative aspect-[2/3] w-full overflow-hidden bg-surface-container">
+<img class="w-full h-full object-cover transition-transform duration-500 group-hover:scale-105" data-alt="Blade Runner 2049 official dark cyberpunk theatrical poster showing Ryan Gosling in a leather duster coat in an apocalyptic orange haze and misty dystopian neon city." src="https://lh3.googleusercontent.com/aida-public/AB6AXuDoaxlHYi2lqC1GApPvOgqHitprBlrZEJc6xvdoKypzZTn3pY8wMtweAVO1k-LF8mwvRYUWSIR1zQ7pl3SihiE1neLrgUWprNuj2KyRnwXqucngv6dSNaHk2DxJE1-WHDihyU5NjJTQmF0cPlmy03bCCPrTIPvLL2LST7cxshKVESblhihrh12RU9qbQmNqRupUk9y7iZK_e4FpTQK0zReobtBgS5EffpnZiXjespuZH4uDgTHIVKaO"/>
+<div class="absolute inset-0 bg-gradient-to-t from-surface-container-low via-transparent to-transparent"></div>
+<div class="absolute top-2 left-2 flex items-center gap-1 px-2 py-0.5 rounded-full bg-surface-container-lowest/80 backdrop-blur-md">
+<span class="material-symbols-outlined text-primary text-[12px]" style="font-variation-settings: 'FILL' 1;">star</span>
+<span class="font-badge-numeric text-badge-numeric text-on-surface">8.4</span>
+</div>
+<div class="absolute top-2 right-2 px-1.5 py-0.5 rounded bg-surface-container-highest/80 backdrop-blur-md text-on-surface font-label-sm text-label-sm font-bold uppercase">
+            4K UHD
+          </div>
+<button aria-label="Lưu phim" class="absolute bottom-2 right-2 w-8 h-8 rounded-full bg-surface-container-highest/80 backdrop-blur-md text-on-surface flex items-center justify-center hover:text-primary transition-colors">
+<span class="material-symbols-outlined text-[16px]">bookmark_add</span>
+</button>
+</div>
+<div class="p-space-xs flex flex-col flex-1 justify-between">
+<div>
+<h4 class="font-headline-sm text-headline-sm text-on-surface truncate">Blade Runner 2049</h4>
+<p class="font-body-sm text-body-sm text-on-surface-variant truncate">Ryan Gosling, Harrison Ford</p>
+</div>
+<div class="flex items-center justify-between pt-space-2xs mt-space-2xs text-outline">
+<span class="font-label-sm text-label-sm">2g 44p • 2017</span>
+<span class="font-label-sm text-label-sm text-primary">Oscar Kỹ Xảo</span>
+</div>
+</div>
+</div>
+<!-- Movie Card 3: Interstellar -->
+<div class="flex flex-col bg-surface-container-low rounded-2xl overflow-hidden shadow-lg group">
+<div class="relative aspect-[2/3] w-full overflow-hidden bg-surface-container">
+<img class="w-full h-full object-cover transition-transform duration-500 group-hover:scale-105" data-alt="Interstellar vertical movie poster depicting an astronaut in a spacesuit walking across an alien icy water world under a gigantic glowing black hole Gargantua." src="https://lh3.googleusercontent.com/aida-public/AB6AXuBwjthq7xG_v6q3wOghPQ6Adn2D0Yjwqqan_bUBOaLijdLpM9nmI4q5MI1tvFoG5y4CJQN4N_bvYlW9QHbMUf84Sf_ANNA1cWovxCGk5lMJxfgJDbBAhZ6LLpN0amOlMjWpJDxOVDv31aJxiSXAHWN-rVR2eazrPSjiY80kHawJsSP692LcWoMtUuZSU7IY-ABIzLlMlk6crePPUkRxF2nshNOiON0_i7M-dAlGmsQocjcodc0ZROYp"/>
+<div class="absolute inset-0 bg-gradient-to-t from-surface-container-low via-transparent to-transparent"></div>
+<div class="absolute top-2 left-2 flex items-center gap-1 px-2 py-0.5 rounded-full bg-surface-container-lowest/80 backdrop-blur-md">
+<span class="material-symbols-outlined text-primary text-[12px]" style="font-variation-settings: 'FILL' 1;">star</span>
+<span class="font-badge-numeric text-badge-numeric text-on-surface">8.7</span>
+</div>
+<div class="absolute top-2 right-2 px-1.5 py-0.5 rounded bg-primary-container text-on-primary-container font-label-sm text-label-sm font-bold uppercase">
+            IMAX Re-issue
+          </div>
+<button aria-label="Lưu phim" class="absolute bottom-2 right-2 w-8 h-8 rounded-full bg-surface-container-highest/80 backdrop-blur-md text-on-surface flex items-center justify-center hover:text-primary transition-colors">
+<span class="material-symbols-outlined text-[16px]">bookmark_add</span>
+</button>
+</div>
+<div class="p-space-xs flex flex-col flex-1 justify-between">
+<div>
+<h4 class="font-headline-sm text-headline-sm text-on-surface truncate">Hố Đen Tử Thần</h4>
+<p class="font-body-sm text-body-sm text-on-surface-variant truncate">Đạo diễn: Christopher Nolan</p>
+</div>
+<div class="flex items-center justify-between pt-space-2xs mt-space-2xs text-outline">
+<span class="font-label-sm text-label-sm">2g 49p • 2014</span>
+<span class="font-label-sm text-label-sm text-tertiary">70MM Laser</span>
+</div>
+</div>
+</div>
+<!-- Movie Card 4: Oppenheimer -->
+<div class="flex flex-col bg-surface-container-low rounded-2xl overflow-hidden shadow-lg group">
+<div class="relative aspect-[2/3] w-full overflow-hidden bg-surface-container">
+<img class="w-full h-full object-cover transition-transform duration-500 group-hover:scale-105" data-alt="Oppenheimer movie poster with Cillian Murphy in a trench coat and fedora hat standing in front of a massive explosion of burning orange ember flames and swirling atomic dust." src="https://lh3.googleusercontent.com/aida-public/AB6AXuDfvNxAe39Z8XZFxlMThhk2u17sP5iBoCDu_fI4rvzGRBISvjZHveSE1aKnqm71T81EwfC9f6SAOVON7C4ElCvTts1V6aYE7HHfFLBBtUBJEiEf6X-LyA1D1tJCbQzMrCQDmK4rM-deuUxutocSJA5HSQKBs4FwnHKgslGxo9iUQ9dJ6RkKXvmODoe8fifxWIVqNef76vPeVPH0u7DyuhCqQwdpPl2bfIjZCKgYRN7A2JmRgrMKiosK"/>
+<div class="absolute inset-0 bg-gradient-to-t from-surface-container-low via-transparent to-transparent"></div>
+<div class="absolute top-2 left-2 flex items-center gap-1 px-2 py-0.5 rounded-full bg-surface-container-lowest/80 backdrop-blur-md">
+<span class="material-symbols-outlined text-primary text-[12px]" style="font-variation-settings: 'FILL' 1;">star</span>
+<span class="font-badge-numeric text-badge-numeric text-on-surface">8.9</span>
+</div>
+<div class="absolute top-2 right-2 px-1.5 py-0.5 rounded bg-surface-container-highest/80 backdrop-blur-md text-on-surface font-label-sm text-label-sm font-bold uppercase">
+            Oscar 2024
+          </div>
+<button aria-label="Lưu phim" class="absolute bottom-2 right-2 w-8 h-8 rounded-full bg-surface-container-highest/80 backdrop-blur-md text-on-surface flex items-center justify-center hover:text-primary transition-colors">
+<span class="material-symbols-outlined text-[16px]">bookmark_add</span>
+</button>
+</div>
+<div class="p-space-xs flex flex-col flex-1 justify-between">
+<div>
+<h4 class="font-headline-sm text-headline-sm text-on-surface truncate">Oppenheimer</h4>
+<p class="font-body-sm text-body-sm text-on-surface-variant truncate">Cillian Murphy, Emily Blunt</p>
+</div>
+<div class="flex items-center justify-between pt-space-2xs mt-space-2xs text-outline">
+<span class="font-label-sm text-label-sm">3g 00p • 2023</span>
+<span class="font-label-sm text-label-sm text-secondary-container">Best Picture</span>
+</div>
+</div>
+</div>
+</div>
+</section>
+<!-- Interactive Search Filter Micro-sheet Trigger -->
+<div class="px-margin mb-space-lg">
+<div class="w-full bg-gradient-to-r from-surface-container via-surface-container-high to-surface-container p-space-md rounded-2xl shadow-xl flex items-center justify-between">
+<div class="flex items-center gap-space-sm">
+<div class="w-12 h-12 rounded-xl bg-primary/10 flex items-center justify-center text-primary">
+<span class="material-symbols-outlined text-[26px]">spatial_audio</span>
+</div>
+<div>
+<h4 class="font-headline-sm text-headline-sm text-on-surface">Chỉnh Âm Học Chuẩn Phòng Chiếu</h4>
+<p class="font-body-sm text-body-sm text-on-surface-variant">Tối ưu hóa DAC rời &amp; Dolby Headphone 3D</p>
+</div>
+</div>
+<button class="px-space-sm py-2 rounded-xl bg-primary text-on-primary font-label-md text-label-md uppercase tracking-wider font-semibold active:scale-95 transition-all">
+        Bật
+      </button>
+</div>
+</div>
+</div>
+<script>
+  (function initSearchMicroInteractions() {
+    const input = document.getElementById('cinemaSearchInput');
+    if (!input) return;
+
+    // Subtle interactive clear / focus helper
+    input.addEventListener('focus', () => {
+      input.parentElement.classList.add('shadow-primary-container/20');
+    });
+
+    input.addEventListener('blur', () => {
+      input.parentElement.classList.remove('shadow-primary-container/20');
+    });
+
+    // Bookmark toggling animation
+    const bookmarkBtns = document.querySelectorAll('button[aria-label="Lưu phim"]');
+    bookmarkBtns.forEach(btn => {
+      btn.addEventListener('click', (e) => {
+        e.stopPropagation();
+        const icon = btn.querySelector('.material-symbols-outlined');
+        if (icon.innerText === 'bookmark_add') {
+          icon.innerText = 'bookmark_added';
+          icon.style.fontVariationSettings = "'FILL' 1";
+          btn.classList.add('text-primary');
+        } else {
+          icon.innerText = 'bookmark_add';
+          icon.style.fontVariationSettings = "'FILL' 0";
+          btn.classList.remove('text-primary');
+        }
+      });
+    });
+  })();
+</script></main><nav class="fixed bottom-0 w-full z-50 pb-safe pointer-events-none" data-active-classes="text-primary-container font-bold scale-105"><div class="max-w-md mx-auto px-margin pb-space-sm pt-space-2xs pointer-events-auto"><div class="h-16 px-space-sm rounded-full bg-surface-container-lowest/85 backdrop-blur-2xl shadow-[0_10px_32px_rgba(0,0,0,0.6)] flex items-center justify-around"><a class="flex flex-col items-center justify-center gap-0.5 min-w-[56px] h-12 text-on-surface-variant hover:text-on-surface transition-all" data-path="trang-chu" href="#"><span class="material-symbols-outlined text-[22px]">home</span><span class="font-label-sm text-label-sm uppercase tracking-wider">Trang chủ</span></a><a class="flex flex-col items-center justify-center gap-0.5 min-w-[56px] h-12 text-on-surface-variant hover:text-on-surface transition-all" data-path="kham-pha" href="#"><span class="material-symbols-outlined text-[22px]">explore</span><span class="font-label-sm text-label-sm uppercase tracking-wider">Khám phá</span></a><a class="flex flex-col items-center justify-center gap-0.5 min-w-[56px] h-12 text-on-surface-variant hover:text-on-surface transition-all" data-path="tai-ve" href="#"><span class="material-symbols-outlined text-[22px]">download_for_offline</span><span class="font-label-sm text-label-sm uppercase tracking-wider">Tải về</span></a><a class="flex flex-col items-center justify-center gap-0.5 min-w-[56px] h-12 text-on-surface-variant hover:text-on-surface transition-all" data-path="ho-so" href="#"><span class="material-symbols-outlined text-[22px]">account_circle</span><span class="font-label-sm text-label-sm uppercase tracking-wider">Hồ sơ</span></a></div></div></nav></body></html>

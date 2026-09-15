@@ -1,0 +1,454 @@
+<!DOCTYPE html>
+
+<html class="dark" lang="vi"><head><meta charset="utf-8"/><meta content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no, viewport-fit=cover" name="viewport"/><link href="https://fonts.googleapis.com/css2?family=Plus+Jakarta+Sans:wght@400;600;700&amp;family=Space+Grotesk:wght@600;700&amp;family=Syne:wght@700;800&amp;display=swap" rel="stylesheet"/><link href="https://fonts.googleapis.com/css2?family=Material+Symbols+Outlined:opsz,wght,FILL,GRAD@24,400,0,0" rel="stylesheet"/>
+<link href="https://fonts.googleapis.com/css2?family=Material+Symbols+Outlined:wght,FILL@100..700,0..1&amp;display=swap" rel="stylesheet"/><style>@layer base{html,body{width:100vw;margin:0;padding:0;}body{overscroll-behavior:none;}.pb-safe{padding-bottom:env(safe-area-inset-bottom,0px);}.pt-safe{padding-top:env(safe-area-inset-top,0px);}main>:first-child{margin-top:0!important;}main>:last-child{margin-bottom:0!important;}}::-webkit-scrollbar{display:none;}</style><script src="https://cdn.tailwindcss.com?plugins=forms,container-queries"></script><script id="tailwind-config">tailwind.config = { darkMode: "class", theme: { extend: { colors: { "surface-container-highest": "#343538", "on-secondary-container": "#ffdcdc", "error": "#ffb4ab", "on-primary": "#472a00", "inverse-surface": "#e3e2e6", "surface-dim": "#121316", "secondary-fixed-dim": "#ffb3b6", "primary": "#ffc174", "tertiary-fixed-dim": "#4cd7f6", "on-primary-fixed-variant": "#653e00", "surface-container-high": "#292a2d", "outline": "#a08e7a", "on-tertiary-fixed": "#001f26", "surface-container-lowest": "#0d0e11", "on-tertiary-container": "#004b58", "tertiary-container": "#29c1df", "on-error": "#690005", "error-container": "#93000a", "surface-container-low": "#1b1b1f", "tertiary": "#54ddfc", "on-primary-container": "#613b00", "on-error-container": "#ffdad6", "on-tertiary": "#003640", "primary-fixed": "#ffddb8", "on-background": "#e3e2e6", "inverse-primary": "#855300", "primary-container": "#f59e0b", "on-tertiary-fixed-variant": "#004e5c", "secondary-container": "#cc003c", "outline-variant": "#534434", "surface-tint": "#ffb95f", "on-secondary": "#68001a", "on-secondary-fixed-variant": "#920028", "secondary-fixed": "#ffdada", "background": "#121316", "inverse-on-surface": "#2f3034", "surface-container": "#1f1f23", "on-surface": "#e3e2e6", "surface-bright": "#38393d", "on-primary-fixed": "#2a1700", "primary-fixed-dim": "#ffb95f", "on-secondary-fixed": "#40000c", "surface-variant": "#343538", "secondary": "#ffb3b6", "tertiary-fixed": "#acedff", "surface": "#121316", "on-surface-variant": "#d8c3ad" }, borderRadius: { "DEFAULT": "0.25rem", "lg": "0.5rem", "xl": "0.75rem", "full": "9999px" }, spacing: { "gutter-sm": "0.75rem", "margin-tablet": "2rem", "space-2xl": "3rem", "space-lg": "1.5rem", "gutter": "1rem", "space-2xs": "0.25rem", "gutter-lg": "1.5rem", "space-xl": "2rem", "space-xs": "0.5rem", "space-md": "1rem", "space-sm": "0.75rem", "margin": "1.25rem", "margin-mobile": "1rem" }, fontFamily: { "headline-lg": ["Syne"], "body-sm": ["Plus Jakarta Sans"], "display-hero": ["Syne"], "display-hero-mobile": ["Syne"], "label-lg": ["Space Grotesk"], "headline-xl-mobile": ["Syne"], "label-sm": ["Space Grotesk"], "headline-sm": ["Plus Jakarta Sans"], "label-md": ["Space Grotesk"], "badge-numeric": ["Space Grotesk"], "headline-xl": ["Syne"], "body-md": ["Plus Jakarta Sans"], "headline-md": ["Plus Jakarta Sans"], "body-lg": ["Plus Jakarta Sans"] }, fontSize: { "headline-lg": ["24px", { "lineHeight": "30px", "letterSpacing": "-0.01em", "fontWeight": "700" }], "body-sm": ["12px", { "lineHeight": "16px", "letterSpacing": "0.01em", "fontWeight": "400" }], "display-hero": ["52px", { "lineHeight": "58px", "letterSpacing": "-0.03em", "fontWeight": "800" }], "display-hero-mobile": ["36px", { "lineHeight": "42px", "letterSpacing": "-0.02em", "fontWeight": "800" }], "label-lg": ["14px", { "lineHeight": "18px", "letterSpacing": "0.04em", "fontWeight": "600" }], "headline-xl-mobile": ["26px", { "lineHeight": "32px", "letterSpacing": "-0.01em", "fontWeight": "700" }], "label-sm": ["10px", { "lineHeight": "12px", "letterSpacing": "0.08em", "fontWeight": "700" }], "headline-sm": ["18px", { "lineHeight": "24px", "letterSpacing": "0em", "fontWeight": "600" }], "label-md": ["12px", { "lineHeight": "16px", "letterSpacing": "0.06em", "fontWeight": "600" }], "badge-numeric": ["13px", { "lineHeight": "14px", "letterSpacing": "0.02em", "fontWeight": "700" }], "headline-xl": ["32px", { "lineHeight": "38px", "letterSpacing": "-0.02em", "fontWeight": "700" }], "body-md": ["14px", { "lineHeight": "20px", "letterSpacing": "0em", "fontWeight": "400" }], "headline-md": ["20px", { "lineHeight": "26px", "letterSpacing": "-0.01em", "fontWeight": "700" }], "body-lg": ["16px", { "lineHeight": "24px", "letterSpacing": "0em", "fontWeight": "400" }] } } } };</script><style>
+    body {
+      min-height: max(884px, 100dvh);
+    }
+  </style>
+</head><body class="bg-surface text-on-surface font-body-md text-body-md flex flex-col min-h-screen relative overflow-x-hidden">
+<!-- WebGL Fluid Aurora Shader Canvas Background -->
+<div class="fixed inset-0 w-full h-full pointer-events-none z-0 overflow-hidden" style="display:block;">
+<canvas class="w-full h-full block opacity-85" id="shader-canvas-ANIMATION_11"></canvas>
+<div class="absolute inset-0 bg-[#0d0e11]/45 backdrop-contrast-125 pointer-events-none"></div>
+</div>
+<script>
+(function() {
+  const canvas = document.getElementById('shader-canvas-ANIMATION_11');
+  if (!canvas) return;
+
+  function syncSize() {
+    const w = window.innerWidth || 1280;
+    const h = window.innerHeight || 720;
+    if (canvas.width !== w || canvas.height !== h) {
+      canvas.width = w;
+      canvas.height = h;
+    }
+  }
+  window.addEventListener('resize', syncSize);
+  syncSize();
+
+  const gl = canvas.getContext('webgl') || canvas.getContext('experimental-webgl');
+  if (!gl) return;
+  const vs = `attribute vec2 a_position;
+varying vec2 v_texCoord;
+void main() {
+  v_texCoord = a_position * 0.5 + 0.5;
+  gl_Position = vec4(a_position, 0.0, 1.0);
+}`;
+  const fs = `precision highp float;
+uniform float u_time;
+uniform vec2 u_resolution;
+uniform vec2 u_mouse;
+
+// Simplex/Perlin noise helper
+vec3 mod289(vec3 x) { return x - floor(x * (1.0 / 289.0)) * 289.0; }
+vec2 mod289(vec2 x) { return x - floor(x * (1.0 / 289.0)) * 289.0; }
+vec3 permute(vec3 x) { return mod289(((x*34.0)+1.0)*x); }
+
+float snoise(vec2 v) {
+  const vec4 C = vec4(0.211324865405187,  // (3.0-sqrt(3.0))/6.0
+                      0.366025403784439,  // 0.5*(sqrt(3.0)-1.0)
+                     -0.577350269189626,  // -1.0 + 2.0 * C.x
+                      0.024390243902439); // 1.0 / 41.0
+  vec2 i  = floor(v + dot(v, C.yy) );
+  vec2 x0 = v -   i + dot(i, C.xx);
+  vec2 i1  = (x0.x > x0.y) ? vec2(1.0, 0.0) : vec2(0.0, 1.0);
+  vec4 x12 = x0.xyxy + C.xxzz;
+  x12.xy -= i1;
+  i = mod289(i);
+  vec3 p = permute( permute( i.y + vec3(0.0, i1.y, 1.0 ))
+        + i.x + vec3(0.0, i1.x, 1.0 ));
+  vec3 m = max(0.5 - vec3(dot(x0,x0), dot(x12.xy,x12.xy), dot(x12.zw,x12.zw)), 0.0);
+  m = m*m ;
+  m = m*m ;
+  vec3 x = 2.0 * fract(p * C.www) - 1.0;
+  vec3 h = abs(x) - 0.5;
+  vec3 ox = floor(x + 0.5);
+  vec3 a0 = x - ox;
+  m *= 1.79284291400159 - 0.85373472095314 * ( a0*a0 + h*h );
+  vec3 g;
+  g.x  = a0.x  * x0.x  + h.x  * x0.y;
+  g.yz = a0.yz * x12.xz + h.yz * x12.yw;
+  return 130.0 * dot(m, g);
+}
+
+void main() {
+    vec2 st = gl_FragCoord.xy / u_resolution.xy;
+    st.y = 1.0 - st.y;
+    
+    float t = u_time * 0.25;
+    
+    // Spatial iridescent cinema light field
+    float n1 = snoise(st * 2.2 + vec2(t * 0.4, -t * 0.3));
+    float n2 = snoise(st * 3.5 - vec2(-t * 0.2, t * 0.35) + n1 * 0.5);
+    float n3 = snoise(st * 1.5 + vec2(t * 0.1, t * 0.15));
+    
+    // Core Cinema Palettes: Deep Space (#090A0F) -> Regal Amber Gold (#F59E0B) -> Electric Violet (#7C3AED) -> Cyan Laser (#06B6D4)
+    vec3 deepSpace = vec3(0.04, 0.045, 0.07);
+    vec3 amberGold = vec3(0.96, 0.62, 0.05);
+    vec3 electricViolet = vec3(0.48, 0.18, 0.93);
+    vec3 laserCyan = vec3(0.02, 0.71, 0.83);
+    
+    float auroraWeight1 = smoothstep(-0.2, 0.8, n1 + st.y * 0.5);
+    float auroraWeight2 = smoothstep(-0.1, 0.9, n2 - st.x * 0.3);
+    
+    vec3 col = deepSpace;
+    col = mix(col, electricViolet * 0.7, auroraWeight1 * 0.45);
+    col = mix(col, amberGold * 0.8, pow(auroraWeight2, 2.2) * 0.5);
+    col += laserCyan * pow(clamp(n3 * 0.6 + 0.4, 0.0, 1.0), 3.0) * 0.25;
+    
+    // Soft top-down vignette for readability
+    float vignette = smoothstep(1.3, 0.2, length(st - vec2(0.5, 0.4)));
+    col *= (0.7 + 0.3 * vignette);
+    
+    // Subtle star dust shimmer
+    float dust = fract(sin(dot(st.xy ,vec2(12.9898,78.233))) * 43758.5453);
+    if (dust > 0.992) {
+        col += vec3(1.0, 0.95, 0.8) * 0.35 * (0.5 + 0.5 * sin(u_time * 3.0 + dust * 100.0));
+    }
+
+    gl_FragColor = vec4(col, 1.0);
+}`;
+  function cs(type, src) {
+    const s = gl.createShader(type);
+    gl.shaderSource(s, src);
+    gl.compileShader(s);
+    return s;
+  }
+  const prog = gl.createProgram();
+  gl.attachShader(prog, cs(gl.VERTEX_SHADER, vs));
+  gl.attachShader(prog, cs(gl.FRAGMENT_SHADER, fs));
+  gl.linkProgram(prog);
+  gl.useProgram(prog);
+  const buf = gl.createBuffer();
+  gl.bindBuffer(gl.ARRAY_BUFFER, buf);
+  gl.bufferData(gl.ARRAY_BUFFER, new Float32Array([-1,-1, 1,-1, -1,1, 1,1]), gl.STATIC_DRAW);
+  const pos = gl.getAttribLocation(prog, 'a_position');
+  gl.enableVertexAttribArray(pos);
+  gl.vertexAttribPointer(pos, 2, gl.FLOAT, false, 0, 0);
+  const uTime = gl.getUniformLocation(prog, 'u_time');
+  const uRes = gl.getUniformLocation(prog, 'u_resolution');
+  const uMouse = gl.getUniformLocation(prog, 'u_mouse');
+
+  let mouse = { x: window.innerWidth / 2, y: window.innerHeight / 2 };
+  window.addEventListener('mousemove', (event) => {
+    mouse.x = event.clientX;
+    mouse.y = window.innerHeight - event.clientY;
+  });
+  window.addEventListener('touchmove', (event) => {
+    if (event.touches && event.touches[0]) {
+      mouse.x = event.touches[0].clientX;
+      mouse.y = window.innerHeight - event.touches[0].clientY;
+    }
+  }, { passive: true });
+
+  function render(t) {
+    syncSize();
+    gl.viewport(0, 0, canvas.width, canvas.height);
+    if (uTime) gl.uniform1f(uTime, t * 0.001);
+    if (uRes) gl.uniform2f(uRes, canvas.width, canvas.height);
+    if (uMouse) gl.uniform2f(uMouse, mouse.x, mouse.y);
+    gl.drawArrays(gl.TRIANGLE_STRIP, 0, 4);
+    requestAnimationFrame(render);
+  }
+  render(0);
+})();
+</script>
+<header class="fixed top-0 w-full z-50 pt-safe bg-surface/60 backdrop-blur-xl shadow-[0_1px_8px_rgba(0,0,0,0.04)] border-b border-white/5"><div class="h-28 px-margin flex flex-col justify-between py-space-xs"><div class="flex items-center justify-between gap-space-sm"><div class="flex items-center gap-space-xs"><img alt="CineStream Logo" class="h-8 w-auto object-contain" src="https://lh3.googleusercontent.com/aida/AEtjO1WGX1vbs_RHt9aQK8kmZQ2wBo3f0qT2bXw8ROHBB0g7FAtoC3_F7R0wB7LFybD_PoZBDi0gzrZOGaRtjTqmVGd3nmJ8APDVhw0qopIcQdtzgq9KmnLH18FQmH0DL0_nDOEp9SsCH64MPzjZ5LSYYUhS0Q0WRowxc5p3p9uomEm-YbtxPSg7GKfCjljKrEj4_c2Ll0ap1O1NXlnP6Uov82o7HreX98zuX-Ds5oKrFHjNCyq9l8B65eiAJ3Y"/><span class="font-headline-md text-headline-md text-primary tracking-tight font-bold">CineStream</span><span class="font-label-sm text-label-sm px-1.5 py-0.5 rounded-full bg-surface-container-highest/80 backdrop-blur-md text-on-surface-variant ml-1">Trang Chủ</span></div><div class="flex items-center gap-space-xs"><button aria-label="Tìm kiếm" class="min-w-[44px] min-h-[44px] w-11 h-11 rounded-full flex items-center justify-center text-on-surface-variant hover:text-on-surface hover:bg-surface-container/60 transition-colors" type="button"><span class="material-symbols-outlined text-[22px]">search</span></button><button aria-label="Thông báo" class="min-w-[44px] min-h-[44px] w-11 h-11 rounded-full relative flex items-center justify-center text-on-surface-variant hover:text-on-surface hover:bg-surface-container/60 transition-colors" type="button"><span class="material-symbols-outlined text-[22px]">notifications</span><span class="absolute top-2.5 right-2.5 w-2 h-2 rounded-full bg-secondary-container animate-pulse"></span></button><div class="w-8 h-8 rounded-full bg-primary flex items-center justify-center ml-1"><span class="material-symbols-outlined text-on-primary text-[18px]">person</span></div></div></div><div class="flex items-center gap-space-xs overflow-x-auto no-scrollbar py-0.5"><button class="px-3 py-1 rounded-full font-label-md text-label-md whitespace-nowrap bg-primary-container text-on-primary font-semibold shadow-[0_0_12px_rgba(245,158,11,0.3)]" type="button">Tất cả</button><button class="px-3 py-1 rounded-full font-label-md text-label-md whitespace-nowrap bg-surface-container-high/70 backdrop-blur-md text-on-surface-variant hover:text-on-surface transition-colors" type="button">Phim Lẻ</button><button class="px-3 py-1 rounded-full font-label-md text-label-md whitespace-nowrap bg-surface-container-high/70 backdrop-blur-md text-on-surface-variant hover:text-on-surface transition-colors" type="button">Phim Bộ</button><button class="px-3 py-1 rounded-full font-label-md text-label-md whitespace-nowrap bg-surface-container-high/70 backdrop-blur-md text-on-surface-variant hover:text-on-surface transition-colors" type="button">Anime</button><button class="px-3 py-1 rounded-full font-label-md text-label-md whitespace-nowrap bg-surface-container-high/70 backdrop-blur-md text-on-surface-variant hover:text-on-surface transition-colors" type="button">Chiếu Rạp</button></div></div></header><main class="flex flex-col relative w-full pt-28 pb-28 z-10 bg-transparent"><div class="flex flex-col w-full text-on-surface select-none pb-12">
+<!-- Spatial Stage Ambient Halo -->
+<div class="relative w-full px-margin pt-2">
+<!-- Dynamic Spatial Header Status Bar (Floating Glass Sub-bar) -->
+<div class="w-full mb-4 px-3.5 py-2.5 rounded-2xl bg-surface-container/60 backdrop-blur-xl border border-white/10 flex items-center justify-between shadow-lg shadow-black/40">
+<div class="flex items-center gap-2">
+<div class="relative flex items-center justify-center w-6 h-6 rounded-full bg-primary/10">
+<span class="material-symbols-outlined text-primary text-[17px] animate-pulse">view_in_ar</span>
+<span class="absolute -top-0.5 -right-0.5 w-2 h-2 rounded-full bg-primary-container shadow-[0_0_8px_#f59e0b]"></span>
+</div>
+<div class="flex flex-col">
+<span class="font-label-sm text-label-sm uppercase tracking-wider text-primary font-bold">Không Gian 3D • VisionOS</span>
+<span class="font-body-sm text-body-sm text-on-surface-variant text-[11px] leading-tight">Dolby Vision • Atmos 9.1.4 Khả Dụng</span>
+</div>
+</div>
+<div class="flex items-center gap-1.5 bg-surface-container-highest/80 backdrop-blur-md px-2.5 py-1 rounded-full shadow-inner border border-white/5">
+<span class="w-1.5 h-1.5 rounded-full bg-tertiary shadow-[0_0_6px_#54ddfc]"></span>
+<span class="font-label-sm text-label-sm text-tertiary tracking-wide font-bold">CALIBRATED</span>
+</div>
+</div>
+<!-- Spatial Environments Selector (Pill bar) -->
+<div class="flex items-center gap-2 overflow-x-auto no-scrollbar pb-3">
+<button class="group flex items-center gap-1.5 px-3 py-1.5 rounded-full bg-primary-container text-on-primary font-label-md text-label-md font-bold whitespace-nowrap shadow-[0_0_18px_rgba(245,158,11,0.45)] transition-all" type="button">
+<span class="material-symbols-outlined text-[16px]">lens_blur</span>
+<span>IMAX Laser Dome</span>
+</button>
+<button class="group flex items-center gap-1.5 px-3 py-1.5 rounded-full bg-surface-container-high/60 backdrop-blur-md border border-white/10 text-on-surface-variant hover:text-on-surface font-label-md text-label-md whitespace-nowrap transition-all" type="button">
+<span class="material-symbols-outlined text-[16px] text-tertiary">public</span>
+<span>Không Trọng Lực</span>
+</button>
+<button class="group flex items-center gap-1.5 px-3 py-1.5 rounded-full bg-surface-container-high/60 backdrop-blur-md border border-white/10 text-on-surface-variant hover:text-on-surface font-label-md text-label-md whitespace-nowrap transition-all" type="button">
+<span class="material-symbols-outlined text-[16px] text-primary">chair</span>
+<span>VIP Cinema Lounge</span>
+</button>
+</div>
+<!-- Hero Featured Banner: Spatial Glassmorphic Stage with 3D Depth Perception -->
+<div class="relative w-full rounded-3xl overflow-hidden bg-surface-container-lowest/80 backdrop-blur-md border border-white/10 shadow-[0_20px_48px_-10px_rgba(0,0,0,0.9)] p-0.5">
+<!-- Glow Underlay (VisionOS edge reflection) -->
+<div class="absolute -inset-1 bg-gradient-to-b from-primary/30 via-transparent to-tertiary/20 rounded-3xl blur-xl opacity-60 pointer-events-none"></div>
+<div class="relative w-full rounded-[22px] overflow-hidden bg-surface-container-low/60">
+<!-- Backdrop Poster Art with Cinematic Scrim -->
+<div class="relative w-full h-[400px]">
+<div class="w-full h-full bg-cover bg-center transform scale-105 transition-transform duration-700" data-alt="Epic cinematic still from Dune Part Two on desert dunes of Arrakis with Paul Atreides and Chani under giant glowing amber twin moons, warm atmospheric cinematic lighting, IMAX 70mm composition, photorealistic volumetric dust and golden lens flares" style="background-image: url('https://lh3.googleusercontent.com/aida-public/AB6AXuAv4Vai8IzFqZpAUw05OhGK62R4dopKC3a1NEhwJ3IeFAoumDRrkyRhAs7E8r_5sqQJ8JnMgMbU7czOkxzMh7TnU_8O901Z0oXKVOVyE2i4swipSZnugU-pV0MdCPaW_0JrwMnlLCW20dDjB_cn74s_7PDFRQMHGDVg3Cq20N7QSVc994zYabcwoHye0hySAmu-_t5N9is6ATSda_sCYnTWNp--MunD-wAmTwUDwiI1VQTsMNcmAY38')"></div>
+<!-- Cinematic Multi-tier Vignettes & Glass Gradients -->
+<div class="absolute inset-0 bg-gradient-to-t from-surface-container-lowest via-surface-container-lowest/60 to-transparent"></div>
+<div class="absolute inset-0 bg-gradient-to-r from-surface-container-lowest/90 via-transparent to-surface-container-lowest/40"></div>
+<!-- Top Badge Floating Pill (Spatial Tag & Live Audience) -->
+<div class="absolute top-3.5 left-3.5 right-3.5 flex items-center justify-between">
+<div class="flex items-center gap-1.5 px-2.5 py-1 rounded-full bg-surface-container-lowest/70 backdrop-blur-xl border border-white/10 shadow-md">
+<span class="w-2 h-2 rounded-full bg-secondary-container animate-ping"></span>
+<span class="font-label-sm text-label-sm text-on-surface tracking-wider font-bold">● SPATIAL 3D STAGE</span>
+</div>
+<div class="flex items-center gap-1 px-2.5 py-1 rounded-full bg-surface-container-lowest/70 backdrop-blur-xl border border-white/10 shadow-md">
+<span class="material-symbols-outlined text-[15px] text-tertiary">headphones</span>
+<span class="font-label-sm text-label-sm text-tertiary font-bold tracking-wider">360° AUDIO</span>
+</div>
+</div>
+<!-- Theatrical Floating Content Block -->
+<div class="absolute bottom-3 left-3 right-3 p-4 rounded-2xl bg-surface-container/75 backdrop-blur-2xl border border-white/10 shadow-[0_16px_36px_rgba(0,0,0,0.6)]">
+<!-- Badges Row -->
+<div class="flex flex-wrap items-center gap-1.5 mb-2">
+<span class="px-2 py-0.5 rounded-md bg-surface-container-highest/80 border border-white/5 text-primary font-label-sm text-label-sm font-bold">IMAX 70MM</span>
+<span class="px-2 py-0.5 rounded-md bg-surface-container-highest/80 border border-white/5 text-on-surface font-label-sm text-label-sm font-bold">DOLBY VISION</span>
+<span class="px-2 py-0.5 rounded-md bg-secondary-container/20 border border-secondary/20 text-secondary font-label-sm text-label-sm font-bold">16+</span>
+</div>
+<!-- Title -->
+<h1 class="font-headline-xl-mobile text-headline-xl-mobile text-on-surface font-extrabold tracking-tight drop-shadow-md">
+              DUNE: HÀNH TINH CÁT II
+            </h1>
+<!-- Accolades & Critical Metrics -->
+<div class="flex items-center gap-3 my-2.5 py-1 overflow-x-auto no-scrollbar">
+<div class="flex items-center gap-1">
+<span class="text-primary font-bold text-[13px]">★</span>
+<span class="font-badge-numeric text-badge-numeric text-on-surface font-bold">9.2</span>
+<span class="font-label-sm text-label-sm text-on-surface-variant">IMDb</span>
+</div>
+<div class="w-1 h-1 rounded-full bg-outline-variant"></div>
+<div class="flex items-center gap-1">
+<span class="text-secondary-fixed text-[13px]">🍅</span>
+<span class="font-badge-numeric text-badge-numeric text-on-surface font-bold">95%</span>
+<span class="font-label-sm text-label-sm text-on-surface-variant">Rotten</span>
+</div>
+<div class="w-1 h-1 rounded-full bg-outline-variant"></div>
+<div class="flex items-center gap-1">
+<span class="material-symbols-outlined text-[14px] text-primary">military_tech</span>
+<span class="font-label-sm text-label-sm text-primary font-semibold whitespace-nowrap">6 GIẢI OSCAR</span>
+</div>
+</div>
+<p class="font-body-sm text-body-sm text-on-surface-variant line-clamp-2 mb-3.5">
+              Hành trình định mệnh của Paul Atreides khi anh hợp nhất với Chani và tộc Fremen, trả thù những kẻ hủy hoại gia tộc giữa vũ trụ cát bụi.
+            </p>
+<!-- Dual Action CTAs -->
+<div class="grid grid-cols-5 gap-2 pt-0.5">
+<button class="col-span-3 min-h-[46px] px-4 rounded-xl bg-primary-container text-on-primary font-label-lg text-label-lg font-bold flex items-center justify-center gap-2 shadow-[0_8px_24px_rgba(245,158,11,0.4)] active:scale-[0.98] transition-transform" type="button">
+<span class="material-symbols-outlined text-[20px]" style="font-variation-settings: 'FILL' 1;">play_arrow</span>
+<span class="tracking-wide text-xs uppercase">XEM SPATIAL 3D</span>
+</button>
+<button class="col-span-2 min-h-[46px] px-3 rounded-xl bg-surface-container-highest/70 backdrop-blur-md border border-white/10 text-on-surface font-label-lg text-label-lg font-semibold flex items-center justify-center gap-1.5 hover:bg-surface-container-highest active:scale-[0.98] transition-all" type="button">
+<span class="material-symbols-outlined text-[18px] text-tertiary">group</span>
+<span class="text-xs">Phòng Ảo</span>
+</button>
+</div>
+</div>
+</div>
+</div>
+</div>
+</div>
+<!-- Continue Watching Section (Spatial Audio Equipped Card) -->
+<section class="mt-7 px-margin w-full">
+<div class="flex items-center justify-between mb-3">
+<div class="flex items-center gap-2">
+<span class="w-2 h-2 rounded-full bg-primary shadow-[0_0_8px_#ffc174]"></span>
+<h2 class="font-headline-sm text-headline-sm text-on-surface font-bold tracking-tight">Tiếp tục thưởng thức</h2>
+</div>
+<a class="font-label-md text-label-md text-primary font-semibold flex items-center gap-0.5 hover:underline" href="#">
+        Tất cả <span class="material-symbols-outlined text-[15px]">chevron_right</span>
+</a>
+</div>
+<!-- Active Resume Card with Spatial Edge Glow -->
+<div class="relative w-full p-3 rounded-2xl bg-surface-container/60 backdrop-blur-xl border border-white/10 shadow-lg shadow-black/50 flex gap-3.5 items-center">
+<!-- Media Thumbnail with Floating Glass Play -->
+<div class="relative w-28 h-20 rounded-xl overflow-hidden shrink-0 bg-surface-container-low">
+<div class="w-full h-full bg-cover bg-center" data-alt="Cinematic frame of Christopher Nolan Interstellar Endurance spacecraft orbiting black hole Gargantua with glowing golden accretion disk against deep obsidian cosmos and spatial optical depth" style="background-image: url('https://lh3.googleusercontent.com/aida-public/AB6AXuBzt8KgqxF47xxkVBuPbLAIzYblllqSCeKAZ9I194lezzm7qJ7ZhoBIyWqmKPuB9EjZ4g79x4vJb2c_noMccEbFC3zpOE5clOHf3HRqMWFS5NhaErKW4zYCNrtRsWrCMMg76ZRnSukEwaSravK9-BI5kCN3wOb-E_IQBkgvKJWEgn9AjMyuKOx7dKFP0OtTcm8gSJrrxlb58GKv-Q_cHBDil6uMLbLUET_na5bPlDtXIuUzZZ55B0nH')"></div>
+<div class="absolute inset-0 bg-black/35 flex items-center justify-center">
+<div class="w-8 h-8 rounded-full bg-primary-container/90 text-on-primary flex items-center justify-center shadow-[0_0_12px_#f59e0b]">
+<span class="material-symbols-outlined text-[18px]" style="font-variation-settings: 'FILL' 1;">play_arrow</span>
+</div>
+</div>
+<div class="absolute bottom-1 right-1 px-1.5 py-0.5 rounded bg-black/80 font-badge-numeric text-[10px] text-white font-bold">
+          42:18
+        </div>
+</div>
+<!-- Episode Info & Glowing Progress Line -->
+<div class="flex flex-col flex-1 min-w-0">
+<div class="flex items-center justify-between gap-1 mb-0.5">
+<span class="font-label-sm text-label-sm text-tertiary font-bold tracking-wider">DOLBY ATMOS 9.1</span>
+<span class="font-label-sm text-label-sm text-on-surface-variant">Còn 1h 24p</span>
+</div>
+<h3 class="font-headline-sm text-headline-sm text-on-surface text-[15px] font-bold truncate">
+          INTERSTELLAR: Hố Đen Tử Thần
+        </h3>
+<p class="font-body-sm text-body-sm text-on-surface-variant text-[12px] truncate mb-2">
+          Cảnh quay siêu thực tại Chiều Không Gian Thứ 5
+        </p>
+<!-- Glowing Ambient Progress Bar -->
+<div class="w-full h-1.5 rounded-full bg-surface-container-highest overflow-hidden relative">
+<div class="h-full w-[68%] rounded-full bg-gradient-to-r from-primary-container via-primary to-tertiary shadow-[0_0_10px_#f59e0b]"></div>
+</div>
+</div>
+</div>
+</section>
+<!-- Interactive Feature Block: Spatial Watch Party with Friends -->
+<section class="mt-7 px-margin w-full">
+<div class="relative w-full rounded-2xl overflow-hidden p-4 bg-surface-container-high/50 backdrop-blur-2xl border border-white/10 shadow-xl shadow-black/60">
+<!-- Background Aurora Gradient -->
+<div class="absolute -top-12 -right-12 w-36 h-36 rounded-full bg-tertiary/20 blur-2xl pointer-events-none"></div>
+<div class="absolute -bottom-10 -left-10 w-36 h-36 rounded-full bg-secondary-container/20 blur-2xl pointer-events-none"></div>
+<div class="relative flex flex-col gap-3">
+<div class="flex items-start justify-between">
+<div class="flex flex-col">
+<div class="flex items-center gap-1.5 mb-1">
+<span class="material-symbols-outlined text-tertiary text-[18px]">spatial_audio_off</span>
+<span class="font-label-sm text-label-sm text-tertiary font-bold uppercase tracking-wider">Độc quyền CineStream VR</span>
+</div>
+<h3 class="font-headline-md text-headline-md text-on-surface text-[17px] font-bold">
+              Phòng Chiếu Không Gian Cùng Bạn Bè
+            </h3>
+</div>
+<span class="px-2 py-0.5 rounded-full bg-surface-container-highest/80 border border-white/5 text-primary font-badge-numeric text-[11px] font-bold tracking-wider">
+            3 PHÒNG SẴN SÀNG
+          </span>
+</div>
+<p class="font-body-sm text-body-sm text-on-surface-variant text-[12px] leading-relaxed">
+          Đồng bộ thời gian thực với avatar 3D tương tác đa chiều và âm thanh vòm định vị giọng nói xung quanh phòng chiếu.
+        </p>
+<!-- Social Active Pod & Quick Join -->
+<div class="flex items-center justify-between pt-1">
+<div class="flex items-center -space-x-2">
+<div class="w-8 h-8 rounded-full bg-primary/30 flex items-center justify-center shadow-md">
+<span class="material-symbols-outlined text-[16px] text-primary">face_6</span>
+</div>
+<div class="w-8 h-8 rounded-full bg-tertiary/30 flex items-center justify-center shadow-md">
+<span class="material-symbols-outlined text-[16px] text-tertiary">face_3</span>
+</div>
+<div class="w-8 h-8 rounded-full bg-secondary-container/30 flex items-center justify-center shadow-md">
+<span class="material-symbols-outlined text-[16px] text-secondary">face_5</span>
+</div>
+<div class="w-8 h-8 rounded-full bg-surface-container-highest flex items-center justify-center font-badge-numeric text-badge-numeric text-on-surface text-[11px] font-bold shadow-md">
+              +4
+            </div>
+</div>
+<button class="px-3.5 py-1.5 rounded-xl bg-tertiary-container/30 text-tertiary font-label-md text-label-md font-bold flex items-center gap-1 hover:bg-tertiary-container/40 active:scale-95 transition-all" type="button">
+<span class="material-symbols-outlined text-[16px]">spatial_tracking</span>
+<span>Tham Gia Ngay</span>
+</button>
+</div>
+</div>
+</div>
+</section>
+<!-- Curated Masterpieces: Top 3 Cinema Hall of Fame -->
+<section class="mt-7 w-full">
+<div class="flex items-center justify-between px-margin mb-3.5">
+<div class="flex flex-col">
+<span class="font-label-sm text-label-sm text-primary uppercase font-bold tracking-widest">BẢNG XẾP HẠNG HÀN LÂM</span>
+<h2 class="font-headline-sm text-headline-sm text-on-surface font-bold">Tuyệt Tác Tuyển Chọn</h2>
+</div>
+<div class="flex items-center gap-1 text-on-surface-variant font-label-sm text-label-sm">
+<span class="material-symbols-outlined text-[16px] text-primary">verified</span>
+<span>Kiểm định 4K</span>
+</div>
+</div>
+<!-- Horizontal Snap Rail with Cinematic Numerals & Floating 3D Cards -->
+<div class="flex gap-4 overflow-x-auto no-scrollbar px-margin pt-1 pb-4 snap-x snap-mandatory">
+<!-- Rank 1 Card -->
+<div class="snap-start relative flex-shrink-0 w-44 flex flex-col group">
+<!-- Floating Big Theatrical Number -->
+<div class="absolute -top-3 -left-2 z-20 font-headline-lg text-[44px] font-black leading-none text-primary drop-shadow-[0_4px_12px_rgba(245,158,11,0.5)]">
+          1
+        </div>
+<div class="relative w-full h-64 rounded-2xl overflow-hidden bg-surface-container-low/80 backdrop-blur-md border border-white/10 shadow-xl shadow-black/70 transition-transform duration-300 group-hover:scale-105">
+<div class="w-full h-full bg-cover bg-center" data-alt="Cinematic movie poster for Oppenheimer showcasing Cillian Murphy with intense focused gaze in warm amber flame reflections and atomic particle dust clouds, ultra-high resolution dark masterpiece" style="background-image: url('https://lh3.googleusercontent.com/aida-public/AB6AXuDK0WB0Cb7O2ZnQLgGivSx2zzAiuHyHlVZ3Y9-h96FBe6f-j1EtKKW6-VM58QxmDpvz1cMUINhkXnoc5J9xWzZNHbSkKzIHrpEb-JBWfkclJHAvul2Wyq1NT203HzKK8TCmEAq4fID7WXB2qC-OZUMZOz-lAPpV4U5ZejWDW8o6kusBZcdbcnkf65xV5RHkceWRmrrCpHrh1Mm7wycbtpnxsCLw9C-wug6qO8TOdo8kC4Cg4NFKkbST')"></div>
+<div class="absolute inset-0 bg-gradient-to-t from-surface-container-lowest via-transparent to-transparent"></div>
+<!-- Top Right Rating Capsule -->
+<div class="absolute top-2.5 right-2.5 px-2 py-0.5 rounded-full bg-surface-container-lowest/80 backdrop-blur-md flex items-center gap-1 shadow-md">
+<span class="text-primary text-[11px] font-bold">★</span>
+<span class="font-badge-numeric text-[11px] text-on-surface font-bold">8.9</span>
+</div>
+<!-- Bottom Meta Label -->
+<div class="absolute bottom-2.5 left-2.5 right-2.5 flex flex-col">
+<span class="font-label-sm text-[10px] text-primary font-bold">7 GIẢI OSCAR</span>
+<span class="font-headline-sm text-headline-sm text-on-surface text-[14px] font-bold truncate">Oppenheimer</span>
+<span class="font-body-sm text-body-sm text-on-surface-variant text-[11px]">Christopher Nolan • 3h 00m</span>
+</div>
+</div>
+</div>
+<!-- Rank 2 Card -->
+<div class="snap-start relative flex-shrink-0 w-44 flex flex-col group">
+<div class="absolute -top-3 -left-2 z-20 font-headline-lg text-[44px] font-black leading-none text-on-surface drop-shadow-[0_4px_12px_rgba(255,255,255,0.3)]">
+          2
+        </div>
+<div class="relative w-full h-64 rounded-2xl overflow-hidden bg-surface-container-low/80 backdrop-blur-md border border-white/10 shadow-xl shadow-black/70 transition-transform duration-300 group-hover:scale-105">
+<div class="w-full h-full bg-cover bg-center" data-alt="Cinematic movie poster for Blade Runner 2049 showing Ryan Gosling Officer K walking through massive orange atmospheric dusty desert with colossal fallen cybernetic statues, cinematic volumetric fog and deep sci-fi aesthetic" style="background-image: url('https://lh3.googleusercontent.com/aida-public/AB6AXuDZ0dR0QSH_J7-DgYAvV8GoiWQmpYyGqMHVYf4y_yG75PG8Z2-1QFPMr_u5h9oJj2zIiuTM4aMLIr8qSIlF7A-jdlx0xuGZjgPKhqTq9PxvegnNKZ68ngmqazKnrI-FSlW4HYookAgEE7-sNfWvAs22LNe4Nx-uIArCK0muc50OdjfVw7jQBzzJUtny_L_m0pK_NhuP7vPOG_KLgTqekxV9G1Kfrq0Yqaqp26p4EmLkN8_AePRKzWie')"></div>
+<div class="absolute inset-0 bg-gradient-to-t from-surface-container-lowest via-transparent to-transparent"></div>
+<div class="absolute top-2.5 right-2.5 px-2 py-0.5 rounded-full bg-surface-container-lowest/80 backdrop-blur-md flex items-center gap-1 shadow-md">
+<span class="text-primary text-[11px] font-bold">★</span>
+<span class="font-badge-numeric text-[11px] text-on-surface font-bold">8.6</span>
+</div>
+<div class="absolute bottom-2.5 left-2.5 right-2.5 flex flex-col">
+<span class="font-label-sm text-[10px] text-tertiary font-bold">SPATIAL MASTER</span>
+<span class="font-headline-sm text-headline-sm text-on-surface text-[14px] font-bold truncate">Blade Runner 2049</span>
+<span class="font-body-sm text-body-sm text-on-surface-variant text-[11px]">Denis Villeneuve • 2h 44m</span>
+</div>
+</div>
+</div>
+<!-- Rank 3 Card -->
+<div class="snap-start relative flex-shrink-0 w-44 flex flex-col group">
+<div class="absolute -top-3 -left-2 z-20 font-headline-lg text-[44px] font-black leading-none text-tertiary drop-shadow-[0_4px_12px_rgba(84,221,252,0.4)]">
+          3
+        </div>
+<div class="relative w-full h-64 rounded-2xl overflow-hidden bg-surface-container-low/80 backdrop-blur-md border border-white/10 shadow-xl shadow-black/70 transition-transform duration-300 group-hover:scale-105">
+<div class="w-full h-full bg-cover bg-center" data-alt="Cinematic fantasy sci-fi movie poster for Avatar The Way of Water featuring underwater bioluminescent Pandora oceans with Na vi diving alongside giant Ilu creatures, mesmerizing turquoise and deep ocean indigo glowing hues" style="background-image: url('https://lh3.googleusercontent.com/aida-public/AB6AXuBIe-kYEMorxzt7p7cpLXtXeK2yFv3LKMatTr1oMSGSU25WOW_8pg7lg3IJUJxhq37D1G0VffoDyKuz25mbcoYeRgg4R2gMEgiBAwKT_rx6Bjq7dRfdzTwvXlhSQjTybuyepQiYaBp7X9lQ31tySM5PLhG7ydnljXW04jwgVNob5lduED-fBO_08XbEP4W4jIj6uE-Up5FklV4-gKVwk_enBSbPUZuQhISGm2jWhMJ5DToh4W_0il6g')"></div>
+<div class="absolute inset-0 bg-gradient-to-t from-surface-container-lowest via-transparent to-transparent"></div>
+<div class="absolute top-2.5 right-2.5 px-2 py-0.5 rounded-full bg-surface-container-lowest/80 backdrop-blur-md flex items-center gap-1 shadow-md">
+<span class="text-primary text-[11px] font-bold">★</span>
+<span class="font-badge-numeric text-[11px] text-on-surface font-bold">8.4</span>
+</div>
+<div class="absolute bottom-2.5 left-2.5 right-2.5 flex flex-col">
+<span class="font-label-sm text-[10px] text-secondary font-bold">HFR 3D ATMOS</span>
+<span class="font-headline-sm text-headline-sm text-on-surface text-[14px] font-bold truncate">Avatar: Dòng Chảy</span>
+<span class="font-body-sm text-body-sm text-on-surface-variant text-[11px]">James Cameron • 3h 12m</span>
+</div>
+</div>
+</div>
+</div>
+</section>
+<!-- Dolby Spatial Audio Calibration Showcase Mini-banner -->
+<section class="mt-4 px-margin w-full">
+<div class="w-full p-4 rounded-2xl bg-gradient-to-r from-surface-container/60 via-surface-container-high/60 to-surface-container-low/60 backdrop-blur-xl border border-white/10 flex items-center justify-between shadow-lg shadow-black/40">
+<div class="flex items-center gap-3">
+<div class="w-10 h-10 rounded-full bg-primary/10 flex items-center justify-center shrink-0">
+<span class="material-symbols-outlined text-primary text-[22px]">graphic_eq</span>
+</div>
+<div class="flex flex-col min-w-0">
+<span class="font-headline-sm text-headline-sm text-[15px] font-bold text-on-surface truncate">
+            Hiệu Chuẩn Âm Vòm Phòng
+          </span>
+<span class="font-body-sm text-body-sm text-on-surface-variant text-[12px]">
+            Tự động quét cấu trúc phòng qua micro thiết bị
+          </span>
+</div>
+</div>
+<button aria-label="Bắt đầu cân chỉnh" class="min-w-[40px] min-h-[40px] rounded-full bg-surface-container-highest/80 border border-white/10 text-primary flex items-center justify-center hover:bg-primary hover:text-on-primary transition-all shrink-0" type="button">
+<span class="material-symbols-outlined text-[20px]">tune</span>
+</button>
+</div>
+</section>
+</div></main><div class="fixed bottom-0 w-full z-50 pb-safe pointer-events-none flex justify-center px-margin mb-3"><nav class="pointer-events-auto w-full max-w-md h-16 rounded-full bg-surface-container-lowest/80 backdrop-blur-2xl border border-white/10 shadow-[0_12px_32px_rgba(0,0,0,0.6)] px-space-xs flex items-center justify-around" data-active-classes="text-primary [&amp;&gt;div]:bg-primary/20 [&amp;&gt;div]:shadow-[0_0_16px_rgba(255,193,116,0.35)]"><a class="group flex flex-col items-center justify-center min-w-[44px] min-h-[44px] px-3 py-1 text-primary hover:text-on-surface transition-colors" data-path="trang-chu" href="#"><div class="w-10 h-7 rounded-full flex items-center justify-center bg-primary/20 shadow-[0_0_16px_rgba(255,193,116,0.35)] transition-all"><span class="material-symbols-outlined text-[20px]">home</span></div><span class="font-label-sm text-label-sm tracking-wide mt-0.5">Trang chủ</span></a><a class="group flex flex-col items-center justify-center min-w-[44px] min-h-[44px] px-3 py-1 text-on-surface-variant hover:text-on-surface transition-colors" data-path="kham-pha" href="#"><div class="w-10 h-7 rounded-full flex items-center justify-center transition-all"><span class="material-symbols-outlined text-[20px]">explore</span></div><span class="font-label-sm text-label-sm tracking-wide mt-0.5">Khám phá</span></a><a class="group flex flex-col items-center justify-center min-w-[44px] min-h-[44px] px-3 py-1 text-on-surface-variant hover:text-on-surface transition-colors" data-path="tai-ve" href="#"><div class="w-10 h-7 rounded-full flex items-center justify-center transition-all"><span class="material-symbols-outlined text-[20px]">download_for_offline</span></div><span class="font-label-sm text-label-sm tracking-wide mt-0.5">Tải về</span></a><a class="group flex flex-col items-center justify-center min-w-[44px] min-h-[44px] px-3 py-1 text-on-surface-variant hover:text-on-surface transition-colors" data-path="ho-so" href="#"><div class="w-10 h-7 rounded-full flex items-center justify-center transition-all"><span class="material-symbols-outlined text-[20px]">account_circle</span></div><span class="font-label-sm text-label-sm tracking-wide mt-0.5">Hồ sơ</span></a></nav></div></body></html>

@@ -35,7 +35,7 @@ export default function WatchSection({ embedUrl, m3u8Url, nextEpisodeSlug, movie
   return (
     <div className="space-y-4">
       {/* Player Container */}
-      <div className="aspect-video w-full bg-black rounded-lg overflow-hidden relative shadow-2xl border border-white/10">
+      <div className="w-full bg-black rounded-lg overflow-hidden relative shadow-2xl border border-white/10 min-h-[70vh]">
         {playerType === 'embed' ? (
           embedUrl ? (
             <iframe

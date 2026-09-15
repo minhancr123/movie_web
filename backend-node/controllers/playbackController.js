@@ -286,6 +286,18 @@ const STARTUP_BUFFER_SECONDS = Math.max(
  */
 const RESOLVE_BUFFER_WAIT_MS = 6000;
 
+/**
+ * The floor below which the HLS endpoint refuses to serve at all.
+ *
+ * This and the head start above have to be read together. They used to
+ * disagree: the endpoint demanded 30 s while resolve handed the session over at
+ * 15 s or less, so the player received a session whose every request answered
+ * 409 and it sat at readyState 0 forever. A gate the producer cannot satisfy is
+ * not a safety check, it is a deadlock, so the floor is derived from the target
+ * rather than written down twice.
+ */
+const PLAYLIST_MIN_SECONDS = Math.min(8, STARTUP_BUFFER_SECONDS);
+
 const readPlaylistState = async (sessionId) => {
   try {
     const playlist = await fs.readFile(sessionPath(sessionId, 'index.m3u8'), 'utf8');
@@ -877,10 +889,17 @@ export const resolvePlayback = async (req, res) => {
         // A short, verified head start absorbs normal upstream jitter. More
         // importantly, a source which stops producing segments is rejected here
         // instead of leaving the player spinning forever.
-        // Wait briefly for a head start, then hand over regardless: the client
-        // polls the session for the rest and can show real progress instead of
-        // a frozen caption. A source that never fills is caught by the poll,
-        // not by holding this request open.
+        // Never hand over a session the HLS endpoint would refuse: below the
+        // floor the player gets nothing but 409s. A source that cannot reach
+        // even this is the dead source the old long wait existed to catch.
+        const servable = await waitForInitialBuffer(sessionId, PLAYLIST_MIN_SECONDS, 45000);
+        if (!servable) {
+          throw new Error(`Nguồn remux không tạo nổi ${PLAYLIST_MIN_SECONDS}s đầu trong 45 giây`);
+        }
+
+        // Past the floor, the head start is worth having but not worth blocking
+        // for: the client polls for the rest and shows real progress instead of
+        // a frozen caption.
         warmingUp = !(await waitForInitialBuffer(
           sessionId,
           STARTUP_BUFFER_SECONDS,
@@ -1655,7 +1674,9 @@ export const getPlaybackSession = async (req, res) => {
 
     if (session.mode === 'remux') {
       const state = await readPlaylistState(session.sessionId);
-      if (!state.exists || state.duration < 30) return fail(res, 409, 'Video vẫn đang được chuẩn bị');
+      if (!state.exists || state.duration < PLAYLIST_MIN_SECONDS) {
+        return fail(res, 409, 'Video vẫn đang được chuẩn bị');
+      }
     }
 
     const { _id, userId, userIdStr, ...publicSession } = session;
@@ -1702,7 +1723,9 @@ export const serveHlsAsset = async (req, res) => {
     }
     if (asset === 'index.m3u8') {
       const state = await readPlaylistState(sessionId);
-      if (!state.exists || state.duration < 30) return fail(res, 409, 'Video vẫn đang được chuẩn bị');
+      if (!state.exists || state.duration < PLAYLIST_MIN_SECONDS) {
+        return fail(res, 409, 'Video vẫn đang được chuẩn bị');
+      }
       if (!state.ended) {
         const live = getRemuxSession(sessionId);
         const playlistPath = sessionPath(sessionId, 'index.m3u8');

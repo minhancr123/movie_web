@@ -60,3 +60,7 @@ obj/
 
 # graft's local graph cache — regenerable, not committed (run `graft build`).
 /graft/
+
+# local debug/verification transactions (TDD baselines, red/green logs,
+# rollback copies — may briefly hold session tokens, never commit).
+.codex-artifacts/

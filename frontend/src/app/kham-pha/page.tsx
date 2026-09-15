@@ -16,12 +16,24 @@ const YEARS = Array.from({ length: 15 }, (_, i) => CURRENT_YEAR - i);
 
 // TMDB filters by ISO-3166-1 origin country, not by the old phimapi slugs.
 const REGIONS = [
+  { code: 'VN', name: 'Việt Nam' },
   { code: 'KR', name: 'Hàn Quốc' },
   { code: 'CN', name: 'Trung Quốc' },
   { code: 'US', name: 'Mỹ' },
-  { code: 'VN', name: 'Việt Nam' },
   { code: 'JP', name: 'Nhật Bản' },
   { code: 'TH', name: 'Thái Lan' },
+  { code: 'GB', name: 'Anh' },
+  { code: 'FR', name: 'Pháp' },
+  { code: 'DE', name: 'Đức' },
+  { code: 'IN', name: 'Ấn Độ' },
+  { code: 'ES', name: 'Tây Ban Nha' },
+  { code: 'IT', name: 'Ý' },
+  { code: 'HK', name: 'Hồng Kông' },
+  { code: 'TW', name: 'Đài Loan' },
+  { code: 'ID', name: 'Indonesia' },
+  { code: 'PH', name: 'Philippines' },
+  { code: 'AU', name: 'Úc' },
+  { code: 'CA', name: 'Canada' },
 ];
 
 export default async function DiscoverPage({ searchParams }: DiscoverPageProps) {

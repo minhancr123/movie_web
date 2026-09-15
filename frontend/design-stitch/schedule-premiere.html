@@ -1,0 +1,697 @@
+<!DOCTYPE html>
+
+<html class="dark" lang="vi"><head>
+<meta charset="utf-8"/>
+<meta content="width=device-width, initial-scale=1.0" name="viewport"/>
+<title>Lịch Chiếu &amp; Công Chiếu Trực Tiếp - CineStream Spatial Cinema Lab</title>
+<!-- Tailwind CSS CDN with Forms & Container Queries -->
+<script src="https://cdn.tailwindcss.com?plugins=forms,container-queries"></script>
+<!-- Google Fonts: Syne, Space Grotesk, Plus Jakarta Sans & Material Symbols -->
+<link href="https://fonts.googleapis.com" rel="preconnect"/>
+<link crossorigin="" href="https://fonts.gstatic.com" rel="preconnect"/>
+<link href="https://fonts.googleapis.com/css2?family=Plus+Jakarta+Sans:ital,wght@0,300;0,400;0,500;0,600;0,700;0,800;1,400&amp;family=Space+Grotesk:wght@400;500;600;700&amp;family=Syne:wght@600;700;800;900&amp;display=swap" rel="stylesheet"/>
+<link href="https://fonts.googleapis.com/css2?family=Material+Symbols+Outlined:opsz,wght,FILL,GRAD@24,400,0,0" rel="stylesheet"/>
+<!-- Tailwind Configuration -->
+<script data-purpose="tailwind-config">
+    tailwind.config = {
+      darkMode: 'class',
+      theme: {
+        extend: {
+          colors: {
+            brand: {
+              amber: '#f59e0b',
+              gold: '#ffc174',
+              orange: '#d97706',
+              cyan: '#54ddfc',
+              dark: '#121316',
+              surface: '#1b1b1f',
+              surfaceAlt: '#232328'
+            }
+          },
+          fontFamily: {
+            sans: ['"Plus Jakarta Sans"', 'sans-serif'],
+            syne: ['Syne', 'sans-serif'],
+            mono: ['"Space Grotesk"', 'monospace']
+          },
+          boxShadow: {
+            'amber-glow': '0 0 35px -5px rgba(245, 158, 11, 0.35)',
+            'amber-sm': '0 0 15px 0 rgba(245, 158, 11, 0.25)',
+            'cyan-glow': '0 0 30px -5px rgba(84, 221, 252, 0.25)'
+          }
+        }
+      }
+    }
+  </script>
+<!-- CSS: Custom Glassmorphism, Glows & Typography Styles -->
+<style data-purpose="base-layout">
+    body {
+      background-color: #121316;
+      color: #e3e2e6;
+      font-family: 'Plus Jakarta Sans', sans-serif;
+      overflow-x: hidden;
+      min-height: 100vh;
+    }
+
+    /* Ambient Spatial Lighting */
+    .spatial-bg-glow {
+      position: fixed;
+      pointer-events: none;
+      z-index: 0;
+      width: 700px;
+      height: 700px;
+      border-radius: 9999px;
+      filter: blur(140px);
+      opacity: 0.12;
+    }
+  </style>
+<style data-purpose="glass-and-scrollbars">
+    /* Glassmorphic Paneling */
+    .cinema-glass {
+      background: rgba(27, 27, 31, 0.65);
+      backdrop-filter: blur(24px);
+      -webkit-backdrop-filter: blur(24px);
+      border: 1px solid rgba(255, 255, 255, 0.08);
+    }
+    .cinema-glass-light {
+      background: rgba(255, 255, 255, 0.04);
+      backdrop-filter: blur(16px);
+      border: 1px solid rgba(255, 255, 255, 0.06);
+    }
+
+    /* Subtle custom scrollbar for spatial chatbox */
+    .custom-chat-scroll::-webkit-scrollbar {
+      width: 4px;
+    }
+    .custom-chat-scroll::-webkit-scrollbar-track {
+      background: transparent;
+    }
+    .custom-chat-scroll::-webkit-scrollbar-thumb {
+      background: rgba(255, 255, 255, 0.15);
+      border-radius: 4px;
+    }
+    .custom-chat-scroll::-webkit-scrollbar-thumb:hover {
+      background: rgba(245, 158, 11, 0.4);
+    }
+  </style>
+</head>
+<body class="relative selection:bg-brand-amber selection:text-black antialiased">
+<!-- Ambient Light Orbs -->
+<div aria-hidden="true" class="spatial-bg-glow bg-[#f59e0b] top-[-100px] left-1/4"></div>
+<div aria-hidden="true" class="spatial-bg-glow bg-[#54ddfc] bottom-1/3 right-[-150px]"></div>
+<!-- BEGIN: MainHeader -->
+<header class="sticky top-0 z-50 w-full cinema-glass border-b border-white/10 px-8 py-3.5" data-purpose="desktop-navbar">
+<div class="max-w-[1440px] mx-auto flex items-center justify-between gap-6">
+<!-- CineStream Logo & Branding -->
+<div class="flex items-center gap-8">
+<a class="flex items-center gap-3.5 group" href="#">
+<div class="w-10 h-10 rounded-xl bg-gradient-to-br from-brand-amber to-brand-orange flex items-center justify-center shadow-amber-sm group-hover:scale-105 transition-transform duration-300">
+<span class="material-symbols-outlined text-black font-extrabold text-2xl">movie</span>
+</div>
+<div class="flex flex-col">
+<div class="flex items-center gap-2">
+<span class="font-syne font-black text-2xl tracking-wider bg-gradient-to-r from-brand-gold via-brand-amber to-amber-200 bg-clip-text text-transparent">CINESTREAM</span>
+<span class="px-2 py-0.5 rounded bg-brand-amber/15 border border-brand-amber/30 text-[10px] font-bold text-brand-gold font-mono uppercase tracking-widest">4K VR</span>
+</div>
+<span class="text-[10px] tracking-[0.25em] text-neutral-400 uppercase -mt-0.5 font-semibold">Spatial Cinema Lab</span>
+</div>
+</a>
+<!-- Primary Navigation -->
+<nav aria-label="Main Navigation" class="hidden lg:flex items-center gap-1.5">
+<a class="px-4 py-2 rounded-xl text-sm font-medium text-neutral-300 hover:text-white hover:bg-white/5 transition" href="#">Trang Chủ</a>
+<a class="px-4 py-2 rounded-xl text-sm font-medium text-neutral-300 hover:text-white hover:bg-white/5 transition" href="#">Khám Phá</a>
+<a class="px-4 py-2 rounded-xl text-sm font-medium text-neutral-300 hover:text-white hover:bg-white/5 transition" href="#">Phim Lẻ</a>
+<a class="px-4 py-2 rounded-xl text-sm font-medium text-neutral-300 hover:text-white hover:bg-white/5 transition flex items-center gap-1.5" href="#">
+            Phim Bộ
+            <span class="px-1.5 py-0.5 text-[9px] font-bold bg-rose-500/20 text-rose-400 border border-rose-500/30 rounded">HOT</span>
+</a>
+<!-- Active Nav Link: Lịch Chiếu -->
+<a class="px-4 py-2 rounded-xl text-sm font-semibold bg-brand-amber/15 text-brand-gold border border-brand-amber/30 shadow-amber-sm flex items-center gap-1.5" href="#">
+<span class="w-1.5 h-1.5 rounded-full bg-brand-amber animate-pulse"></span>
+            Lịch Chiếu
+          </a>
+<a class="px-4 py-2 rounded-xl text-sm font-medium text-brand-cyan hover:bg-brand-cyan/10 transition flex items-center gap-1.5" href="#">
+<span class="material-symbols-outlined text-base">view_in_ar</span>
+            Phòng Ảo VR
+          </a>
+</nav>
+</div>
+<!-- Search Box & User Profile Controls -->
+<div class="flex items-center gap-4">
+<!-- Shortcut Search Bar -->
+<div class="relative w-72 hidden md:block">
+<span class="material-symbols-outlined absolute left-3.5 top-1/2 -translate-y-1/2 text-neutral-400 text-lg">search</span>
+<input class="w-full pl-10 pr-16 py-2 rounded-xl bg-white/5 border border-white/10 text-xs text-white placeholder-neutral-400 focus:outline-none focus:border-brand-amber/50 focus:ring-1 focus:ring-brand-amber/50 transition backdrop-blur-md" placeholder="Tìm kiếm tác phẩm, đạo diễn..." type="text"/>
+<kbd class="absolute right-3 top-1/2 -translate-y-1/2 text-[10px] font-mono px-1.5 py-0.5 rounded bg-white/10 text-neutral-400 border border-white/10">Ctrl+K</kbd>
+</div>
+<!-- Notification Bell with Ping -->
+<button aria-label="Xem thông báo" class="relative p-2.5 rounded-xl bg-white/5 hover:bg-white/10 text-neutral-300 transition">
+<span class="material-symbols-outlined text-xl">notifications</span>
+<span class="absolute top-2 right-2 w-2.5 h-2.5 bg-rose-500 rounded-full border-2 border-[#121316]"></span>
+</button>
+<!-- VIP Profile Badge Card -->
+<div class="flex items-center gap-3 pl-2 border-l border-white/10">
+<div class="relative">
+<div class="w-10 h-10 rounded-full ring-2 ring-brand-amber/60 overflow-hidden bg-neutral-800 flex items-center justify-center font-bold text-sm text-brand-gold">
+              TL
+            </div>
+<span class="absolute -bottom-1 -right-1 px-1 py-0.2 bg-gradient-to-r from-brand-amber to-brand-orange text-[9px] font-black text-black rounded uppercase">VIP</span>
+</div>
+<div class="hidden xl:flex flex-col text-left">
+<span class="text-xs font-bold text-neutral-100 flex items-center gap-1">
+              Trần Long
+              <span class="material-symbols-outlined text-brand-gold text-[14px]">verified</span>
+</span>
+<span class="text-[10px] text-brand-gold/80 font-mono tracking-wider">Master 4K Space</span>
+</div>
+</div>
+</div>
+</div>
+</header>
+<!-- END: MainHeader -->
+<!-- BEGIN: MainContent -->
+<main class="max-w-[1440px] mx-auto px-8 py-8 space-y-12">
+<!-- BEGIN: SpatialPremiereLiveSection -->
+<section aria-labelledby="live-premiere-heading" class="relative">
+<div class="cinema-glass rounded-3xl p-6 md:p-8 shadow-2xl border border-white/10 relative overflow-hidden">
+<!-- Subtle Ambient Glow inside Card -->
+<div class="absolute -top-40 -left-20 w-96 h-96 bg-brand-amber/15 rounded-full blur-3xl pointer-events-none"></div>
+<!-- Main 2-Column Grid -->
+<div class="grid grid-cols-1 lg:grid-cols-12 gap-6 relative z-10 items-stretch">
+<!-- LEFT COLUMN: Massive Cinematic Live Stream Stage (68% width -> lg:col-span-8) -->
+<div class="lg:col-span-8 flex flex-col justify-between rounded-2xl overflow-hidden relative min-h-[560px] border border-white/10 group">
+<!-- Desert Background Movie Still -->
+<div class="absolute inset-0 z-0">
+<img alt="Dune Arrakis Desert with Ornithopter" class="w-full h-full object-cover object-center transform group-hover:scale-105 transition duration-1000 ease-out" src="https://lh3.googleusercontent.com/aida/AEtjO1WLfSUwkM5b1daO5vTTZZyKOdGV5UcLPgz7578FDUD21rrkdgth0mcNFPxxXsTJhSQS3GvdwhynjHOx_xaDkgOyphli14Hmckhp755sEbCr8HZpIzg_YHCBx0sZQKZ0RRqAD28oXpW-mN0t5wQFH_GdNu0E142uqaX5HCP0YHnZxqAyxMqo7npt85oIO5zaq7eJS5lXKHrNLbkUjAUiLJNnLXiIvk9TrKE8MW_nJ2Qj5Ds2_9ignu0EtHc"/>
+<!-- Layered Cinematic Gradients -->
+<div class="absolute inset-0 bg-gradient-to-t from-[#121316] via-[#121316]/50 to-black/40"></div>
+<div class="absolute inset-0 bg-gradient-to-r from-[#121316]/80 via-transparent to-black/60"></div>
+</div>
+<!-- Top Overlay Info Bar (Badges & Live Counters) -->
+<div class="relative z-10 p-6 flex flex-wrap items-center justify-between gap-4">
+<div class="flex items-center gap-3">
+<!-- Red Live Pulsing Badge -->
+<div class="flex items-center gap-2 px-3 py-1.5 bg-red-600/90 backdrop-blur-md rounded-full text-white font-bold text-xs uppercase tracking-wider shadow-lg shadow-red-600/40">
+<span class="w-2 h-2 rounded-full bg-white animate-ping"></span>
+<span class="flex items-center gap-1"><span class="w-2 h-2 rounded-full bg-white"></span> LIVE</span>
+</div>
+<!-- Live Viewer Count Pill -->
+<div class="px-3.5 py-1.5 rounded-full bg-black/60 backdrop-blur-md border border-white/10 text-xs font-mono text-neutral-200 flex items-center gap-1.5">
+<span class="material-symbols-outlined text-brand-gold text-sm">visibility</span>
+<span class="font-bold text-white">184,520</span> đang xem trực tuyến
+                </div>
+</div>
+<!-- Tech Badges -->
+<div class="flex flex-wrap items-center gap-2">
+<span class="px-2.5 py-1 rounded-md bg-brand-amber/20 border border-brand-amber/40 text-[11px] font-mono font-bold text-brand-gold uppercase">IMAX 70MM</span>
+<span class="px-2.5 py-1 rounded-md bg-white/10 border border-white/20 text-[11px] font-mono font-bold text-white uppercase backdrop-blur-sm">DOLBY ATMOS 9.1.4</span>
+<span class="px-2.5 py-1 rounded-md bg-brand-cyan/20 border border-brand-cyan/40 text-[11px] font-mono font-bold text-brand-cyan uppercase">4K HDR 60FPS</span>
+</div>
+</div>
+<!-- Bottom Content (Title, Countdown & CTA Actions) -->
+<div class="relative z-10 p-6 md:p-8 space-y-6">
+<div class="space-y-2.5 max-w-2xl">
+<div class="inline-flex items-center gap-2 px-3 py-1 rounded-md bg-amber-500/10 border border-amber-500/30 text-brand-gold text-xs font-semibold tracking-wider uppercase">
+<span class="material-symbols-outlined text-sm">stars</span>
+                  Premiere Toàn Cầu Đặc Biệt
+                </div>
+<h1 class="text-3xl md:text-5xl font-syne font-black text-white leading-tight tracking-tight uppercase drop-shadow-md" id="live-premiere-heading">
+                  DUNE: HÀNH TINH CÁT II <span class="bg-gradient-to-r from-brand-gold to-brand-amber bg-clip-text text-transparent block md:inline">— BẢN MỞ RỘNG</span>
+</h1>
+<p class="text-neutral-300 text-sm md:text-base leading-relaxed line-clamp-2">
+                  Buổi công chiếu độc quyền trực tiếp toàn cầu trước khi phát hành toàn hệ thống CineStream. Tận hưởng toàn vẹn không gian sa mạc Arrakis trên tỷ lệ chuẩn IMAX Laser.
+                </p>
+</div>
+<!-- Countdown Timer Card (Space Grotesk) -->
+<div class="space-y-2">
+<div class="text-xs font-mono tracking-widest text-neutral-400 uppercase flex items-center gap-1.5">
+<span class="material-symbols-outlined text-brand-amber text-sm">timer</span>
+                  Thời gian đếm ngược suất chiếu chính thức:
+                </div>
+<div class="flex items-center gap-3">
+<!-- Hours -->
+<div class="bg-black/70 backdrop-blur-xl border border-brand-gold/30 rounded-2xl px-5 py-3 text-center min-w-[84px] shadow-lg">
+<span class="block text-3xl md:text-4xl font-mono font-bold text-brand-gold">01</span>
+<span class="text-[10px] font-mono tracking-wider text-neutral-400 uppercase">Giờ (Hours)</span>
+</div>
+<span class="text-2xl font-mono font-bold text-brand-gold/60">:</span>
+<!-- Minutes -->
+<div class="bg-black/70 backdrop-blur-xl border border-brand-gold/30 rounded-2xl px-5 py-3 text-center min-w-[84px] shadow-lg">
+<span class="block text-3xl md:text-4xl font-mono font-bold text-brand-gold">24</span>
+<span class="text-[10px] font-mono tracking-wider text-neutral-400 uppercase">Phút (Mins)</span>
+</div>
+<span class="text-2xl font-mono font-bold text-brand-gold/60">:</span>
+<!-- Seconds -->
+<div class="bg-black/70 backdrop-blur-xl border border-brand-gold/30 rounded-2xl px-5 py-3 text-center min-w-[84px] shadow-lg">
+<span class="block text-3xl md:text-4xl font-mono font-bold text-brand-gold animate-pulse">38</span>
+<span class="text-[10px] font-mono tracking-wider text-neutral-400 uppercase">Giây (Secs)</span>
+</div>
+</div>
+</div>
+<!-- Action CTAs -->
+<div class="flex flex-wrap items-center gap-4 pt-2">
+<button class="px-7 py-3.5 rounded-xl bg-gradient-to-r from-brand-amber via-[#f59e0b] to-brand-orange text-black font-extrabold text-sm uppercase tracking-wider flex items-center gap-2.5 shadow-amber-glow hover:brightness-110 active:scale-[0.98] transition-all duration-200">
+<span class="material-symbols-outlined text-xl">play_arrow</span>
+                  Vào Phòng Chiếu Trực Tiếp
+                </button>
+<button class="px-5 py-3.5 rounded-xl cinema-glass-light hover:bg-white/10 text-white font-semibold text-sm border border-white/15 flex items-center gap-2 transition">
+<span class="material-symbols-outlined text-brand-cyan text-lg">group_add</span>
+                  Mời Bạn Xem Cùng <span class="px-2 py-0.5 rounded-full bg-brand-cyan/20 text-brand-cyan text-xs font-mono font-bold">4/6</span>
+</button>
+<button class="p-3.5 rounded-xl cinema-glass-light hover:bg-white/10 text-neutral-300 border border-white/15 transition" title="Cài đặt Spatial Audio">
+<span class="material-symbols-outlined text-lg">spatial_audio</span>
+</button>
+</div>
+</div>
+</div>
+<!-- RIGHT COLUMN: Spatial Live Chatbox (32% width -> lg:col-span-4) -->
+<div class="lg:col-span-4 cinema-glass-light rounded-2xl border border-white/10 flex flex-col justify-between overflow-hidden h-full min-h-[560px]" data-purpose="live-chat-panel">
+<!-- Chat Header -->
+<div class="p-4 border-b border-white/10 flex items-center justify-between bg-black/40">
+<div class="flex items-center gap-2.5">
+<div class="w-2.5 h-2.5 rounded-full bg-emerald-400 animate-pulse"></div>
+<div>
+<h3 class="text-sm font-bold text-white flex items-center gap-1.5">
+                    Phòng Trò Chuyện Trực Tiếp
+                    <span class="text-xs text-neutral-400 font-mono font-normal">(184.5k)</span>
+</h3>
+<p class="text-[11px] text-emerald-400 font-mono">Đồng bộ độ trễ siêu thấp 12ms</p>
+</div>
+</div>
+<button class="text-neutral-400 hover:text-white p-1 rounded transition" title="Tùy chọn chat">
+<span class="material-symbols-outlined text-lg">tune</span>
+</button>
+</div>
+<!-- Chat Messages Scroll Area -->
+<div class="p-4 space-y-3.5 overflow-y-auto max-h-[380px] custom-chat-scroll text-xs">
+<!-- Message 1 -->
+<div class="flex items-start gap-2.5">
+<div class="w-7 h-7 rounded-full bg-amber-600/30 text-brand-gold flex items-center justify-center font-bold text-[11px] shrink-0 border border-brand-amber/30">
+                  MK
+                </div>
+<div class="space-y-0.5">
+<div class="flex items-center gap-2">
+<span class="font-bold text-white text-xs">Minh Khang</span>
+<span class="px-1 py-0.2 bg-brand-amber/20 text-brand-gold text-[9px] font-mono rounded">VIP 4</span>
+<span class="text-[10px] text-neutral-500 font-mono">20:14</span>
+</div>
+<p class="text-neutral-300 leading-relaxed bg-white/5 p-2 rounded-xl rounded-tl-none border border-white/5">
+                    Âm thanh Dolby Atmos đoạn này rung cả phòng chiếu rạp tại gia! Phê quá anh em ơi! 🔥
+                  </p>
+</div>
+</div>
+<!-- Message 2 -->
+<div class="flex items-start gap-2.5">
+<div class="w-7 h-7 rounded-full bg-cyan-600/30 text-brand-cyan flex items-center justify-center font-bold text-[11px] shrink-0 border border-brand-cyan/30">
+                  HA
+                </div>
+<div class="space-y-0.5">
+<div class="flex items-center gap-2">
+<span class="font-bold text-white text-xs">Hoàng Anh Cinephile</span>
+<span class="px-1 py-0.2 bg-brand-cyan/20 text-brand-cyan text-[9px] font-mono rounded">CRITIC</span>
+<span class="text-[10px] text-neutral-500 font-mono">20:15</span>
+</div>
+<p class="text-neutral-300 leading-relaxed bg-white/5 p-2 rounded-xl rounded-tl-none border border-white/5">
+                    Háo hức phân cảnh đại chiến giun cát xuất hiện quá! Bản mở rộng này có thêm 15 phút chưa từng chiếu ở rạp truyền thống.
+                  </p>
+</div>
+</div>
+<!-- Message 3 -->
+<div class="flex items-start gap-2.5">
+<div class="w-7 h-7 rounded-full bg-purple-600/30 text-purple-300 flex items-center justify-center font-bold text-[11px] shrink-0 border border-purple-500/30">
+                  VN
+                </div>
+<div class="space-y-0.5">
+<div class="flex items-center gap-2">
+<span class="font-bold text-white text-xs">Vũ Ngọc</span>
+<span class="text-[10px] text-neutral-500 font-mono">20:15</span>
+</div>
+<p class="text-neutral-300 leading-relaxed bg-white/5 p-2 rounded-xl rounded-tl-none border border-white/5">
+                    Chất lượng 4K HDR 60fps nét từng hạt cát luôn 😱 Màn OLED nhìn đã mắt dã man.
+                  </p>
+</div>
+</div>
+<!-- Message 4 -->
+<div class="flex items-start gap-2.5">
+<div class="w-7 h-7 rounded-full bg-emerald-600/30 text-emerald-300 flex items-center justify-center font-bold text-[11px] shrink-0 border border-emerald-500/30">
+                  TD
+                </div>
+<div class="space-y-0.5">
+<div class="flex items-center gap-2">
+<span class="font-bold text-white text-xs">Thành Đạt VR</span>
+<span class="px-1 py-0.2 bg-emerald-500/20 text-emerald-400 text-[9px] font-mono rounded">SPATIAL</span>
+<span class="text-[10px] text-neutral-500 font-mono">20:16</span>
+</div>
+<p class="text-neutral-300 leading-relaxed bg-white/5 p-2 rounded-xl rounded-tl-none border border-white/5">
+                    Đang đeo kính Vision Pro xem trong rạp ảo với bạn bè ở xa, y chang ngồi hàng ghế VIP IMAX thực tế! 🍿✨
+                  </p>
+</div>
+</div>
+</div>
+<!-- Quick Reaction Buttons Bar & Message Input -->
+<div class="p-3 border-t border-white/10 bg-black/50 space-y-2.5">
+<!-- Reactions -->
+<div class="flex items-center justify-between px-1">
+<span class="text-[10px] text-neutral-400 uppercase font-mono">Thả cảm xúc:</span>
+<div class="flex items-center gap-1.5">
+<button class="hover:scale-125 transition text-sm p-1 rounded hover:bg-white/10" title="Lửa">🔥</button>
+<button class="hover:scale-125 transition text-sm p-1 rounded hover:bg-white/10" title="Bắp rang">🍿</button>
+<button class="hover:scale-125 transition text-sm p-1 rounded hover:bg-white/10" title="Ngạc nhiên">😱</button>
+<button class="hover:scale-125 transition text-sm p-1 rounded hover:bg-white/10" title="Thả tim">❤️</button>
+<button class="hover:scale-125 transition text-sm p-1 rounded hover:bg-white/10" title="Vỗ tay">👏</button>
+</div>
+</div>
+<!-- Chat Input Box -->
+<div class="relative flex items-center">
+<input class="w-full pl-3 pr-10 py-2.5 bg-white/5 border border-white/10 rounded-xl text-xs text-white placeholder-neutral-500 focus:outline-none focus:border-brand-amber focus:ring-1 focus:ring-brand-amber transition" placeholder="Bình luận trực tiếp với phòng chiếu..." type="text"/>
+<button aria-label="Gửi bình luận" class="absolute right-1.5 p-1.5 rounded-lg bg-brand-amber text-black hover:bg-brand-gold transition flex items-center justify-center">
+<span class="material-symbols-outlined text-base">send</span>
+</button>
+</div>
+</div>
+</div>
+</div>
+</div>
+</section>
+<!-- END: SpatialPremiereLiveSection -->
+<!-- BEGIN: WeeklyScheduleSection -->
+<section aria-labelledby="weekly-schedule-heading" class="space-y-6">
+<!-- Section Heading & Metadata -->
+<div class="flex flex-col md:flex-row md:items-end justify-between gap-4 border-b border-white/10 pb-4">
+<div>
+<div class="flex items-center gap-2 mb-1">
+<span class="w-2.5 h-2.5 rounded-full bg-brand-amber"></span>
+<span class="text-xs font-mono font-bold tracking-widest text-brand-gold uppercase">CẬP NHẬT THEO GIỜ VIỆT NAM (UTC+7)</span>
+</div>
+<h2 class="text-2xl md:text-3xl font-syne font-extrabold text-white" id="weekly-schedule-heading">
+            LỊCH PHÁT SÓNG &amp; CÔNG CHIẾU TUẦN NÀY
+          </h2>
+</div>
+<!-- Filter Tags -->
+<div class="flex flex-wrap items-center gap-2">
+<button class="px-3 py-1.5 rounded-lg bg-brand-amber text-black font-bold text-xs">Tất cả suất chiếu</button>
+<button class="px-3 py-1.5 rounded-lg bg-white/5 hover:bg-white/10 text-neutral-300 text-xs font-medium border border-white/10 transition">Công chiếu VIP</button>
+<button class="px-3 py-1.5 rounded-lg bg-white/5 hover:bg-white/10 text-neutral-300 text-xs font-medium border border-white/10 transition">IMAX Live</button>
+<button class="px-3 py-1.5 rounded-lg bg-white/5 hover:bg-white/10 text-neutral-300 text-xs font-medium border border-white/10 transition">Anime Midnight</button>
+</div>
+</div>
+<!-- 7-Day Horizontal Pill Navigation -->
+<div aria-label="Chọn ngày chiếu trong tuần" class="flex items-center gap-3 overflow-x-auto pb-2 scrollbar-none" role="tablist">
+<!-- Day 1: Active (Today) -->
+<button aria-selected="true" class="px-5 py-3 rounded-2xl bg-brand-amber/15 border-2 border-brand-amber text-left min-w-[155px] shrink-0 shadow-amber-sm" role="tab">
+<span class="block text-[11px] font-mono uppercase text-brand-gold font-bold flex items-center gap-1.5">
+<span class="w-2 h-2 rounded-full bg-brand-amber animate-ping"></span>
+            Hôm nay
+          </span>
+<span class="text-base font-bold text-white font-syne">Thứ Hai, 24/02</span>
+</button>
+<!-- Day 2 -->
+<button aria-selected="false" class="px-5 py-3 rounded-2xl cinema-glass hover:border-white/20 text-left min-w-[155px] shrink-0 transition" role="tab">
+<span class="block text-[11px] font-mono uppercase text-neutral-400">Ngày mai</span>
+<span class="text-base font-bold text-neutral-200 font-syne">Thứ Ba, 25/02</span>
+</button>
+<!-- Day 3 -->
+<button aria-selected="false" class="px-5 py-3 rounded-2xl cinema-glass hover:border-white/20 text-left min-w-[155px] shrink-0 transition" role="tab">
+<span class="block text-[11px] font-mono uppercase text-neutral-400">Giữa tuần</span>
+<span class="text-base font-bold text-neutral-200 font-syne">Thứ Tư, 26/02</span>
+</button>
+<!-- Day 4 -->
+<button aria-selected="false" class="px-5 py-3 rounded-2xl cinema-glass hover:border-white/20 text-left min-w-[155px] shrink-0 transition" role="tab">
+<span class="block text-[11px] font-mono uppercase text-neutral-400">Suất VIP</span>
+<span class="text-base font-bold text-neutral-200 font-syne">Thứ Năm, 27/02</span>
+</button>
+<!-- Day 5 -->
+<button aria-selected="false" class="px-5 py-3 rounded-2xl cinema-glass hover:border-white/20 text-left min-w-[155px] shrink-0 transition" role="tab">
+<span class="block text-[11px] font-mono uppercase text-neutral-400">Cuối tuần</span>
+<span class="text-base font-bold text-neutral-200 font-syne">Thứ Sáu, 28/02</span>
+</button>
+<!-- Day 6: HOT Weekend -->
+<button aria-selected="false" class="px-5 py-3 rounded-2xl cinema-glass hover:border-brand-amber/40 text-left min-w-[155px] shrink-0 transition relative group" role="tab">
+<span class="absolute top-2 right-2 px-1.5 py-0.2 bg-rose-500 text-[9px] font-bold text-white rounded uppercase">HOT</span>
+<span class="block text-[11px] font-mono uppercase text-brand-gold">Đặc sắc</span>
+<span class="text-base font-bold text-neutral-200 group-hover:text-white font-syne">Thứ Bảy, 01/03</span>
+</button>
+<!-- Day 7 -->
+<button aria-selected="false" class="px-5 py-3 rounded-2xl cinema-glass hover:border-white/20 text-left min-w-[155px] shrink-0 transition" role="tab">
+<span class="block text-[11px] font-mono uppercase text-neutral-400">Chủ nhật chill</span>
+<span class="text-base font-bold text-neutral-200 font-syne">Chủ Nhật, 02/03</span>
+</button>
+</div>
+<!-- Timeline Schedule List Cards -->
+<div class="space-y-3.5" data-purpose="timeline-schedule-items">
+<!-- Suất 1: Đang Diễn Ra (Dune 2) -->
+<div class="cinema-glass hover:border-brand-amber/40 transition rounded-2xl p-4 md:p-5 flex flex-col md:flex-row items-start md:items-center justify-between gap-4 border-l-4 border-l-brand-amber">
+<div class="flex items-center gap-5 w-full md:w-auto">
+<!-- Time Column -->
+<div class="min-w-[110px] space-y-1">
+<span class="block font-mono text-2xl font-bold text-brand-gold">20:00</span>
+<span class="inline-flex items-center gap-1 px-2 py-0.5 rounded bg-brand-amber/20 text-brand-gold text-[10px] font-mono font-bold uppercase">
+<span class="w-1.5 h-1.5 rounded-full bg-brand-amber animate-ping"></span>
+                ĐANG DIỄN RA
+              </span>
+</div>
+<!-- Poster Thumbnail -->
+<img alt="Dune Part Two Poster Thumbnail" class="w-14 h-20 object-cover rounded-xl shadow-md border border-white/10 shrink-0" src="https://lh3.googleusercontent.com/aida/AEtjO1Xsi48yVhQtHUh2eRHu3-tHxYPSfT-Eb0CsMXVn-GLvDQJ3MwoahZwOIG5GHS971q-kH2wevk40cAIlUhzXytWQEtKNlKRvOUR1Xuvqnv2zraoNVdmF2-03N6rAmzwENxxoGRT5jERhzuslEqsGcS760TP42a3a_1AQjUEB6VKdlFHsWaL6ITwqJWPjLo865sNkBumveMmuKVWu-Lo55Ip8ri2F0RaGybrpTXRAorS6G1CFRWYxxz9rEGA"/>
+<!-- Film Info -->
+<div class="space-y-1.5">
+<h4 class="text-base md:text-lg font-bold text-white hover:text-brand-gold transition cursor-pointer">
+                Dune: Hành Tinh Cát II — Bản Chiếu Không Gian IMAX
+              </h4>
+<div class="flex flex-wrap items-center gap-2">
+<span class="px-2 py-0.5 rounded bg-brand-amber/10 border border-brand-amber/30 text-[10px] font-mono font-bold text-brand-gold">IMAX 70MM</span>
+<span class="px-2 py-0.5 rounded bg-white/5 border border-white/10 text-[10px] font-mono text-neutral-300">DOLBY VISION</span>
+<span class="px-2 py-0.5 rounded bg-white/5 border border-white/10 text-[10px] font-mono text-neutral-300">BẢN GỐC</span>
+<span class="text-neutral-500 text-xs">• 166 phút • Denis Villeneuve</span>
+</div>
+</div>
+</div>
+<!-- Action Button -->
+<div class="flex items-center gap-3 w-full md:w-auto justify-end">
+<span class="text-xs text-brand-gold/80 font-mono hidden xl:inline">Phòng chiếu trực tiếp đang mở</span>
+<button class="w-full md:w-auto px-6 py-2.5 rounded-xl bg-gradient-to-r from-brand-amber to-brand-orange text-black font-extrabold text-xs uppercase tracking-wider shadow-amber-sm hover:brightness-110 transition flex items-center justify-center gap-2">
+<span class="material-symbols-outlined text-base">play_circle</span>
+              Vào Xem Ngay
+            </button>
+</div>
+</div>
+<!-- Suất 2: Sắp Chiếu (Oppenheimer Q&A) -->
+<div class="cinema-glass hover:border-brand-amber/40 transition rounded-2xl p-4 md:p-5 flex flex-col md:flex-row items-start md:items-center justify-between gap-4">
+<div class="flex items-center gap-5 w-full md:w-auto">
+<!-- Time Column -->
+<div class="min-w-[110px] space-y-1">
+<span class="block font-mono text-2xl font-bold text-neutral-200">21:30</span>
+<span class="inline-block px-2 py-0.5 rounded bg-cyan-500/20 text-brand-cyan text-[10px] font-mono font-bold uppercase">
+                SẮP CHIẾU • 45P
+              </span>
+</div>
+<!-- Poster Icon Placeholder -->
+<div class="w-14 h-20 rounded-xl bg-neutral-800 border border-white/10 flex flex-col items-center justify-center text-neutral-500 shrink-0">
+<span class="material-symbols-outlined text-2xl text-brand-amber">bolt</span>
+<span class="text-[9px] font-mono font-bold uppercase">ATOM</span>
+</div>
+<!-- Film Info -->
+<div class="space-y-1.5">
+<h4 class="text-base md:text-lg font-bold text-white hover:text-brand-gold transition cursor-pointer">
+                Oppenheimer: Bão Tố Nguyên Tử — Trực Tiếp Giao Lưu Đạo Diễn
+              </h4>
+<div class="flex flex-wrap items-center gap-2">
+<span class="px-2 py-0.5 rounded bg-white/5 border border-white/10 text-[10px] font-mono text-neutral-300">4K MASTER</span>
+<span class="px-2 py-0.5 rounded bg-white/5 border border-white/10 text-[10px] font-mono text-neutral-300">DOLBY ATMOS</span>
+<span class="px-2 py-0.5 rounded bg-rose-500/20 border border-rose-500/30 text-[10px] font-mono text-rose-300 font-bold">Q&amp;A LIVE</span>
+<span class="text-neutral-500 text-xs">• 180 phút • Christopher Nolan</span>
+</div>
+</div>
+</div>
+<!-- Action Button: Set Reminder -->
+<div class="flex items-center gap-3 w-full md:w-auto justify-end">
+<button class="w-full md:w-auto px-5 py-2.5 rounded-xl border border-brand-amber/40 hover:bg-brand-amber/10 text-brand-gold font-bold text-xs uppercase tracking-wider transition flex items-center justify-center gap-2">
+<span class="material-symbols-outlined text-base">notifications_active</span>
+              Đặt Nhắc Hẹn
+            </button>
+</div>
+</div>
+<!-- Suất 3: Đêm Cyberpunk (Blade Runner 2049) -->
+<div class="cinema-glass hover:border-brand-amber/40 transition rounded-2xl p-4 md:p-5 flex flex-col md:flex-row items-start md:items-center justify-between gap-4">
+<div class="flex items-center gap-5 w-full md:w-auto">
+<!-- Time Column -->
+<div class="min-w-[110px] space-y-1">
+<span class="block font-mono text-2xl font-bold text-neutral-200">23:00</span>
+<span class="inline-block px-2 py-0.5 rounded bg-purple-500/20 text-purple-300 text-[10px] font-mono font-bold uppercase">
+                MIDNIGHT
+              </span>
+</div>
+<!-- Poster Icon Placeholder -->
+<div class="w-14 h-20 rounded-xl bg-neutral-800 border border-white/10 flex flex-col items-center justify-center text-neutral-500 shrink-0">
+<span class="material-symbols-outlined text-2xl text-brand-cyan">memory</span>
+<span class="text-[9px] font-mono font-bold uppercase">CYBER</span>
+</div>
+<!-- Film Info -->
+<div class="space-y-1.5">
+<h4 class="text-base md:text-lg font-bold text-white hover:text-brand-gold transition cursor-pointer">
+                Blade Runner 2049 — Chiếu Đêm Cyberpunk Neo-Tokyo
+              </h4>
+<div class="flex flex-wrap items-center gap-2">
+<span class="px-2 py-0.5 rounded bg-brand-cyan/10 border border-brand-cyan/30 text-[10px] font-mono text-brand-cyan font-bold">4K 60FPS</span>
+<span class="px-2 py-0.5 rounded bg-white/5 border border-white/10 text-[10px] font-mono text-neutral-300">SPATIAL 3D</span>
+<span class="text-neutral-500 text-xs">• 164 phút • Denis Villeneuve</span>
+</div>
+</div>
+</div>
+<!-- Action Button: Already Set Reminder -->
+<div class="flex items-center gap-3 w-full md:w-auto justify-end">
+<button class="w-full md:w-auto px-5 py-2.5 rounded-xl bg-emerald-500/15 border border-emerald-500/30 text-emerald-300 font-bold text-xs uppercase tracking-wider transition flex items-center justify-center gap-2">
+<span class="material-symbols-outlined text-base">check_circle</span>
+              Đã Đặt Nhắc Hẹn
+            </button>
+</div>
+</div>
+<!-- Suất 4: Ngày Mai (Interstellar) -->
+<div class="cinema-glass hover:border-brand-amber/40 transition rounded-2xl p-4 md:p-5 flex flex-col md:flex-row items-start md:items-center justify-between gap-4">
+<div class="flex items-center gap-5 w-full md:w-auto">
+<!-- Time Column -->
+<div class="min-w-[110px] space-y-1">
+<span class="block font-mono text-xl font-bold text-neutral-400">19:00</span>
+<span class="text-[10px] font-mono text-neutral-400 uppercase">Ngày Mai (25/02)</span>
+</div>
+<!-- Poster Icon Placeholder -->
+<div class="w-14 h-20 rounded-xl bg-neutral-800 border border-white/10 flex flex-col items-center justify-center text-neutral-500 shrink-0">
+<span class="material-symbols-outlined text-2xl text-amber-300">all_inclusive</span>
+<span class="text-[9px] font-mono font-bold uppercase">SPACE</span>
+</div>
+<!-- Film Info -->
+<div class="space-y-1.5">
+<h4 class="text-base md:text-lg font-bold text-white hover:text-brand-gold transition cursor-pointer">
+                Interstellar: Hố Đen Tử Thần (Kỷ Niệm 10 Năm Công Chiếu IMAX)
+              </h4>
+<div class="flex flex-wrap items-center gap-2">
+<span class="px-2 py-0.5 rounded bg-brand-amber/10 border border-brand-amber/30 text-[10px] font-mono text-brand-gold">IMAX EXPANDED</span>
+<span class="px-2 py-0.5 rounded bg-white/5 border border-white/10 text-[10px] font-mono text-neutral-300">MASTER AUDIO 9.1.4</span>
+<span class="text-neutral-500 text-xs">• 169 phút • Vũ Trụ / Sci-Fi</span>
+</div>
+</div>
+</div>
+<!-- Action Button: Set Reminder -->
+<div class="flex items-center gap-3 w-full md:w-auto justify-end">
+<button class="w-full md:w-auto px-5 py-2.5 rounded-xl border border-white/20 hover:bg-white/10 text-neutral-200 font-bold text-xs uppercase tracking-wider transition flex items-center justify-center gap-2">
+<span class="material-symbols-outlined text-base">notifications</span>
+              Đặt Nhắc Hẹn
+            </button>
+</div>
+</div>
+<!-- Suất 5: Ngày Mai (Arcane S2) -->
+<div class="cinema-glass hover:border-brand-amber/40 transition rounded-2xl p-4 md:p-5 flex flex-col md:flex-row items-start md:items-center justify-between gap-4">
+<div class="flex items-center gap-5 w-full md:w-auto">
+<!-- Time Column -->
+<div class="min-w-[110px] space-y-1">
+<span class="block font-mono text-xl font-bold text-neutral-400">21:00</span>
+<span class="text-[10px] font-mono text-neutral-400 uppercase">Ngày Mai (25/02)</span>
+</div>
+<!-- Poster Icon Placeholder -->
+<div class="w-14 h-20 rounded-xl bg-neutral-800 border border-white/10 flex flex-col items-center justify-center text-neutral-500 shrink-0">
+<span class="material-symbols-outlined text-2xl text-brand-cyan">auto_awesome</span>
+<span class="text-[9px] font-mono font-bold uppercase">ARCANE</span>
+</div>
+<!-- Film Info -->
+<div class="space-y-1.5">
+<h4 class="text-base md:text-lg font-bold text-white hover:text-brand-gold transition cursor-pointer">
+                Arcane: Mùa 2 — Tập 1-3 Độc Quyền Bản Chiếu Rạp Không Gian
+              </h4>
+<div class="flex flex-wrap items-center gap-2">
+<span class="px-2 py-0.5 rounded bg-brand-cyan/10 border border-brand-cyan/30 text-[10px] font-mono text-brand-cyan">4K ULTRA</span>
+<span class="px-2 py-0.5 rounded bg-white/5 border border-white/10 text-[10px] font-mono text-neutral-300">DOLBY VISION</span>
+<span class="px-2 py-0.5 rounded bg-brand-amber/10 text-brand-gold border border-brand-amber/30 text-[10px] font-mono font-bold">SERIES PREMIERE</span>
+<span class="text-neutral-500 text-xs">• Riot Games &amp; Fortiche</span>
+</div>
+</div>
+</div>
+<!-- Action Button: Set Reminder -->
+<div class="flex items-center gap-3 w-full md:w-auto justify-end">
+<button class="w-full md:w-auto px-5 py-2.5 rounded-xl border border-white/20 hover:bg-white/10 text-neutral-200 font-bold text-xs uppercase tracking-wider transition flex items-center justify-center gap-2">
+<span class="material-symbols-outlined text-base">notifications</span>
+              Đặt Nhắc Hẹn
+            </button>
+</div>
+</div>
+</div>
+</section>
+<!-- END: WeeklyScheduleSection -->
+</main>
+<!-- END: MainContent -->
+<!-- BEGIN: MainFooter -->
+<footer class="mt-20 border-t border-white/10 bg-[#0d0e11] py-14 px-8 text-neutral-400 text-sm" data-purpose="cinema-footer">
+<div class="max-w-[1440px] mx-auto space-y-10">
+<!-- Top Columns -->
+<div class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-12 gap-8 pb-10 border-b border-white/10">
+<!-- Col 1: Platform Statement (5 cols) -->
+<div class="lg:col-span-4 space-y-4">
+<div class="flex items-center gap-2.5">
+<div class="w-8 h-8 rounded-lg bg-gradient-to-br from-brand-amber to-brand-orange flex items-center justify-center shadow-amber-sm">
+<span class="material-symbols-outlined text-black font-extrabold text-lg">movie</span>
+</div>
+<span class="font-syne font-extrabold text-xl tracking-wider text-white">CINESTREAM</span>
+</div>
+<p class="text-xs text-neutral-400 leading-relaxed max-w-sm">
+            Nền tảng streaming điện ảnh không gian cao cấp đầu tiên tại Việt Nam với chuẩn rạp IMAX 70mm, Dolby Vision và hệ thống âm thanh vòm Dolby Atmos 9.1.4 không nén.
+          </p>
+<div class="flex items-center gap-3 text-neutral-400 pt-2">
+<a class="w-8 h-8 rounded-lg bg-white/5 hover:bg-brand-amber/20 hover:text-brand-gold flex items-center justify-center transition" href="#"><span class="material-symbols-outlined text-base">share</span></a>
+<a class="w-8 h-8 rounded-lg bg-white/5 hover:bg-brand-amber/20 hover:text-brand-gold flex items-center justify-center transition" href="#"><span class="material-symbols-outlined text-base">forum</span></a>
+<a class="w-8 h-8 rounded-lg bg-white/5 hover:bg-brand-amber/20 hover:text-brand-gold flex items-center justify-center transition" href="#"><span class="material-symbols-outlined text-base">podcasts</span></a>
+</div>
+</div>
+<!-- Col 2: Navigation Links (2.5 cols) -->
+<div class="lg:col-span-3 space-y-3">
+<h5 class="text-xs font-mono font-bold uppercase tracking-wider text-white">Chuyên Mục Điền Ảnh</h5>
+<ul class="space-y-2 text-xs">
+<li><a class="hover:text-brand-gold transition" href="#">Phim Đạt Giải Oscar &amp; Cannes</a></li>
+<li><a class="hover:text-brand-gold transition" href="#">Phim Chiếu Rạp Mới Nhất</a></li>
+<li><a class="hover:text-brand-gold transition" href="#">Độc Quyền CineStream Originals</a></li>
+<li><a class="hover:text-brand-gold transition" href="#">Thư Viện Phim 4K HDR Lossless</a></li>
+<li><a class="hover:text-brand-gold transition" href="#">Lịch Phát Sóng Trực Tiếp Tuần</a></li>
+</ul>
+</div>
+<!-- Col 3: Spatial Tech (2.5 cols) -->
+<div class="lg:col-span-2 space-y-3">
+<h5 class="text-xs font-mono font-bold uppercase tracking-wider text-white">Công Nghệ Spatial</h5>
+<ul class="space-y-2 text-xs">
+<li><a class="hover:text-brand-cyan transition" href="#">Apple Vision Pro Cine App</a></li>
+<li><a class="hover:text-brand-cyan transition" href="#">Âm Thanh Định Vị Dolby Atmos</a></li>
+<li><a class="hover:text-brand-cyan transition" href="#">Chế Độ Xem Chung Phòng Ảo VR</a></li>
+<li><a class="hover:text-brand-cyan transition" href="#">Kiểm Tra Băng Thông Lossless</a></li>
+</ul>
+</div>
+<!-- Col 4: Network Status Box (3 cols) -->
+<div class="lg:col-span-3 space-y-3">
+<h5 class="text-xs font-mono font-bold uppercase tracking-wider text-white">Trạng Thái Hệ Thống</h5>
+<div class="p-4 rounded-xl cinema-glass border border-white/10 space-y-2.5 text-xs font-mono">
+<div class="flex items-center justify-between">
+<span class="text-neutral-400">Máy chủ VN &amp; Singapore:</span>
+<span class="text-emerald-400 font-bold flex items-center gap-1">
+<span class="w-1.5 h-1.5 rounded-full bg-emerald-400"></span> 99.99% Hoạt động
+              </span>
+</div>
+<div class="flex items-center justify-between">
+<span class="text-neutral-400">Băng thông CDN 4K:</span>
+<span class="text-brand-gold font-bold">100 Gbps Lossless</span>
+</div>
+<div class="flex items-center justify-between">
+<span class="text-neutral-400">Độ phân giải hiển thị:</span>
+<span class="text-white">IMAX 1.43:1 Native</span>
+</div>
+</div>
+</div>
+</div>
+<!-- Bottom Copyright & Legal Links -->
+<div class="flex flex-col sm:flex-row items-center justify-between gap-4 text-xs text-neutral-400">
+<div>
+          © 2025 CineStream Media Inc. Giữ toàn bộ bản quyền trải nghiệm điện ảnh số.
+        </div>
+<div class="flex items-center gap-6">
+<a class="hover:text-white transition" href="#">Chính Sách Bảo Mật</a>
+<a class="hover:text-white transition" href="#">Điều Khoản Dịch Vụ</a>
+<a class="hover:text-white transition" href="#">Liên Hệ Bản Quyền</a>
+</div>
+</div>
+</div>
+</footer>
+<!-- END: MainFooter -->
+</body></html>

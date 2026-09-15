@@ -1,0 +1,542 @@
+<!DOCTYPE html>
+
+<html class="dark" lang="vi">
+<head>
+<meta charset="utf-8"/>
+<meta content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no" name="viewport"/>
+<title>CineStream 4K Spatial Player - Dune: Hành Tinh Cát II</title>
+<script src="https://cdn.tailwindcss.com?plugins=forms,container-queries"></script>
+<link href="https://fonts.googleapis.com" rel="preconnect"/>
+<link crossorigin="" href="https://fonts.gstatic.com" rel="preconnect"/>
+<link href="https://fonts.googleapis.com/css2?family=Plus+Jakarta+Sans:ital,wght@0,300;0,400;0,500;0,600;0,700;0,800;1,400&amp;family=Syne:wght@600;700;800;900&amp;family=JetBrains+Mono:wght@400;600;700&amp;display=swap" rel="stylesheet"/>
+<style>
+    :root {
+      --amber-glow: #f59e0b;
+      --cyan-laser: #06b6d4;
+      --violet-spatial: #8b5cf6;
+    }
+    body {
+      font-family: 'Plus Jakarta Sans', sans-serif;
+      background-color: #060709;
+      color: #f3f4f6;
+      overflow-x: hidden;
+      -webkit-tap-highlight-color: transparent;
+    }
+    .font-syne { font-family: 'Syne', sans-serif; }
+    .font-mono-tech { font-family: 'JetBrains Mono', monospace; }
+
+    /* Glassmorphism Classes */
+    .glass-panel {
+      background: rgba(18, 19, 24, 0.65);
+      backdrop-filter: blur(20px);
+      -webkit-backdrop-filter: blur(20px);
+      border: 1px solid rgba(255, 255, 255, 0.08);
+    }
+    .glass-button {
+      background: rgba(255, 255, 255, 0.06);
+      backdrop-filter: blur(12px);
+      border: 1px solid rgba(255, 255, 255, 0.12);
+      transition: all 0.2s cubic-bezier(0.4, 0, 0.2, 1);
+    }
+    .glass-button:active {
+      transform: scale(0.96);
+      background: rgba(245, 158, 11, 0.15);
+      border-color: rgba(245, 158, 11, 0.4);
+    }
+    .glow-amber {
+      box-shadow: 0 0 35px -5px rgba(245, 158, 11, 0.45);
+    }
+    .glow-cyan {
+      box-shadow: 0 0 25px -4px rgba(6, 182, 212, 0.4);
+    }
+    .cinema-vignette {
+      background: radial-gradient(circle at center, transparent 45%, rgba(6, 7, 9, 0.85) 90%, #060709 100%);
+    }
+
+    /* Custom scrubber range input */
+    input[type=range]::-webkit-slider-thumb {
+      -webkit-appearance: none;
+      height: 16px;
+      width: 16px;
+      border-radius: 50%;
+      background: #f59e0b;
+      cursor: pointer;
+      box-shadow: 0 0 12px rgba(245, 158, 11, 0.8), 0 0 0 3px rgba(255, 255, 255, 0.9);
+      transition: transform 0.15s ease;
+    }
+    input[type=range]::-webkit-slider-thumb:hover, input[type=range]:active::-webkit-slider-thumb {
+      transform: scale(1.3);
+    }
+  </style>
+</head>
+<body class="relative min-h-screen bg-[#060709] select-none text-white">
+<!-- Realtime WebGL Cinematic Shader Background Canvas -->
+<div class="fixed inset-0 w-full h-full pointer-events-none z-0 opacity-40">
+<canvas class="w-full h-full block" id="player-bg-canvas"></canvas>
+</div>
+<!-- MAIN WRAPPER (Mobile 390px Optimized Canvas Viewport) -->
+<div class="relative z-10 max-w-md mx-auto min-h-screen flex flex-col bg-[#07080b]/90 border-x border-white/5 shadow-2xl overflow-hidden pb-10">
+<!-- 1. TOP STATUS / NAVIGATION BAR -->
+<header class="pt-4 px-5 pb-3 flex items-center justify-between z-30">
+<div class="flex items-center gap-3">
+<button class="w-10 h-10 rounded-full glass-button flex items-center justify-center text-white/90 hover:text-amber-400" onclick="window.history.back()">
+<svg class="w-5 h-5" fill="none" stroke="currentColor" viewbox="0 0 24 24"><path d="M15 19l-7-7 7-7" stroke-linecap="round" stroke-linejoin="round" stroke-width="2"></path></svg>
+</button>
+<div>
+<div class="flex items-center gap-2">
+<span class="inline-flex items-center px-2 py-0.5 rounded text-[10px] font-mono-tech font-bold bg-amber-500/20 text-amber-400 border border-amber-500/30">4K HDR</span>
+<span class="inline-flex items-center px-2 py-0.5 rounded text-[10px] font-mono-tech font-bold bg-cyan-500/20 text-cyan-300 border border-cyan-500/30">VISIONOS</span>
+</div>
+<h1 class="text-sm font-bold text-white tracking-wide truncate max-w-[190px] mt-0.5 font-syne">Dune: Hành Tinh Cát II</h1>
+</div>
+</div>
+<div class="flex items-center gap-2">
+<!-- AirPlay / Cast -->
+<button class="w-10 h-10 rounded-full glass-button flex items-center justify-center text-white/80 hover:text-white" title="Spatial Cast">
+<svg class="w-4 h-4" fill="none" stroke="currentColor" viewbox="0 0 24 24"><path d="M9.75 17L9 20l-1 1h8l-1-1-.75-3M3 13h18M5 17h14a2 2 0 002-2V5a2 2 0 00-2-2H5a2 2 0 00-2 2v10a2 2 0 002 2z" stroke-linecap="round" stroke-linejoin="round" stroke-width="2"></path></svg>
+</button>
+<!-- Virtual Room / Watch Party Pill -->
+<button class="flex items-center gap-1.5 px-3 py-1.5 rounded-full glass-button bg-purple-500/20 text-purple-300 border-purple-500/40 text-xs font-semibold hover:bg-purple-500/30" id="btn-party-toggle">
+<span class="w-2 h-2 rounded-full bg-emerald-400 animate-ping"></span>
+<span>Phòng Ảo</span>
+</button>
+</div>
+</header>
+<!-- 2. MAIN 4K CINEMA VIDEO SCREEN CONTAINER -->
+<div class="relative w-full aspect-[16/10] bg-black overflow-hidden group">
+<!-- Simulated 4K Movie Frame (Arrakis Desert Duel Scene) -->
+<div class="absolute inset-0 bg-cover bg-center transition-transform duration-700 scale-100 group-hover:scale-105" style="background-image: url('https://www.gstatic.com/labs-code/stitch/stitch-placeholder-300x300.svg');">
+</div>
+<!-- Color Grading & Film Atmosphere Overlay -->
+<div class="absolute inset-0 bg-gradient-to-t from-black/90 via-transparent to-black/60 pointer-events-none"></div>
+<div class="absolute inset-0 cinema-vignette pointer-events-none"></div>
+<!-- Live Watermark Badges in Player -->
+<div class="absolute top-3 left-4 flex items-center gap-2 z-20">
+<span class="px-2 py-0.5 rounded bg-black/60 backdrop-blur-md text-[10px] font-mono-tech font-bold text-amber-300 border border-amber-500/40 flex items-center gap-1">
+<svg class="w-2.5 h-2.5 fill-amber-400" viewbox="0 0 24 24"><circle cx="12" cy="12" r="10"></circle></svg>
+          IMAX 1.90:1
+        </span>
+<span class="px-2 py-0.5 rounded bg-black/60 backdrop-blur-md text-[10px] font-mono-tech text-white/90 border border-white/10 flex items-center gap-1">
+<svg class="w-2.5 h-2.5 text-cyan-400" fill="none" stroke="currentColor" viewbox="0 0 24 24"><path d="M15.536 8.464a5 5 0 010 7.072M18.364 5.636a9 9 0 010 12.728M6 10H3a1 1 0 00-1 1v2a1 1 0 001 1h3l4 4V6l-4 4z" stroke-linecap="round" stroke-linejoin="round" stroke-width="2"></path></svg>
+          Dolby Atmos 9.1.4
+        </span>
+</div>
+<!-- Live Spatial Sound Stage Indicator (Top Right) -->
+<div class="absolute top-3 right-4 z-20">
+<div class="flex items-center gap-1.5 px-2.5 py-1 rounded-full bg-black/70 backdrop-blur-md border border-cyan-500/30 text-[10px] text-cyan-300 font-mono-tech">
+<span class="relative flex h-2 w-2">
+<span class="animate-ping absolute inline-flex h-full w-full rounded-full bg-cyan-400 opacity-75"></span>
+<span class="relative inline-flex rounded-full h-2 w-2 bg-cyan-500"></span>
+</span>
+          360° AUDIO
+        </div>
+</div>
+<!-- Interactive Spatial Center Controls -->
+<div class="absolute inset-0 flex items-center justify-center gap-6 z-20 pointer-events-auto">
+<!-- Rewind 10s -->
+<button class="w-12 h-12 rounded-full glass-button flex flex-col items-center justify-center text-white/80 hover:text-amber-400 hover:scale-110 active:scale-95" id="btn-rewind">
+<svg class="w-5 h-5" fill="none" stroke="currentColor" viewbox="0 0 24 24"><path d="M12.066 11.2a1 1 0 000 1.6l5.334 4A1 1 0 0019 16V8a1 1 0 00-1.6-.8l-5.334 4zM4.066 11.2a1 1 0 000 1.6l5.334 4A1 1 0 0011 16V8a1 1 0 00-1.6-.8l-5.334 4z" stroke-linecap="round" stroke-linejoin="round" stroke-width="2"></path></svg>
+<span class="text-[9px] font-mono-tech -mt-0.5">10s</span>
+</button>
+<!-- Master Play / Pause Button with Amber Neon Pulse -->
+<button class="relative group/play w-16 h-16 rounded-full bg-gradient-to-tr from-amber-600 via-amber-500 to-yellow-400 text-black flex items-center justify-center glow-amber shadow-2xl transform active:scale-90 transition duration-200" id="btn-master-play">
+<span class="absolute inset-0 rounded-full bg-amber-400/40 animate-ping duration-1000 -z-10"></span>
+<svg class="w-8 h-8 ml-1 fill-black" id="play-icon" viewbox="0 0 24 24"><path d="M8 5v14l11-7z"></path></svg>
+<svg class="w-8 h-8 fill-black hidden" id="pause-icon" viewbox="0 0 24 24"><path d="M6 19h4V5H6v14zm8-14v14h4V5h-4z"></path></svg>
+</button>
+<!-- Fast Forward 10s -->
+<button class="w-12 h-12 rounded-full glass-button flex flex-col items-center justify-center text-white/80 hover:text-amber-400 hover:scale-110 active:scale-95" id="btn-forward">
+<svg class="w-5 h-5" fill="none" stroke="currentColor" viewbox="0 0 24 24"><path d="M11.933 12.8a1 1 0 000-1.6L6.6 7.2A1 1 0 005 8v8a1 1 0 001.6.8l5.333-4zM19.933 12.8a1 1 0 000-1.6l-5.333-4A1 1 0 0013 8v8a1 1 0 001.6.8l5.333-4z" stroke-linecap="round" stroke-linejoin="round" stroke-width="2"></path></svg>
+<span class="text-[9px] font-mono-tech -mt-0.5">10s</span>
+</button>
+</div>
+<!-- Quick Subtitle Bar at Bottom of Video -->
+<div class="absolute bottom-3 left-0 right-0 text-center px-6 z-20">
+<p class="inline-block px-3 py-1 rounded bg-black/80 backdrop-blur-sm text-xs text-amber-200/90 font-medium tracking-wide border border-white/5">
+          Paul Atreides: "Dẫn dắt họ tới thiên đường... bằng ngọn lửa bão cát."
+        </p>
+</div>
+</div>
+<!-- 3. TIMELINE SCRUBBER & DURATION METRICS -->
+<div class="px-5 pt-4 pb-2 z-20">
+<!-- Progress Bar & Thumb -->
+<div class="relative w-full flex items-center">
+<!-- Buffer progress background -->
+<div class="absolute left-0 right-0 h-1.5 bg-white/10 rounded-full overflow-hidden">
+<div class="w-[72%] h-full bg-white/20"></div>
+</div>
+<!-- Active played stream progress bar -->
+<div class="absolute left-0 h-1.5 bg-gradient-to-r from-amber-500 via-amber-400 to-yellow-300 rounded-full shadow-[0_0_12px_rgba(245,158,11,0.8)]" id="played-bar" style="width: 46%;"></div>
+<!-- Interactive Range Input -->
+<input class="relative z-10 w-full h-1.5 bg-transparent appearance-none cursor-pointer focus:outline-none" id="time-slider" max="100" min="0" type="range" value="46"/>
+</div>
+<!-- Time Stamp Indicator -->
+<div class="flex items-center justify-between text-xs font-mono-tech mt-2 text-white/60">
+<span class="text-amber-400 font-bold" id="current-time">01:14:28</span>
+<div class="flex items-center gap-2">
+<span class="inline-block w-1.5 h-1.5 rounded-full bg-emerald-400"></span>
+<span class="text-[11px] text-white/40">CHƯƠNG 4: BÃO CÁT THỨC TỈNH</span>
+</div>
+<span>02:46:00</span>
+</div>
+</div>
+<!-- 4. QUICK PLAYER ACTION TOOLBAR -->
+<div class="px-5 py-2.5 flex items-center justify-between border-b border-white/5 z-20">
+<!-- Audio & Subtitle Selector Modal trigger -->
+<button class="flex items-center gap-1.5 px-3 py-1.5 rounded-xl glass-button text-xs font-medium text-white/90 hover:text-amber-400" id="btn-audio-sub">
+<svg class="w-4 h-4 text-amber-400" fill="none" stroke="currentColor" viewbox="0 0 24 24"><path d="M7 8h10M7 12h4m1 8l-4-4H5a2 2 0 01-2-2V6a2 2 0 012-2h14a2 2 0 012 2v8a2 2 0 01-2 2h-3l-4 4z" stroke-linecap="round" stroke-linejoin="round" stroke-width="2"></path></svg>
+<span>Âm thanh &amp; Phụ đề</span>
+</button>
+<!-- Resolution / Stream Quality (4K UHD) -->
+<button class="flex items-center gap-1.5 px-3 py-1.5 rounded-xl glass-button text-xs font-mono-tech font-bold text-amber-300 hover:border-amber-400/50" id="btn-quality">
+<span class="w-1.5 h-1.5 rounded-full bg-amber-400"></span>
+<span>4K 60fps</span>
+<svg class="w-3 h-3 text-white/40" fill="none" stroke="currentColor" viewbox="0 0 24 24"><path d="M19 9l-7 7-7-7" stroke-linecap="round" stroke-linejoin="round" stroke-width="2"></path></svg>
+</button>
+<!-- Playback Speed -->
+<button class="px-2.5 py-1.5 rounded-xl glass-button text-xs font-mono-tech text-white/80 hover:text-white" id="btn-speed">
+        1.0x
+      </button>
+<!-- Lock Screen Control -->
+<button class="w-8 h-8 rounded-xl glass-button flex items-center justify-center text-white/70 hover:text-white" title="Khóa màn hình">
+<svg class="w-4 h-4" fill="none" stroke="currentColor" viewbox="0 0 24 24"><path d="M12 15v2m-6 4h12a2 2 0 002-2v-6a2 2 0 00-2-2H6a2 2 0 00-2 2v6a2 2 0 002 2zm10-10V7a4 4 0 00-8 0v4h8z" stroke-linecap="round" stroke-linejoin="round" stroke-width="2"></path></svg>
+</button>
+</div>
+<!-- 5. SPATIAL & CINEMATIC IMMERSIVE SUITE (VisionOS Style Controls) -->
+<div class="px-5 mt-4 space-y-4 z-20">
+<!-- Module A: Virtual Theater Environment Selector -->
+<div class="glass-panel p-3.5 rounded-2xl border border-white/10">
+<div class="flex items-center justify-between mb-3">
+<div class="flex items-center gap-2">
+<svg class="w-4 h-4 text-cyan-400" fill="none" stroke="currentColor" viewbox="0 0 24 24"><path d="M21 12a9 9 0 01-9 9m9-9a9 9 0 00-9-9m9 9H3m9 9a9 9 0 01-9-9m9 9c1.657 0 3-4.03 3-9s-1.343-9-3-9m0 18c-1.657 0-3-4.03-3-9s1.343-9 3-9m-9 9a9 9 0 019-9" stroke-linecap="round" stroke-linejoin="round" stroke-width="2"></path></svg>
+<span class="text-xs font-bold uppercase tracking-wider text-white/90 font-syne">Môi Trường Chiếu Ảo VisionOS</span>
+</div>
+<span class="text-[10px] font-mono-tech text-cyan-400 bg-cyan-400/10 px-2 py-0.5 rounded-full border border-cyan-400/20">3D Active</span>
+</div>
+<div class="grid grid-cols-3 gap-2">
+<!-- Env 1: IMAX Dome -->
+<button class="flex flex-col items-center justify-center p-2.5 rounded-xl border border-amber-500/50 bg-amber-500/15 text-white transition-all shadow-[0_0_15px_rgba(245,158,11,0.2)]">
+<span class="text-lg">🪐</span>
+<span class="text-[11px] font-bold mt-1 text-amber-300">IMAX Vòm</span>
+<span class="text-[9px] text-white/50 font-mono-tech">Màn cong 180°</span>
+</button>
+<!-- Env 2: Zero Gravity Orbit -->
+<button class="flex flex-col items-center justify-center p-2.5 rounded-xl border border-white/10 bg-white/5 text-white/70 hover:bg-white/10 hover:text-white transition-all">
+<span class="text-lg">🌌</span>
+<span class="text-[11px] font-bold mt-1 text-white">Không Trọng Lực</span>
+<span class="text-[9px] text-white/40 font-mono-tech">Vũ trụ sâu</span>
+</button>
+<!-- Env 3: Private VIP Lounge -->
+<button class="flex flex-col items-center justify-center p-2.5 rounded-xl border border-white/10 bg-white/5 text-white/70 hover:bg-white/10 hover:text-white transition-all">
+<span class="text-lg">🛋️</span>
+<span class="text-[11px] font-bold mt-1 text-white">VIP Lounge</span>
+<span class="text-[9px] text-white/40 font-mono-tech">Đèn rạp dịu</span>
+</button>
+</div>
+</div>
+<!-- Module B: Interactive Watch Party (Đồng Bộ Phòng Chiếu Trực Tiếp) -->
+<div class="glass-panel p-3.5 rounded-2xl border border-purple-500/20 bg-gradient-to-b from-purple-950/20 to-transparent">
+<div class="flex items-center justify-between mb-2.5">
+<div class="flex items-center gap-2">
+<span class="relative flex h-2.5 w-2.5">
+<span class="animate-ping absolute inline-flex h-full w-full rounded-full bg-purple-400 opacity-75"></span>
+<span class="relative inline-flex rounded-full h-2.5 w-2.5 bg-purple-500"></span>
+</span>
+<span class="text-xs font-bold text-white tracking-wide font-syne">Phòng Chiếu Ảo Đang Xem Cùng Bạn (4)</span>
+</div>
+<span class="text-[10px] font-mono-tech text-purple-300">Sync: 100%</span>
+</div>
+<div class="flex items-center justify-between">
+<!-- Avatars list -->
+<div class="flex items-center -space-x-2">
+<div class="relative w-9 h-9 rounded-full ring-2 ring-amber-500 bg-amber-500/30 overflow-hidden flex items-center justify-center text-xs font-bold text-white shadow-lg">
+<img alt="Avatar Bạn" class="w-full h-full object-cover" src="https://www.gstatic.com/labs-code/stitch/stitch-placeholder-300x300.svg"/>
+<span class="absolute bottom-0 right-0 w-2.5 h-2.5 rounded-full bg-emerald-400 ring-1 ring-black"></span>
+</div>
+<div class="relative w-9 h-9 rounded-full ring-2 ring-purple-500 bg-purple-500/30 overflow-hidden flex items-center justify-center text-xs font-bold text-white shadow-lg">
+<img alt="Hoàng Nam" class="w-full h-full object-cover" src="https://www.gstatic.com/labs-code/stitch/stitch-placeholder-300x300.svg"/>
+<span class="absolute bottom-0 right-0 w-2.5 h-2.5 rounded-full bg-emerald-400 ring-1 ring-black"></span>
+</div>
+<div class="relative w-9 h-9 rounded-full ring-2 ring-cyan-500 bg-cyan-500/30 overflow-hidden flex items-center justify-center text-xs font-bold text-white shadow-lg">
+<img alt="Linh Miu" class="w-full h-full object-cover" src="https://www.gstatic.com/labs-code/stitch/stitch-placeholder-300x300.svg"/>
+<span class="absolute bottom-0 right-0 w-2.5 h-2.5 rounded-full bg-emerald-400 ring-1 ring-black"></span>
+</div>
+<button class="w-9 h-9 rounded-full glass-button ring-2 ring-white/10 flex items-center justify-center text-white/80 hover:text-amber-400 text-sm font-bold">
+              +
+            </button>
+</div>
+<!-- Quick Reaction Buttons -->
+<div class="flex items-center gap-1.5">
+<button class="p-1.5 rounded-full glass-button hover:scale-125 transition text-base">🔥</button>
+<button class="p-1.5 rounded-full glass-button hover:scale-125 transition text-base">😱</button>
+<button class="p-1.5 rounded-full glass-button hover:scale-125 transition text-base">❤️</button>
+<button class="px-2.5 py-1 rounded-full glass-button bg-cyan-500/20 text-cyan-300 text-[11px] font-mono-tech border-cyan-500/30 flex items-center gap-1">
+<svg class="w-3 h-3" fill="none" stroke="currentColor" viewbox="0 0 24 24"><path d="M19 11a7 7 0 01-7 7m0 0a7 7 0 01-7-7m7 7v4m0 0H8m4 0h4m-4-8a3 3 0 100-6 3 3 0 000 6z" stroke-linecap="round" stroke-linejoin="round" stroke-width="2"></path></svg>
+              Mic
+            </button>
+</div>
+</div>
+</div>
+<!-- Module C: Chapter Markers with Scene Previews -->
+<div>
+<div class="flex items-center justify-between mb-2">
+<h2 class="text-xs font-bold text-white/80 uppercase tracking-wider font-syne">Các Cột Mốc Cảnh Quay (Chapters)</h2>
+<span class="text-[11px] text-amber-400/80 font-mono-tech hover:underline cursor-pointer">Xem tất cả 12 cảnh</span>
+</div>
+<div class="flex gap-3 overflow-x-auto pb-2 scrollbar-none">
+<!-- Active Chapter 4 -->
+<div class="flex-shrink-0 w-36 rounded-xl overflow-hidden glass-panel border-amber-500/60 shadow-[0_0_12px_rgba(245,158,11,0.25)] relative group cursor-pointer">
+<div class="h-20 bg-cover bg-center relative" style="background-image: url('https://www.gstatic.com/labs-code/stitch/stitch-placeholder-300x300.svg');">
+<span class="absolute top-1.5 left-1.5 px-1.5 py-0.5 rounded bg-amber-500 text-black font-mono-tech font-bold text-[9px]">ĐANG XEM</span>
+<span class="absolute bottom-1 right-1 px-1.5 py-0.2 rounded bg-black/80 text-[10px] font-mono-tech text-white">01:14:28</span>
+</div>
+<div class="p-2">
+<p class="text-[11px] font-bold text-amber-300 truncate">C4: Cưỡi Giun Cát</p>
+<p class="text-[9px] text-white/50 truncate">Thử thách Paul Atreides</p>
+</div>
+</div>
+<!-- Chapter 5 -->
+<div class="flex-shrink-0 w-36 rounded-xl overflow-hidden glass-panel border-white/10 hover:border-white/30 relative group cursor-pointer">
+<div class="h-20 bg-cover bg-center relative opacity-80 group-hover:opacity-100 transition" style="background-image: url('https://www.gstatic.com/labs-code/stitch/stitch-placeholder-300x300.svg');">
+<span class="absolute bottom-1 right-1 px-1.5 py-0.2 rounded bg-black/80 text-[10px] font-mono-tech text-white/80">01:38:10</span>
+</div>
+<div class="p-2">
+<p class="text-[11px] font-bold text-white truncate">C5: Đấu Trường Giedi</p>
+<p class="text-[9px] text-white/50 truncate">Feyd-Rautha xuất hiện</p>
+</div>
+</div>
+<!-- Chapter 6 -->
+<div class="flex-shrink-0 w-36 rounded-xl overflow-hidden glass-panel border-white/10 hover:border-white/30 relative group cursor-pointer">
+<div class="h-20 bg-cover bg-center relative opacity-80 group-hover:opacity-100 transition" style="background-image: url('https://www.gstatic.com/labs-code/stitch/stitch-placeholder-300x300.svg');">
+<span class="absolute bottom-1 right-1 px-1.5 py-0.2 rounded bg-black/80 text-[10px] font-mono-tech text-white/80">02:10:45</span>
+</div>
+<div class="p-2">
+<p class="text-[11px] font-bold text-white truncate">C6: Khúc Tráng Ca Sa Mạc</p>
+<p class="text-[9px] text-white/50 truncate">Trận chiến Arrakeen</p>
+</div>
+</div>
+</div>
+</div>
+</div>
+<!-- 6. POPUP/DRAWER: AUDIO & SUBTITLE SETTINGS (INTERACTIVE SIMULATION) -->
+<div class="hidden px-5 mt-3 z-30" id="audio-modal">
+<div class="glass-panel p-4 rounded-2xl border border-amber-500/30 shadow-2xl">
+<div class="flex items-center justify-between pb-2 border-b border-white/10 mb-3">
+<span class="text-xs font-bold text-amber-400 uppercase font-syne">Cài Đặt Âm Thanh &amp; Phụ Đề</span>
+<button class="text-white/60 hover:text-white text-xs" id="btn-close-modal">✕ Đóng</button>
+</div>
+<div class="grid grid-cols-2 gap-3 text-xs">
+<div>
+<p class="text-[10px] font-mono-tech text-white/50 uppercase mb-1.5">Âm Thanh Đa Kênh</p>
+<div class="space-y-1">
+<label class="flex items-center gap-2 p-1.5 rounded-lg bg-amber-500/20 text-amber-300 font-semibold cursor-pointer">
+<input checked="" class="text-amber-500 focus:ring-0" name="audio" type="radio"/>
+<span>Dolby Atmos 9.1.4 (Gốc)</span>
+</label>
+<label class="flex items-center gap-2 p-1.5 rounded-lg hover:bg-white/5 text-white/70 cursor-pointer">
+<input class="text-amber-500 focus:ring-0" name="audio" type="radio"/>
+<span>Tiếng Việt (Lồng tiếng 5.1)</span>
+</label>
+</div>
+</div>
+<div>
+<p class="text-[10px] font-mono-tech text-white/50 uppercase mb-1.5">Phụ Đề Điện Ảnh</p>
+<div class="space-y-1">
+<label class="flex items-center gap-2 p-1.5 rounded-lg bg-amber-500/20 text-amber-300 font-semibold cursor-pointer">
+<input checked="" class="text-amber-500 focus:ring-0" name="sub" type="radio"/>
+<span>Tiếng Việt (Chuẩn Dịch Rạp)</span>
+</label>
+<label class="flex items-center gap-2 p-1.5 rounded-lg hover:bg-white/5 text-white/70 cursor-pointer">
+<input class="text-amber-500 focus:ring-0" name="sub" type="radio"/>
+<span>English (CC)</span>
+</label>
+</div>
+</div>
+</div>
+</div>
+</div>
+</div>
+<!-- Realtime WebGL Background Shader Script -->
+<script>
+    (function() {
+      // 1. Dynamic WebGL Shader initialization
+      const canvas = document.getElementById('player-bg-canvas');
+      if (canvas) {
+        function syncSize() {
+          const w = window.innerWidth || 1280;
+          const h = window.innerHeight || 720;
+          if (canvas.width !== w || canvas.height !== h) {
+            canvas.width = w;
+            canvas.height = h;
+          }
+        }
+        window.addEventListener('resize', syncSize);
+        syncSize();
+
+        const gl = canvas.getContext('webgl') || canvas.getContext('experimental-webgl');
+        if (gl) {
+          const vs = `attribute vec2 a_position;
+          void main() { gl_Position = vec4(a_position, 0.0, 1.0); }`;
+
+          const fs = `precision highp float;
+          uniform float u_time;
+          uniform vec2 u_resolution;
+
+          // Simple noise
+          float hash(vec2 p) { return fract(sin(dot(p, vec2(127.1, 311.7))) * 43758.5453123); }
+          float noise(vec2 p) {
+              vec2 i = floor(p);
+              vec2 f = fract(p);
+              vec2 u = f*f*(3.0-2.0*f);
+              return mix(mix(hash(i + vec2(0.0,0.0)), hash(i + vec2(1.0,0.0)), u.x),
+                         mix(hash(i + vec2(0.0,1.0)), hash(i + vec2(1.0,1.0)), u.x), u.y);
+          }
+
+          void main() {
+              vec2 st = gl_FragCoord.xy / u_resolution.xy;
+              float t = u_time * 0.15;
+              
+              // Cinema wave gradients
+              float n1 = noise(st * 3.0 + vec2(t * 0.3, -t * 0.2));
+              float n2 = noise(st * 4.5 - vec2(-t * 0.15, t * 0.25) + n1 * 0.4);
+              
+              vec3 space = vec3(0.03, 0.035, 0.05);
+              vec3 amber = vec3(0.96, 0.62, 0.05);
+              vec3 violet = vec3(0.48, 0.18, 0.85);
+              vec3 cyan = vec3(0.02, 0.71, 0.83);
+
+              vec3 col = mix(space, violet * 0.4, n1);
+              col = mix(col, amber * 0.5, pow(n2, 2.5) * 0.6);
+              col += cyan * pow(n1 * n2, 2.0) * 0.2;
+
+              gl_FragColor = vec4(col, 1.0);
+          }`;
+
+          function createShader(type, src) {
+            const s = gl.createShader(type);
+            gl.shaderSource(s, src);
+            gl.compileShader(s);
+            return s;
+          }
+          const prog = gl.createProgram();
+          gl.attachShader(prog, createShader(gl.VERTEX_SHADER, vs));
+          gl.attachShader(prog, createShader(gl.FRAGMENT_SHADER, fs));
+          gl.linkProgram(prog);
+          gl.useProgram(prog);
+
+          const buf = gl.createBuffer();
+          gl.bindBuffer(gl.ARRAY_BUFFER, buf);
+          gl.bufferData(gl.ARRAY_BUFFER, new Float32Array([-1,-1, 1,-1, -1,1, 1,1]), gl.STATIC_DRAW);
+          const pos = gl.getAttribLocation(prog, 'a_position');
+          gl.enableVertexAttribArray(pos);
+          gl.vertexAttribPointer(pos, 2, gl.FLOAT, false, 0, 0);
+
+          const uTime = gl.getUniformLocation(prog, 'u_time');
+          const uRes = gl.getUniformLocation(prog, 'u_resolution');
+
+          function render(t) {
+            gl.viewport(0, 0, canvas.width, canvas.height);
+            if (uTime) gl.uniform1f(uTime, t * 0.001);
+            if (uRes) gl.uniform2f(uRes, canvas.width, canvas.height);
+            gl.drawArrays(gl.TRIANGLE_STRIP, 0, 4);
+            requestAnimationFrame(render);
+          }
+          render(0);
+        }
+      }
+
+      // 2. Interactive Video Player Controls Logic
+      const btnMasterPlay = document.getElementById('btn-master-play');
+      const playIcon = document.getElementById('play-icon');
+      const pauseIcon = document.getElementById('pause-icon');
+      const timeSlider = document.getElementById('time-slider');
+      const playedBar = document.getElementById('played-bar');
+      const currentTimeLabel = document.getElementById('current-time');
+      let isPlaying = true;
+
+      if (btnMasterPlay) {
+        btnMasterPlay.addEventListener('click', () => {
+          isPlaying = !isPlaying;
+          if (isPlaying) {
+            playIcon.classList.add('hidden');
+            pauseIcon.classList.remove('hidden');
+          } else {
+            playIcon.classList.remove('hidden');
+            pauseIcon.classList.add('hidden');
+          }
+        });
+      }
+
+      // Scrubber interaction
+      if (timeSlider) {
+        timeSlider.addEventListener('input', (e) => {
+          const val = e.target.value;
+          playedBar.style.width = val + '%';
+          
+          // calculate time from percentage (total 166 minutes = 9960 seconds)
+          const totalSec = 9960;
+          const curSec = Math.floor((val / 100) * totalSec);
+          const hrs = String(Math.floor(curSec / 3600)).padStart(2, '0');
+          const mins = String(Math.floor((curSec % 3600) / 60)).padStart(2, '0');
+          const secs = String(curSec % 60).padStart(2, '0');
+          currentTimeLabel.textContent = `${hrs}:${mins}:${secs}`;
+        });
+      }
+
+      // Audio/Subtitle Modal Toggle
+      const btnAudioSub = document.getElementById('btn-audio-sub');
+      const audioModal = document.getElementById('audio-modal');
+      const btnCloseModal = document.getElementById('btn-close-modal');
+      if (btnAudioSub && audioModal) {
+        btnAudioSub.addEventListener('click', () => {
+          audioModal.classList.toggle('hidden');
+        });
+        if (btnCloseModal) {
+          btnCloseModal.addEventListener('click', () => {
+            audioModal.classList.add('hidden');
+          });
+        }
+      }
+
+      // Rewind & Fast Forward feedback
+      const btnRewind = document.getElementById('btn-rewind');
+      const btnForward = document.getElementById('btn-forward');
+      if (btnRewind && timeSlider) {
+        btnRewind.addEventListener('click', () => {
+          let currentVal = parseInt(timeSlider.value) - 2;
+          if (currentVal < 0) currentVal = 0;
+          timeSlider.value = currentVal;
+          timeSlider.dispatchEvent(new Event('input'));
+        });
+      }
+      if (btnForward && timeSlider) {
+        btnForward.addEventListener('click', () => {
+          let currentVal = parseInt(timeSlider.value) + 2;
+          if (currentVal > 100) currentVal = 100;
+          timeSlider.value = currentVal;
+          timeSlider.dispatchEvent(new Event('input'));
+        });
+      }
+
+      // Speed toggler
+      const btnSpeed = document.getElementById('btn-speed');
+      const speeds = ['1.0x', '1.25x', '1.5x', '2.0x', '0.75x'];
+      let speedIdx = 0;
+      if (btnSpeed) {
+        btnSpeed.addEventListener('click', () => {
+          speedIdx = (speedIdx + 1) % speeds.length;
+          btnSpeed.textContent = speeds[speedIdx];
+        });
+      }
+
+      // Quality selector notification
+      const btnQuality = document.getElementById('btn-quality');
+      if (btnQuality) {
+        btnQuality.addEventListener('click', () => {
+          alert('Đang phát ở chất lượng cao nhất: 4K UHD 60fps Dolby Vision (Bitrate 48 Mbps)');
+        });
+      }
+    })();
+  </script>
+</body>
+</html>

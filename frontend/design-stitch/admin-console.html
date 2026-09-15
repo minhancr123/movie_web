@@ -1,0 +1,393 @@
+<!DOCTYPE html>
+
+<html class="dark" lang="vi"><head><meta charset="utf-8"/><meta content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no, viewport-fit=cover" name="viewport"/><link href="https://fonts.googleapis.com" rel="preconnect"/><link crossorigin="" href="https://fonts.gstatic.com" rel="preconnect"/><link href="https://fonts.googleapis.com/css2?family=Plus+Jakarta+Sans:wght@400;600;700&amp;family=Space+Grotesk:wght@600;700&amp;family=Syne:wght@700;800&amp;display=swap" rel="stylesheet"/><link href="https://fonts.googleapis.com/css2?family=Material+Symbols+Outlined:opsz,wght,FILL,GRAD@20..48,100..700,0..1,-50..200" rel="stylesheet"/>
+<link href="https://fonts.googleapis.com/css2?family=Material+Symbols+Outlined:wght,FILL@100..700,0..1&amp;display=swap" rel="stylesheet"/><script src="https://cdn.tailwindcss.com"></script><script id="tailwind-config">tailwind.config = { darkMode: "class", theme: { extend: { "colors": { "surface-bright": "#38393d", "background": "#121316", "on-primary-container": "#613b00", "error": "#ffb4ab", "on-tertiary": "#003640", "on-secondary-container": "#ffdcdc", "on-surface": "#e3e2e6", "secondary-fixed": "#ffdada", "surface-container-highest": "#343538", "surface-container-lowest": "#0d0e11", "surface-variant": "#343538", "primary-fixed-dim": "#ffb95f", "on-secondary": "#68001a", "inverse-surface": "#e3e2e6", "on-secondary-fixed": "#40000c", "error-container": "#93000a", "on-error-container": "#ffdad6", "tertiary-fixed": "#acedff", "secondary": "#ffb3b6", "inverse-primary": "#855300", "on-background": "#e3e2e6", "surface-container-low": "#1b1b1f", "on-secondary-fixed-variant": "#920028", "surface-container-high": "#292a2d", "primary-fixed": "#ffddb8", "secondary-container": "#cc003c", "surface": "#121316", "on-tertiary-fixed-variant": "#004e5c", "outline-variant": "#534434", "tertiary-container": "#29c1df", "surface-dim": "#121316", "on-primary-fixed": "#2a1700", "on-surface-variant": "#d8c3ad", "primary": "#ffc174", "outline": "#a08e7a", "inverse-on-surface": "#2f3034", "tertiary-fixed-dim": "#4cd7f6", "on-error": "#690005", "tertiary": "#54ddfc", "on-tertiary-container": "#004b58", "primary-container": "#f59e0b", "surface-container": "#1f1f23", "secondary-fixed-dim": "#ffb3b6", "surface-tint": "#ffb95f", "on-primary-fixed-variant": "#653e00", "on-tertiary-fixed": "#001f26", "on-primary": "#472a00" }, "borderRadius": { "DEFAULT": "0.25rem", "lg": "0.5rem", "xl": "0.75rem", "full": "9999px" }, "spacing": { "space-lg": "1.5rem", "gutter-lg": "1.5rem", "space-2xl": "3rem", "space-xl": "2rem", "margin-tablet": "2rem", "gutter": "1rem", "space-2xs": "0.25rem", "space-md": "1rem", "space-xs": "0.5rem", "gutter-sm": "0.75rem", "margin": "1.25rem", "space-sm": "0.75rem", "margin-mobile": "1rem" }, "fontFamily": { "headline-sm": ["Plus Jakarta Sans"], "headline-lg": ["Syne"], "body-md": ["Plus Jakarta Sans"], "body-sm": ["Plus Jakarta Sans"], "display-hero-mobile": ["Syne"], "headline-xl": ["Syne"], "label-md": ["Space Grotesk"], "label-sm": ["Space Grotesk"], "headline-xl-mobile": ["Syne"], "badge-numeric": ["Space Grotesk"], "display-hero": ["Syne"], "body-lg": ["Plus Jakarta Sans"], "headline-md": ["Plus Jakarta Sans"], "label-lg": ["Space Grotesk"] }, "fontSize": { "headline-sm": ["18px", { "lineHeight": "24px", "letterSpacing": "0em", "fontWeight": "600" }], "headline-lg": ["24px", { "lineHeight": "30px", "letterSpacing": "-0.01em", "fontWeight": "700" }], "body-md": ["14px", { "lineHeight": "20px", "letterSpacing": "0em", "fontWeight": "400" }], "body-sm": ["12px", { "lineHeight": "16px", "letterSpacing": "0.01em", "fontWeight": "400" }], "display-hero-mobile": ["36px", { "lineHeight": "42px", "letterSpacing": "-0.02em", "fontWeight": "800" }], "headline-xl": ["32px", { "lineHeight": "38px", "letterSpacing": "-0.02em", "fontWeight": "700" }], "label-md": ["12px", { "lineHeight": "16px", "letterSpacing": "0.06em", "fontWeight": "600" }], "label-sm": ["10px", { "lineHeight": "12px", "letterSpacing": "0.08em", "fontWeight": "700" }], "headline-xl-mobile": ["26px", { "lineHeight": "32px", "letterSpacing": "-0.01em", "fontWeight": "700" }], "badge-numeric": ["13px", { "lineHeight": "14px", "letterSpacing": "0.02em", "fontWeight": "700" }], "display-hero": ["52px", { "lineHeight": "58px", "letterSpacing": "-0.03em", "fontWeight": "800" }], "body-lg": ["16px", { "lineHeight": "24px", "letterSpacing": "0em", "fontWeight": "400" }], "headline-md": ["20px", { "lineHeight": "26px", "letterSpacing": "-0.01em", "fontWeight": "700" }], "label-lg": ["14px", { "lineHeight": "18px", "letterSpacing": "0.04em", "fontWeight": "600" }] } } } }</script><style>@layer base{html,body{width:100%;margin:0;padding:0;}body{overscroll-behavior-y:none;}.pb-safe{padding-bottom:env(safe-area-inset-bottom,0px);}.pt-safe{padding-top:env(safe-area-inset-top,0px);}main>:first-child{margin-top:0!important;}main>:last-child{margin-bottom:0!important;}}::-webkit-scrollbar{display:none;}</style><style>
+    body {
+      min-height: max(884px, 100dvh);
+    }
+  </style>
+  </head><body class="bg-surface text-on-surface font-body-md text-body-md flex flex-col min-h-screen"><header class="fixed top-0 w-full z-50 pt-safe bg-surface/80 backdrop-blur-xl shadow-[0_4px_20px_rgba(0,0,0,0.4)]"><div class="h-16 px-margin flex items-center justify-between gap-space-sm"><div class="flex items-center gap-space-sm"><img alt="Brand logo. - Primary color: #f59e0b
+- Font: syne
+- Mode: dark
+- Roundness: rounded-md
+" class="h-8 w-auto object-contain" src="https://lh3.googleusercontent.com/aida/AEtjO1X7fxMzztb60EUwsJeiJMPgXTtXsaCe82s698s7mF2XTd-mvsVc_Vrjj7pdQ2MsqwhjjdwoIbRLNJPdpx0uk_SHrMfTMD-l4-cWVjeKq8sIfFVR8bVTFyifye6bARFLb2iwOKigDCqmvf6c7FrwXiAVVsZEEgiaLm0F_dg9hb6rJP3hkCarYdZwrmxHQqiqUE4T1aQQj-ELFp3RSo0H9jD76rMhCXWm6icKe_Czj3MOlE0K2nB9LxdsGq0"/><span class="font-headline-lg text-headline-lg tracking-tight text-on-surface">CineStream</span></div><div class="flex items-center gap-space-2xs"><button aria-label="Search" class="w-11 h-11 flex items-center justify-center rounded-full text-on-surface-variant hover:text-primary transition-colors"><span class="material-symbols-outlined text-[24px]">search</span></button><button aria-label="Notifications" class="w-11 h-11 flex items-center justify-center rounded-full text-on-surface-variant hover:text-primary transition-colors relative"><span class="material-symbols-outlined text-[24px]">notifications</span><span class="absolute top-2.5 right-2.5 w-2 h-2 rounded-full bg-primary-container ring-2 ring-surface"></span></button><div class="w-8 h-8 rounded-full bg-primary flex items-center justify-center ml-space-2xs"><span class="material-symbols-outlined text-on-primary text-[18px]">person</span></div></div></div></header><main class="flex flex-col relative w-full pt-16 pb-28 bg-surface"><div class="flex flex-col w-full">
+<!-- Dynamic Hero Telemetry & Control Status Panel -->
+<div class="relative w-full overflow-hidden bg-surface-container-low px-margin py-space-md">
+<!-- Ambient Sci-Fi Glow & Desert Amber Horizon Background Accent -->
+<div class="absolute -top-16 -right-12 w-64 h-64 rounded-full bg-primary/10 blur-3xl pointer-events-none"></div>
+<div class="absolute top-1/2 -left-16 w-56 h-56 rounded-full bg-tertiary/10 blur-3xl pointer-events-none"></div>
+<!-- Header / Admin Context -->
+<div class="flex flex-col gap-space-xs relative z-10">
+<div class="flex items-center justify-between">
+<div class="flex items-center gap-space-xs">
+<span class="inline-flex items-center justify-center w-2 h-2 rounded-full bg-tertiary animate-ping"></span>
+<span class="font-label-sm text-label-sm uppercase tracking-wider text-tertiary font-bold">HỆ THỐNG TRỰC TUYẾN 99.99%</span>
+</div>
+<button class="flex items-center gap-1.5 px-3 py-1 rounded-full bg-surface-container-high text-primary hover:bg-surface-bright transition-all shadow-sm" id="live-toggle-btn">
+<span class="material-symbols-outlined text-[16px]">sensors</span>
+<span class="font-label-sm text-label-sm uppercase font-semibold">Live Monitor</span>
+</button>
+</div>
+<div class="flex items-baseline justify-between mt-1">
+<div>
+<h1 class="font-headline-xl-mobile text-headline-xl-mobile text-on-surface tracking-tight font-bold">
+            BẢNG ĐIỀU KHIỂN QUẢN TRỊ
+          </h1>
+<p class="font-body-sm text-body-sm text-on-surface-variant mt-0.5">
+            Admin: <span class="text-on-surface font-semibold">Nguyễn Quản Trị</span> • Cụm máy chủ IMAX Ultra-Direct
+          </p>
+</div>
+</div>
+</div>
+<!-- Live Spotlight Master Banner (Dune Cinematic Theme Inspired) -->
+<div class="relative mt-space-md rounded-xl overflow-hidden shadow-xl bg-surface-container">
+<div class="h-36 w-full bg-cover bg-center relative" data-alt="Cinematic wide shot of an ornithopter flying across vast golden sand dunes on the desert planet Arrakis during a dramatic sunset with amber lighting, cinematic movie still aesthetic from Dune Part Two in dark sci-fi high fidelity." style="background-image: url('https://lh3.googleusercontent.com/aida-public/AB6AXuCvLYRDrWaN0wKC30aL1QZmxXOcXL85c1LR1P6aHNlDm8IN-_J8p95qq6NQHVcgSz38dV-_dwc0Efheu4bl0cGXY7XVeYxOOe6spRrjdhoKMDs0GiAtmfeC-jq8-bUmvE8UigYFzbe0qlPhrUtwz4dBWO5kNziD0kI7c1r-2bXawRXSzUmqdcdrJVA-4Y03SczhCL010gMgl2cnl8tH-q3OUd9oAxg3VMhSxcSR8wPfVwAz0jxbnLz-')">
+<div class="absolute inset-0 bg-gradient-to-t from-surface-container-lowest via-surface-container-lowest/60 to-transparent"></div>
+<div class="absolute inset-0 bg-gradient-to-r from-surface-container-lowest/90 via-transparent to-surface-container-lowest/40"></div>
+<div class="absolute bottom-3 left-3 right-3 flex items-end justify-between">
+<div class="flex flex-col">
+<div class="flex items-center gap-1.5">
+<span class="px-1.5 py-0.5 rounded bg-primary-container text-on-primary font-label-sm text-label-sm font-bold tracking-wider uppercase">Master 4K Dolby</span>
+<span class="px-1.5 py-0.5 rounded bg-surface-container-highest/80 text-tertiary font-label-sm text-label-sm uppercase">Trực Tiếp</span>
+</div>
+<span class="font-headline-sm text-headline-sm text-on-surface font-bold mt-1">Dune: Part Two</span>
+<span class="font-body-sm text-body-sm text-on-surface-variant">Lượt xem kỷ lục phòng chiếu IMAX Home Sync</span>
+</div>
+<button class="flex items-center gap-1 px-3 py-1.5 rounded-full bg-primary text-on-primary font-label-md text-label-md uppercase font-bold shadow-md hover:bg-primary-fixed-dim transition-all">
+<span class="material-symbols-outlined text-[16px]">tune</span>
+<span>Bitrate</span>
+</button>
+</div>
+</div>
+</div>
+</div>
+<!-- Real-time Cinema Telemetry Metrics Cards -->
+<div class="px-margin pt-space-md pb-space-xs flex flex-col gap-space-sm">
+<div class="flex items-center justify-between">
+<h2 class="font-headline-sm text-headline-sm text-on-surface font-bold flex items-center gap-2">
+<span class="material-symbols-outlined text-primary text-[20px]">analytics</span>
+        Số Liệu Thời Gian Thực
+      </h2>
+<span class="font-label-sm text-label-sm text-on-surface-variant uppercase tracking-wider">Làm mới: 3s</span>
+</div>
+<!-- 2x2 Bento Matrix for Mobile Efficiency -->
+<div class="grid grid-cols-2 gap-gutter-sm">
+<!-- Card 1: Live Viewers -->
+<div class="p-space-sm rounded-xl bg-surface-container-high flex flex-col justify-between shadow-md relative overflow-hidden">
+<div class="flex items-center justify-between">
+<span class="font-label-sm text-label-sm uppercase text-on-surface-variant">Người xem live</span>
+<div class="w-7 h-7 rounded-full bg-surface-container-highest flex items-center justify-center text-primary">
+<span class="material-symbols-outlined text-[18px]">visibility</span>
+</div>
+</div>
+<div class="mt-2">
+<div class="font-badge-numeric text-headline-sm text-on-surface font-bold tracking-tight">148,920</div>
+<div class="flex items-center gap-1 mt-1 text-tertiary font-label-sm text-label-sm font-semibold">
+<span class="material-symbols-outlined text-[14px]">trending_up</span>
+<span>+18.4% hôm nay</span>
+</div>
+</div>
+</div>
+<!-- Card 2: 4K CDN Bandwidth -->
+<div class="p-space-sm rounded-xl bg-surface-container-high flex flex-col justify-between shadow-md relative overflow-hidden">
+<div class="flex items-center justify-between">
+<span class="font-label-sm text-label-sm uppercase text-on-surface-variant">Băng thông 4K</span>
+<div class="w-7 h-7 rounded-full bg-surface-container-highest flex items-center justify-center text-tertiary">
+<span class="material-symbols-outlined text-[18px]">speed</span>
+</div>
+</div>
+<div class="mt-2">
+<div class="font-badge-numeric text-headline-sm text-on-surface font-bold tracking-tight">1.84 <span class="font-label-md text-label-md text-on-surface-variant">Tbps</span></div>
+<div class="flex items-center gap-1 mt-1 text-primary font-label-sm text-label-sm font-semibold">
+<span class="w-1.5 h-1.5 rounded-full bg-primary"></span>
+<span>Tối ưu hóa (98%)</span>
+</div>
+</div>
+</div>
+<!-- Card 3: Virtual Watch Parties -->
+<div class="p-space-sm rounded-xl bg-surface-container-high flex flex-col justify-between shadow-md relative overflow-hidden">
+<div class="flex items-center justify-between">
+<span class="font-label-sm text-label-sm uppercase text-on-surface-variant">Phòng chiếu ảo</span>
+<div class="w-7 h-7 rounded-full bg-surface-container-highest flex items-center justify-center text-secondary">
+<span class="material-symbols-outlined text-[18px]">groups</span>
+</div>
+</div>
+<div class="mt-2">
+<div class="font-badge-numeric text-headline-sm text-on-surface font-bold tracking-tight">1,420</div>
+<div class="flex items-center gap-1 mt-1 text-on-surface-variant font-label-sm text-label-sm">
+<span class="material-symbols-outlined text-[14px]">local_activity</span>
+<span>12.8 người/phòng</span>
+</div>
+</div>
+</div>
+<!-- Card 4: Daily Revenue -->
+<div class="p-space-sm rounded-xl bg-surface-container-high flex flex-col justify-between shadow-md relative overflow-hidden">
+<div class="flex items-center justify-between">
+<span class="font-label-sm text-label-sm uppercase text-on-surface-variant">Doanh thu ngày</span>
+<div class="w-7 h-7 rounded-full bg-surface-container-highest flex items-center justify-center text-primary-container">
+<span class="material-symbols-outlined text-[18px]">payments</span>
+</div>
+</div>
+<div class="mt-2">
+<div class="font-badge-numeric text-headline-sm text-on-surface font-bold tracking-tight">348.5 <span class="font-label-md text-label-md text-on-surface-variant">Tr.đ</span></div>
+<div class="flex items-center gap-1 mt-1 text-tertiary font-label-sm text-label-sm font-semibold">
+<span class="material-symbols-outlined text-[14px]">arrow_upward</span>
+<span>+12.0% 24h qua</span>
+</div>
+</div>
+</div>
+</div>
+</div>
+<!-- Quick Admin Mission Actions -->
+<div class="px-margin pt-space-sm pb-space-xs flex flex-col gap-space-xs">
+<div class="flex items-center justify-between">
+<h2 class="font-headline-sm text-headline-sm text-on-surface font-bold flex items-center gap-2">
+<span class="material-symbols-outlined text-tertiary text-[20px]">bolt</span>
+        Tác Vụ Quản Trị Nhanh
+      </h2>
+</div>
+<div class="grid grid-cols-4 gap-2 mt-1">
+<button class="flex flex-col items-center justify-center p-2 rounded-xl bg-surface-container-high hover:bg-surface-bright transition-all text-center">
+<div class="w-10 h-10 rounded-full bg-primary/10 text-primary flex items-center justify-center mb-1">
+<span class="material-symbols-outlined text-[20px]">verified</span>
+</div>
+<span class="font-label-sm text-label-sm text-on-surface">Duyệt Bản Quyền</span>
+</button>
+<button class="flex flex-col items-center justify-center p-2 rounded-xl bg-surface-container-high hover:bg-surface-bright transition-all text-center">
+<div class="w-10 h-10 rounded-full bg-tertiary/10 text-tertiary flex items-center justify-center mb-1">
+<span class="material-symbols-outlined text-[20px]">admin_panel_settings</span>
+</div>
+<span class="font-label-sm text-label-sm text-on-surface">Cấp Quyền VIP</span>
+</button>
+<button class="flex flex-col items-center justify-center p-2 rounded-xl bg-surface-container-high hover:bg-surface-bright transition-all text-center">
+<div class="w-10 h-10 rounded-full bg-secondary/10 text-secondary flex items-center justify-center mb-1">
+<span class="material-symbols-outlined text-[20px]">warning</span>
+</div>
+<span class="font-label-sm text-label-sm text-on-surface">Cảnh Báo (2)</span>
+</button>
+<button class="flex flex-col items-center justify-center p-2 rounded-xl bg-surface-container-high hover:bg-surface-bright transition-all text-center">
+<div class="w-10 h-10 rounded-full bg-primary-container/10 text-primary flex items-center justify-center mb-1">
+<span class="material-symbols-outlined text-[20px]">confirmation_number</span>
+</div>
+<span class="font-label-sm text-label-sm text-on-surface">Mã Ưu Đãi</span>
+</button>
+</div>
+</div>
+<!-- Content Management & Streaming Performance -->
+<div class="px-margin pt-space-md pb-space-xs flex flex-col gap-space-sm">
+<div class="flex items-center justify-between">
+<div>
+<h2 class="font-headline-sm text-headline-sm text-on-surface font-bold flex items-center gap-2">
+<span class="material-symbols-outlined text-primary text-[20px]">movie</span>
+          Theo Dõi Nội Dung &amp; Luồng Phát
+        </h2>
+<p class="font-body-sm text-body-sm text-on-surface-variant">Thống kê băng thông theo thời gian thực</p>
+</div>
+<button class="flex items-center gap-1 px-3 py-1.5 rounded-full bg-surface-container-high text-primary font-label-sm text-label-sm font-bold uppercase hover:bg-surface-bright transition-all shadow-sm">
+<span class="material-symbols-outlined text-[16px]">upload_file</span>
+<span>Upload 4K</span>
+</button>
+</div>
+<!-- Movie Performance Item 1: Dune Part Two -->
+<div class="p-space-sm rounded-xl bg-surface-container flex flex-col gap-space-xs shadow-md">
+<div class="flex items-center justify-between">
+<div class="flex items-center gap-3">
+<div class="w-12 h-16 rounded-lg overflow-hidden bg-surface-container-highest shrink-0 shadow-sm">
+<img class="w-full h-full object-cover" data-alt="Vertical movie poster of Dune Part Two featuring desert landscape and sci-fi aesthetic with warm sunset tones and dramatic typography." src="https://lh3.googleusercontent.com/aida-public/AB6AXuCnEht45jWvlMrYN_0izijzyPJollBZ7iZmDrUje0Cb6wPwvxFhRa1nVSmTujTOBZW9A31uHEjCbjeZxIJuzfgDypNfBr9-haBuRGcTs3MHT7nO2htC4TQD3F6D3wxBm4FHmiRwq6ZpOdaEp5-X-Q797zN64qEp8ZQHceCptvIYQuZf4yeqgQhN6KStF_kadOU85B2YwUSpqiva021wN7ckXoozp8TBUKyobF9fThLLnwaNpICecB2R"/>
+</div>
+<div class="flex flex-col">
+<div class="flex items-center gap-1.5">
+<span class="font-headline-sm text-headline-sm text-on-surface font-bold">Dune: Part Two</span>
+<span class="px-1.5 py-0.2 rounded bg-primary-container text-on-primary font-label-sm text-label-sm font-bold">TOP 1</span>
+</div>
+<span class="font-body-sm text-body-sm text-on-surface-variant mt-0.5">48,210 đang xem • 45 Mbps HDR Master</span>
+<div class="flex items-center gap-2 mt-1">
+<span class="font-label-sm text-label-sm text-tertiary font-semibold flex items-center gap-0.5">
+<span class="material-symbols-outlined text-[12px]">check_circle</span> 0% Drop frames
+              </span>
+<span class="font-label-sm text-label-sm text-on-surface-variant">• Server SG-01</span>
+</div>
+</div>
+</div>
+<div class="flex flex-col items-end gap-1">
+<span class="font-badge-numeric text-headline-sm text-primary font-bold">48.2k</span>
+<button class="p-1.5 rounded-full bg-surface-container-high text-on-surface-variant hover:text-primary transition-colors">
+<span class="material-symbols-outlined text-[18px]">more_vert</span>
+</button>
+</div>
+</div>
+<!-- Real-time Bitrate Micro Gauge Visual -->
+<div class="w-full bg-surface-container-lowest rounded-full h-1.5 overflow-hidden flex">
+<div class="bg-primary h-full w-[88%] rounded-full"></div>
+</div>
+</div>
+<!-- Movie Performance Item 2: Oppenheimer -->
+<div class="p-space-sm rounded-xl bg-surface-container flex flex-col gap-space-xs shadow-md">
+<div class="flex items-center justify-between">
+<div class="flex items-center gap-3">
+<div class="w-12 h-16 rounded-lg overflow-hidden bg-surface-container-highest shrink-0 shadow-sm">
+<img class="w-full h-full object-cover" data-alt="Oppenheimer movie poster featuring dramatic fiery atomic explosion in the background with silhouette of scientist in dark dramatic tones." src="https://lh3.googleusercontent.com/aida-public/AB6AXuD77KbrsgMryQmjHyyu4mTguWmF84gtNCEhthfZZwS62djjJPxoMR_kS8x50mym5D8-I3-8PEoM8C7bu-OUxrGATxhdd0pYxcODk3XF_dtSmQjPGA2aUhpA0t5uIQ8NmG6udIN-zc-x_abhRRyYLuyEQKn54L03d_ro-OZz6VbHtYbZ1zfZC-ZEL4Oqd_wCt4jfsA9G3bL19pYIFpL6woXKq5iQPIDjVCgTko5uznfvvAcl6PS0jxGP"/>
+</div>
+<div class="flex flex-col">
+<div class="flex items-center gap-1.5">
+<span class="font-headline-sm text-headline-sm text-on-surface font-bold">Oppenheimer</span>
+<span class="px-1.5 py-0.2 rounded bg-surface-container-highest text-on-surface-variant font-label-sm text-label-sm">IMAX 70mm</span>
+</div>
+<span class="font-body-sm text-body-sm text-on-surface-variant mt-0.5">24,050 đang xem • 38 Mbps Dolby Vision</span>
+<div class="flex items-center gap-2 mt-1">
+<span class="font-label-sm text-label-sm text-tertiary font-semibold flex items-center gap-0.5">
+<span class="material-symbols-outlined text-[12px]">check_circle</span> Ổn định
+              </span>
+<span class="font-label-sm text-label-sm text-on-surface-variant">• Server VN-02</span>
+</div>
+</div>
+</div>
+<div class="flex flex-col items-end gap-1">
+<span class="font-badge-numeric text-headline-sm text-on-surface font-bold">24.0k</span>
+<button class="p-1.5 rounded-full bg-surface-container-high text-on-surface-variant hover:text-primary transition-colors">
+<span class="material-symbols-outlined text-[18px]">more_vert</span>
+</button>
+</div>
+</div>
+<div class="w-full bg-surface-container-lowest rounded-full h-1.5 overflow-hidden flex">
+<div class="bg-tertiary h-full w-[64%] rounded-full"></div>
+</div>
+</div>
+<!-- Movie Performance Item 3: Interstellar -->
+<div class="p-space-sm rounded-xl bg-surface-container flex flex-col gap-space-xs shadow-md">
+<div class="flex items-center justify-between">
+<div class="flex items-center gap-3">
+<div class="w-12 h-16 rounded-lg overflow-hidden bg-surface-container-highest shrink-0 shadow-sm">
+<img class="w-full h-full object-cover" data-alt="Interstellar movie poster with astronaut walking on foreign frozen planetary landscape under deep cosmic star-filled dark sky." src="https://lh3.googleusercontent.com/aida-public/AB6AXuD9bwYeILXu3qQKhVHhmzn5Ki9hj6WNjebIKbNkVUneo78_T2dS54AQxMa-zKDvrwkCk6K9pD9ZYvpru5wFukocem9NJ17HnP6uEHlAHBq9zV_KlAXHokeP--EM55MIBF_rfdOK0TTb6aH7kxqzNCx4YKWaBppcAhQttinsBxXrMr1S9Ko5lH8AqOSRpyQlP2zvytyfN7MGiiTqXiy3r9TymwH_SUvtJAgqKE83A8RNu9LbvKQnqekO"/>
+</div>
+<div class="flex flex-col">
+<div class="flex items-center gap-1.5">
+<span class="font-headline-sm text-headline-sm text-on-surface font-bold">Interstellar</span>
+<span class="px-1.5 py-0.2 rounded bg-surface-container-highest text-on-surface-variant font-label-sm text-label-sm">4K Remaster</span>
+</div>
+<span class="font-body-sm text-body-sm text-on-surface-variant mt-0.5">19,400 đang xem • 35 Mbps Atmos</span>
+<div class="flex items-center gap-2 mt-1">
+<span class="font-label-sm text-label-sm text-tertiary font-semibold flex items-center gap-0.5">
+<span class="material-symbols-outlined text-[12px]">check_circle</span> Tối ưu
+              </span>
+<span class="font-label-sm text-label-sm text-on-surface-variant">• Server VN-01</span>
+</div>
+</div>
+</div>
+<div class="flex flex-col items-end gap-1">
+<span class="font-badge-numeric text-headline-sm text-on-surface font-bold">19.4k</span>
+<button class="p-1.5 rounded-full bg-surface-container-high text-on-surface-variant hover:text-primary transition-colors">
+<span class="material-symbols-outlined text-[18px]">more_vert</span>
+</button>
+</div>
+</div>
+<div class="w-full bg-surface-container-lowest rounded-full h-1.5 overflow-hidden flex">
+<div class="bg-secondary h-full w-[45%] rounded-full"></div>
+</div>
+</div>
+</div>
+<!-- CDN Cluster & Decoders Health Dashboard -->
+<div class="px-margin pt-space-md pb-space-lg flex flex-col gap-space-sm">
+<div class="flex items-center justify-between">
+<div>
+<h2 class="font-headline-sm text-headline-sm text-on-surface font-bold flex items-center gap-2">
+<span class="material-symbols-outlined text-tertiary text-[20px]">dns</span>
+          Cụm CDN &amp; Máy Chủ Đông Nam Á
+        </h2>
+<p class="font-body-sm text-body-sm text-on-surface-variant">Độ trễ và hiệu năng giải mã đa vùng</p>
+</div>
+<span class="px-2.5 py-1 rounded-full bg-surface-container-highest text-tertiary font-label-sm text-label-sm font-bold">
+        VN-SG Cluster
+      </span>
+</div>
+<!-- Cluster Grid Status Cards -->
+<div class="grid grid-cols-1 gap-space-xs">
+<!-- Node VN-SG Core -->
+<div class="p-space-sm rounded-xl bg-surface-container flex items-center justify-between shadow-md">
+<div class="flex items-center gap-3">
+<div class="w-10 h-10 rounded-full bg-surface-container-high flex items-center justify-center text-primary">
+<span class="material-symbols-outlined text-[20px]">hub</span>
+</div>
+<div class="flex flex-col">
+<span class="font-headline-sm text-headline-sm text-on-surface font-semibold">Cụm Máy Chủ VN-SG</span>
+<div class="flex items-center gap-2 mt-0.5">
+<span class="font-label-sm text-label-sm text-tertiary font-bold">24ms Ping</span>
+<span class="text-outline-variant">•</span>
+<span class="font-label-sm text-label-sm text-on-surface-variant">99.98% Uptime</span>
+</div>
+</div>
+</div>
+<div class="flex items-center gap-1.5 px-2 py-1 rounded bg-surface-container-highest text-tertiary font-label-sm text-label-sm font-bold">
+<span class="w-2 h-2 rounded-full bg-tertiary animate-pulse"></span>
+<span>ONLINE</span>
+</div>
+</div>
+<!-- Dolby Atmos Spatial Audio Decoder -->
+<div class="p-space-sm rounded-xl bg-surface-container flex items-center justify-between shadow-md">
+<div class="flex items-center gap-3">
+<div class="w-10 h-10 rounded-full bg-surface-container-high flex items-center justify-center text-tertiary">
+<span class="material-symbols-outlined text-[20px]">spatial_audio_off</span>
+</div>
+<div class="flex flex-col">
+<span class="font-headline-sm text-headline-sm text-on-surface font-semibold">Bộ Giải Mã Spatial Audio</span>
+<div class="flex items-center gap-2 mt-0.5">
+<span class="font-label-sm text-label-sm text-primary font-bold">Dolby Atmos Core</span>
+<span class="text-outline-variant">•</span>
+<span class="font-label-sm text-label-sm text-on-surface-variant">100% Công suất</span>
+</div>
+</div>
+</div>
+<div class="flex items-center gap-1.5 px-2 py-1 rounded bg-surface-container-highest text-primary font-label-sm text-label-sm font-bold">
+<span class="w-2 h-2 rounded-full bg-primary"></span>
+<span>MAX LOAD</span>
+</div>
+</div>
+<!-- Edge Caching Status -->
+<div class="p-space-sm rounded-xl bg-surface-container flex items-center justify-between shadow-md">
+<div class="flex items-center gap-3">
+<div class="w-10 h-10 rounded-full bg-surface-container-high flex items-center justify-center text-secondary">
+<span class="material-symbols-outlined text-[20px]">memory</span>
+</div>
+<div class="flex flex-col">
+<span class="font-headline-sm text-headline-sm text-on-surface font-semibold">Bộ Nhớ Đệm Edge NVMe</span>
+<div class="flex items-center gap-2 mt-0.5">
+<span class="font-label-sm text-label-sm text-on-surface-variant">Tỉ lệ Hit Cache: 94.2%</span>
+<span class="text-outline-variant">•</span>
+<span class="font-label-sm text-label-sm text-tertiary font-bold">14.2 GB/s Đọc</span>
+</div>
+</div>
+</div>
+<div class="flex items-center gap-1.5 px-2 py-1 rounded bg-surface-container-highest text-tertiary font-label-sm text-label-sm font-bold">
+<span>CHUẨN</span>
+</div>
+</div>
+</div>
+</div>
+<!-- Primary System Actions Floating CTA Bar -->
+<div class="px-margin pb-space-lg flex items-center gap-space-xs">
+<button class="flex-1 py-3.5 px-4 rounded-full bg-primary text-on-primary font-label-lg text-label-lg uppercase font-bold flex items-center justify-center gap-2 shadow-lg shadow-primary/20 hover:brightness-110 active:scale-98 transition-all">
+<span class="material-symbols-outlined text-[20px]">add_circle</span>
+<span>Thêm Phim Mới</span>
+</button>
+<button class="w-12 h-12 rounded-full bg-surface-container-high text-on-surface flex items-center justify-center hover:bg-surface-bright active:scale-95 transition-all shadow-md">
+<span class="material-symbols-outlined text-[22px]">settings</span>
+</button>
+</div>
+</div>
+<script>
+  // Simple Micro-interaction for Live Monitoring status toggle
+  const liveBtn = document.getElementById('live-toggle-btn');
+  if (liveBtn) {
+    let active = true;
+    liveBtn.addEventListener('click', () => {
+      active = !active;
+      if (active) {
+        liveBtn.classList.remove('opacity-60');
+        liveBtn.querySelector('span:last-child').textContent = 'Live Monitor';
+      } else {
+        liveBtn.classList.add('opacity-60');
+        liveBtn.querySelector('span:last-child').textContent = 'Paused';
+      }
+    });
+  }
+</script></main><nav class="fixed bottom-0 w-full z-50 pb-safe pointer-events-none" data-active-classes="text-primary-container font-bold scale-105"><div class="max-w-md mx-auto px-margin pb-space-sm pt-space-2xs pointer-events-auto"><div class="h-16 px-space-sm rounded-full bg-surface-container-lowest/85 backdrop-blur-2xl shadow-[0_10px_32px_rgba(0,0,0,0.6)] flex items-center justify-around"><a class="flex flex-col items-center justify-center gap-0.5 min-w-[56px] h-12 text-on-surface-variant hover:text-on-surface transition-all" data-path="trang-chu" href="#"><span class="material-symbols-outlined text-[22px]">home</span><span class="font-label-sm text-label-sm uppercase tracking-wider">Trang chủ</span></a><a class="flex flex-col items-center justify-center gap-0.5 min-w-[56px] h-12 text-on-surface-variant hover:text-on-surface transition-all" data-path="kham-pha" href="#"><span class="material-symbols-outlined text-[22px]">explore</span><span class="font-label-sm text-label-sm uppercase tracking-wider">Khám phá</span></a><a class="flex flex-col items-center justify-center gap-0.5 min-w-[56px] h-12 text-on-surface-variant hover:text-on-surface transition-all" data-path="tai-ve" href="#"><span class="material-symbols-outlined text-[22px]">download_for_offline</span><span class="font-label-sm text-label-sm uppercase tracking-wider">Tải về</span></a><a class="flex flex-col items-center justify-center gap-0.5 min-w-[56px] h-12 text-on-surface-variant hover:text-on-surface transition-all" data-path="ho-so" href="#"><span class="material-symbols-outlined text-[22px]">account_circle</span><span class="font-label-sm text-label-sm uppercase tracking-wider">Hồ sơ</span></a></div></div></nav></body></html>
