@@ -59,10 +59,31 @@ const MAX_ATTEMPTS = 5;
 // this, a release whose label omits the codec gets probed again on every single
 // resolve, and sources already proven undecodable keep burning retry slots.
 const PROBE_FACTS_TTL = 7 * 24 * 60 * 60;
+/**
+ * The bytes behind an infohash are immutable, so this could live forever; a
+ * week simply keeps the keyspace from growing without bound for films nobody
+ * returns to.
+ */
+const PROBE_RESULT_TTL = 7 * 24 * 60 * 60;
 const probeFactsKey = (infoHash) => `playback:probe:${String(infoHash).toLowerCase()}`;
 // OpenSubtitles hash of the picked file. Cached so repeat resolves of the same
 // source never re-issue the two range requests.
 const fileHashKey = (infoHash) => `playback:oshash:${String(infoHash).toLowerCase()}`;
+/**
+ * Full ffprobe output for one file inside one torrent.
+ *
+ * Keyed on the file, not the torrent: a release can hold several, and their
+ * streams differ. The bytes behind an infohash never change, so what ffprobe
+ * says about them cannot change either — a long TTL is safe, and the only thing
+ * re-probing buys is another round trip to the debrid CDN for a moov atom that
+ * was already read minutes ago.
+ *
+ * This is separate from probeFactsKey, which stores the handful of fields the
+ * ranker filters on. That one exists to skip bad sources; this one exists to
+ * skip the probe itself.
+ */
+const probeResultKey = (infoHash, fileId) =>
+  `playback:probefull:${String(infoHash).toLowerCase()}:${String(fileId ?? 'default')}`;
 
 const fail = (res, status, message, extra = {}) =>
   res.status(status).json({ success: false, message, ...extra });
@@ -747,13 +768,21 @@ export const resolvePlayback = async (req, res) => {
       }
 
       // 8. ffprobe decides direct vs remux; a probe failure tries the next source.
-      let probe;
-      try {
-        probe = await ffprobe(inputUrl);
-      } catch (error) {
-        console.error(`resolvePlayback probe failed tmdb=${tmdbId} mode=retry`);
-        lastError = error;
-        continue;
+      // Measured: a cold resolve spent ~8.7 s before ffmpeg even started, and
+      // the addon lookup accounts for ~0.2 s of it. Most of the rest is this
+      // call pulling a moov atom across the debrid CDN — work that is identical
+      // every time for the same file.
+      const probeCacheKey = probeResultKey(candidate.infoHash, file.fileId);
+      let probe = await getCache(probeCacheKey);
+      if (!probe) {
+        try {
+          probe = await ffprobe(inputUrl);
+        } catch (error) {
+          console.error(`resolvePlayback probe failed tmdb=${tmdbId} mode=retry`);
+          lastError = error;
+          continue;
+        }
+        await setCache(probeCacheKey, probe, PROBE_RESULT_TTL);
       }
       // Record before acting on it: a rejection here is exactly the fact the
       // ranker needs next time so this source stops consuming a retry slot.
