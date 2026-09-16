@@ -58,10 +58,16 @@ export const shouldReuseRemuxSession = ({
   playlistComplete = false,
   hasLiveSession = false,
   liveExitCode,
+  playlistFresh = false,
   playlistGrowing = false,
 } = {}) => {
   if (playlistComplete) return true;
-  if (hasLiveSession) return liveExitCode === undefined;
+  // A child process can stay alive while its upstream socket is wedged. Reusing
+  // that session reconnects the player to the same frozen playlist forever, so
+  // an incomplete live session also needs recent or observable disk progress.
+  if (hasLiveSession) {
+    return liveExitCode === undefined && (playlistFresh || playlistGrowing);
+  }
   return Boolean(playlistGrowing);
 };
 
@@ -247,14 +253,12 @@ const isBrowserAudioCodec = (codec, profile = null, channels = null) => {
 };
 const isMp4Container = (format) => String(format || '').split(',').includes('mov') || String(format || '').includes('mp4');
 
-export const decidePlaybackMode = (probe, caps = {}, preferredAudioIdx = null) => {
+export const decidePlaybackMode = (probe, caps = {}, preferredAudioIdx = null, opts = {}) => {
   if (!probe.video) {
     return { mode: 'reject', reason: 'Không tìm thấy video stream' };
   }
 
   const codec = probe.video.codec;
-  if (codec === 'hevc' && !caps.hevc) return { mode: 'reject', reason: 'Client không giải mã được HEVC' };
-  if (codec === 'av1' && !caps.av1) return { mode: 'reject', reason: 'Client không giải mã được AV1' };
   if (!isBrowserVideoCodec(codec)) return { mode: 'reject', reason: `Không video-transcode codec ${codec}` };
 
   const frameRate = Number(probe.video.frameRate);
@@ -281,6 +285,34 @@ export const decidePlaybackMode = (probe, caps = {}, preferredAudioIdx = null) =
   const audio = audios[targetAudioIdx] || null;
   const audioCopy = audio && isBrowserAudioCodec(audio.codec, audio.profile, audio.channels);
   const containerOk = isMp4Container(probe.format);
+
+  // Codec the client cannot decode directly (HEVC/AV1 on most desktop
+  // browsers): re-encode to AVC on the server instead of rejecting, when the
+  // operator allows it (see VIDEO_TRANSCODE_FALLBACK). Without an allowed
+  // fallback the old hard rejection stands — offering the source would mean
+  // a black screen.
+  const needsCodecTranscode =
+    (codec === 'hevc' && !caps.hevc) || (codec === 'av1' && !caps.av1);
+  if (needsCodecTranscode) {
+    const capability = opts.videoTranscode || { allowed: false, hardware: false };
+    const plan = capability.allowed ? planCodecTranscode(probe, caps, capability) : null;
+    if (!plan) {
+      return {
+        mode: 'reject',
+        reason: codec === 'hevc' ? 'Client không giải mã được HEVC' : 'Client không giải mã được AV1',
+      };
+    }
+    return {
+      mode: 'remux',
+      reason: `${codec.toUpperCase()} không chạy trực tiếp trên client — server transcode sang AVC ${plan.height}p${plan.tonemap ? ', HDR chuyển về SDR' : ''}`,
+      videoTranscode: plan,
+      videoCopy: false,
+      audioCopy: false,
+      audioStreamIndex: audio ? audio.streamIndex : null,
+      audioChannels: audio ? audio.channels : null,
+      audioIndex: targetAudioIdx,
+    };
+  }
 
   if (containerOk && audioCopy && targetAudioIdx === 0) {
     return { mode: 'direct', reason: 'Container và codec đã phù hợp browser', audioStreamIndex: null, audioIndex: targetAudioIdx };
@@ -375,6 +407,90 @@ export const detectVideoEncoder = async () => {
 export const __setEncoderForTests = (value) => { encoderCache = value; };
 
 /**
+ * Codec-transcode fallback policy (VIDEO_TRANSCODE_FALLBACK).
+ *
+ * Why this exists: most desktop browsers report hevc:false, so every 4K HEVC
+ * release used to be rejected outright even though the server could have
+ * re-encoded it to AVC on the fly. The policy decides when that fallback is
+ * offered:
+ *   - 'auto' (default): only with a hardware encoder. Software 4K transcode
+ *     runs far below realtime and would trade a clear rejection for endless
+ *     buffering, so it stays rejected.
+ *   - '1'/'always': always offer it, even on libx264 (fine for small servers
+ *     whose clients cap at 1080p, or operators who accept the CPU bill).
+ *   - '0'/'never': previous behaviour — reject incompatible codecs outright.
+ */
+export const getVideoTranscodePolicy = () => {
+  const raw = String(process.env.VIDEO_TRANSCODE_FALLBACK || 'auto').toLowerCase();
+  const mode =
+    raw === '1' || raw === 'true' || raw === 'always'
+      ? 'always'
+      : raw === '0' || raw === 'false' || raw === 'never'
+        ? 'never'
+        : 'auto';
+  return { mode, hardware: encoderCache ? Boolean(encoderCache.hardware) : null };
+};
+
+/**
+ * Async capability check for one resolve: warms the encoder detection (cached
+ * after the first call) and folds it into the policy above.
+ * @returns {Promise<{ allowed: boolean, hardware: boolean }>}
+ */
+export const resolveVideoTranscodeCapability = async () => {
+  const { mode } = getVideoTranscodePolicy();
+  if (mode === 'never') return { allowed: false, hardware: false };
+  let hardware = false;
+  try {
+    hardware = Boolean((await detectVideoEncoder())?.hardware);
+  } catch {
+    hardware = false;
+  }
+  if (mode === 'always') return { allowed: true, hardware };
+  return hardware ? { allowed: true, hardware: true } : { allowed: false, hardware: false };
+};
+
+/** HDR detection off the fields ffprobe already records. */
+export const isHdrVideo = (video) => {
+  const transfer = String(video?.colorTransfer || '').toLowerCase();
+  const primaries = String(video?.colorPrimaries || '').toLowerCase();
+  return transfer.includes('smpte2084') || transfer.includes('arib-std-b67') || primaries.includes('bt2020');
+};
+
+/** 10-bit sources need an explicit downshift: H.264 encoders take yuv420p. */
+export const isTenBitVideo = (video) =>
+  /10|p010|p016/i.test(String(video?.pixFmt || ''));
+
+/** VBR targets for codec-transcode rungs (H.264, SDR). */
+export const transcodeKbpsForHeight = (height) => {
+  const h = Number(height) || 1080;
+  if (h >= 2000) return 20000;
+  if (h >= 1400) return 12000;
+  if (h >= 900) return 8000;
+  if (h >= 600) return 4000;
+  return 2000;
+};
+
+/**
+ * Build the ffmpeg-side plan for a codec-incompatible source.
+ * Returns null when even transcoding cannot serve it in realtime.
+ */
+export const planCodecTranscode = (probe, caps = {}, capability = {}) => {
+  const srcH = Number(probe?.video?.height) || null;
+  const capH = Number(caps?.maxHeight) > 0 ? Number(caps.maxHeight) : 1080;
+  const targetH = srcH ? Math.min(srcH, capH) : capH;
+  // Software transcode above 1080p never reaches realtime: keep rejecting
+  // rather than trading a clear message for endless buffering.
+  if (targetH > 1080 && !capability.hardware) return null;
+  return {
+    mode: 'transcode',
+    height: targetH,
+    kbps: transcodeKbpsForHeight(targetH),
+    tonemap: isHdrVideo(probe?.video),
+    tenBit: isTenBitVideo(probe?.video),
+  };
+};
+
+/**
  * Video arguments for one delivery plan.
  *
  * `copy` is the remux path and costs nothing. The transcode path scales and
@@ -382,20 +498,38 @@ export const __setEncoderForTests = (value) => { encoderCache = value; };
  * where the CPU saving comes from — decoding to system memory first spends
  * 22 s of CPU per minute of 4K instead of 1.1 s.
  */
+/**
+ * HDR -> SDR tonemap chain (zscale). Without it a transcoded HDR source
+ * comes out washed out: the PQ/BT.2020 light is reinterpreted as SDR.
+ * Appended after scaling; ends on yuv420p for the H.264 encoders.
+ */
+const TONEMAP_FILTERS = 'zscale=transfer=linear,tonemap=hable,zscale=transfer=bt709:matrix=bt709:primaries=bt709';
+
 export const buildVideoArgs = (video, encoder) => {
   if (!video || video.mode !== 'transcode') return { input: [], output: ['-c:v', 'copy'] };
 
   const height = Math.max(144, Math.round(video.height || 1080));
   const kbps = Math.max(200, Math.round(video.kbps || 3000));
   const hardware = encoder?.hardware && encoder.encoder.includes('nvenc');
+  const tonemap = Boolean(video.tonemap);
+  const tenBit = Boolean(video.tenBit);
 
   if (hardware) {
+    // scale_cuda emits GPU frames; zscale/tonemap need system memory, so HDR
+    // (or 10-bit SDR, which nvenc H.264 also rejects) round-trips through a
+    // download/upload pair. Decode stays on the GPU either way.
+    const needsDownload = tonemap || tenBit;
+    const vf = tonemap
+      ? `scale_cuda=-2:${height},hwdownload,format=p010le,${TONEMAP_FILTERS},format=yuv420p,hwupload_cuda`
+      : needsDownload
+        ? `scale_cuda=-2:${height},hwdownload,format=yuv420p,hwupload_cuda`
+        : `scale_cuda=-2:${height}`;
     return {
       input: ['-hwaccel', 'cuda', '-hwaccel_output_format', 'cuda'],
       output: [
         // -2 keeps the aspect ratio and rounds to an even width, which the
         // encoder requires; an odd width fails the whole command.
-        '-vf', `scale_cuda=-2:${height}`,
+        '-vf', vf,
         '-c:v', encoder.encoder,
         '-preset', 'p4',
         '-tune', 'hq',
@@ -411,10 +545,13 @@ export const buildVideoArgs = (video, encoder) => {
     };
   }
 
+  const vf = tonemap
+    ? `scale=-2:${height},${TONEMAP_FILTERS},format=yuv420p`
+    : `scale=-2:${height},format=yuv420p`;
   return {
     input: [],
     output: [
-      '-vf', `scale=-2:${height}`,
+      '-vf', vf,
       '-c:v', encoder?.encoder || 'libx264',
       '-preset', 'veryfast',
       '-b:v', `${kbps}k`,
@@ -515,6 +652,9 @@ export const activeEgressKbps = () => {
 export const startRemuxSession = async ({ sessionId, inputUrl, audioCopy = false, audioStreamIndex = null, audioChannels = null, video = null }) => {
   const id = safeId(sessionId);
   if (!id) throw new Error('sessionId không hợp lệ');
+  // A pending grace-period stop belongs to the previous writer: a fresh start
+  // on the same id must not be killed by it.
+  cancelScheduledStop(id);
 
   const existing = sessions.get(id);
   if (existing?.process && !existing.process.killed) return existing;
@@ -614,12 +754,47 @@ export const isRemuxSessionLive = (sessionId) => {
 
 export const stopRemuxSession = async (sessionId) => {
   const id = safeId(sessionId);
+  cancelScheduledStop(id);
   const session = sessions.get(id);
   if (!session) return false;
   if (session.process && !session.process.killed && session.exitCode === undefined) {
     session.process.kill('SIGTERM');
   }
   sessions.delete(id);
+  return true;
+};
+
+/**
+ * Grace period before a superseded writer is stopped.
+ *
+ * Switching A -> B kills A's ffmpeg immediately, so switching back to A pays
+ * a full cold remux (45s initial-buffer wait on a slow upstream) even when A
+ * was healthy. Holding the old writer for a short window makes source
+ * comparison cheap: returning inside the window finds the writer alive and
+ * its partial playlist reusable. Bounded — one timer per session, cleared the
+ * moment the session goes current again or is stopped directly.
+ */
+export const SUPERSEDE_GRACE_MS = 90 * 1000;
+const supersedeTimers = new Map();
+
+export const scheduleSupersededStop = (sessionId, delayMs = SUPERSEDE_GRACE_MS) => {
+  const id = safeId(sessionId);
+  if (!id || supersedeTimers.has(id)) return false;
+  const timer = setTimeout(() => {
+    supersedeTimers.delete(id);
+    stopRemuxSession(id).catch(() => false);
+  }, delayMs);
+  if (typeof timer.unref === 'function') timer.unref();
+  supersedeTimers.set(id, timer);
+  return true;
+};
+
+export const cancelScheduledStop = (sessionId) => {
+  const id = safeId(sessionId);
+  const timer = id ? supersedeTimers.get(id) : undefined;
+  if (!timer) return false;
+  clearTimeout(timer);
+  supersedeTimers.delete(id);
   return true;
 };
 
@@ -815,10 +990,19 @@ export default {
   activeEgressKbps,
   buildVideoArgs,
   detectVideoEncoder,
+  getVideoTranscodePolicy,
+  resolveVideoTranscodeCapability,
+  isHdrVideo,
+  isTenBitVideo,
+  transcodeKbpsForHeight,
+  planCodecTranscode,
   startRemuxSession,
   waitForPlaylist,
   getRemuxSession,
   stopRemuxSession,
+  scheduleSupersededStop,
+  cancelScheduledStop,
+  SUPERSEDE_GRACE_MS,
   selectSupersededRemuxes,
   isRemuxSessionLive,
   touchTranscodeSession,

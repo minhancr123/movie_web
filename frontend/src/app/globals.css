@@ -264,4 +264,218 @@ input[type="datetime-local"] {
 /* Smooth Image Loading */
 img {
   transition: opacity 0.3s ease-in-out;
+}
+
+/* Liquid Glass — floating player surfaces.
+   Apple-style recipe: layered specular highlights (top-left white bloom,
+   bottom-right amber warmth, top cyan kiss) over a saturated blur, hairline
+   edge light via inset shadows, ambient amber underglow. Background layers
+   are used (never pseudo-elements) so rounded corners clip them cleanly.
+   NOTE: these classes are unlayered, so they win over Tailwind utilities on
+   the same property — do NOT combine them with background, shadow, or border
+   utilities expecting those to apply, and do NOT set `position` here (it would
+   override absolute/fixed utilities). */
+.liquid-glass {
+  background:
+    radial-gradient(120% 90% at 12% 0%, rgba(255, 255, 255, 0.24) 0%, rgba(255, 255, 255, 0.06) 30%, transparent 55%),
+    radial-gradient(100% 130% at 88% 118%, rgba(245, 158, 11, 0.18) 0%, transparent 52%),
+    radial-gradient(70% 90% at 88% -20%, rgba(84, 221, 252, 0.09) 0%, transparent 55%),
+    linear-gradient(180deg, rgba(255, 255, 255, 0.11) 0%, rgba(255, 255, 255, 0.02) 32%, rgba(0, 0, 0, 0.14) 100%),
+    rgba(10, 10, 15, 0.52);
+  backdrop-filter: blur(22px) saturate(1.7);
+  -webkit-backdrop-filter: blur(22px) saturate(1.7);
+  border: 1px solid rgba(255, 255, 255, 0.16);
+  box-shadow:
+    0 12px 40px -8px rgba(0, 0, 0, 0.7),
+    0 0 28px -6px rgba(245, 158, 11, 0.18),
+    inset 0 1px 0 rgba(255, 255, 255, 0.3),
+    inset 1px 0 0 rgba(255, 255, 255, 0.07),
+    inset -1px 0 0 rgba(255, 255, 255, 0.07),
+    inset 0 -1px 0 rgba(255, 255, 255, 0.09);
+}
+
+.liquid-glass-strong {
+  background:
+    radial-gradient(110% 80% at 10% 0%, rgba(255, 255, 255, 0.2) 0%, rgba(255, 255, 255, 0.04) 30%, transparent 55%),
+    radial-gradient(90% 110% at 90% 115%, rgba(245, 158, 11, 0.14) 0%, transparent 55%),
+    linear-gradient(180deg, rgba(255, 255, 255, 0.09) 0%, rgba(255, 255, 255, 0.02) 30%, rgba(0, 0, 0, 0.18) 100%),
+    rgba(8, 8, 12, 0.74);
+  backdrop-filter: blur(28px) saturate(1.6);
+  -webkit-backdrop-filter: blur(28px) saturate(1.6);
+  border: 1px solid rgba(255, 255, 255, 0.14);
+  box-shadow:
+    0 24px 60px -12px rgba(0, 0, 0, 0.85),
+    0 0 38px -8px rgba(245, 158, 11, 0.28),
+    inset 0 1px 0 rgba(255, 255, 255, 0.26),
+    inset 0 -1px 0 rgba(255, 255, 255, 0.07);
+}
+
+/* One-shot light sweep when a glass sheet appears (settings popup mounts
+   fresh on every open, so it replays each time). Requires a positioned
+   ancestor (absolute/fixed/relative) — both player surfaces have one. */
+.liquid-glass-sheen::before {
+  content: "";
+  position: absolute;
+  inset: 0;
+  border-radius: inherit;
+  background: linear-gradient(115deg, transparent 42%, rgba(255, 255, 255, 0.13) 50%, transparent 58%);
+  background-size: 280% 100%;
+  background-position: 130% 0;
+  pointer-events: none;
+  z-index: 1;
+  animation: liquid-sheen-sweep 1.1s ease-out 0.05s 1;
+}
+
+@keyframes liquid-sheen-sweep {
+  from { background-position: 130% 0; }
+  to { background-position: -30% 0; }
+}
+
+.liquid-glass-btn {
+  border: 1px solid transparent;
+  transition: background-color 0.25s ease, border-color 0.25s ease, box-shadow 0.25s ease, transform 0.15s ease, color 0.25s ease;
+}
+
+.liquid-glass-btn:hover {
+  background-color: rgba(255, 255, 255, 0.14);
+  border-color: rgba(255, 255, 255, 0.22);
+  box-shadow: 0 0 14px -2px rgba(255, 255, 255, 0.28), inset 0 1px 0 rgba(255, 255, 255, 0.16);
+  color: #fcd34d;
+}
+
+.liquid-glass-btn:active {
+  transform: scale(0.92);
+}
+
+/* Toggled-on glass button (e.g. settings gear while the sheet is open). */
+.liquid-glass-btn-on {
+  background-color: rgba(245, 158, 11, 0.18);
+  border-color: rgba(245, 158, 11, 0.55);
+  color: #fbbf24;
+  box-shadow: 0 0 16px -2px rgba(245, 158, 11, 0.55), inset 0 1px 0 rgba(255, 255, 255, 0.16);
+}
+
+/* Tiny glass chip (time readout, header icons). */
+.liquid-chip {
+  background: rgba(255, 255, 255, 0.07);
+  border: 1px solid rgba(255, 255, 255, 0.13);
+  box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.14), 0 2px 8px -2px rgba(0, 0, 0, 0.5);
+  border-radius: 9999px;
+}
+
+/* Vertical hairline divider between glass button groups. */
+.liquid-divider {
+  width: 1px;
+  align-self: stretch;
+  margin-top: 4px;
+  margin-bottom: 4px;
+  background: linear-gradient(180deg, transparent, rgba(255, 255, 255, 0.28), transparent);
+}
+
+/* Played portion of the progress track: molten amber with outer glow. */
+.liquid-track-played {
+  background: linear-gradient(90deg, #b45309, #f59e0b 60%, #fcd34d);
+  box-shadow: 0 0 10px rgba(245, 158, 11, 0.9), 0 0 24px rgba(245, 158, 11, 0.45);
+}
+
+/* Progress knob: glass marble, always faintly visible, full on hover. */
+.liquid-knob {
+  background: radial-gradient(circle at 32% 30%, #ffffff 0%, #fde68a 38%, #f59e0b 72%, #b45309 100%);
+  box-shadow: 0 0 0 3px rgba(245, 158, 11, 0.28), 0 0 14px rgba(245, 158, 11, 0.9);
+}
+
+/* Hero play button: rotating ambient light ring around the glass core. */
+.liquid-play {
+  position: relative;
+  isolation: isolate;
+}
+
+.liquid-play::before {
+  content: "";
+  position: absolute;
+  inset: -4px;
+  border-radius: 9999px;
+  z-index: -1;
+  background: conic-gradient(from 0deg,
+    rgba(245, 158, 11, 0),
+    rgba(245, 158, 11, 0.55),
+    rgba(252, 211, 77, 0.9),
+    rgba(84, 221, 252, 0.35),
+    rgba(245, 158, 11, 0));
+  filter: blur(7px);
+  opacity: 0.85;
+  animation: liquid-spin 5s linear infinite;
+}
+
+@keyframes liquid-spin {
+  to { transform: rotate(360deg); }
+}
+
+/* Glass range sliders (volume): glowing amber thumb on a glass track.
+   The fill gradient is painted inline by the component (React style prop),
+   so the runnable track stays transparent here. Plain shapes only: the
+   project's cssnano build chokes on exotic selector/value syntax. */
+.liquid-range {
+  -webkit-appearance: none;
+  appearance: none;
+  height: 6px;
+  border-radius: 9999px;
+  box-shadow: inset 0 1px 2px rgba(0, 0, 0, 0.5);
+  outline: none;
+}
+
+.liquid-range::-webkit-slider-runnable-track {
+  height: 6px;
+  border-radius: 9999px;
+  background: transparent;
+}
+
+.liquid-range::-webkit-slider-thumb {
+  -webkit-appearance: none;
+  appearance: none;
+  margin-top: -5px;
+  height: 16px;
+  width: 16px;
+  border: none;
+  border-radius: 9999px;
+  background: radial-gradient(circle at 32% 30%, #ffffff 0%, #fde68a 40%, #f59e0b 75%, #b45309 100%);
+  box-shadow: 0 0 10px rgba(245, 158, 11, 0.9);
+  cursor: pointer;
+}
+
+.liquid-range::-moz-range-track {
+  height: 6px;
+  border-radius: 9999px;
+  background: rgba(255, 255, 255, 0.22);
+}
+
+.liquid-range::-moz-range-progress {
+  height: 6px;
+  border-radius: 9999px;
+  background: linear-gradient(90deg, #b45309, #f59e0b 60%, #fcd34d);
+}
+
+.liquid-range::-moz-range-thumb {
+  height: 16px;
+  width: 16px;
+  border: none;
+  border-radius: 9999px;
+  background: radial-gradient(circle at 32% 30%, #ffffff 0%, #fde68a 40%, #f59e0b 75%, #b45309 100%);
+  box-shadow: 0 0 10px rgba(245, 158, 11, 0.9);
+  cursor: pointer;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .liquid-glass-btn {
+    transition: none;
+  }
+
+  .liquid-glass-btn:active {
+    transform: none;
+  }
+
+  .liquid-glass-sheen::before,
+  .liquid-play::before {
+    animation: none;
+  }
 }

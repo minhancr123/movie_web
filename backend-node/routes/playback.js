@@ -2,6 +2,7 @@ import express from 'express';
 import {
   resolvePlayback,
   listPlaybackSources,
+  getResolveStage,
   getPlaybackSession,
   serveHlsAsset,
   getPlaybackSubtitles,
@@ -32,5 +33,6 @@ router.post('/sources', playbackRateLimit, listPlaybackSources);
 router.post('/subtitles', playbackRateLimit, getPlaybackSubtitles);
 router.get('/subtitles/job/:jobId', playbackPollRateLimit, getSubtitleJob);
 router.get('/session/:sessionId', playbackPollRateLimit, getPlaybackSession);
+router.get('/resolve/:resolveId/stage', playbackPollRateLimit, getResolveStage);
 
 export default router;

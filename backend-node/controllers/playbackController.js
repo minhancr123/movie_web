@@ -32,12 +32,15 @@ import {
   waitForPlaylist,
   getRemuxSession,
   stopRemuxSession,
+  scheduleSupersededStop,
+  cancelScheduledStop,
   activeEgressKbps,
   selectSupersededRemuxes,
   isRemuxSessionLive,
   touchTranscodeSession,
   shouldReuseRemuxSession,
   sessionPath,
+  resolveVideoTranscodeCapability,
   extractSubtitleTrack,
   extractSubtitleTracks,
   subsPath,
@@ -47,6 +50,7 @@ import {
   redactSecrets,
 } from '../services/playback/remuxService.js';
 import { isLanClient } from '../services/playback/clientNetwork.js';
+import { setResolveStage, getResolveStage as readResolveStage } from '../services/playback/resolveProgress.js';
 import { planAdmission } from '../services/playback/deliveryPlan.js';
 import { getDecryptedKey } from '../services/providers/connectionStore.js';
 import { computeOpenSubtitlesHash } from '../services/playback/opensubtitlesHash.js';
@@ -508,15 +512,23 @@ const findReusableRemuxSession = async (db, { userId, type, tmdbId, season, epis
       );
       return null;
     }
-    if (complete) return session;
+    if (complete) {
+      // Back in use: revoke any pending grace-period stop.
+      cancelScheduledStop(session.sessionId);
+      return session;
+    }
 
     // Liveness: reject a known exited child immediately. After a Node restart
     // the child map is empty, so sample the playlist instead of trusting its
     // age: only an observably growing orphan still has a writer behind it.
     const live = getRemuxSession(session.sessionId);
+    const before = await fs.stat(playlistPath);
+    const playlistFresh = Date.now() - before.mtimeMs <= SESSION_STALE_MS;
     let playlistGrowing = false;
-    if (!live) {
-      const before = await fs.stat(playlistPath);
+    // Orphans must prove that another writer still owns them. A known child is
+    // sampled only after its playlist goes stale, which keeps healthy reuse fast
+    // while catching ffmpeg processes whose upstream socket is wedged.
+    if (!live || !playlistFresh) {
       await new Promise((resolve) => setTimeout(resolve, 750));
       const after = await fs.stat(playlistPath);
       playlistGrowing = after.size > before.size || after.mtimeMs > before.mtimeMs;
@@ -525,12 +537,14 @@ const findReusableRemuxSession = async (db, { userId, type, tmdbId, season, epis
       playlistComplete: complete,
       hasLiveSession: Boolean(live),
       liveExitCode: live?.exitCode,
+      playlistFresh,
       playlistGrowing,
     });
     if (!reusable) {
       // Dead writer: drop the record + partial segments (best effort) so the
       // next resolve starts a fresh remux instead of replaying the corpse.
       try {
+        await stopRemuxSession(session.sessionId).catch(() => false);
         await db.collection('playback_sessions').deleteOne({ sessionId: session.sessionId });
         await fs.rm(sessionPath(session.sessionId), { recursive: true, force: true });
       } catch {
@@ -538,6 +552,7 @@ const findReusableRemuxSession = async (db, { userId, type, tmdbId, season, epis
       }
       return null;
     }
+    cancelScheduledStop(session.sessionId);
     return session;
   } catch {
     return null;
@@ -556,6 +571,12 @@ export const resolvePlayback = async (req, res) => {
   const audioIdx =
     Number.isInteger(parsed.audioIndex) && parsed.audioIndex >= 0 ? parsed.audioIndex : null;
 
+  // Client-generated progress key (see services/playback/resolveProgress.js).
+  // Absent on old clients: stages are then simply not tracked.
+  const resolveId =
+    typeof req.body?.resolveId === 'string' ? req.body.resolveId : null;
+  const stage = (name, detail) => setResolveStage(resolveId, name, detail);
+
   // One account can still deliberately change source/audio after the current
   // resolve finishes. Only concurrent work for the same title is queued; this
   // is the invariant needed to prevent duplicate remux writers.
@@ -572,6 +593,7 @@ export const resolvePlayback = async (req, res) => {
 
     try {
     // 1. Catalog detail -> IMDb id + runtime (cached like the catalog routes).
+    stage('detail');
     const detail = await cached(`catalog:detail:${type}:${tmdbId}`, CACHE_TTL.DETAIL, () =>
       tmdb.getDetail(type, tmdbId),
     );
@@ -593,6 +615,7 @@ export const resolvePlayback = async (req, res) => {
     }
 
     // 3. Addon candidates keyed on the Stremio id.
+    stage('sources');
     const { candidates, errors: addonErrors } = await getStreamCandidates({
       imdbId: detail.imdbId,
       mediaType: type,
@@ -606,6 +629,7 @@ export const resolvePlayback = async (req, res) => {
     }
 
     // 4. Cached check (per-user entitlements; failure degrades to "not cached").
+    stage('rank');
     let cachedMap = {};
     try {
       cachedMap = await torbox.checkCached(
@@ -625,10 +649,15 @@ export const resolvePlayback = async (req, res) => {
       })),
     );
 
-    // 5. Rank for this client.
+    // 5. Rank for this client. The codec-transcode capability is resolved once
+    // (encoder detection caches after the first call): when the server can
+    // re-encode, HEVC/AV1 the browser cannot decode stays playable instead of
+    // being rejected outright.
+    const videoTranscode = await resolveVideoTranscodeCapability();
     const { best, playable, rejected } = rankCandidates(enriched, caps, {
       runtimeMinutes,
       ...titleExpectation(detail),
+      videoTranscode,
     });
 
     // 5b. Manual pick wins over the ranker: the user saw the badge list and
@@ -660,6 +689,7 @@ export const resolvePlayback = async (req, res) => {
     }
 
     for (const candidate of attempts) {
+      stage('reuse');
       const defaultAudioIndex = (() => {
         if (!Array.isArray(candidate.audioTracks) || candidate.audioTracks.length === 0) return 0;
         const enIdx = candidate.audioTracks.findIndex((a) =>
@@ -688,6 +718,10 @@ export const resolvePlayback = async (req, res) => {
             playlistUrl: reusable.playlistUrl,
             reason: 'Dùng lại phiên remux đang có',
             fileName: reusable.fileName || '',
+            durationSeconds:
+              typeof reusable.durationSeconds === 'number'
+                ? reusable.durationSeconds
+                : (reusable.runtimeMinutes ? Math.round(reusable.runtimeMinutes * 60) : null),
             audioIndex: reusable.audioIndex ?? resolvedAudioForReuse,
             candidate: sanitizeCandidateForResponse(candidate),
           },
@@ -697,7 +731,11 @@ export const resolvePlayback = async (req, res) => {
 
     // 6. Try the top candidates until one yields a playable file.
     let lastError = null;
+    let attemptNo = 0;
     for (const candidate of attempts) {
+      attemptNo += 1;
+      const attemptTag = attempts.length > 1 ? `${attemptNo}/${attempts.length}` : '';
+      stage('prepare', attemptTag);
       let prepared;
       try {
         prepared = await torbox.prepareSource(debridKey, {
@@ -752,6 +790,7 @@ export const resolvePlayback = async (req, res) => {
       }
 
       // 7. Resolve a fresh short-lived download URL (owner-only, never persisted).
+      stage('link', attemptTag);
       let inputUrl;
       try {
         inputUrl = await torbox.getDownloadUrl(debridKey, {
@@ -772,6 +811,7 @@ export const resolvePlayback = async (req, res) => {
       // the addon lookup accounts for ~0.2 s of it. Most of the rest is this
       // call pulling a moov atom across the debrid CDN — work that is identical
       // every time for the same file.
+      stage('probe', attemptTag);
       const probeCacheKey = probeResultKey(candidate.infoHash, file.fileId);
       let probe = await getCache(probeCacheKey);
       if (!probe) {
@@ -819,7 +859,7 @@ export const resolvePlayback = async (req, res) => {
         continue;
       }
 
-      const decision = decidePlaybackMode(probe, caps, audioIdx);
+      const decision = decidePlaybackMode(probe, caps, audioIdx, { videoTranscode });
       if (decision.mode === 'reject') {
         lastError = new Error(decision.reason);
         continue;
@@ -898,20 +938,40 @@ export const resolvePlayback = async (req, res) => {
       for (const staleId of selectSupersededRemuxes(
         prior.map((row) => row.sessionId), sessionId, isRemuxSessionLive,
       )) {
-        await stopRemuxSession(staleId);
-        console.warn(`remux ${staleId} bị thay thế bởi ${sessionId}; đã dừng để nhường băng thông`);
+        // Grace, not instant kill: the viewer may flip back within seconds
+        // (source comparison), and a live writer + partial playlist is worth
+        // far more than the bandwidth saved by stopping it right now.
+        scheduleSupersededStop(staleId);
+        console.warn(`remux ${staleId} bị thay thế bởi ${sessionId}; giữ writer 90s phòng quay lại`);
       }
 
       // Remux: ffmpeg reads the URL in-process; the URL itself stays in memory.
+      // A codec-transcode decision overrides the delivery ladder's video plan:
+      // the ladder only sizes bandwidth, while this also changes the codec
+      // (and tone-maps HDR). When both apply, take the narrower of the two.
       let warmingUp = false;
       try {
+        let videoPlan = delivery;
+        if (decision.videoTranscode) {
+          const ct = decision.videoTranscode;
+          videoPlan = delivery.mode === 'transcode'
+            ? {
+              mode: 'transcode',
+              height: Math.min(ct.height, delivery.height),
+              kbps: Math.min(ct.kbps, delivery.kbps),
+              tonemap: ct.tonemap,
+              tenBit: ct.tenBit,
+            }
+            : { ...ct };
+        }
+        stage('remux', attemptTag);
         const session = await startRemuxSession({
           sessionId,
           inputUrl,
           audioCopy: Boolean(decision.audioCopy),
           audioStreamIndex: decision.audioStreamIndex ?? null,
           audioChannels: decision.audioChannels ?? null,
-          video: delivery,
+          video: videoPlan,
         });
         await waitForPlaylist(session);
         // Do not hand the browser a live playlist that has only a few segments.
@@ -921,6 +981,7 @@ export const resolvePlayback = async (req, res) => {
         // Never hand over a session the HLS endpoint would refuse: below the
         // floor the player gets nothing but 409s. A source that cannot reach
         // even this is the dead source the old long wait existed to catch.
+        stage('buffer', attemptTag);
         const servable = await waitForInitialBuffer(sessionId, PLAYLIST_MIN_SECONDS, 45000);
         if (!servable) {
           throw new Error(`Nguồn remux không tạo nổi ${PLAYLIST_MIN_SECONDS}s đầu trong 45 giây`);
@@ -929,6 +990,7 @@ export const resolvePlayback = async (req, res) => {
         // Past the floor, the head start is worth having but not worth blocking
         // for: the client polls for the rest and shows real progress instead of
         // a frozen caption.
+        stage('warm', attemptTag);
         warmingUp = !(await waitForInitialBuffer(
           sessionId,
           STARTUP_BUFFER_SECONDS,
@@ -943,6 +1005,15 @@ export const resolvePlayback = async (req, res) => {
         lastError = error;
         continue;
       }
+
+      // Duration honesty: ffprobe of a slow upstream URL often yields nothing,
+      // and then the player shows the live remux edge ("5:00" for a 100-minute
+      // film) instead of the real length. TMDB runtime is exact enough here.
+      const fullDurationSeconds =
+        (Number.isFinite(probe.duration) && probe.duration > 0
+          ? Math.round(probe.duration)
+          : null)
+        ?? (runtimeMinutes ? Math.round(runtimeMinutes * 60) : null);
 
       await saveSession(db, {
         sessionId,
@@ -962,7 +1033,7 @@ export const resolvePlayback = async (req, res) => {
           videoHash: fileHash?.videoHash ?? null,
           videoSize: fileHash?.videoSize ?? null,
           runtimeMinutes,
-          durationSeconds: probe.duration || null,
+          durationSeconds: fullDurationSeconds,
           videoCodec: probe.video?.codec || null,
           videoProfile: probe.video?.profile || '',
           videoHeight: probe.video?.height || null,
@@ -980,7 +1051,7 @@ export const resolvePlayback = async (req, res) => {
           mode: 'remux',
           sessionId,
           playlistUrl: `/api/playback/hls/${sessionId}/index.m3u8`,
-          durationSeconds: probe.duration || null,
+          durationSeconds: fullDurationSeconds,
           reason: decision.reason,
           fileName: file.name || '',
           audioIndex: decision.audioIndex ?? 0,
@@ -1083,6 +1154,7 @@ export const listPlaybackSources = async (req, res) => {
     const { playable, rejected } = rankCandidates(enriched, caps, {
       runtimeMinutes,
       ...titleExpectation(detail),
+      videoTranscode: await resolveVideoTranscodeCapability(),
     });
 
     return res.json({
@@ -1142,22 +1214,24 @@ const audioLabel = (a, idx = 0, total = 1) => {
   if (SUB_LANG_LABELS[code]) return SUB_LANG_LABELS[code];
   if (a?.title && a.title.trim()) {
     const t = a.title.trim();
-    if (/eng|english/i.test(t)) return 'Tiếng Anh';
+    if (/\beng\b|english/i.test(t)) return 'Tiếng Anh';
     if (/viet|vietnamese/i.test(t)) return 'Tiếng Việt';
     if (/orig|gốc|vo\b/i.test(t)) return 'Âm thanh gốc';
     return t;
   }
   if (code) return code.toUpperCase();
-  // If no language metadata tag is present in media file:
+  // No language metadata tag in the file: never claim a language. The first
+  // track is the file's default, nothing more — a previous version labelled
+  // it "Tiếng Anh" and poisoned every English check downstream.
   if (idx === 0) {
-    return 'Âm thanh gốc (Tiếng Anh)';
+    return 'Âm thanh gốc';
   }
   return `Track ${idx + 1} (${String(a?.codec || 'Audio').toUpperCase()})`;
 };
 
 const audioInfo = (list) =>
   (list || []).map((a, idx) => ({
-    language: a.language || (idx === 0 ? 'en' : ''),
+    language: a.language || '',
     label: audioLabel(a, idx, list?.length || 1),
     codec: a.codec || '',
     channels: a.channels || null,
@@ -1327,7 +1401,11 @@ export const getPlaybackSubtitles = async (req, res) => {
 
     // Background prefetch asks only for the cheap external lookup. Embedded
     // extraction remains an explicit fallback when the user opens the menu.
+    // The match verdict still rides along (the OpenSubtitles search is
+    // quota-free) so the player can warn about expected drift before the menu
+    // is ever opened.
     if (externalOnly) {
+      const matchReport = await matchReportPromise;
       return res.json({
         success: true,
         data: {
@@ -1338,6 +1416,7 @@ export const getPlaybackSubtitles = async (req, res) => {
           probe: { audio: [], subtitles: [] },
           source: 'external',
           embeddedFallback: true,
+          match: matchReport,
         },
       });
     }
@@ -1594,6 +1673,17 @@ export const serveSubtitleVtt = async (req, res) => {
 
 /* ------------------------------------------------------------ session poll */
 
+/**
+ * GET /api/playback/resolve/:resolveId/stage — live phase of an in-flight
+ * resolve, so the client shows measurement instead of guessing by elapsed
+ * seconds. Unknown or rotted ids 404; the client keeps its last label.
+ */
+export const getResolveStage = async (req, res) => {
+  const entry = readResolveStage(req.params?.resolveId);
+  if (!entry) return fail(res, 404, 'Không có tiến trình nào');
+  return res.json({ success: true, data: entry });
+};
+
 export const getPlaybackSession = async (req, res) => {
   try {
     const db = getDB();
@@ -1611,6 +1701,29 @@ export const getPlaybackSession = async (req, res) => {
       const state = await readPlaylistState(session.sessionId);
       const buffered = Math.round(state.duration || 0);
       const live = getRemuxSession(session.sessionId);
+      let ageMs = Number.POSITIVE_INFINITY;
+      if (state.exists) {
+        try {
+          ageMs = Date.now() - (await fs.stat(sessionPath(session.sessionId, 'index.m3u8'))).mtimeMs;
+        } catch {
+          ageMs = Number.POSITIVE_INFINITY;
+        }
+      }
+      const writerHealthy = state.ended || (live
+        ? shouldReuseRemuxSession({
+            playlistComplete: false,
+            hasLiveSession: true,
+            liveExitCode: live.exitCode,
+            playlistFresh: ageMs <= SESSION_STALE_MS,
+            playlistGrowing: false,
+          })
+        : state.exists && ageMs <= SESSION_STALE_MS);
+      if (!state.ended && !writerHealthy) {
+        // An ffmpeg child may stay alive after its upstream socket wedges.
+        // Killing it here ensures the client's automatic re-resolve can create
+        // a genuinely new writer instead of reconnecting to frozen bytes.
+        await stopRemuxSession(session.sessionId);
+      }
       return res.json({
         success: true,
         data: {
@@ -1619,9 +1732,9 @@ export const getPlaybackSession = async (req, res) => {
           bufferedSeconds: buffered,
           startupTargetSeconds: STARTUP_BUFFER_SECONDS,
           ready: state.ended || buffered >= STARTUP_BUFFER_SECONDS,
-          // A writer that has exited without finishing means this will never
-          // fill, and the client should stop waiting rather than count forever.
-          writerAlive: live ? live.exitCode === undefined : !state.ended,
+          // Process existence is insufficient: a wedged ffmpeg process remains
+          // alive while its playlist never changes.
+          writerAlive: writerHealthy,
           progress: Math.min(100, Math.round((buffered / STARTUP_BUFFER_SECONDS) * 100)),
         },
       });
@@ -1759,8 +1872,18 @@ export const serveHlsAsset = async (req, res) => {
         const live = getRemuxSession(sessionId);
         const playlistPath = sessionPath(sessionId, 'index.m3u8');
         const ageMs = Date.now() - (await fs.stat(playlistPath)).mtimeMs;
-        const writerDead = live ? live.exitCode !== undefined : ageMs > SESSION_STALE_MS;
+        const writerHealthy = live
+          ? shouldReuseRemuxSession({
+              playlistComplete: false,
+              hasLiveSession: true,
+              liveExitCode: live.exitCode,
+              playlistFresh: ageMs <= SESSION_STALE_MS,
+              playlistGrowing: false,
+            })
+          : ageMs <= SESSION_STALE_MS;
+        const writerDead = !writerHealthy;
         if (writerDead) {
+          await stopRemuxSession(sessionId);
           // Record why. Without this a failed session carries only a filename,
           // so a source that dies every time is indistinguishable from a
           // one-off and there is nothing to act on.
@@ -1770,10 +1893,10 @@ export const serveHlsAsset = async (req, res) => {
               $set: {
                 mode: 'failed',
                 failureStage: 'remux',
-                failureReason: live
+                failureReason: live?.exitCode !== undefined
                   ? `ffmpeg thoát với mã ${live.exitCode}`
-                  : `không có tiến trình ffmpeg và playlist đứng yên ${Math.round(ageMs / 1000)}s`,
-                failureExitCode: live ? live.exitCode : null,
+                  : `playlist đứng yên ${Math.round(ageMs / 1000)}s; tiến trình remux không còn tạo dữ liệu`,
+                failureExitCode: live?.exitCode ?? null,
                 // ffmpeg echoes its input URL, which is a short-lived TorBox
                 // download link. Redact before this reaches Mongo.
                 failureDetail: redactSecrets(live?.stderr).slice(-800),
@@ -1812,6 +1935,7 @@ export const serveHlsAsset = async (req, res) => {
 export default {
   resolvePlayback,
   listPlaybackSources,
+  getResolveStage,
   getPlaybackSession,
   serveHlsAsset,
   pickBestFile,

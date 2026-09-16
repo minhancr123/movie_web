@@ -12,6 +12,7 @@ import { enqueueJob, JOBS } from './config/queue.js';
 import authRoutes from './routes/auth.js';
 import { createDefaultAdmin } from './controllers/authController.js';
 import { startTranscodeCacheJanitor } from './services/playback/remuxService.js';
+import { detectVideoEncoder } from './services/playback/remuxService.js';
 import favoriteRoutes from './routes/favorites.js';
 import watchHistoryRoutes from './routes/watchHistory.js';
 import commentRoutes from './routes/comments.js';
@@ -206,6 +207,11 @@ const startServer = async () => {
     console.log(
       `[transcode-cache] scanned=${cacheCleanup.scanned} removed=${cacheCleanup.deletedIds.length} retainedMB=${Math.round(cacheCleanup.retainedBytes / 1024 / 1024)}`,
     );
+
+    // Warm the video-encoder detection so the first playback resolve already
+    // knows whether the codec-transcode fallback (HEVC/AV1 -> AVC) is viable.
+    // Fire-and-forget: detection degrades to software on failure, never fatal.
+    detectVideoEncoder().catch(() => {});
 
 
     // Start listening

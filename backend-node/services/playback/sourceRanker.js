@@ -290,8 +290,14 @@ const SOURCE_SCORE = {
 /**
  * Score one candidate for one client. Returns `{ score, playable, reasons }`.
  * `playable: false` means "do not offer this at all" rather than "rank last".
+ *
+ * `videoTranscode` (`{ allowed, hardware }`) marks sources the server can
+ * re-encode: a codec the browser cannot decode stays playable via an
+ * on-the-fly AVC transcode instead of being rejected. Mirrors the realtime
+ * rule in remuxService.planCodecTranscode — software transcode above 1080p
+ * never reaches realtime, so those stay rejected.
  */
-export const scoreCandidate = (candidate, caps, { runtimeMinutes = null } = {}) => {
+export const scoreCandidate = (candidate, caps, { runtimeMinutes = null, videoTranscode = null } = {}) => {
   const reasons = [];
   let score = 0;
 
@@ -326,12 +332,35 @@ export const scoreCandidate = (candidate, caps, { runtimeMinutes = null } = {}) 
     };
   }
 
-  // --- codec: the hard gate. Offering HEVC to a Chrome user means a black screen.
-  if (candidate.codec === 'hevc' && !caps.hevc) {
-    return { score: -1000, playable: false, reasons: ['client không giải mã được HEVC'] };
-  }
-  if (candidate.codec === 'av1' && !caps.av1) {
-    return { score: -1000, playable: false, reasons: ['client không giải mã được AV1'] };
+  // --- codec: the hard gate, unless the server can re-encode. Serving a raw
+  // HEVC stream to a Chrome user means a black screen, but a server-side
+  // AVC transcode of the same release plays fine — worse than native, so it
+  // ranks below directly-playable sources, but far better than unwatchable.
+  for (const { codec, label } of [
+    { codec: 'hevc', label: 'HEVC' },
+    { codec: 'av1', label: 'AV1' },
+  ]) {
+    if (candidate.codec === codec && !caps[codec]) {
+      const vt = videoTranscode || { allowed: false, hardware: false };
+      const srcH = Number(candidate.resolution) || 0;
+      const capH = Number(caps.maxHeight) > 0 ? Number(caps.maxHeight) : 1080;
+      const targetH = srcH ? Math.min(srcH, capH) : capH;
+      const realtime = targetH <= 1080 || vt.hardware;
+      if (vt.allowed && realtime) {
+        score -= 30;
+        reasons.push(`server transcode ${label}→AVC ${targetH}p`);
+        break;
+      }
+      return {
+        score: -1000,
+        playable: false,
+        reasons: [
+          targetH > 1080 && vt.allowed && !vt.hardware
+            ? `${label} 4K cần GPU transcode, server hiện không có`
+            : `client không giải mã được ${label}`,
+        ],
+      };
+    }
   }
 
   if (candidate.codec === 'hevc') {
@@ -463,14 +492,14 @@ export const scoreCandidate = (candidate, caps, { runtimeMinutes = null } = {}) 
 export const rankCandidates = (
   candidates,
   rawCaps,
-  { runtimeMinutes = null, expectedTitles = [], expectedYear = null } = {},
+  { runtimeMinutes = null, expectedTitles = [], expectedYear = null, videoTranscode = null } = {},
 ) => {
   const caps = normalizeCapabilities(rawCaps);
 
   const ranked = (candidates || [])
     .map((candidate) => {
       const parsed = parseCandidate(candidate, { expectedTitles, expectedYear });
-      const { score, playable, reasons } = scoreCandidate(parsed, caps, { runtimeMinutes });
+      const { score, playable, reasons } = scoreCandidate(parsed, caps, { runtimeMinutes, videoTranscode });
       return { ...parsed, score, playable, reasons };
     })
     .sort((a, b) => {

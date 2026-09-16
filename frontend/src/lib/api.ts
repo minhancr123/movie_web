@@ -153,6 +153,7 @@ export const playbackAPI = {
     capabilities: any;
     sourceToken?: string;
     audioIndex?: number;
+    resolveId?: string;
   }) => authClient.post('/playback/resolve', data),
   listSources: (data: {
     type: string;
@@ -162,6 +163,8 @@ export const playbackAPI = {
     capabilities: any;
   }) => authClient.post('/playback/sources', data),
   getSession: (sessionId: string) => authClient.get(`/playback/session/${sessionId}`),
+  getResolveStage: (resolveId: string) =>
+    authClient.get(`/playback/resolve/${encodeURIComponent(resolveId)}/stage`),
   subtitleJob: (jobId: string) => authClient.get(`/playback/subtitles/job/${jobId}`),
   subtitles: (data: {
     type: string;

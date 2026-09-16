@@ -1,16 +1,18 @@
 'use client';
 
 import React, { useEffect, useRef, useState, useCallback } from 'react';
+import { createPortal } from 'react-dom';
 import Hls from 'hls.js';
 import {
     Play, Pause, Maximize, Minimize, Volume2, VolumeX,
-    RotateCcw, RotateCw, Settings, SkipForward, Loader2, Captions
+    RotateCcw, RotateCw, Settings, SkipForward, Loader2, Captions, X
 } from 'lucide-react';
 import { useWatchHistory } from '../hooks/useLocalStorage';
 import { playbackAPI, apiUrl } from '@/lib/api';
 import { detectCapabilities } from '@/lib/capabilities';
 import {
     fetchCues, activeCues,
+    isEmbeddedTrack, trackSource, isViTrack, isEnTrack, isReadyTrack,
     type SubCue, type SubTrack,
 } from '@/lib/subtitles';
 import {
@@ -76,6 +78,9 @@ interface VideoPlayerProps {
         React bails out on an unchanged src, so this forces the pipeline below
         to tear down and rebuild (fresh hls.js + resume from history). */
     reloadKey?: number;
+    /** Fired when currentTime advances past the stall threshold. Lets the
+        parent reset its recovery counter so isolated stalls don't accumulate. */
+    onPlaybackProgress?: () => void;
     /**
      * The surround mode and the element to sample. Both are emitted rather than
      * used here: the player's own box clips its overflow, so the light has to be
@@ -85,7 +90,7 @@ interface VideoPlayerProps {
     onVideoReady?: (el: HTMLVideoElement | null) => void;
 }
 
-export default function VideoPlayer({ src, movie, episode, authToken, durationSeconds, onNextEpisode, subContext, onPickAudio, activeAudioIndex, onPlaybackFailure, reloadKey = 0, onCinemaChange, onVideoReady }: VideoPlayerProps) {
+export default function VideoPlayer({ src, movie, episode, authToken, durationSeconds, onNextEpisode, subContext, onPickAudio, activeAudioIndex, onPlaybackFailure, reloadKey = 0, onPlaybackProgress, onCinemaChange, onVideoReady }: VideoPlayerProps) {
     const videoRef = useRef<HTMLVideoElement>(null);
     const containerRef = useRef<HTMLDivElement>(null);
 
@@ -103,6 +108,9 @@ export default function VideoPlayer({ src, movie, episode, authToken, durationSe
     const [buffered, setBuffered] = useState(0);
     const [isLoading, setIsLoading] = useState(true);
     const [error, setError] = useState<string | null>(null);
+    // Audible play() rejected for lack of gesture: show tap-to-play instead of
+    // silent autoplay. Cleared on the first real play event.
+    const [autoplayBlocked, setAutoplayBlocked] = useState(false);
     // Re-mount the playback pipeline (fresh hls.js + resume from history).
     const [retryKey, setRetryKey] = useState(0);
 
@@ -237,6 +245,13 @@ export default function VideoPlayer({ src, movie, episode, authToken, durationSe
     const subDelayRef = useRef(subDelay);
     useEffect(() => { subDelayRef.current = subDelay; }, [subDelay]);
     const selectedSubRef = useRef<string>('off');
+    // True until the viewer manually picks a subtitle track: only auto-picks
+    // may be replaced when a better (file-matched) list arrives. A manual
+    // choice always sticks, even if an embedded track shows up later.
+    const autoSubRef = useRef(true);
+    // Timing base of the auto-picked track. An online pick upgrades to an
+    // embedded one; anything else never moves on its own.
+    const autoSubSourceRef = useRef<string | null>(null);
 
     const adjustSubDelay = useCallback((delta: number) => {
         const next = Math.min(30, Math.max(-30, Math.round((subDelayRef.current + delta) * 2) / 2));
@@ -277,11 +292,15 @@ export default function VideoPlayer({ src, movie, episode, authToken, durationSe
     ];
     const stallTimerRef = useRef<NodeJS.Timeout>();
     const lastProgressRef = useRef(0);
+    const localStallRecoveryRef = useRef(false);
+    const hlsRef = useRef<Hls | null>(null);
 
-    /** A dead remux used to leave the spinner running forever. Detect a real
-        no-progress stall quickly and ask the parent to resolve a fresh session. */
-    const STALL_TIMEOUT_MS = 20000;
-    const armStallTimer = () => {
+    /** Restart hls.js once before replacing the server-side remux. The two
+        deadlines still total 20s, but a recoverable loader stall gets nudged
+        after 8s instead of leaving the viewer on a frozen frame for all 20. */
+    const LOCAL_STALL_RECOVERY_MS = 8000;
+    const ESCALATED_STALL_TIMEOUT_MS = 12000;
+    const armStallTimer = (timeoutMs = LOCAL_STALL_RECOVERY_MS) => {
         // This is a rolling deadline, not a one-shot "waiting" alarm. Browsers
         // can report playing/canplay and keep readyState > 0 while currentTime
         // is frozen, so progress itself must keep renewing the watchdog.
@@ -292,21 +311,35 @@ export default function VideoPlayer({ src, movie, episode, authToken, durationSe
             const video = videoRef.current;
             if (video && !video.paused && !video.ended) {
                 if (video.currentTime > lastProgressRef.current + 0.25) {
+                    localStallRecoveryRef.current = false;
                     armStallTimer();
                     return;
                 }
+
+                const hls = hlsRef.current;
+                if (hls && !localStallRecoveryRef.current) {
+                    localStallRecoveryRef.current = true;
+                    hls.stopLoad();
+                    hls.startLoad(video.currentTime || -1);
+                    void video.play().catch(() => { /* autoplay may need a gesture */ });
+                    armStallTimer(ESCALATED_STALL_TIMEOUT_MS);
+                    return;
+                }
+
+                localStallRecoveryRef.current = false;
                 setIsLoading(false);
                 const reason = 'Luồng phát không tiến triển trong 20 giây.';
                 if (onPlaybackFailure) onPlaybackFailure(reason);
                 else setError(`${reason} Bấm Thử lại để nối lại.`);
             }
-        }, STALL_TIMEOUT_MS);
+        }, timeoutMs);
     };
     const clearStallTimer = () => {
         if (stallTimerRef.current) {
             clearTimeout(stallTimerRef.current);
             stallTimerRef.current = undefined;
         }
+        localStallRecoveryRef.current = false;
     };
 
     // Subtitles: cheap external inventory is prefetched; embedded extraction is
@@ -332,18 +365,63 @@ export default function VideoPlayer({ src, movie, episode, authToken, durationSe
     const subRequestInFlightRef = useRef(false);
     const subRequestFullAfterRef = useRef(false);
 
-    const applyTracks = useCallback((tracks: SubTrack[]) => {
-        setSubTracks(tracks);
-        // Auto-pick Vietnamese once its file is ready.
-        const vi = tracks.find((t) => t.ready !== false && t.language.toLowerCase().startsWith('vi'));
-        if (vi) {
-            setSelectedSub((prev) => {
-                if (prev !== 'off') return prev;
-                void ensureCues(vi);
-                return vi.id;
-            });
+    // Best Vietnamese pick: a file-exact embedded track first, otherwise the
+    // addon's first Vietnamese sidecar (timed for some release of the title —
+    // right language, timing not guaranteed; see the match verdict in the menu).
+    const bestViTrack = (tracks: SubTrack[]) =>
+        tracks.find((t) => isReadyTrack(t) && isViTrack(t) && isEmbeddedTrack(t))
+        || tracks.find((t) => isReadyTrack(t) && isViTrack(t));
+
+    // Auto-select Vietnamese, upgrading to a file-matched track when one
+    // appears later. The background prefetch returns online-only lists, while
+    // the session-backed inventory (or a finished extraction job) can add
+    // embedded tracks afterwards — without this the first generic
+    // "Tiếng Việt 1" would stick forever even after the synced track lands.
+    const maybeAutoPickSub = useCallback((tracks: SubTrack[]) => {
+        if (!autoSubRef.current) return;
+        const currentId = selectedSubRef.current;
+        const best = bestViTrack(tracks);
+        if (!best) return;
+        if (currentId === 'off' || currentId === '') {
+            autoSubSourceRef.current = trackSource(best);
+            setSelectedSub(best.id);
+            void ensureCues(best);
+            return;
+        }
+        if (autoSubSourceRef.current !== 'embedded' && isEmbeddedTrack(best) && best.id !== currentId) {
+            autoSubSourceRef.current = 'embedded';
+            setSelectedSub(best.id);
+            void ensureCues(best);
+            showSyncToast('Đã chuyển sang phụ đề nhúng khớp file đang xem');
         }
         // eslint-disable-next-line react-hooks/exhaustive-deps
+    }, [showSyncToast]);
+
+    // Bilingual partner: same timing base as the primary whenever possible.
+    // Two sidecars from different releases drift progressively (fps/cut
+    // differences), which no constant offset can fix — same-source pairing
+    // (embedded↔embedded especially) avoids that entirely.
+    const pickSecondaryFor = (primary: SubTrack | undefined, tracks: SubTrack[]) => {
+        if (!primary) return undefined;
+        const pool = tracks.filter((t) => t.id !== primary.id && isReadyTrack(t));
+        if (pool.length === 0) return undefined;
+        const primaryVi = isViTrack(primary);
+        const primaryLang2 = primary.language.toLowerCase().slice(0, 2);
+        const langMatch = (t: SubTrack) => primaryVi ? isEnTrack(t) : isViTrack(t);
+        const sameSource = (t: SubTrack) => trackSource(t) === trackSource(primary);
+        const otherLang = (t: SubTrack) => !t.language.toLowerCase().startsWith(primaryLang2);
+        return pool.find((t) => langMatch(t) && sameSource(t))
+            || pool.find((t) => langMatch(t))
+            || pool.find((t) => sameSource(t) && otherLang(t))
+            || pool.find(otherLang)
+            || pool[0];
+    };
+
+    const applyTracks = useCallback((tracks: SubTrack[]) => {
+        setSubTracks(tracks);
+        // Selection itself follows in the [subTracks] effect below so every
+        // list improvement (prefetch → session inventory → extraction job)
+        // runs the same upgrade logic exactly once per list.
     }, []);
 
     const loadSubtitleInventory = useCallback(async (allowEmbedded = false) => {
@@ -457,15 +535,13 @@ export default function VideoPlayer({ src, movie, episode, authToken, durationSe
         };
     }, [subJobId]);
 
+    // Follow file-matched tracks as the inventory improves: background
+    // prefetch (online-only) → session-backed list (may add embedded) →
+    // extraction-job results (embedded URLs landing). Runs once per list.
     useEffect(() => {
-        if (!subJobId) return;
-        const vi = subTracks.find((t) => t.ready !== false && t.language.toLowerCase().startsWith('vi'));
-        if (vi && selectedSub === 'off') {
-            setSelectedSub(vi.id);
-            void ensureCues(vi);
-        }
+        maybeAutoPickSub(subTracks);
         // eslint-disable-next-line react-hooks/exhaustive-deps
-    }, [subTracks, subJobId]);
+    }, [subTracks]);
 
     const ensureCues = useCallback(async (track: SubTrack) => {
         if (cueCache[track.id] || !track.url) return;
@@ -484,20 +560,16 @@ export default function VideoPlayer({ src, movie, episode, authToken, durationSe
     }, [JSON.stringify(Object.keys(cueCache))]);
 
     const pickSubtitle = (id: string) => {
+        // A manual pick always sticks: the auto-upgrade above must not yank
+        // the viewer off a track they chose themselves.
+        autoSubRef.current = false;
         setSelectedSub(id);
         const track = subTracks.find((t) => t.id === id);
         if (track) void ensureCues(track);
         if (id === 'off') {
             setBilingual(false);
         } else if (bilingual && (id === secondarySub || !secondarySub)) {
-            const nextLang = track?.language?.toLowerCase() || '';
-            const readyTracks = subTracks.filter((t) => t.id !== id && t.ready !== false && t.url);
-            const newSec = (nextLang.startsWith('vi')
-                ? readyTracks.find((t) => (t as any).source === 'embedded' && t.language?.toLowerCase().startsWith('en'))
-                    || readyTracks.find((t) => t.language?.toLowerCase().startsWith('en'))
-                : readyTracks.find((t) => t.language?.toLowerCase().startsWith('vi')))
-                || readyTracks.find((t) => !t.language?.toLowerCase().startsWith(nextLang.slice(0, 2)))
-                || readyTracks[0];
+            const newSec = pickSecondaryFor(track, subTracks);
             if (newSec) {
                 setSecondarySub(newSec.id);
                 void ensureCues(newSec);
@@ -505,21 +577,10 @@ export default function VideoPlayer({ src, movie, episode, authToken, durationSe
         }
     };
 
-    // Auto-pick English audio track if available and not currently English
-    useEffect(() => {
-        if (subStatus !== 'ready' || subAudio.length <= 1) return;
-        const currentLang = Number.isInteger(activeAudioIndex) && subAudio[activeAudioIndex!]
-            ? subAudio[activeAudioIndex!].language
-            : '';
-        if (/^(en|eng|english)$/i.test(currentLang?.trim())) return; // Already English
-
-        const engIdx = subAudio.findIndex(
-            (a) => /^(en|eng|english)$/i.test(a.language?.trim())
-        );
-        if (engIdx >= 0 && engIdx !== activeAudioIndex && onPickAudio) {
-            onPickAudio(engIdx);
-        }
-    }, [subStatus, subAudio, activeAudioIndex, onPickAudio]);
+    // NOTE: there is deliberately no "auto-prefer English" effect beyond the
+    // initial pick above. An earlier version re-forced English whenever the
+    // current track wasn't English, which fought the viewer: picking Vietnamese
+    // immediately bounced back to English, so switching tracks never stuck.
 
     // Restore delay memory when subtitle track is picked (per-track delay)
     useEffect(() => {
@@ -585,7 +646,6 @@ export default function VideoPlayer({ src, movie, episode, authToken, durationSe
 
     const controlsTimeoutRef = useRef<NodeJS.Timeout>();
     const loadingTimeoutRef = useRef<NodeJS.Timeout>();
-    const hlsRef = useRef<Hls | null>(null); // Keep reference to HLS instance
     const { history, addToHistory } = useWatchHistory();
 
     const toggleSettings = () => {
@@ -630,13 +690,27 @@ export default function VideoPlayer({ src, movie, episode, authToken, durationSe
 
         const startPlayback = () => {
             if (cancelled) return;
-            video.play().then(
-                () => { },
+            // Audible-only start. By the time the async resolve (TorBox +
+            // manifest) finishes, the click that opened the film is no longer
+            // an active browser gesture, so audible play() rejects with
+            // NotAllowedError. There is deliberately no muted fallback: a
+            // paused first frame with a tap-to-play prompt beats silent video,
+            // and the tap itself is a gesture, so play() then succeeds audible.
+            video.muted = false;
+            void video.play().then(
+                () => {
+                    if (cancelled) return;
+                    setIsPlaying(true);
+                    setAutoplayBlocked(false);
+                },
                 (err: unknown) => {
                     if (cancelled) return;
-                    // Autoplay blocked until the user gestures; not a failure.
+                    // Tear-down mid-flight (src change / reloadKey): ignore.
                     if (err instanceof DOMException && err.name === 'AbortError') return;
                     setIsPlaying(false);
+                    if (err instanceof DOMException && err.name === 'NotAllowedError') {
+                        setAutoplayBlocked(true);
+                    }
                 },
             );
         };
@@ -645,7 +719,9 @@ export default function VideoPlayer({ src, movie, episode, authToken, durationSe
             const saved = history.find(h => h.slug === movie.slug);
             const duration = durationSeconds || (Number.isFinite(video.duration) ? video.duration : 0);
             if (saved && saved.currentEpisode === episode.slug && saved.progress) {
-                video.currentTime = duration > 0 ? Math.min(saved.progress, Math.max(duration - 5, 0)) : saved.progress;
+                // Back off 2s so a reload never lands on the exact broken fragment.
+                const resumeAt = Math.max(0, saved.progress - 2);
+                video.currentTime = duration > 0 ? Math.min(resumeAt, Math.max(duration - 5, 0)) : resumeAt;
             }
         };
 
@@ -707,10 +783,10 @@ export default function VideoPlayer({ src, movie, episode, authToken, durationSe
                 // always stays on Auto here.
                 hls.currentLevel = -1;
 
-                // Restore history
+                // Restore history (back off 2s to skip the exact stalled fragment).
                 const saved = history.find(h => h.slug === movie.slug);
                 if (saved && saved.currentEpisode === episode.slug && saved.progress) {
-                    video.currentTime = saved.progress;
+                    video.currentTime = Math.max(0, saved.progress - 2);
                 }
                 startPlayback();
                 setIsLoading(false);
@@ -765,7 +841,7 @@ export default function VideoPlayer({ src, movie, episode, authToken, durationSe
             video.addEventListener('loadedmetadata', () => {
                 const saved = history.find(h => h.slug === movie.slug);
                 if (saved && saved.currentEpisode === episode.slug && saved.progress) {
-                    video.currentTime = saved.progress;
+                    video.currentTime = Math.max(0, saved.progress - 2);
                 }
                 startPlayback();
                 setIsLoading(false);
@@ -858,7 +934,9 @@ export default function VideoPlayer({ src, movie, episode, authToken, durationSe
         const handleTimeUpdate = () => {
             if (video.paused) setCurrentTime(video.currentTime);
             if (video.currentTime > lastProgressRef.current + 0.25) {
+                localStallRecoveryRef.current = false;
                 armStallTimer();
+                if (onPlaybackProgress) onPlaybackProgress();
             }
             if (video.buffered.length > 0) {
                 const bufferedEnd = video.buffered.end(video.buffered.length - 1);
@@ -872,6 +950,7 @@ export default function VideoPlayer({ src, movie, episode, authToken, durationSe
         const handleDurationChange = () => setDuration(durationSeconds || video.duration);
         const handlePlay = () => {
             setIsPlaying(true);
+            setAutoplayBlocked(false);
             armStallTimer();
         };
         const handlePause = () => {
@@ -932,14 +1011,19 @@ export default function VideoPlayer({ src, movie, episode, authToken, durationSe
             video.removeEventListener('canplay', handleCanPlay);
             video.removeEventListener('ended', handleEnded);
         }
-    }, [onNextEpisode, durationSeconds, onPlaybackFailure]);
+    }, [onNextEpisode, durationSeconds, onPlaybackFailure, onPlaybackProgress]);
 
-    // Controls Visibility
+    // Controls Visibility (touch taps reuse the same path: on touch
+    // screens there is no mousemove, so without this the bar can never be
+    // recalled once it auto-hides — especially in fullscreen).
+    // The settings sheet pins the bar open while it is up.
+    const showSettingsRef = useRef(false);
+    showSettingsRef.current = showSettings;
     const handleMouseMove = () => {
         setShowControls(true);
         if (controlsTimeoutRef.current) clearTimeout(controlsTimeoutRef.current);
         controlsTimeoutRef.current = setTimeout(() => {
-            if (isPlaying) setShowControls(false);
+            if (isPlaying && !showSettingsRef.current) setShowControls(false);
         }, 3000);
     };
 
@@ -950,13 +1034,42 @@ export default function VideoPlayer({ src, movie, episode, authToken, durationSe
         }
     }, [isPlaying]);
 
+    // Fullscreen state is owned by the browser (ESC key, system gestures and
+    // the mobile system UI can enter/leave at any time), so React only
+    // mirrors document.fullscreenElement instead of guessing optimistically.
+    // That stale optimistic set is what used to leave the player showing the
+    // wrong icon — or a hidden bar — after exiting fullscreen outside the button.
+    useEffect(() => {
+        const syncFullscreen = () => {
+            const el = document.fullscreenElement;
+            setIsFullscreen(!!el && (!containerRef.current || el === containerRef.current));
+        };
+        document.addEventListener('fullscreenchange', syncFullscreen);
+        return () => document.removeEventListener('fullscreenchange', syncFullscreen);
+    }, []);
+
     const toggleFullscreen = useCallback(() => {
+        const container = containerRef.current;
         if (!document.fullscreenElement) {
-            containerRef.current?.requestFullscreen();
-            setIsFullscreen(true);
-        } else {
-            document.exitFullscreen();
-            setIsFullscreen(false);
+            if (container?.requestFullscreen) {
+                try {
+                    const p = container.requestFullscreen() as unknown as Promise<void> | undefined;
+                    // Rejection (denied gesture, ESC race) is fine: the
+                    // fullscreenchange listener above keeps state honest.
+                    p?.catch(() => {});
+                } catch {
+                    // Older iOS Safari throws synchronously: fall through.
+                    (videoRef.current as HTMLVideoElement & { webkitEnterFullscreen?: () => void } | null)?.webkitEnterFullscreen?.();
+                }
+            } else {
+                // iOS Safari has no element fullscreen at all.
+                (videoRef.current as HTMLVideoElement & { webkitEnterFullscreen?: () => void } | null)?.webkitEnterFullscreen?.();
+            }
+        } else if (document.exitFullscreen) {
+            try {
+                const p = document.exitFullscreen() as unknown as Promise<void> | undefined;
+                p?.catch(() => {});
+            } catch { /* already exiting */ }
         }
     }, []);
 
@@ -1009,21 +1122,43 @@ export default function VideoPlayer({ src, movie, episode, authToken, durationSe
         setVolume(vol);
         if (videoRef.current) {
             videoRef.current.volume = vol;
+            // The element stays muted until told otherwise: dragging the slider
+            // up must also clear muted, otherwise sound can never come back
+            // that way (volume up + muted element = silence).
+            videoRef.current.muted = vol === 0;
             setIsMuted(vol === 0);
         }
     };
 
     const toggleMute = () => {
-        if (videoRef.current) {
-            const newMuted = !isMuted;
-            setIsMuted(newMuted);
-            videoRef.current.muted = newMuted;
-            if (newMuted) {
-                setVolume(0);
-            } else {
-                setVolume(1);
-                videoRef.current.volume = 1;
-            }
+        const video = videoRef.current;
+        if (!video) return;
+        if (video.paused) {
+            // Speaker on a paused player means "play with sound", not "flip
+            // the mute flag on a frozen frame": a paused player is silent
+            // either way, so unmute and start audible playback (this tap is a
+            // gesture, so play() is allowed). Slider-to-zero still mutes.
+            video.muted = false;
+            setIsMuted(false);
+            if (video.volume === 0) video.volume = 1;
+            setVolume(video.volume || 1);
+            void video.play().catch(() => { /* errors surface via events */ });
+            return;
+        }
+        // Read the element, not React state: the 'M' shortcut handler closes
+        // over a stale isMuted. The element is the source of truth.
+        const newMuted = !video.muted;
+        video.muted = newMuted;
+        setIsMuted(newMuted);
+        if (newMuted) {
+            setVolume(0);
+        } else {
+            if (video.volume === 0) video.volume = 1;
+            setVolume(video.volume);
+            // Unmuting is a real user gesture, so audible playback is allowed
+            // now. Guarantee the picture keeps moving with the sound on instead
+            // of sitting paused at the same frame.
+            void video.play().catch(() => { /* errors surface via events */ });
         }
     };
 
@@ -1100,7 +1235,9 @@ export default function VideoPlayer({ src, movie, episode, authToken, durationSe
             ref={containerRef}
             className="relative w-full h-full bg-black group overflow-hidden select-none"
             onMouseMove={handleMouseMove}
-            onMouseLeave={() => isPlaying && setShowControls(false)}
+            // Touch screens never fire mousemove: taps must recall the bar too.
+            onTouchStart={handleMouseMove}
+            onMouseLeave={() => isPlaying && !showSettings && setShowControls(false)}
             onClick={togglePlay}
             onDoubleClick={toggleFullscreen}
         >
@@ -1182,8 +1319,8 @@ export default function VideoPlayer({ src, movie, episode, authToken, durationSe
                 </div>
             )}
 
-            {/* Keyboard Help Hint */}
-            <div className={`absolute top-4 right-4 z-20 bg-black/60 backdrop-blur-sm rounded-lg px-3 py-1.5 text-white text-xs transition-opacity ${showControls ? 'opacity-100' : 'opacity-0'}`}>
+            {/* Keyboard Help Hint (desktop only: no keyboard on touch) */}
+            <div className={`hidden sm:block absolute top-4 right-4 z-20 liquid-glass rounded-lg px-3 py-1.5 text-white text-xs transition-opacity ${showControls ? 'opacity-100' : 'opacity-0'}`}>
                 <button onClick={(e) => { e.stopPropagation(); setShowKeyboardHelp(true); }} className="hover:text-amber-gold transition">
                     Press <kbd className="bg-white/20 px-1.5 py-0.5 rounded mx-1">?</kbd> for shortcuts
                 </button>
@@ -1204,12 +1341,18 @@ export default function VideoPlayer({ src, movie, episode, authToken, durationSe
                 </div>
             )}
 
-            {/* Big Play Button (when paused) */}
+            {/* Big Play Button (when paused). Clicks fall through to the
+                container's togglePlay, so one tap starts audible playback. */}
             {!isPlaying && !isLoading && (
-                <div className="absolute inset-0 flex items-center justify-center z-10 pointer-events-none">
-                    <div className="w-20 h-20 bg-black/60 rounded-full flex items-center justify-center pl-2 shadow-2xl backdrop-blur-sm border border-white/10 group-hover:scale-110 transition-transform duration-300">
+                <div className="absolute inset-0 flex flex-col items-center justify-center gap-3 z-10 cursor-pointer">
+                    <div className="w-20 h-20 liquid-glass liquid-play rounded-full flex items-center justify-center pl-2 group-hover:scale-110 transition-transform duration-300">
                         <Play className="text-white w-10 h-10 fill-white" />
                     </div>
+                    {autoplayBlocked && (
+                        <p className="rounded-full bg-black/70 backdrop-blur-md px-4 py-1.5 text-xs font-semibold text-amber-gold border border-amber-primary/40">
+                            Nhấn để phát có tiếng
+                        </p>
+                    )}
                 </div>
             )}
 
@@ -1217,7 +1360,7 @@ export default function VideoPlayer({ src, movie, episode, authToken, durationSe
                 instead of native <track> so cross-origin VTT needs no CORS
                 changes on the media itself and two languages can show at once. */}
             {(primaryCues.length > 0 || secondaryCues.length > 0) && (
-                <div className="pointer-events-none absolute inset-x-0 bottom-24 z-20 flex flex-col items-center gap-1.5 px-6 text-center">
+                <div className="pointer-events-none absolute inset-x-0 bottom-32 sm:bottom-28 z-20 flex flex-col items-center gap-1.5 px-6 text-center">
                     {secondaryCues.map((cue, i) => (
                         <p
                             key={`sec-${cue.start}-${i}`}
@@ -1239,29 +1382,36 @@ export default function VideoPlayer({ src, movie, episode, authToken, durationSe
                 </div>
             )}
 
-            {/* Controls Overlay */}
+            {/* Controls Overlay — floating liquid-glass pill. When hidden it
+                must also drop pointer events, otherwise the invisible bar
+                swallows taps on the bottom of the video (notably in
+                fullscreen) and the player feels "stuck". */}
             <div
-                className={`absolute bottom-0 left-0 right-0 bg-gradient-to-t from-black/90 via-black/60 to-transparent px-4 pb-4 pt-16 transition-opacity duration-300 z-30 ${showControls ? 'opacity-100' : 'opacity-0'}`}
+                className={`absolute inset-x-2 bottom-2 sm:inset-x-4 sm:bottom-4 z-30 liquid-glass rounded-2xl px-3 pt-2.5 pb-2.5 sm:px-4 transition-all duration-300 ${showControls ? 'opacity-100 translate-y-0' : 'opacity-0 translate-y-3 pointer-events-none'}`}
                 onClick={(e) => e.stopPropagation()}
                 // Double-clicks on controls (e.g. the settings gear) must not
                 // bubble to the container's onDoubleClick (= fullscreen).
                 onDoubleClick={(e) => e.stopPropagation()}
             >
-                {/* Progress Bar */}
-                <div className="relative w-full h-1.5 group/progress cursor-pointer mb-4 flex items-center">
-                    <div className="absolute top-0 left-0 h-full w-full bg-white/20 rounded-full overflow-hidden">
-                        <div
-                            className="h-full bg-white/40"
-                            style={{ width: `${buffered}%` }}
-                        />
-                    </div>
+                {/* Progress Bar (taller invisible hit area for touch).
+                    The track thickens on hover/active and stays vertically
+                    centered, so it feels like YouTube's seek bar. */}
+                <div className="relative w-full h-6 -mt-1 cursor-pointer mb-1 flex items-center group/progress">
+                    <div className="absolute left-0 right-0 top-1/2 -translate-y-1/2 h-1.5 rounded-full group-hover/progress:h-3 group-active/progress:h-3 transition-all duration-200">
+                        <div className="absolute top-0 left-0 h-full w-full bg-white/20 rounded-full overflow-hidden">
+                            <div
+                                className="h-full bg-white/40"
+                                style={{ width: `${buffered}%` }}
+                            />
+                        </div>
                     <div
-                        className="absolute top-0 left-0 h-full bg-amber-primary rounded-full"
+                        className="absolute top-0 left-0 h-full liquid-track-played rounded-full transition-all duration-200"
                         style={{ width: `${(currentTime / duration) * 100}%` }}
                     />
+                    </div>
                     {/* Draggable Knob */}
                     <div
-                        className="absolute w-4 h-4 bg-amber-primary rounded-full shadow-lg scale-0 group-hover/progress:scale-100 transition-transform duration-200 pointer-events-none"
+                        className="absolute top-1/2 -translate-y-1/2 w-4 h-4 liquid-knob rounded-full scale-[0.55] group-hover/progress:scale-110 group-active/progress:scale-110 transition-all duration-200 pointer-events-none"
                         style={{ left: `calc(${(currentTime / duration) * 100}% - 8px)` }}
                     />
                     <input
@@ -1271,21 +1421,25 @@ export default function VideoPlayer({ src, movie, episode, authToken, durationSe
                         step="0.1"
                         value={currentTime}
                         onChange={handleSeek}
+                        aria-label="Tua video"
                         className="absolute inset-0 w-full h-full opacity-0 cursor-pointer"
                     />
                 </div>
 
-                <div className="flex items-center justify-between gap-2">
-                    <div className="flex min-w-0 items-center gap-2 sm:gap-4">
-                        <button onClick={togglePlay} className="text-white hover:text-amber-gold transition-colors">
-                            {isPlaying ? <Pause size={28} fill="currentColor" /> : <Play size={28} fill="currentColor" />}
+                <div className="flex items-center justify-between gap-1.5 sm:gap-2">
+                    <div className="flex min-w-0 flex-1 items-center gap-0.5 sm:gap-3">
+                        <button onClick={togglePlay} aria-label={isPlaying ? 'Tạm dừng' : 'Phát'} className="liquid-glass-btn shrink-0 text-white hover:text-amber-gold transition-colors p-1.5 sm:p-2 rounded-full">
+                            {isPlaying ? <Pause className="w-6 h-6 sm:w-7 sm:h-7" fill="currentColor" /> : <Play className="w-6 h-6 sm:w-7 sm:h-7" fill="currentColor" />}
                         </button>
 
-                        <div className="flex items-center gap-2 group/volume">
-                            <button onClick={toggleMute} className="text-white hover:text-cinema-muted transition-colors">
+                        {/* Hover slider is desktop-only: touch has no hover,
+                            so volume also lives as a slider in the settings
+                            sheet below. */}
+                        <div className="hidden sm:flex items-center gap-2 group/volume">
+                            <button onClick={toggleMute} aria-label={isMuted ? 'Bật tiếng' : 'Tắt tiếng'} className="liquid-glass-btn text-white hover:text-cinema-muted transition-colors p-2 rounded-full">
                                 {isMuted || volume === 0 ? <VolumeX size={22} /> : <Volume2 size={22} />}
                             </button>
-                            <div className="w-0 overflow-hidden group-hover/volume:w-24 transition-all duration-300 flex items-center">
+                            <div className="w-0 overflow-hidden group-hover/volume:w-24 group-focus-within/volume:w-24 transition-all duration-300 flex items-center">
                                 <input
                                     type="range"
                                     min={0}
@@ -1293,23 +1447,31 @@ export default function VideoPlayer({ src, movie, episode, authToken, durationSe
                                     step={0.1}
                                     value={isMuted ? 0 : volume}
                                     onChange={handleVolumeChange}
-                                    className="w-20 h-1 bg-surface-bright rounded-lg appearance-none cursor-pointer accent-amber-primary ml-2"
+                                    aria-label="Âm lượng"
+                                    style={{ background: `linear-gradient(to right, #b45309 0%, #f59e0b ${Math.round((isMuted ? 0 : volume) * 100)}%, rgba(255,255,255,0.22) ${Math.round((isMuted ? 0 : volume) * 100)}%)` }}
+                                    className="w-full h-1.5 rounded-full appearance-none cursor-pointer liquid-range"
                                 />
                             </div>
                         </div>
+                        {/* Compact mute toggle for touch (slider is in settings) */}
+                        <button onClick={toggleMute} aria-label={isMuted ? 'Bật tiếng' : 'Tắt tiếng'} className="liquid-glass-btn sm:hidden shrink-0 text-white hover:text-cinema-muted transition-colors p-1.5 rounded-full">
+                            {isMuted || volume === 0 ? <VolumeX className="w-5 h-5" /> : <Volume2 className="w-5 h-5" />}
+                        </button>
 
-                        <div className="whitespace-nowrap text-xs sm:text-sm font-medium text-cinema-muted font-mono tracking-wider">
+                        <div className="liquid-divider mx-1 hidden sm:block" />
+
+                        <div className="hidden min-[400px]:block whitespace-nowrap text-xs sm:text-sm font-medium text-cinema-muted font-mono tracking-wider truncate liquid-chip px-2.5 py-1">
                             {formatTime(currentTime)} / {formatTime(duration)}
                         </div>
                     </div>
 
-                    <div className="flex shrink-0 items-center gap-2 sm:gap-4">
+                    <div className="flex shrink-0 items-center gap-1 sm:gap-3">
                         {onNextEpisode && (
                             <button
                                 onClick={onNextEpisode}
-                                className="flex items-center gap-2 bg-white/10 hover:bg-amber-primary text-black text-sm px-3 sm:px-4 py-1.5 rounded-lg backdrop-blur-sm transition-all border border-white/10"
+                                className="flex items-center gap-1.5 bg-amber-primary/90 hover:bg-amber-primary text-black text-sm px-2.5 sm:px-4 py-1.5 rounded-xl backdrop-blur-sm transition-all border border-amber-primary/50 shadow-[0_0_20px_-5px_rgba(245,158,11,0.6)]"
                             >
-                                <SkipForward size={16} fill="white" />
+                                <SkipForward size={16} fill="currentColor" />
                                 <span className="hidden font-bold min-[420px]:inline"> Tập Tiếp</span>
                             </button>
                         )}
@@ -1317,24 +1479,82 @@ export default function VideoPlayer({ src, movie, episode, authToken, durationSe
                         <div className="relative group/settings">
                             <button
                                 onClick={toggleSettings}
-                                className={`text-white hover:text-amber-gold transition-colors p-2 rounded-full hover:bg-white/10 ${showSettings ? 'text-amber-gold bg-white/10' : ''}`}
+                                aria-label="Cài đặt phát"
+                                className={`liquid-glass-btn text-white transition-colors p-1.5 sm:p-2 rounded-full ${showSettings ? 'liquid-glass-btn-on' : ''}`}
                             >
-                                <Settings size={22} className={`transition-transform duration-500 ease-out ${showSettings ? 'rotate-90' : 'group-hover/settings:rotate-45'}`} />
+                                <Settings className={`w-5 h-5 sm:w-[22px] sm:h-[22px] transition-transform duration-500 ease-out ${showSettings ? 'rotate-90' : 'group-hover/settings:rotate-45'}`} />
                             </button>
 
-                            {/* Settings Menu Popup: fixed to the viewport (not the
-                                gear button) so a crowded/overflowing controls
-                                row can never push it off-screen. Works in and
-                                out of fullscreen. */}
-                            {showSettings && (
-                                <div
-                                    {...{ [CINEMA_BRIGHT_ATTR]: '' }}
-                                    className="fixed bottom-24 right-4 left-4 sm:left-auto sm:right-6 sm:w-80 max-h-[62vh] overflow-y-auto custom-scrollbar bg-black/90 backdrop-blur-md rounded-xl border border-white/10 p-4 shadow-2xl animate-in fade-in slide-in-from-bottom-4 duration-200 z-[70]">
-                                    <h4 className="text-white font-bold text-sm mb-3 border-b border-white/10/50 pb-2 flex items-center gap-2">
-                                        <Settings size={14} className="text-amber-gold" /> Cài đặt phát
+                            {/* Settings sheet: portalled to the player root so it
+                                anchors to the player box itself. (A `fixed`
+                                sheet nested under the glass pill would be
+                                hijacked by the pill's backdrop-filter, which
+                                becomes its containing block and sandwiches it
+                                between the viewport top and the controls bar
+                                on phones.) True bottom sheet on phones (scrim
+                                + pinned header), floating card on larger
+                                screens. Stays inside the fullscreen subtree. */}
+                            {showSettings && containerRef.current && createPortal(
+                                <>
+                                    {/* Scrim (phones only): tap outside to close */}
+                                    <div
+                                        className="absolute inset-0 z-[60] bg-black/45 sm:hidden animate-in fade-in duration-200"
+                                        onClick={(e) => { e.stopPropagation(); setShowSettings(false); }}
+                                    />
+                                    <div
+                                        {...{ [CINEMA_BRIGHT_ATTR]: '' }}
+                                        className="absolute inset-x-2 bottom-2 max-h-[calc(100%-1rem)] sm:inset-x-auto sm:right-4 sm:bottom-24 sm:w-[22rem] sm:max-h-[calc(100%-7.5rem)] overflow-hidden liquid-glass-strong liquid-glass-sheen rounded-2xl flex flex-col animate-in fade-in slide-in-from-bottom-4 duration-200 z-[70]">
+                                    <div className="flex shrink-0 justify-center pt-2.5 sm:hidden" aria-hidden="true">
+                                        <div className="h-1 w-10 rounded-full bg-white/25" />
+                                    </div>
+                                    <h4 className="shrink-0 text-white font-bold text-sm border-b border-white/10 px-4 pt-2.5 sm:pt-3.5 pb-2.5 flex items-center gap-2">
+                                        <span className="liquid-chip p-1.5 flex items-center justify-center">
+                                            <Settings size={14} className="text-amber-gold" />
+                                        </span>
+                                        Cài đặt phát
+                                        <button
+                                            onClick={(e) => { e.stopPropagation(); setShowSettings(false); }}
+                                            aria-label="Đóng cài đặt"
+                                            className="liquid-glass-btn ml-auto text-cinema-subtle hover:text-white p-1.5 rounded-full"
+                                        >
+                                            <X size={16} />
+                                        </button>
                                     </h4>
 
-                                    <div className="space-y-4">
+                                    <div className="min-h-0 flex-1 space-y-4 overflow-y-auto custom-scrollbar px-4 py-3">
+                                        {/* Volume (touch-friendly: the bar's hover slider is desktop-only) */}
+                                        <div>
+                                            <div className="flex justify-between items-center mb-2">
+                                                <p className="text-xs text-cinema-subtle font-bold uppercase tracking-wider">Âm lượng</p>
+                                                <button
+                                                    onClick={toggleMute}
+                                                    className="text-[11px] font-bold text-amber-gold hover:underline"
+                                                >
+                                                    {isMuted || volume === 0 ? 'Đang tắt — bật lại' : `${Math.round((isMuted ? 0 : volume) * 100)}%`}
+                                                </button>
+                                            </div>
+                                            <div className="flex items-center gap-2.5 rounded-md border border-white/10 bg-surface-container px-2.5 py-2">
+                                                <button
+                                                    onClick={toggleMute}
+                                                    aria-label={isMuted ? 'Bật tiếng' : 'Tắt tiếng'}
+                                                    className="shrink-0 text-white hover:text-amber-gold transition-colors"
+                                                >
+                                                    {isMuted || volume === 0 ? <VolumeX size={18} /> : <Volume2 size={18} />}
+                                                </button>
+                                                <input
+                                                    type="range"
+                                                    min={0}
+                                                    max={1}
+                                                    step={0.05}
+                                                    value={isMuted ? 0 : volume}
+                                                    onChange={handleVolumeChange}
+                                                    aria-label="Âm lượng"
+                                                    style={{ background: `linear-gradient(to right, #b45309 0%, #f59e0b ${Math.round((isMuted ? 0 : volume) * 100)}%, rgba(255,255,255,0.22) ${Math.round((isMuted ? 0 : volume) * 100)}%)` }}
+                                                    className="w-full h-1.5 rounded-full cursor-pointer liquid-range"
+                                                />
+                                            </div>
+                                        </div>
+
                                         {/* Speed Controller */}
                                         <div>
                                             <div className="flex justify-between items-center mb-2">
@@ -1556,7 +1776,7 @@ export default function VideoPlayer({ src, movie, episode, authToken, durationSe
                                                         const active = (activeAudioIndex ?? 0) === i;
                                                         const label =
                                                             !a.label || a.label === 'Không rõ'
-                                                                ? (i === 0 ? 'Âm thanh gốc (Tiếng Anh)' : `Track ${i + 1}`)
+                                                                ? (i === 0 ? 'Âm thanh gốc' : `Track ${i + 1}`)
                                                                 : a.label;
                                                         return (
                                                             <button
@@ -1631,14 +1851,18 @@ export default function VideoPlayer({ src, movie, episode, authToken, durationSe
                                                                     key={t.id}
                                                                     onClick={() => !pending && pickSubtitle(t.id)}
                                                                     disabled={pending}
-                                                                    title={pending ? `${t.label} — đang trích…` : t.label}
+                                                                    title={pending
+                                                                        ? `${t.label} — đang trích từ file…`
+                                                                        : isEmbeddedTrack(t)
+                                                                            ? `${t.label} — trích từ file đang xem, khớp giờ`
+                                                                            : `${t.label} — phụ đề online, nếu lệch hãy thử track khác hoặc chỉnh độ trễ bên dưới`}
                                                                     className={`px-2 py-1.5 rounded-md text-[10px] font-bold transition-all border truncate ${selectedSub === t.id
                                                                         ? 'bg-amber-primary text-black border-amber-primary'
                                                                         : pending
                                                                             ? 'bg-surface-container text-cinema-subtle/50 border-white/5 cursor-wait'
                                                                             : 'bg-surface-container text-cinema-subtle border-white/10 hover:text-white'}`}
                                                                 >
-                                                                    {t.label}{pending ? '…' : ''}
+                                                                    {!pending && isEmbeddedTrack(t) ? `✓ ${t.label}` : `${t.label}${pending ? '…' : ''}`}
                                                                 </button>
                                                             );
                                                         })}
@@ -1681,14 +1905,7 @@ export default function VideoPlayer({ src, movie, episode, authToken, durationSe
                                                                         setBilingual(next);
                                                                         if (next) {
                                                                             const currentTrack = subTracks.find((t) => t.id === selectedSub);
-                                                                            const currentLang = currentTrack?.language?.toLowerCase() || '';
-                                                                            const readyTracks = subTracks.filter((t) => t.id !== selectedSub && t.ready !== false && t.url);
-                                                                            const candidate = (currentLang.startsWith('vi')
-                                                                                ? readyTracks.find((t) => (t as any).source === 'embedded' && t.language?.toLowerCase().startsWith('en'))
-                                                                                    || readyTracks.find((t) => t.language?.toLowerCase().startsWith('en'))
-                                                                                : readyTracks.find((t) => t.language?.toLowerCase().startsWith('vi')))
-                                                                                || readyTracks.find((t) => !t.language?.toLowerCase().startsWith(currentLang.slice(0, 2)))
-                                                                                || readyTracks[0];
+                                                                            const candidate = pickSecondaryFor(currentTrack, subTracks);
                                                                             if (candidate) {
                                                                                 setSecondarySub(candidate.id);
                                                                                 void ensureCues(candidate);
@@ -1863,11 +2080,13 @@ export default function VideoPlayer({ src, movie, episode, authToken, durationSe
                                         </div>
                                     </div>
                                 </div>
-                            )}
+                                </>,
+                                containerRef.current
+                                )}
                         </div>
 
-                        <button onClick={toggleFullscreen} className="text-white hover:text-cinema-muted transition-colors p-2 hover:bg-white/10 rounded-full">
-                            {isFullscreen ? <Minimize size={22} /> : <Maximize size={22} />}
+                        <button onClick={toggleFullscreen} aria-label={isFullscreen ? 'Thoát toàn màn hình' : 'Toàn màn hình'} className="liquid-glass-btn shrink-0 text-white hover:text-cinema-muted transition-colors p-1.5 sm:p-2 hover:bg-white/10 rounded-full">
+                            {isFullscreen ? <Minimize className="w-5 h-5 sm:w-[22px] sm:h-[22px]" /> : <Maximize className="w-5 h-5 sm:w-[22px] sm:h-[22px]" />}
                         </button>
                     </div>
                 </div>

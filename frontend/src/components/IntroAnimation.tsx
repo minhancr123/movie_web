@@ -2,28 +2,65 @@
 
 import { useEffect, useState } from 'react';
 
+const INTRO_KEY = 'introShown_v4';
+const INTRO_DURATION_MS = 4500;
+const FADE_DURATION_MS = 1000;
+
+const readShown = (): boolean => {
+    try {
+        return sessionStorage.getItem(INTRO_KEY) === 'true';
+    } catch {
+        // Storage blocked (private mode / disabled cookies): treat as shown so
+        // a throwing getItem can never pin the fullscreen splash forever.
+        return true;
+    }
+};
+
+const markShown = () => {
+    try {
+        sessionStorage.setItem(INTRO_KEY, 'true');
+    } catch {
+        // Best effort only; the failsafe timer below dismisses regardless.
+    }
+};
+
 const IntroAnimation = () => {
     const [show, setShow] = useState(true);
     const [remove, setRemove] = useState(false);
+    // Gated so CSS keyframe timelines start in the same commit as the JS
+    // dismiss timers. Without this, on a slow cold start the server HTML
+    // paints (and CSS animations run) seconds before hydration finishes,
+    // leaving a frozen-looking splash while timers count from hydration.
+    const [mounted, setMounted] = useState(false);
 
     useEffect(() => {
         // Use a versioned key so user sees the new intro immediately
-        const hasShown = sessionStorage.getItem('introShown_v4');
-        if (hasShown) {
+        if (readShown()) {
             setShow(false);
             setRemove(true);
             return;
         }
 
-        const totalDuration = 4500;
+        // Insert the animated nodes now: their CSS animations start here,
+        // in sync with the timers below.
+        setMounted(true);
 
-        const timer = setTimeout(() => {
+        const hideTimer = setTimeout(() => {
             setShow(false);
-            setTimeout(() => setRemove(true), 1000); // Allow fade out time
-            sessionStorage.setItem('introShown_v4', 'true');
-        }, totalDuration);
+            markShown();
+        }, INTRO_DURATION_MS);
+        // Failsafe: the overlay must come off the screen even if anything
+        // above misbehaves (backgrounded tab, animation stall, prev bug).
+        const removeTimer = setTimeout(() => {
+            setShow(false);
+            setRemove(true);
+            markShown();
+        }, INTRO_DURATION_MS + FADE_DURATION_MS + 1500);
 
-        return () => clearTimeout(timer);
+        return () => {
+            clearTimeout(hideTimer);
+            clearTimeout(removeTimer);
+        };
     }, []);
 
     if (remove) return null;
@@ -68,7 +105,9 @@ const IntroAnimation = () => {
                 }
             `}</style>
 
-            <div className="intro-container relative flex flex-col items-center">
+            <div className={`${mounted ? 'intro-container' : ''} relative flex flex-col items-center`}>
+                {mounted && (
+                <>
                 <div className="flex items-center gap-4 md:gap-8 mb-4">
                     <div className="flex glow-text">
                         {"CINE".split('').map((char, i) => (
@@ -103,6 +142,8 @@ const IntroAnimation = () => {
                         animationDelay: '1s'
                     }}
                 />
+                </>
+                )}
             </div>
         </div>
     );

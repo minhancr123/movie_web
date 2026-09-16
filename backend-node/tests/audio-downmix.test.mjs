@@ -148,3 +148,29 @@ assert.deepEqual(selectSupersededRemuxes(['a'], 'keep', () => false), []);
 assert.deepEqual(selectSupersededRemuxes([null, undefined, ''], 'keep', () => true), []);
 assert.deepEqual(selectSupersededRemuxes(undefined, 'keep'), [], 'missing input must not throw');
 console.log('ok - superseded remuxes selected without ever stopping the new one');
+
+/* ---------------------------------- superseded-stop grace period bindings */
+
+const {
+  scheduleSupersededStop,
+  cancelScheduledStop,
+  stopRemuxSession,
+} = await import('../services/playback/remuxService.js');
+
+const sleep = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
+
+// Scheduling is idempotent per session: the second call is a no-op.
+assert.equal(scheduleSupersededStop('grace-probe-a', 5000), true);
+assert.equal(scheduleSupersededStop('grace-probe-a', 5000), false);
+// Junk ids never arm a timer.
+assert.equal(scheduleSupersededStop('', 10), false);
+assert.equal(scheduleSupersededStop(null, 10), false);
+// Cancelling twice reports accordingly, and a cancelled timer never fires.
+assert.equal(cancelScheduledStop('grace-probe-a'), true);
+assert.equal(cancelScheduledStop('grace-probe-a'), false);
+assert.equal(cancelScheduledStop('never-scheduled'), false);
+// A fired grace timer stops a live-tracked session; stopping twice is safe.
+assert.equal(scheduleSupersededStop('grace-probe-b', 15), true);
+await sleep(60);
+assert.equal(await stopRemuxSession('grace-probe-b'), false);
+console.log('ok - superseded-stop grace arms once, cancels cleanly, fires safely');

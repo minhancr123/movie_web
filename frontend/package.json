@@ -5,7 +5,7 @@
   "scripts": {
     "dev": "node -e \"require('fs').rmSync('.next',{recursive:true,force:true})\" && next dev",
     "dev:fast": "next dev",
-    "test": "node --test tests/dev-cache-reset.test.mjs tests/audio-enhancer.test.mjs tests/ambilight.test.mjs",
+    "test": "node --test tests/dev-cache-reset.test.mjs tests/audio-enhancer.test.mjs tests/ambilight.test.mjs tests/autoplay.test.mjs tests/intro-route-scope.test.mjs",
     "test:routes": "node --test tests/continue-watching-route.test.mjs",
     "test:dev-cache": "node --test tests/dev-cache-reset.test.mjs",
     "build": "next build",

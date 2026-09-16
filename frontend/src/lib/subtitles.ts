@@ -13,7 +13,35 @@ export interface SubTrack {
   url: string;
   /** False while the background extraction job is still running. */
   ready?: boolean;
+  /**
+   * Where the track came from. 'embedded' tracks are extracted from the
+   * playing file itself, so their timing is exact; anything else is an
+   * online sidecar timed for some (possibly different) release.
+   */
+  source?: string;
 }
+
+/**
+ * True for tracks extracted from the playing file: either an explicit
+ * embedded source, or the backend's `<infohash>:<index>` id shape (the
+ * session-less extraction path mints those without a source field).
+ * Only these have timing guaranteed to match the picture.
+ */
+export const isEmbeddedTrack = (t: { source?: string; id: string }): boolean =>
+  t.source === 'embedded' || /^[0-9a-f]{40}:\d+$/i.test(t.id);
+
+/** Coarse timing-base grouping for bilingual pairing. */
+export const trackSource = (t: { source?: string; id: string }): string =>
+  t.source || (isEmbeddedTrack(t) ? 'embedded' : 'online');
+
+export const isViTrack = (t: { language: string }): boolean =>
+  t.language.toLowerCase().startsWith('vi');
+
+export const isEnTrack = (t: { language: string }): boolean =>
+  t.language.toLowerCase().startsWith('en');
+
+export const isReadyTrack = (t: { ready?: boolean; url: string }): boolean =>
+  t.ready !== false && !!t.url;
 
 const TS = '(\\d{2,}):(\\d{2}):(\\d{2})[.,](\\d{3})';
 const TS_SHORT = '(\\d{2}):(\\d{2})[.,](\\d{3})';

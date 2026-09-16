@@ -10,6 +10,25 @@ import CinemaLayer, { type CinemaMode } from '@/components/CinemaLayer';
 
 /** Mirrors PLAYBACK_STARTUP_BUFFER_SECONDS on the server, for the wait copy. */
 const STARTUP_BUFFER_HINT = 15;
+
+/** Server resolve phases (GET /playback/resolve/:id/stage) in plain words. */
+const RESOLVE_STAGE_LABELS: Record<string, string> = {
+  detail: 'Đang lấy thông tin phim',
+  sources: 'Đang tìm nguồn chiếu',
+  rank: 'Đang chấm điểm nguồn',
+  reuse: 'Đang kiểm tra phiên cũ',
+  prepare: 'Đang chuẩn bị link TorBox',
+  link: 'Đang lấy link tải',
+  probe: 'Đang đọc thông tin file',
+  remux: 'Đang khởi động luồng',
+  buffer: 'Đang đệm những giây đầu',
+  warm: 'Đang đệm thêm',
+};
+
+const formatResolveStage = (stage: string, detail: string): string => {
+  const base = RESOLVE_STAGE_LABELS[stage] || 'Đang chuẩn bị nguồn phát';
+  return detail ? `${base} (${detail})` : base;
+};
 import { providerAPI, playbackAPI } from '@/lib/api';
 import { detectCapabilities } from '@/lib/capabilities';
 import type { PlayerEpisode } from '@/lib/catalog';
@@ -110,6 +129,13 @@ export default function PlaybackSection({
    * the wait without pretending to know a percentage it cannot measure.
    */
   const [resolveElapsed, setResolveElapsed] = useState(0);
+  /**
+   * Live phase reported by the server for the current resolve
+   * (GET /playback/resolve/:id/stage). Replaces the old elapsed-time step
+   * estimates with measurement: TorBox prepare, link, probe, remux, buffer.
+   */
+  const [resolveStageLabel, setResolveStageLabel] = useState('');
+  const stagePollRef = useRef<NodeJS.Timeout | null>(null);
   const [cinemaMode, setCinemaMode] = useState<CinemaMode>('off');
   const [videoEl, setVideoEl] = useState<HTMLVideoElement | null>(null);
   const [candidate, setCandidate] = useState<SourceCandidate | null>(null);
@@ -124,11 +150,14 @@ export default function PlaybackSection({
 
   const pickAudio = useCallback(
     (index: number) => {
+      if (index === activeAudioIndexRef.current) return;
       setActiveAudioIndex(index);
       activeAudioIndexRef.current = index;
-      // Same release, different audio: the player reloads the new stream and
-      // resumes from the saved position via history.
-      void startPlaybackResolutionRef.current(activeTokenRef.current, index);
+      // Same release, different audio: keep the current stream on screen while
+      // the new track's session warms up, then reload and resume via history.
+      void startPlaybackResolutionRef.current(activeTokenRef.current, index, {
+        preservePlayer: true,
+      });
     },
     []
   );
@@ -142,7 +171,11 @@ export default function PlaybackSection({
   // Latest-value mirrors so stable callbacks never close over stale state.
   const activeTokenRef = useRef<string>('');
   const startPlaybackResolutionRef = useRef<
-    (sourceToken?: string, audioIndex?: number) => Promise<void>
+    (
+      sourceToken?: string,
+      audioIndex?: number,
+      options?: { preservePlayer?: boolean },
+    ) => Promise<void>
   >(async () => {});
   const loadSourcesRef = useRef<() => Promise<void>>(async () => {});
 
@@ -166,11 +199,20 @@ export default function PlaybackSection({
     recoveryInFlightRef.current = true;
     setErrorMessage(`Luồng bị gián đoạn, đang tự khôi phục (${recoveryAttemptsRef.current}/2)…`);
     void startPlaybackResolutionRef
-      .current(activeTokenRef.current, activeAudioIndexRef.current ?? undefined)
+      .current(
+        activeTokenRef.current,
+        activeAudioIndexRef.current ?? undefined,
+        { preservePlayer: true },
+      )
       .finally(() => {
         recoveryInFlightRef.current = false;
       });
   }, [selectedSourceKey]);
+
+  // Isolated stalls must not accumulate: steady progress clears the counter.
+  const handlePlaybackProgress = useCallback(() => {
+    if (recoveryAttemptsRef.current !== 0) recoveryAttemptsRef.current = 0;
+  }, []);
 
   const clearPoll = () => {
     if (pollTimerRef.current) {
@@ -179,8 +221,18 @@ export default function PlaybackSection({
     }
   };
 
+  const clearStagePoll = () => {
+    if (stagePollRef.current) {
+      clearInterval(stagePollRef.current);
+      stagePollRef.current = null;
+    }
+  };
+
   useEffect(() => {
-    return () => clearPoll();
+    return () => {
+      clearPoll();
+      clearStagePoll();
+    };
   }, []);
 
   // Pro toolbar PiP: drives the <video> rendered by VideoPlayer below.
@@ -209,8 +261,19 @@ export default function PlaybackSection({
    */
   const resolveInFlightRef = useRef<string | null>(null);
 
-  const startPlaybackResolution = useCallback(async (sourceToken?: string, audioIndex?: number) => {
-    const rememberedToken = typeof window !== 'undefined' ? localStorage.getItem(selectedSourceKey) || '' : '';
+  const startPlaybackResolution = useCallback(async (
+    sourceToken?: string,
+    audioIndex?: number,
+    options?: { preservePlayer?: boolean },
+  ) => {
+    // Storage can throw when blocked: never let it reject the resolve.
+    let rememberedToken = '';
+    try {
+      rememberedToken =
+        typeof window !== 'undefined' ? localStorage.getItem(selectedSourceKey) || '' : '';
+    } catch {
+      rememberedToken = '';
+    }
     const resolvedSourceToken = sourceToken || rememberedToken || '';
     const resolvedAudioIndex =
       audioIndex !== undefined ? audioIndex : activeAudioIndexRef.current;
@@ -220,9 +283,40 @@ export default function PlaybackSection({
     resolveInFlightRef.current = requestKey;
 
     clearPoll();
+    clearStagePoll();
     setErrorMessage('');
     setResolveElapsed(0);
-    setPlaybackStatus('resolving');
+    setResolveStageLabel('');
+    const preservePlayer = options?.preservePlayer === true && Boolean(playUrlRef.current);
+    if (!preservePlayer) setPlaybackStatus('resolving');
+
+    // Client progress key so the server can report its live phase while the
+    // resolve HTTP call stays open (up to minutes on a slow upstream).
+    const resolveId = (() => {
+      try {
+        if (typeof crypto !== 'undefined' && typeof crypto.randomUUID === 'function') {
+          return crypto.randomUUID();
+        }
+      } catch {
+        // Fall through to the timestamp fallback below.
+      }
+      return `r-${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 10)}`;
+    })();
+    const pollResolveStage = async () => {
+      try {
+        const r = await playbackAPI.getResolveStage(resolveId);
+        const st = r.data?.data;
+        if (st?.stage) setResolveStageLabel(formatResolveStage(st.stage, st.detail || ''));
+      } catch {
+        // 404 = unknown/expired id: keep the last label, the resolve HTTP
+        // response itself is still coming and carries the real outcome.
+      }
+    };
+    void pollResolveStage();
+    // Local handle: the 4xx-retry path below re-enters this function, and the
+    // outer finally must not kill the retry's poll.
+    const stageTimer = setInterval(pollResolveStage, 1500);
+    stagePollRef.current = stageTimer;
 
     try {
       const caps = detectCapabilities();
@@ -232,6 +326,7 @@ export default function PlaybackSection({
         season: season ?? undefined,
         episode: episode ?? undefined,
         capabilities: caps,
+        resolveId,
         ...(resolvedSourceToken ? { sourceToken: resolvedSourceToken } : {}),
         ...(resolvedAudioIndex !== null && resolvedAudioIndex !== undefined
           ? { audioIndex: resolvedAudioIndex }
@@ -267,13 +362,73 @@ export default function PlaybackSection({
           ? data.playlistUrl
           : `${backendBase.replace(/\/api\/?$/, '')}${data.playlistUrl}`;
 
-        applyPlayUrl(absoluteUrl);
-        setFileName(data.fileName || '');
-        setPlayMode('remux');
-        setDurationSeconds(typeof data.durationSeconds === 'number' ? data.durationSeconds : null);
-        setPlaybackStatus('ready');
+        // Still filling its head start: hold the first frame until the buffer
+        // reaches the startup target instead of playing 8s then stalling at
+        // ~0:28 waiting for segments. The session poll reports real buffered
+        // seconds so the wait shows progress, not a frozen caption.
+        if (data.warmingUp === true && data.sessionId) {
+          const warmId = data.sessionId;
+          const warmUrl = absoluteUrl;
+          const warmTarget =
+            typeof data.startupTargetSeconds === 'number' && data.startupTargetSeconds > 0
+              ? data.startupTargetSeconds
+              : 15;
+          if (!preservePlayer) setPlaybackStatus('downloading');
+          setDownloadProgress(0);
+          setPlaybackSessionId(typeof data.sessionId === 'string' ? data.sessionId : '');
+          setFileName(data.fileName || '');
+          setPlayMode('remux');
+          setDurationSeconds(typeof data.durationSeconds === 'number' ? data.durationSeconds : null);
+          let warmPolls = 0;
+          let warmFails = 0;
+          const finishWarm = () => {
+            clearPoll();
+            applyPlayUrl(warmUrl);
+            setPlaybackStatus('ready');
+          };
+          pollTimerRef.current = setInterval(async () => {
+            warmPolls += 1;
+            try {
+              const pollRes = await playbackAPI.getSession(warmId);
+              const sessionData = pollRes.data?.data;
+              warmFails = 0;
+              if (!sessionData) return;
+              const buffered =
+                typeof sessionData.bufferedSeconds === 'number'
+                  ? sessionData.bufferedSeconds
+                  : null;
+              if (typeof sessionData.progress === 'number') {
+                setDownloadProgress(sessionData.progress);
+              } else if (buffered !== null) {
+                setDownloadProgress(Math.min(99, Math.round((buffered / warmTarget) * 100)));
+              }
+              if (sessionData.ready === true) {
+                finishWarm();
+                return;
+              }
+              if (sessionData.writerAlive === false) {
+                // A partial EVENT playlist cannot finish playing after its
+                // writer dies. Resolving again replaces the dead remux instead
+                // of handing VideoPlayer a stream that is guaranteed to freeze.
+                clearPoll();
+                recoverPlayback('Luồng remux đã ngừng tạo dữ liệu.');
+                return;
+              }
+              if (warmPolls >= 30) finishWarm();
+            } catch {
+              warmFails += 1;
+              if (warmFails >= 5) finishWarm();
+            }
+          }, 2000);
+        } else {
+          applyPlayUrl(absoluteUrl);
+          setFileName(data.fileName || '');
+          setPlayMode('remux');
+          setDurationSeconds(typeof data.durationSeconds === 'number' ? data.durationSeconds : null);
+          setPlaybackStatus('ready');
+        }
       } else if (data.mode === 'downloading' || data.mode === 'preparing') {
-        setPlaybackStatus('downloading');
+        if (!preservePlayer) setPlaybackStatus('downloading');
         setDownloadProgress(data.progress || 0);
 
         if (data.sessionId) {
@@ -308,7 +463,7 @@ export default function PlaybackSection({
                   sessionData.mode === 'direct'
                 ) {
                   clearPoll();
-                  startPlaybackResolution(sourceToken);
+                  startPlaybackResolution(sourceToken, undefined, options);
                 }
               }
             } catch (pollErr: any) {
@@ -341,7 +496,7 @@ export default function PlaybackSection({
         // Released before the retry so the follow-up is never mistaken for a
         // duplicate of the request that just failed.
         resolveInFlightRef.current = null;
-        startPlaybackResolution('');
+        startPlaybackResolution('', undefined, options);
         return;
       }
 
@@ -360,9 +515,10 @@ export default function PlaybackSection({
         setErrorMessage(`${message}${hint}`);
       }
     } finally {
+      if (stagePollRef.current === stageTimer) clearStagePoll();
       if (resolveInFlightRef.current === requestKey) resolveInFlightRef.current = null;
     }
-  }, [type, tmdbId, season, episode, selectedSourceKey]);
+  }, [type, tmdbId, season, episode, selectedSourceKey, recoverPlayback]);
 
   // Keep the stable mirrors in sync after every render.
   startPlaybackResolutionRef.current = startPlaybackResolution;
@@ -517,24 +673,14 @@ export default function PlaybackSection({
           Lần đầu mỗi phim mất khoảng 10–20 giây: tìm nguồn, kiểm codec, rồi dựng
           sẵn {STARTUP_BUFFER_HINT}s đệm. Những lần sau gần như tức thì.
         </p>
-        {/* Each step lights up as the elapsed time passes the point it usually
-            starts. Honest about being an estimate — the server does not report
-            its stage, so this is a guide, not a measurement. */}
+        {/* Live server stage: measurement, not the old elapsed-time guess. */}
         <div className="flex items-center gap-2 text-[10px] font-mono">
-          {[
-            { at: 0, label: 'tìm nguồn' },
-            { at: 5, label: 'kiểm codec' },
-            { at: 9, label: 'dựng đệm' },
-          ].map((step) => (
-            <span
-              key={step.label}
-              className={`px-2 py-0.5 rounded border transition-colors ${resolveElapsed >= step.at
-                ? 'border-amber-primary/60 text-amber-gold bg-amber-primary/10'
-                : 'border-white/10 text-cinema-muted'}`}
-            >
-              {step.label}
-            </span>
-          ))}
+          <span
+            key={resolveStageLabel}
+            className="px-2 py-0.5 rounded border border-amber-primary/60 text-amber-gold bg-amber-primary/10 animate-pulse"
+          >
+            {resolveStageLabel || 'Đang bắt đầu…'}
+          </span>
         </div>
         {resolveElapsed > 35 && (
           <p className="text-[10px] text-cinema-muted mt-3">
@@ -710,12 +856,14 @@ export default function PlaybackSection({
       <div className="w-full space-y-2">
         <div className="relative">
           <CinemaLayer mode={cinemaMode} video={videoEl} />
-          <div className="relative w-full rounded-xl overflow-hidden shadow-2xl bg-black border border-white/5 min-h-[70vh]">
+          <div className="relative aspect-video w-full rounded-xl overflow-hidden shadow-2xl bg-black border border-white/5">
           <VideoPlayer
             onCinemaChange={setCinemaMode}
             onVideoReady={setVideoEl}
             src={playUrl}
             reloadKey={reloadKey}
+            onPlaybackFailure={recoverPlayback}
+            onPlaybackProgress={handlePlaybackProgress}
             movie={movieData}
             episode={episodeData}
             authToken={(session?.user as any)?.accessToken}
@@ -728,7 +876,6 @@ export default function PlaybackSection({
               playbackSessionId,
               ...(activeToken ? { sourceToken: activeToken } : {}),
             }}
-            onPlaybackFailure={recoverPlayback}
             onPickAudio={pickAudio}
             activeAudioIndex={activeAudioIndex}
           />
@@ -968,5 +1115,12 @@ export default function PlaybackSection({
     );
   }
 
-  return null;
+  // Idle and ready-without-URL are transient (first mount, strict-mode
+  // re-resolve): never leave a blank hole in the page.
+  return (
+    <div className="aspect-video w-full rounded-xl bg-surface-dark flex flex-col items-center justify-center border border-white/5 p-6 text-center">
+      <Loader2 className="w-10 h-10 text-primary animate-spin mb-3" />
+      <p className="text-cinema-muted text-sm font-medium">Đang tải trình phát…</p>
+    </div>
+  );
 }

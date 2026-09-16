@@ -16,9 +16,28 @@ if (typeof remux.shouldReuseRemuxSession !== 'function') {
     playlistComplete: false,
     hasLiveSession: true,
     liveExitCode: 1,
+    playlistFresh: false,
     playlistGrowing: false,
   });
   if (reusable !== false) failures.push('dead-remux-health-check');
+
+  const freshLiveWriter = remux.shouldReuseRemuxSession({
+    playlistComplete: false,
+    hasLiveSession: true,
+    liveExitCode: undefined,
+    playlistFresh: true,
+    playlistGrowing: false,
+  });
+  const hungLiveWriter = remux.shouldReuseRemuxSession({
+    playlistComplete: false,
+    hasLiveSession: true,
+    liveExitCode: undefined,
+    playlistFresh: false,
+    playlistGrowing: false,
+  });
+  if (freshLiveWriter !== true || hungLiveWriter !== false) {
+    failures.push('hung-live-remux-health-check');
+  }
 }
 
 if (typeof addons.normalizeSubtitlePayload !== 'function') {
@@ -51,6 +70,10 @@ const sectionSource = fs.readFileSync(
   new URL('../../frontend/src/components/PlaybackSection.tsx', import.meta.url),
   'utf8',
 );
+const routeLoadingUrl = new URL(
+  '../../frontend/src/app/xem-phim/[type]/[tmdbId]/[slug]/loading.tsx',
+  import.meta.url,
+);
 if (
   /state\.duration < 30/.test(playbackControllerSource) ||
   !/const PLAYLIST_MIN_SECONDS = Math\.min\(8, STARTUP_BUFFER_SECONDS\)/.test(playbackControllerSource) ||
@@ -67,6 +90,13 @@ if (
 ) {
   failures.push('player-continuous-stall-watchdog');
 }
+if (
+  !/LOCAL_STALL_RECOVERY_MS/.test(playerSource) ||
+  !/hls\.startLoad\(video\.currentTime\s*\|\|\s*-1\)/.test(playerSource) ||
+  !/armStallTimer\(ESCALATED_STALL_TIMEOUT_MS\)/.test(playerSource)
+) {
+  failures.push('player-local-stall-recovery');
+}
 if (!/externalOnly:\s*!allowEmbedded/.test(playerSource)) {
   failures.push('subtitle-background-prefetch');
 }
@@ -81,11 +111,69 @@ if (
 ) {
   failures.push('player-recovery-forces-reload');
 }
+if (
+  !/preservePlayer\?: boolean/.test(sectionSource) ||
+  !/startPlaybackResolutionRef[\s\S]{0,300}preservePlayer:\s*true/.test(sectionSource)
+) {
+  failures.push('recovery-keeps-player-mounted');
+}
+if (
+  /min-h-\[70vh\]/.test(sectionSource) ||
+  !/Đang tải trình phát/.test(sectionSource)
+) {
+  failures.push('first-open-player-placeholder');
+}
+// The watch page is an async Server Component. Its client-side placeholder
+// cannot mount until catalog data resolves, so the segment itself needs a
+// loading boundary or first navigation shows only the page background.
+if (!fs.existsSync(routeLoadingUrl)) {
+  failures.push('route-level-player-skeleton');
+} else {
+  const routeLoadingSource = fs.readFileSync(routeLoadingUrl, 'utf8');
+  if (
+    !/aspect-video/.test(routeLoadingSource) ||
+    !/animate-pulse/.test(routeLoadingSource) ||
+    !/Đang mở rạp phim/.test(routeLoadingSource)
+  ) {
+    failures.push('route-level-player-skeleton');
+  }
+}
+
+const getSessionSource = playbackControllerSource.slice(
+  playbackControllerSource.indexOf('export const getPlaybackSession'),
+  playbackControllerSource.indexOf('/* ------------------------------------------------------------ HLS'),
+);
+const serveHlsSource = playbackControllerSource.slice(
+  playbackControllerSource.indexOf('export const serveHlsAsset'),
+  playbackControllerSource.indexOf('export default'),
+);
+if (
+  !/playlistFresh:\s*ageMs <= SESSION_STALE_MS/.test(getSessionSource) ||
+  !/writerAlive:\s*writerHealthy/.test(getSessionSource) ||
+  !/await stopRemuxSession\(session\.sessionId\)/.test(getSessionSource)
+) {
+  failures.push('warmup-kills-hung-writer');
+}
+if (
+  !/playlistFresh:\s*ageMs <= SESSION_STALE_MS/.test(serveHlsSource) ||
+  !/await stopRemuxSession\(sessionId\)/.test(serveHlsSource)
+) {
+  failures.push('manifest-kills-hung-writer');
+}
+const warmupWriterDeadBlock = sectionSource.match(
+  /if \(sessionData\.writerAlive === false\) \{([\s\S]{0,400}?)\n\s*\}/,
+)?.[1] || '';
+if (
+  !/recoverPlayback\(/.test(warmupWriterDeadBlock) ||
+  /finishWarm\(\)/.test(warmupWriterDeadBlock)
+) {
+  failures.push('warmup-reresolves-dead-writer');
+}
 
 if (failures.length) {
   console.error(`FAIL checks=${failures.join(',')}`);
   process.exit(1);
 }
 
-console.log('PASS checks=dead-remux-health-check,external-subtitle-fast-path,hls-startup-threshold-invariant,player-stall-watchdog,player-continuous-stall-watchdog,player-recovery-forces-reload,subtitle-background-prefetch');
+console.log('PASS checks=dead-remux-health-check,hung-live-remux-health-check,external-subtitle-fast-path,hls-startup-threshold-invariant,player-stall-watchdog,player-continuous-stall-watchdog,player-local-stall-recovery,player-recovery-forces-reload,recovery-keeps-player-mounted,first-open-player-placeholder,route-level-player-skeleton,warmup-kills-hung-writer,manifest-kills-hung-writer,warmup-reresolves-dead-writer,subtitle-background-prefetch');
 process.exit(0);
