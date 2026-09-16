@@ -2,7 +2,7 @@
 
 import Link from 'next/link';
 import Image from 'next/image';
-import { Search, Menu, X, ChevronDown, Loader2, PlayCircle, Bell, User, Mic, History, Trash2 } from 'lucide-react';
+import { Search, Menu, X, ChevronDown, Loader2, PlayCircle, Bell, User, Mic, History, Trash2, Film } from 'lucide-react';
 import { useState, useEffect, useMemo, useRef } from 'react';
 import { useRouter, usePathname } from 'next/navigation';
 import { useSearchMovies } from '@/hooks/useSearchMovies';
@@ -40,6 +40,19 @@ const GENRES = [
     { name: 'Gay Cấn', id: 53 },
     { name: 'Chiến Tranh', id: 10752 },
 ];
+
+// Poster thumbnail with graceful fallback. TMDB has no artwork for obscure
+// titles (backend sends poster: ''), and next/image renders a broken-image
+// icon for an empty src — the exact "vỡ ảnh" in the dropdown. Show a neutral
+// tile instead; the wrapper already provides size/border.
+const SearchPosterArt = ({ src, title, imgClassName }: { src: string; title: string; imgClassName: string }) =>
+    src ? (
+        <Image src={src} alt={title} fill className={imgClassName} />
+    ) : (
+        <div className="flex h-full w-full items-center justify-center bg-white/5" role="img" aria-label={title}>
+            <Film size={20} className="text-cinema-subtle" />
+        </div>
+    );
 
 const Header = () => {
     const [isScrolled, setIsScrolled] = useState(false);
@@ -345,11 +358,10 @@ const Header = () => {
                                                 >
                                                     <div className="absolute inset-0 bg-gradient-to-r from-transparent via-transparent to-amber-primary/10 opacity-0 group-hover:opacity-100 transition-opacity" />
                                                     <div className="relative w-14 h-20 rounded-xl overflow-hidden shrink-0 shadow-lg border border-white/10 group-hover:border-amber-primary/40 transition-colors">
-                                                        <Image
+                                                        <SearchPosterArt
                                                             src={movie.poster}
-                                                            alt={movie.title}
-                                                            fill
-                                                            className="object-cover group-hover:scale-110 transition-transform duration-700"
+                                                            title={movie.title}
+                                                            imgClassName="object-cover group-hover:scale-110 transition-transform duration-700"
                                                         />
                                                     </div>
                                                     <div className="flex-1 min-w-0 z-10">
@@ -522,11 +534,10 @@ const Header = () => {
                                                 onClick={() => setIsMobileSearchVisible(false)}
                                             >
                                                 <div className="relative w-10 h-14 rounded-lg overflow-hidden shrink-0 border border-white/10">
-                                                    <Image
+                                                    <SearchPosterArt
                                                         src={movie.poster}
-                                                        alt={movie.title}
-                                                        fill
-                                                        className="object-cover"
+                                                        title={movie.title}
+                                                        imgClassName="object-cover"
                                                     />
                                                 </div>
                                                 <div className="flex-1 min-w-0">
