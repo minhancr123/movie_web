@@ -45,16 +45,16 @@ export default function CatalogRow({ title, items, path }: CatalogRowProps) {
       <div className="spatial-stage relative">
         <button
           onClick={() => scroll('left')}
-          className="absolute -left-4 top-1/2 -translate-y-1/2 z-20 p-3 glass-panel hover:bg-amber-primary text-cinema-text hover:text-black rounded-full opacity-0 group-hover/row:opacity-100 transition-all duration-300 hover:shadow-amber-glow hidden md:block"
+          className="absolute -left-4 top-1/2 -translate-y-1/2 z-20 p-2 md:p-3 glass-panel hover:bg-amber-primary text-cinema-text hover:text-black rounded-full opacity-0 group-hover/row:opacity-100 transition-all duration-300 hover:shadow-amber-glow md:block"
           aria-label="Cuộn sang trái"
         >
-          <ChevronLeft size={24} />
+          <ChevronLeft size={20} className="md:w-6 md:h-6" />
         </button>
 
         <div
           ref={rowRef}
-          className="flex gap-4 md:gap-6 overflow-x-auto pb-4 pt-2 scrollbar-none snap-x snap-mandatory px-1"
-          style={{ scrollbarWidth: 'none', msOverflowStyle: 'none' }}
+          className="flex gap-4 md:gap-6 overflow-x-auto pb-4 pt-2 scrollbar-none snap-x snap-mandatory px-1 touch-pan-x"
+          style={{ scrollbarWidth: 'none', msOverflowStyle: 'none', WebkitOverflowScrolling: 'touch' }}
         >
           {items.map((item) => (
             <div
@@ -68,10 +68,10 @@ export default function CatalogRow({ title, items, path }: CatalogRowProps) {
 
         <button
           onClick={() => scroll('right')}
-          className="absolute -right-4 top-1/2 -translate-y-1/2 z-20 p-3 glass-panel hover:bg-amber-primary text-cinema-text hover:text-black rounded-full opacity-0 group-hover/row:opacity-100 transition-all duration-300 hover:shadow-amber-glow hidden md:block"
+          className="absolute -right-4 top-1/2 -translate-y-1/2 z-20 p-2 md:p-3 glass-panel hover:bg-amber-primary text-cinema-text hover:text-black rounded-full opacity-0 group-hover/row:opacity-100 transition-all duration-300 hover:shadow-amber-glow md:block"
           aria-label="Cuộn sang phải"
         >
-          <ChevronRight size={24} />
+          <ChevronRight size={20} className="md:w-6 md:h-6" />
         </button>
       </div>
     </div>

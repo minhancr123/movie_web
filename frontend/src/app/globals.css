@@ -441,6 +441,15 @@ img {
   background: radial-gradient(circle at 32% 30%, #ffffff 0%, #fde68a 40%, #f59e0b 75%, #b45309 100%);
   box-shadow: 0 0 10px rgba(245, 158, 11, 0.9);
   cursor: pointer;
+  transition: transform 0.15s ease;
+}
+
+.liquid-range::-webkit-slider-thumb:hover {
+  transform: scale(1.2);
+}
+
+.liquid-range:active::-webkit-slider-thumb {
+  transform: scale(1.35);
 }
 
 .liquid-range::-moz-range-track {
@@ -463,6 +472,15 @@ img {
   background: radial-gradient(circle at 32% 30%, #ffffff 0%, #fde68a 40%, #f59e0b 75%, #b45309 100%);
   box-shadow: 0 0 10px rgba(245, 158, 11, 0.9);
   cursor: pointer;
+  transition: transform 0.15s ease;
+}
+
+.liquid-range::-moz-range-thumb:hover {
+  transform: scale(1.2);
+}
+
+.liquid-range:active::-moz-range-thumb {
+  transform: scale(1.35);
 }
 
 @media (prefers-reduced-motion: reduce) {

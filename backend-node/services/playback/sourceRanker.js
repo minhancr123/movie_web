@@ -203,8 +203,6 @@ export const matchesTitle = (text, expectedTitles = [], expectedYear = null) => 
     }
   }
 
-  // 0.7 tolerates a missing subtitle word ("Brand New Day" vs "Brand New")
-  // while still rejecting an entirely different film.
   return { matched: bestRatio >= 0.7 && !yearConflict, ratio: bestRatio, yearConflict };
 };
 
@@ -297,7 +295,7 @@ const SOURCE_SCORE = {
  * rule in remuxService.planCodecTranscode — software transcode above 1080p
  * never reaches realtime, so those stay rejected.
  */
-export const scoreCandidate = (candidate, caps, { runtimeMinutes = null, videoTranscode = null } = {}) => {
+export const scoreCandidate = (candidate, caps, { runtimeMinutes = null, videoTranscode = null, expectedTitles = [] } = {}) => {
   const reasons = [];
   let score = 0;
 
@@ -499,7 +497,7 @@ export const rankCandidates = (
   const ranked = (candidates || [])
     .map((candidate) => {
       const parsed = parseCandidate(candidate, { expectedTitles, expectedYear });
-      const { score, playable, reasons } = scoreCandidate(parsed, caps, { runtimeMinutes, videoTranscode });
+      const { score, playable, reasons } = scoreCandidate(parsed, caps, { runtimeMinutes, videoTranscode, expectedTitles });
       return { ...parsed, score, playable, reasons };
     })
     .sort((a, b) => {

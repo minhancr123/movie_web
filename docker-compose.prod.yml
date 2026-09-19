@@ -36,6 +36,32 @@ services:
       - FRONTEND_URL=${FRONTEND_URL}
       - REDIS_URL=redis://redis:6379
       - JOB_QUEUE_NAME=movieweb-jobs
+      # --- Catalog ---
+      - TMDB_API_KEY=${TMDB_API_KEY}
+      - TMDB_READ_TOKEN=${TMDB_READ_TOKEN}
+      # --- Playback sources ---
+      - TORBOX_API_KEY=${TORBOX_API_KEY}
+      - TOKEN_ENCRYPTION_KEYS=${TOKEN_ENCRYPTION_KEYS}
+      - STREMIO_ADDONS=${STREMIO_ADDONS}
+      - STREMIO_SUBTITLE_ADDONS=${STREMIO_SUBTITLE_ADDONS}
+      - OPENSUBTITLES_API_KEY=${OPENSUBTITLES_API_KEY:-}
+      # --- Transcode pipeline ---
+      # Must point at the mounted volume below, or renditions land in the
+      # container's own layer: lost on every restart and filling the overlay
+      # until Docker itself runs out of room.
+      - TRANSCODE_ROOT=/data/transcodes
+      - TRANSCODE_CACHE_MAX_GB=${TRANSCODE_CACHE_MAX_GB:-60}
+      - RENDITIONS_MAX_GB=${RENDITIONS_MAX_GB:-60}
+      # CPU-only box: one 4K HEVC->AVC transcode costs ~54s of CPU per 60s of
+      # video, so two viewers on an undecodable release would stall everyone.
+      - VIDEO_TRANSCODE_FALLBACK=${VIDEO_TRANSCODE_FALLBACK:-never}
+      # Ceiling on NEW writers. Joining a running session, or watching a
+      # finished rendition, costs no slot.
+      - REMUX_MAX_WRITERS=${REMUX_MAX_WRITERS:-3}
+      # Behind Caddy/nginx. Wrong here and every viewer shares one rate limit.
+      - TRUST_PROXY=${TRUST_PROXY:-1}
+    volumes:
+      - transcodes:/data/transcodes
     networks:
       - movieweb-network
     depends_on:
@@ -82,6 +108,10 @@ services:
 
 volumes:
   redis-data-new:
+    driver: local
+  # Renditions are large and worth keeping across restarts: a film already
+  # remuxed plays instantly and seeks anywhere, instead of rebuilding.
+  transcodes:
     driver: local
 
 networks:

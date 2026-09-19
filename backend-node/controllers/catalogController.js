@@ -1,6 +1,7 @@
 import { cached, CACHE_TTL } from '../config/redis.js';
 import { isMediaType } from '../services/contentRef.js';
 import * as tmdb from '../services/tmdb.js';
+import { getPersonalizedRecommendations } from '../services/recommendations.js';
 
 const fail = (res, status, message) => res.status(status).json({ success: false, message });
 
@@ -106,7 +107,7 @@ export const getDetail = async (req, res) => {
     if (!isMediaType(type)) return fail(res, 400, 'type phải là movie hoặc tv');
     if (!Number.isInteger(tmdbId) || tmdbId <= 0) return fail(res, 400, 'tmdbId không hợp lệ');
 
-    const data = await cached(`catalog:detail:${type}:${tmdbId}`, CACHE_TTL.DETAIL, () =>
+    const data = await cached(`catalog:detail:${type}:${tmdbId}:v2`, CACHE_TTL.DETAIL, () =>
       tmdb.getDetail(type, tmdbId)
     );
 
@@ -114,6 +115,23 @@ export const getDetail = async (req, res) => {
     return res.json({ success: true, data });
   } catch (error) {
     return handleError(res, 'getDetail', error);
+  }
+};
+
+export const getPerson = async (req, res) => {
+  try {
+    const personId = Number(req.params.personId);
+
+    if (!Number.isInteger(personId) || personId <= 0) return fail(res, 400, 'personId không hợp lệ');
+
+    const data = await cached(`catalog:person:${personId}:v2`, CACHE_TTL.DETAIL, () =>
+      tmdb.getPerson(personId)
+    );
+
+    if (!data) return fail(res, 404, 'Không tìm thấy diễn viên');
+    return res.json({ success: true, data });
+  } catch (error) {
+    return handleError(res, 'getPerson', error);
   }
 };
 
@@ -133,5 +151,19 @@ export const getSeason = async (req, res) => {
     return res.json({ success: true, data });
   } catch (error) {
     return handleError(res, 'getSeason', error);
+  }
+};
+
+export const getRecommendations = async (req, res) => {
+  try {
+    const userId = req.user?.userId;
+    const { type, tmdbId } = req.query;
+
+    // Nếu có type và tmdbId truyền vào, lấy gợi ý dựa trên phim đó
+    // Nếu không, lấy gợi ý dựa trên lịch sử xem của user
+    const data = await getPersonalizedRecommendations(userId, type, tmdbId);
+    return res.json({ success: true, data });
+  } catch (error) {
+    return handleError(res, 'getRecommendations', error);
   }
 };

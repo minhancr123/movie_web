@@ -3,6 +3,7 @@ import { redirect } from 'next/navigation';
 import { Search } from 'lucide-react';
 import { searchCatalog } from '@/lib/catalog';
 import CatalogCard from '@/components/CatalogCard';
+import MovieRequestTrigger from '@/components/MovieRequestTrigger';
 
 interface SearchPageProps {
   searchParams: { keyword?: string; page?: string };
@@ -53,11 +54,17 @@ export default async function SearchPage({ searchParams }: SearchPageProps) {
       </form>
 
       {keyword && (
-        <p className="mb-5 text-cinema-subtle">
-          {pagination.totalItems > 0
-            ? `${pagination.totalItems.toLocaleString()} kết quả cho “${keyword}”`
-            : `Không tìm thấy phim nào cho “${keyword}”`}
-        </p>
+        <>
+          <p className="mb-5 text-cinema-subtle">
+            {pagination.totalItems > 0
+              ? `${pagination.totalItems.toLocaleString()} kết quả cho “${keyword}”`
+              : `Không tìm thấy phim nào cho “${keyword}”`}
+          </p>
+          
+          {pagination.totalItems === 0 && (
+            <MovieRequestTrigger keyword={keyword} />
+          )}
+        </>
       )}
 
       {items.length > 0 && (

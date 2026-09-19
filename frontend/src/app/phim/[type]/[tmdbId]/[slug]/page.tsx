@@ -11,6 +11,7 @@ import {
   type MediaType,
 } from '@/lib/catalog';
 import SaveButton from '@/components/SaveButton';
+import PrewarmWatchLink from '@/components/PrewarmWatchLink';
 import ViewCounter from '@/components/ViewCounter';
 import CommentsSection from '@/components/CommentsSection';
 
@@ -119,7 +120,11 @@ export default async function CatalogDetailPage({ params, searchParams }: PagePa
           )}
 
           <div className="mt-4 flex flex-wrap items-center gap-3">
-            <Link
+            <PrewarmWatchLink
+              type={detail.mediaType}
+              tmdbId={detail.tmdbId}
+              season={season?.seasonNumber ?? null}
+              episode={firstEpisode?.episodeNumber ?? null}
               href={watchHref(detail, season?.seasonNumber, firstEpisode?.episodeNumber)}
               className="group/btn flex items-center gap-2 rounded-full bg-amber-primary px-6 py-3 font-mono text-label-lg uppercase text-surface-dark shadow-amber-button transition-all hover:-translate-y-1 hover:bg-amber-gold"
             >
@@ -127,7 +132,7 @@ export default async function CatalogDetailPage({ params, searchParams }: PagePa
                 <Play fill="currentColor" className="h-4 w-4 text-amber-gold" />
               </div>
               Xem ngay
-            </Link>
+            </PrewarmWatchLink>
             <SaveButton movie={legacyMovie} item={detail} />
             <ViewCounter contentId={detail.contentRef} />
           </div>
@@ -188,17 +193,32 @@ export default async function CatalogDetailPage({ params, searchParams }: PagePa
             <Users size={20} /> Diễn viên
           </h2>
           <div className="flex gap-4 overflow-x-auto pb-3 scrollbar-none">
-            {detail.cast.map((person) => (
-              <div key={`${person.name}-${person.character}`} className="min-w-[110px] text-center">
-                <div className="relative mx-auto h-[110px] w-[110px] overflow-hidden rounded-full bg-surface-container">
-                  {person.profile && (
-                    <Image src={person.profile} alt={person.name} fill sizes="110px" className="object-cover" />
-                  )}
+            {detail.cast.map((person) => {
+              const card = (
+                <>
+                  <div className="relative mx-auto h-[110px] w-[110px] overflow-hidden rounded-full bg-surface-container">
+                    {person.profile && (
+                      <Image src={person.profile} alt={person.name} fill sizes="110px" className="object-cover" />
+                    )}
+                  </div>
+                  <p className="mt-2 line-clamp-1 text-sm font-semibold text-white group-hover:text-amber-gold">{person.name}</p>
+                  <p className="line-clamp-1 text-xs text-cinema-subtle">{person.character}</p>
+                </>
+              );
+              return person.id ? (
+                <Link
+                  key={`${person.name}-${person.character}`}
+                  href={`/dien-vien/${person.id}`}
+                  className="group min-w-[110px] text-center transition-transform hover:-translate-y-1"
+                >
+                  {card}
+                </Link>
+              ) : (
+                <div key={`${person.name}-${person.character}`} className="group min-w-[110px] text-center">
+                  {card}
                 </div>
-                <p className="mt-2 line-clamp-1 text-sm font-semibold text-white">{person.name}</p>
-                <p className="line-clamp-1 text-xs text-cinema-subtle">{person.character}</p>
-              </div>
-            ))}
+              );
+            })}
           </div>
         </section>
       )}

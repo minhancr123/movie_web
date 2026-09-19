@@ -1,0 +1,64 @@
+# Tests. Reusable so deploy.yml runs exactly these before shipping anything.
+name: CI
+
+on:
+  push:
+    branches-ignore: [main, master]
+  pull_request:
+  workflow_call:
+
+jobs:
+  test:
+    name: Tests
+    runs-on: ubuntu-latest
+    timeout-minutes: 25
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: npm
+          cache-dependency-path: |
+            backend-node/package-lock.json
+            frontend/package-lock.json
+
+      # Load-bearing, not a convenience. The playback tests measure real A/V
+      # drift, seek origins and subtitle timing by running ffmpeg over generated
+      # fixtures; without the binary they SKIP, and a green tick would then mean
+      # "the guarantees were not checked" rather than "they hold".
+      - name: Install ffmpeg
+        run: sudo apt-get update && sudo apt-get install -y --no-install-recommends ffmpeg
+
+      - name: Verify ffmpeg is present
+        run: ffmpeg -version | head -1 && ffprobe -version | head -1
+
+      - name: Install backend deps
+        working-directory: backend-node
+        run: npm ci
+
+      - name: Backend tests
+        working-directory: backend-node
+        run: npm test
+
+      # A skipped media test passes silently, so prove they actually ran.
+      - name: Fail if media tests were skipped
+        working-directory: backend-node
+        run: |
+          if npm test 2>&1 | grep -q "skip - ffmpeg/ffprobe not on PATH"; then
+            echo "::error::ffmpeg missing — playback guarantees were not verified"
+            exit 1
+          fi
+
+      - name: Install frontend deps
+        working-directory: frontend
+        run: npm ci
+
+      - name: Frontend tests
+        working-directory: frontend
+        run: npm test
+
+      - name: Frontend production build
+        working-directory: frontend
+        run: npm run build

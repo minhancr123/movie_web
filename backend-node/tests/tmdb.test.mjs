@@ -32,7 +32,7 @@ const responses = {
     poster_path: '/p.jpg', backdrop_path: '/b.jpg', genres: [{ id: 18, name: 'Chính kịch' }],
     external_ids: { imdb_id: 'tt0137523' },
     credits: {
-      cast: [{ name: 'Edward Norton', character: 'The Narrator', profile_path: '/e.jpg' }],
+      cast: [{ id: 819, name: 'Edward Norton', character: 'The Narrator', profile_path: '/e.jpg' }],
       crew: [{ name: 'David Fincher', job: 'Director' }, { name: 'Ai Đó', job: 'Editor' }],
     },
     videos: { results: [{ site: 'YouTube', type: 'Trailer', key: 'abc123' }] },
@@ -44,7 +44,22 @@ const responses = {
       { episode_number: 2, name: 'Tập 2', overview: '', air_date: '2012-04-08', runtime: 54, still_path: null },
     ],
   },
+  '/person/819': {
+    id: 819, name: 'Edward Norton', biography: '', birthday: '1969-08-18', deathday: null,
+    place_of_birth: 'Boston, USA', profile_path: '/n.jpg', known_for_department: 'Acting',
+    combined_credits: {
+      cast: [
+        { id: 550, media_type: 'movie', title: 'Fight Club', character: 'The Narrator', poster_path: '/p.jpg', release_date: '1999-10-15', vote_average: 8.4, popularity: 90 },
+        { id: 1399, media_type: 'tv', name: 'Game of Thrones', character: 'Khách mời', poster_path: null, first_air_date: '2011-04-17', vote_average: 8.4, popularity: 99 },
+        { id: 100, media_type: 'movie', title: null, name: null, popularity: 1 },
+        { id: 101, media_type: 'person', name: 'Ai Đó', popularity: 50 },
+        { id: 102, media_type: 'tv', name: 'Talk Show', popularity: 999, genre_ids: [10767] },
+      ],
+    },
+  },
 };
+
+let personEnglishCalls = 0;
 
 let englishFallbackCalls = 0;
 
@@ -55,6 +70,11 @@ globalThis.fetch = async (url) => {
   if (path === '/movie/550' && searchParams.get('language') === 'en-US') {
     englishFallbackCalls += 1;
     return { ok: true, status: 200, json: async () => ({ ...responses['/movie/550'], overview: 'English overview' }) };
+  }
+
+  if (path === '/person/819' && searchParams.get('language') === 'en-US') {
+    personEnglishCalls += 1;
+    return { ok: true, status: 200, json: async () => ({ ...responses['/person/819'], biography: 'English bio' }) };
   }
 
   const body = responses[path];
@@ -95,6 +115,7 @@ assert.equal(detail.overview, 'English overview', 'empty vi-VN overview falls ba
 assert.equal(englishFallbackCalls, 1, 'fallback fires exactly once');
 assert.deepEqual(detail.directors, ['David Fincher']);
 assert.equal(detail.cast.length, 1);
+assert.equal(detail.cast[0].id, 819, 'cast carries the TMDB person id for the actor page');
 assert.equal(detail.trailerKey, 'abc123');
 assert.equal(detail.runtime, 139);
 assert.equal(detail.seasons, undefined, 'movies carry no seasons');
@@ -110,6 +131,26 @@ assert.equal(season.episodes[1].still, '', 'null still_path yields empty string'
 /* ------------------------------------------------------------- not found */
 const missing = await tmdb.getDetail('movie', 424242);
 assert.equal(missing, null, '404 from TMDB surfaces as null, not a throw');
+
+/* ---------------------------------------------------------------- person */
+const person = await tmdb.getPerson(819);
+
+assert.equal(person.id, 819);
+assert.equal(person.name, 'Edward Norton');
+assert.equal(person.biography, 'English bio', 'empty vi-VN bio falls back to en-US');
+assert.equal(personEnglishCalls, 1, 'person fallback fires exactly once');
+assert.equal(person.birthday, '1969-08-18');
+assert.equal(person.placeOfBirth, 'Boston, USA');
+assert.equal(person.profile, 'https://image.tmdb.org/t/p/h632/n.jpg');
+assert.equal(person.filmography.length, 2, 'untitled and non movie/tv rows dropped');
+assert.equal(person.filmography[0].tmdbId, 1399, 'sorted by popularity desc');
+assert.equal(person.filmography[0].mediaType, 'tv');
+assert.equal(person.filmography[0].poster, '', 'null poster_path yields empty string');
+assert.equal(person.filmography[1].tmdbId, 550);
+assert.equal(person.filmography[1].year, 1999);
+
+assert.equal(await tmdb.getPerson(0), null, 'junk id returns null without fetching');
+assert.equal(await tmdb.getPerson('abc'), null, 'non-numeric id returns null without fetching');
 
 console.log('All TMDB normalizer assertions passed.');
 process.exit(0);

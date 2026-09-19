@@ -1,6 +1,7 @@
 import express from 'express';
 import cors from 'cors';
 import helmet from 'helmet';
+import { parseAllowedOrigins } from './config/cors.js';
 import compression from 'compression';
 import dotenv from 'dotenv';
 import { createServer } from 'http';
@@ -22,6 +23,7 @@ import adminRoutes from './routes/admin.js';
 import catalogRoutes from './routes/catalog.js';
 import providerRoutes from './routes/providers.js';
 import playbackRoutes from './routes/playback.js';
+import movieRequestRoutes from './routes/movieRequests.js';
 import { catalogRateLimit } from './middleware/rateLimit.js';
 
 dotenv.config();
@@ -35,12 +37,13 @@ process.on('unhandledRejection', (reason) => {
 
 const app = express();
 const httpServer = createServer(app);
-const allowedOrigins = [
-  'http://localhost:3000',
-  'http://localhost:3001',
-  'https://movie-web-green-sigma.vercel.app',
-  'https://movie-web-frontend.fly.dev'
-];
+// CORS_ORIGIN / FRONTEND_URL, so a new deployment does not need a code change
+// to answer its own domain. Empty in production means "nothing configured",
+// which fails loudly rather than quietly serving everyone.
+const allowedOrigins = parseAllowedOrigins();
+if (allowedOrigins.length === 0) {
+  console.warn('[server] CORS_ORIGIN/FRONTEND_URL chưa đặt — trình duyệt sẽ bị từ chối');
+}
 const io = new Server(httpServer, {
   cors: {
     origin: allowedOrigins,
@@ -60,9 +63,17 @@ app.use(cors({
 app.use(express.json());
 app.use(express.urlencoded({ extended: true }));
 
-// Request logging
+// Request logging.
+//
+// Every HLS segment is a request: one viewer generates a line every few
+// seconds, and a room full of them buries anything worth reading while filling
+// the disk. In production the media assets are dropped and everything else is
+// kept; in development the firehose is useful, so nothing changes there.
+const LOG_ALL_REQUESTS = process.env.NODE_ENV !== 'production';
 app.use((req, res, next) => {
-  console.log(`${new Date().toISOString()} - ${req.method} ${req.path}`);
+  if (LOG_ALL_REQUESTS || !req.path.startsWith('/api/playback/hls/')) {
+    console.log(`${new Date().toISOString()} - ${req.method} ${req.path}`);
+  }
   next();
 });
 
@@ -86,6 +97,7 @@ app.use('/api/admin', adminRoutes);
 app.use('/api/catalog', catalogRateLimit, catalogRoutes);
 app.use('/api/providers', providerRoutes);
 app.use('/api/playback', playbackRoutes);
+app.use('/api/movie-requests', movieRequestRoutes);
 
 // Socket.IO Logic
 const premiereViewers = new Map(); // Track viewers per premiere
@@ -187,10 +199,38 @@ app.use('*', (req, res) => {
 
 // Error handler
 app.use((err, req, res, next) => {
-  console.error('Error:', err);
+  const isProd = process.env.NODE_ENV === 'production';
+  
+  if (isProd) {
+    // Log full error internally
+    console.error('Error [PROD]:', {
+      message: err.message,
+      stack: err.stack,
+      path: req.path,
+      method: req.method
+    });
+
+    // Mask sensitive technical details
+    const statusCode = err.status || 500;
+    let userMessage = 'Internal Server Error';
+
+    if (statusCode === 404) userMessage = 'Nội dung không tồn tại.';
+    else if (statusCode === 401 || statusCode === 403) userMessage = 'Bạn không có quyền truy cập.';
+    else if (statusCode === 429) userMessage = 'Bạn đang thao tác quá nhanh, vui lòng thử lại sau.';
+    else if (statusCode === 422) userMessage = err.message; // Validation errors are usually safe
+
+    return res.status(statusCode).json({
+      success: false,
+      message: userMessage
+    });
+  }
+
+  // Development: full detail
+  console.error('Error [DEV]:', err);
   res.status(err.status || 500).json({
     success: false,
-    message: err.message || 'Internal Server Error'
+    message: err.message || 'Internal Server Error',
+    stack: err.stack
   });
 });
 

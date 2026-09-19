@@ -2,37 +2,40 @@ name: Deploy to VPS
 
 on:
   push:
-    branches:
-      - main
-      - master
+    branches: [main, master]
     paths:
-      - 'backend/**'
       - 'backend-node/**'
       - 'docker-compose.prod.yml'
       - '.github/workflows/deploy.yml'
+      - '.github/workflows/ci.yml'
   workflow_dispatch:
 
 jobs:
+  # Nothing ships that has not passed. The previous version of this workflow
+  # built and deployed straight from a push with no tests at all.
+  test:
+    uses: ./.github/workflows/ci.yml
+
   deploy:
-    name: Deploy Docker Images to VPS
+    name: Build image and roll out
+    needs: test
     runs-on: ubuntu-latest
-    timeout-minutes: 90
+    timeout-minutes: 45
     environment: 'Production Environments'
 
     steps:
-      - name: Checkout code
-        uses: actions/checkout@v4
+      - uses: actions/checkout@v4
 
-      - name: Set up Docker Buildx
-        uses: docker/setup-buildx-action@v3
+      - uses: docker/setup-buildx-action@v3
 
-      - name: Login to Docker Hub
-        uses: docker/login-action@v3
+      - uses: docker/login-action@v3
         with:
           username: ${{ secrets.DOCKER_USERNAME }}
           password: ${{ secrets.DOCKER_PASSWORD }}
 
-      - name: Build and Push Node.js Backend
+      # The image must carry ffmpeg (see backend-node/Dockerfile): without it
+      # the container starts cleanly and dies on the first play.
+      - name: Build and push backend
         uses: docker/build-push-action@v5
         with:
           context: ./backend-node
@@ -41,23 +44,10 @@ jobs:
           tags: |
             ${{ secrets.DOCKER_USERNAME }}/movie-web:node-latest
             ${{ secrets.DOCKER_USERNAME }}/movie-web:node-${{ github.sha }}
-            ${{ secrets.DOCKER_USERNAME }}/movie-web:latest
           cache-from: type=registry,ref=${{ secrets.DOCKER_USERNAME }}/movie-web:node-latest
           cache-to: type=inline
 
-      - name: Build and Push C# Backend
-        uses: docker/build-push-action@v5
-        with:
-          context: ./backend
-          file: ./backend/Dockerfile
-          push: true
-          tags: |
-            ${{ secrets.DOCKER_USERNAME }}/movie-web:csharp-latest
-            ${{ secrets.DOCKER_USERNAME }}/movie-web:csharp-${{ github.sha }}
-          cache-from: type=registry,ref=${{ secrets.DOCKER_USERNAME }}/movie-web:csharp-latest
-          cache-to: type=inline
-
-      - name: Deploy to VPS
+      - name: Roll out
         uses: appleboy/ssh-action@v1.0.0
         with:
           host: ${{ secrets.VPS_HOST }}
@@ -65,280 +55,62 @@ jobs:
           key: ${{ secrets.VPS_SSH_KEY }}
           port: ${{ secrets.VPS_PORT }}
           timeout: 120s
-          command_timeout: '45m'
+          command_timeout: '20m'
           script: |
             set -euo pipefail
-            cd /root/movieweb
+            cd /opt/movieweb
 
-            cat > docker-compose.prod.yml <<'EOF'
-            services:
-              # Elasticsearch (Search index)
-              elasticsearch:
-                image: docker.elastic.co/elasticsearch/elasticsearch:8.15.3
-                container_name: movieweb-elasticsearch
-                profiles: ["full"]
-                restart: unless-stopped
-                environment:
-                  - discovery.type=single-node
-                  - xpack.security.enabled=false
-                  - xpack.ml.enabled=false
-                  - ES_JAVA_OPTS=-Xms256m -Xmx256m
-                volumes:
-                  - elasticsearch-data:/usr/share/elasticsearch/data
-                mem_limit: 768m
-                networks:
-                  - movieweb-network
-                healthcheck:
-                  test: ["CMD-SHELL", "curl -fsS http://localhost:9200 >/dev/null || exit 1"]
-                  interval: 20s
-                  timeout: 5s
-                  retries: 20
-                  start_period: 60s
+            # Pull the compose file from git rather than writing one inline.
+            # The old workflow pasted its own copy over this file on every
+            # deploy, which silently discarded the transcode volume and the
+            # TorBox/TMDB/disk-limit variables the app needs to run at all.
+            git fetch --quiet origin
+            git reset --quiet --hard origin/${{ github.ref_name }}
 
-              # Redis Cache
-              redis:
-                image: redis:7-alpine
-                container_name: movieweb-redis
-                restart: unless-stopped
-                volumes:
-                  - redis-data-new:/data
-                command: redis-server --appendonly yes --maxmemory 256mb --maxmemory-policy allkeys-lru
-                networks:
-                  - movieweb-network
-                healthcheck:
-                  test: ["CMD", "redis-cli", "ping"]
-                  interval: 10s
-                  timeout: 3s
-                  retries: 3
+            # Remember exactly what is serving right now, so a failed roll-out
+            # has something real to go back to. Recorded as an image ID, not a
+            # tag: the tag is about to be moved.
+            PREV_IMAGE=$(docker inspect -f '{{.Image}}' movieweb-backend-node 2>/dev/null || true)
+            echo "Current image: ${PREV_IMAGE:-none}"
 
-              # C# Backend (ASP.NET Core - Movie API)
+            docker pull ${{ secrets.DOCKER_USERNAME }}/movie-web:node-latest
 
-              # Node.js Backend (Auth, Comments, Socket.io)
-              backend-node:
-                image: minhancr123/movie-web:node-latest
-                container_name: movieweb-backend-node
-                restart: unless-stopped
-                ports:
-                  - "5001:5001"
-                environment:
-                  - NODE_ENV=production
-                  - PORT=5001
-                  - MONGODB_URI=${MONGODB_URI}
-                  - JWT_SECRET=${JWT_SECRET}
-                  - JWT_EXPIRE=30d
-                  - CORS_ORIGIN=${CORS_ORIGIN}
-                  - FRONTEND_URL=${FRONTEND_URL}
-                  - REDIS_URL=redis://redis:6379
-                  - ELASTICSEARCH_URL=http://elasticsearch:9200
-                  - ELASTICSEARCH_ENABLED=${ELASTICSEARCH_ENABLED:-false}
-                  - JOB_QUEUE_NAME=movieweb-jobs
-                networks:
-                  - movieweb-network
-                depends_on:
-                  redis:
-                    condition: service_healthy
-                healthcheck:
-                  test: ["CMD", "wget", "--quiet", "--tries=1", "--spider", "http://localhost:5001/health"]
-                  interval: 30s
-                  timeout: 10s
-                  retries: 3
-                  start_period: 40s
+            docker compose -f docker-compose.prod.yml up -d --remove-orphans
 
-              backend-node-worker:
-                image: minhancr123/movie-web:node-latest
-                container_name: movieweb-backend-node-worker
-                profiles: ["full"]
-                restart: unless-stopped
-                command: ["node", "workers/queueWorker.js"]
-                environment:
-                  - NODE_ENV=production
-                  - MONGODB_URI=${MONGODB_URI}
-                  - REDIS_URL=redis://redis:6379
-                  - ELASTICSEARCH_URL=http://elasticsearch:9200
-                  - ELASTICSEARCH_ENABLED=${ELASTICSEARCH_ENABLED:-false}
-                  - JOB_QUEUE_NAME=movieweb-jobs
-                depends_on:
-                  redis:
-                    condition: service_healthy
-                networks:
-                  - movieweb-network
+            echo "Waiting for the API to report healthy..."
+            for i in $(seq 1 24); do
+              if curl -fsS http://localhost:5001/health >/dev/null; then
+                echo "✓ healthy after ${i} attempt(s)"
+                # ffmpeg is the one dependency whose absence only shows up on a
+                # real play, long after a deploy looks successful.
+                docker exec movieweb-backend-node ffmpeg -version >/dev/null \
+                  && echo "✓ ffmpeg present in the running container" \
+                  || { echo "::error::ffmpeg missing in the image"; exit 1; }
+                docker image prune -f >/dev/null 2>&1 || true
+                exit 0
+              fi
+              sleep 5
+            done
 
-              backend-node-scheduler:
-                image: minhancr123/movie-web:node-latest
-                container_name: movieweb-backend-node-scheduler
-                profiles: ["full"]
-                restart: unless-stopped
-                command: ["node", "workers/scheduler.js"]
-                environment:
-                  - NODE_ENV=production
-                  - MONGODB_URI=${MONGODB_URI}
-                  - REDIS_URL=redis://redis:6379
-                  - JOB_QUEUE_NAME=movieweb-jobs
-                depends_on:
-                  redis:
-                    condition: service_healthy
-                networks:
-                  - movieweb-network
+            echo "✗ API never became healthy"
+            docker compose -f docker-compose.prod.yml logs --tail 200 backend-node || true
 
-            volumes:
-              redis-data-new:
-                driver: local
-              elasticsearch-data:
-                driver: local
-
-            networks:
-              movieweb-network:
-                driver: bridge
-            EOF
-
-            echo "Workflow version: deploy-v2026-04-19-01"
-            echo "[$(date -u +%Y-%m-%dT%H:%M:%SZ)] Deploy started"
-
-            if [ ! -f docker-compose.prod.yml ]; then
-              echo "docker-compose.prod.yml not found in /root/movieweb"
+            if [ -z "${PREV_IMAGE:-}" ]; then
+              echo "::error::No previous image to fall back to — the site is down"
               exit 1
             fi
 
-            COMPOSE_CMD="docker compose"
-            if ! docker compose version >/dev/null 2>&1; then
-              COMPOSE_CMD="docker-compose"
-            fi
+            echo "Rolling back to ${PREV_IMAGE}"
+            docker tag "$PREV_IMAGE" ${{ secrets.DOCKER_USERNAME }}/movie-web:node-latest
+            docker compose -f docker-compose.prod.yml up -d --no-deps backend-node
 
-            MEM_MB=$(awk '/MemTotal/ { printf "%d", $2/1024 }' /proc/meminfo)
-            LOW_MEM_MODE=0
-            if [ "$MEM_MB" -lt 1800 ]; then
-              LOW_MEM_MODE=1
-            fi
-
-            if [ "$LOW_MEM_MODE" -eq 1 ]; then
-              echo "⚠ Low-memory mode enabled (${MEM_MB}MB): run without Elasticsearch/worker/scheduler"
-              export ELASTICSEARCH_ENABLED=false
-              INFRA_SERVICES="redis"
-            else
-              echo "Full mode enabled (${MEM_MB}MB)"
-              export ELASTICSEARCH_ENABLED=true
-              INFRA_SERVICES="redis elasticsearch"
-              BG_SERVICES="backend-node-worker backend-node-scheduler"
-            fi
-
-            # Elasticsearch requires vm.max_map_count >= 262144 on Linux hosts.
-            CURRENT_VMMAP=$(sysctl -n vm.max_map_count 2>/dev/null || echo 0)
-            if [ "$CURRENT_VMMAP" -lt 262144 ]; then
-              echo "Updating vm.max_map_count from $CURRENT_VMMAP to 262144"
-              sysctl -w vm.max_map_count=262144 || true
-            fi
-            
-            # Ensure infra services are up (do not force recreate every deploy).
-            if ! timeout 180s $COMPOSE_CMD -f docker-compose.prod.yml up -d $INFRA_SERVICES; then
-              echo "⚠ Infra startup timed out. Continue with app deploy (search fallback mode)."
-              docker logs --tail 120 movieweb-elasticsearch || true
-            fi
-
-            # Pull latest app images in parallel for faster deploy.
-            docker pull ${{ secrets.DOCKER_USERNAME }}/movie-web:node-latest &
-            PULL_NODE_PID=$!
-            docker pull ${{ secrets.DOCKER_USERNAME }}/movie-web:csharp-latest &
-            PULL_CSHARP_PID=$!
-            wait $PULL_NODE_PID
-            wait $PULL_CSHARP_PID
-
-            # Update APIs first (without force-recreate) so compose only recreates when needed.
-            if ! timeout 240s $COMPOSE_CMD -f docker-compose.prod.yml up -d --no-deps $API_SERVICES; then
-              echo "Compose up failed for API services. Service status:"
-              $COMPOSE_CMD -f docker-compose.prod.yml ps || true
-              docker logs --tail 300 movieweb-backend-node || true
-              exit 1
-            fi
-
-            # Update workers only in full mode.
-            if [ "$LOW_MEM_MODE" -eq 0 ]; then
-              if ! timeout 180s $COMPOSE_CMD -f docker-compose.prod.yml up -d --no-deps $BG_SERVICES; then
-                echo "Compose up failed for worker services. Service status:"
-                $COMPOSE_CMD -f docker-compose.prod.yml ps || true
-                docker logs --tail 200 movieweb-backend-node-worker || true
-                docker logs --tail 200 movieweb-backend-node-scheduler || true
+            for i in $(seq 1 12); do
+              if curl -fsS http://localhost:5001/health >/dev/null; then
+                echo "::error::Deploy failed; rolled back to the previous image and it is serving again"
                 exit 1
               fi
-            else
-              docker rm -f movieweb-backend-node-worker movieweb-backend-node-scheduler movieweb-elasticsearch >/dev/null 2>&1 || true
-            fi
-            
-            echo "Waiting for services to be healthy..."
+              sleep 5
+            done
 
-            check_http() {
-              local url="$1"
-              local name="$2"
-              local max_try="${3:-30}"
-              local i=1
-              while [ "$i" -le "$max_try" ]; do
-                if curl -fsS "$url" >/dev/null; then
-                  echo "✓ $name is healthy"
-                  return 0
-                fi
-                echo "[$i/$max_try] waiting for $name..."
-                sleep 5
-                i=$((i+1))
-              done
-              echo "✗ $name health check failed"
-              return 1
-            }
-
-            check_running() {
-              local container="$1"
-              if docker inspect -f '{{.State.Running}}' "$container" 2>/dev/null | grep -q true; then
-                echo "✓ $container is running"
-                return 0
-              fi
-              echo "✗ $container is not running"
-              return 1
-            }
-
-            check_container_healthy() {
-              local container="$1"
-              local max_try="${2:-30}"
-              local i=1
-              while [ "$i" -le "$max_try" ]; do
-                local status
-                status=$(docker inspect -f '{{if .State.Health}}{{.State.Health.Status}}{{else}}none{{end}}' "$container" 2>/dev/null || echo "missing")
-
-                if [ "$status" = "healthy" ]; then
-                  echo "✓ $container is healthy"
-                  return 0
-                fi
-
-                echo "[$i/$max_try] waiting for $container health (current: $status)..."
-                sleep 5
-                i=$((i+1))
-              done
-
-              echo "✗ $container did not become healthy"
-              return 1
-            }
-            
-            # Health checks
-            if ! check_http "http://localhost:5001/health" "Node.js Backend" 18; then
-              docker logs --tail 200 movieweb-backend-node || true
-              exit 1
-            fi
-
-            if ! check_http "http://localhost:5291/health" "C# Backend" 18; then
-              exit 1
-            fi
-
-            docker exec movieweb-redis redis-cli ping | grep -q PONG || exit 1
-            echo "✓ Redis is healthy"
-
-            if [ "$LOW_MEM_MODE" -eq 0 ]; then
-              if ! check_container_healthy "movieweb-elasticsearch" 6; then
-                echo "⚠ Elasticsearch is not healthy yet. Continue deployment with search fallback mode."
-                docker logs --tail 300 movieweb-elasticsearch || true
-              fi
-            fi
-
-            if [ "$LOW_MEM_MODE" -eq 0 ]; then
-              check_running "movieweb-backend-node-worker"
-              check_running "movieweb-backend-node-scheduler"
-            fi
-
-            echo "[$(date -u +%Y-%m-%dT%H:%M:%SZ)] ✓ Deployment successful!"
-
+            echo "::error::Deploy failed AND the rollback did not come up — the site is down"
+            exit 1

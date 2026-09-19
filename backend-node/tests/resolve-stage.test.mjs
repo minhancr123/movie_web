@@ -23,15 +23,16 @@ console.log('ok - resolve ids validated');
 assert.equal(getResolveStage('r-doesnotexist-00000000'), null);
 assert.equal(getResolveStage('junk'), null);
 
-// Set then read round-trips stage + detail.
+// Set then read round-trips stage + detail (+ append-only history).
 assert.equal(setResolveStage('r-roundtrip-00000001', 'probe'), true);
-assert.deepEqual(getResolveStage('r-roundtrip-00000001'), {
-  stage: 'probe',
-  detail: '',
-  updatedAt: getResolveStage('r-roundtrip-00000001').updatedAt,
-});
+assert.equal(getResolveStage('r-roundtrip-00000001').stage, 'probe');
+assert.equal(getResolveStage('r-roundtrip-00000001').detail, '');
 assert.equal(setResolveStage('r-roundtrip-00000001', 'prepare', '2/5'), true);
 assert.equal(getResolveStage('r-roundtrip-00000001').detail, '2/5');
+assert.deepEqual(
+  getResolveStage('r-roundtrip-00000001').history.map((h) => h.stage),
+  ['probe', 'prepare'],
+);
 console.log('ok - resolve stage set/read round-trips');
 
 // Empty stage and junk ids never write.

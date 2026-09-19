@@ -4,34 +4,33 @@ import React, { useEffect, useState, useCallback, useRef } from 'react';
 import Link from 'next/link';
 import Image from 'next/image';
 import { useSession } from 'next-auth/react';
-import { Loader2, AlertCircle, Key, RefreshCw, CheckCircle2, Download, Film, Layers, PictureInPicture2 } from 'lucide-react';
+import { Loader2, AlertCircle, Key, RefreshCw, CheckCircle2, Download, Film, Layers, PictureInPicture2, ChevronLeft, ChevronRight, ListVideo } from 'lucide-react';
 import VideoPlayer from '@/components/VideoPlayer';
 import CinemaLayer, { type CinemaMode } from '@/components/CinemaLayer';
 
 /** Mirrors PLAYBACK_STARTUP_BUFFER_SECONDS on the server, for the wait copy. */
 const STARTUP_BUFFER_HINT = 15;
 
+import { getResolveStageLabels, getFriendlyErrorMessage } from '@/lib/i18n';
+
+const isProd = process.env.NODE_ENV === 'production';
+
 /** Server resolve phases (GET /playback/resolve/:id/stage) in plain words. */
-const RESOLVE_STAGE_LABELS: Record<string, string> = {
-  detail: 'Đang lấy thông tin phim',
-  sources: 'Đang tìm nguồn chiếu',
-  rank: 'Đang chấm điểm nguồn',
-  reuse: 'Đang kiểm tra phiên cũ',
-  prepare: 'Đang chuẩn bị link TorBox',
-  link: 'Đang lấy link tải',
-  probe: 'Đang đọc thông tin file',
-  remux: 'Đang khởi động luồng',
-  buffer: 'Đang đệm những giây đầu',
-  warm: 'Đang đệm thêm',
-};
+const RESOLVE_STAGE_LABELS = getResolveStageLabels(isProd);
 
 const formatResolveStage = (stage: string, detail: string): string => {
-  const base = RESOLVE_STAGE_LABELS[stage] || 'Đang chuẩn bị nguồn phát';
+  const base = RESOLVE_STAGE_LABELS[stage] || (isProd ? 'Đang chuẩn bị nguồn phát' : 'Đang chuẩn bị nguồn phát');
+  // Hide technical detail in production if it looks like a filename or path
+  if (isProd && detail && (detail.includes('.') || detail.includes('/') || detail.includes('['))) {
+    return base;
+  }
   return detail ? `${base} (${detail})` : base;
 };
 import { providerAPI, playbackAPI } from '@/lib/api';
 import { detectCapabilities } from '@/lib/capabilities';
 import type { PlayerEpisode } from '@/lib/catalog';
+import { useWatchHistory } from '../hooks/useLocalStorage';
+import { computeResumeAt, audioSwitchStartAt } from '@/lib/playback-progress';
 
 interface PlaybackSectionProps {
   type: 'movie' | 'tv';
@@ -46,6 +45,10 @@ interface PlaybackSectionProps {
   seasonLabel?: string;
   /** Real poster URL — saved into watch history so rows can render artwork. */
   poster?: string;
+  /** Full-length runtime in minutes (catalog detail): lets the first resolve
+      open directly at the saved resume point instead of starting at 0 and
+      re-resolving seconds later (film shows, then loads again). */
+  runtimeMinutes?: number | null;
 }
 
 interface SourceCandidate {
@@ -61,6 +64,8 @@ interface SourceCandidate {
   cached?: boolean;
   score?: number | null;
   reasons?: string[];
+  /** Non-torrent origin (e.g. 'vimo' direct HLS) for picker badging. */
+  origin?: string | null;
 }
 
 const resolutionLabel = (value: number | string) => {
@@ -97,8 +102,10 @@ export default function PlaybackSection({
   activeEpisode = null,
   seasonLabel = '',
   poster = '',
+  runtimeMinutes = null,
 }: PlaybackSectionProps) {
   const { data: session, status: authStatus } = useSession();
+  const { history } = useWatchHistory();
 
   const [playbackStatus, setPlaybackStatus] = useState<PlaybackStatus>('idle');
   const [errorMessage, setErrorMessage] = useState<string>('');
@@ -118,6 +125,16 @@ export default function PlaybackSection({
   const [fileName, setFileName] = useState<string>('');
   const [playMode, setPlayMode] = useState<string>('');
   const [durationSeconds, setDurationSeconds] = useState<number | null>(null);
+  // Display offset of the current session's timeline (0 = from the start).
+  // Far seeks resolve a session beginning at the target; the player maps its
+  // truncated 0-based playlist back onto the full film with this.
+  const [startOffset, setStartOffset] = useState<number>(0);
+  // Reported by the server: how far the remux clock leads source time, so the
+  // player can take it back out of subtitle lookups.
+  const [presentationShiftMs, setPresentationShiftMs] = useState<number>(0);
+  // Whether the server offers truncated (seek-started) sessions at all.
+  // Assume yes until told otherwise, so an older backend behaves as before.
+  const [seekStartSupported, setSeekStartSupported] = useState<boolean>(true);
   // Chosen inside the player, drawn here: the surround must escape the player's
   // own overflow-hidden frame to read as light spilling onto the page.
   /**
@@ -136,6 +153,8 @@ export default function PlaybackSection({
    */
   const [resolveStageLabel, setResolveStageLabel] = useState('');
   const stagePollRef = useRef<NodeJS.Timeout | null>(null);
+  // Consecutive stage-poll 404s for the current resolveId (reset per resolve).
+  const stage404sRef = useRef<number>(0);
   const [cinemaMode, setCinemaMode] = useState<CinemaMode>('off');
   const [videoEl, setVideoEl] = useState<HTMLVideoElement | null>(null);
   const [candidate, setCandidate] = useState<SourceCandidate | null>(null);
@@ -147,6 +166,30 @@ export default function PlaybackSection({
   // Preferred embedded audio track (ffprobe order). Survives re-resolves via ref.
   const [activeAudioIndex, setActiveAudioIndex] = useState<number | null>(null);
   const activeAudioIndexRef = useRef<number | null>(null);
+  // One-shot notice banner (e.g. decode-overload downgrade). Dismissible.
+  const [notice, setNotice] = useState<string | null>(null);
+  // Auto quality step-down fires once per title: no flapping between releases.
+  const decodeDowngradeDoneRef = useRef<boolean>(false);
+  const episodeScrollRef = useRef<HTMLDivElement>(null);
+
+  const scrollEpisodes = (direction: 'left' | 'right') => {
+    if (!episodeScrollRef.current) return;
+    const container = episodeScrollRef.current;
+    const scrollAmount = 600;
+    container.scrollBy({
+      left: direction === 'left' ? -scrollAmount : scrollAmount,
+      behavior: 'smooth',
+    });
+  };
+
+  useEffect(() => {
+    if (type === 'tv' && episodeScrollRef.current) {
+      const activeItem = episodeScrollRef.current.querySelector('[data-active="true"]');
+      if (activeItem) {
+        activeItem.scrollIntoView({ inline: 'center', block: 'nearest', behavior: 'smooth' });
+      }
+    }
+  }, [type, activeEpisode]);
 
   const pickAudio = useCallback(
     (index: number) => {
@@ -155,8 +198,22 @@ export default function PlaybackSection({
       activeAudioIndexRef.current = index;
       // Same release, different audio: keep the current stream on screen while
       // the new track's session warms up, then reload and resume via history.
+      // Preserves the current timeline offset and supersedes any pending seek
+      // (the audio switch is the newer intent).
+      pendingSeekRef.current = null;
+      const epoch = ++seekEpochRef.current;
+      // The new track's remux writes from wherever it is told to. Asking for
+      // the session origin restarts the film there, and the player then resumes
+      // to the viewer's position against bytes that have not been written yet —
+      // which looks exactly like the switch doing nothing.
+      const at = audioSwitchStartAt({
+        playhead: playheadRef.current,
+        sessionStart: startOffsetRef.current,
+      });
       void startPlaybackResolutionRef.current(activeTokenRef.current, index, {
         preservePlayer: true,
+        ...(at > 0 ? { startAt: at } : {}),
+        seekEpoch: epoch,
       });
     },
     []
@@ -169,17 +226,39 @@ export default function PlaybackSection({
   const recoveryAttemptsRef = useRef(0);
   const recoveryInFlightRef = useRef(false);
   // Latest-value mirrors so stable callbacks never close over stale state.
+  // Live playhead in full-film seconds, fed by the player's timeupdate.
+  const playheadRef = useRef<number>(0);
   const activeTokenRef = useRef<string>('');
   const startPlaybackResolutionRef = useRef<
     (
       sourceToken?: string,
       audioIndex?: number,
-      options?: { preservePlayer?: boolean },
+      options?: { preservePlayer?: boolean; startAt?: number; seekEpoch?: number },
     ) => Promise<void>
   >(async () => {});
   const loadSourcesRef = useRef<() => Promise<void>>(async () => {});
 
   const selectedSourceKey = `playback:selectedSource:${type}:${tmdbId}:${season ?? 'movie'}:${episode ?? 'full'}`;
+
+  // Resume seed for the FIRST auto-resolve only. Without this, opening a
+  // half-watched title resolves from 0, starts playing, then the player's
+  // post-hoc resume finds its target past the fresh remux head and fires a
+  // SECOND full resolve that supersedes the playing session — the "phim đã
+  // hiện rồi mà vẫn load tiếp" loop from the logs (6.9s + 5.6s + supersede).
+  const initialStartAtRef = useRef<number>(0);
+  const didInitialResolveRef = useRef<boolean>(false);
+  const episodeSlug = season && episode ? `s${season}e${episode}` : 'full';
+  const getResumeSeed = useCallback((): number => {
+    try {
+      const saved = history.find((h) => h.slug === contentRef);
+      if (!saved || saved.currentEpisode !== episodeSlug) return 0;
+      const duration = runtimeMinutes && runtimeMinutes > 0 ? runtimeMinutes * 60 : 0;
+      const at = computeResumeAt(saved.progress, duration);
+      return at !== null && at > 0 ? Math.floor(at) : 0;
+    } catch {
+      return 0;
+    }
+  }, [history, contentRef, episodeSlug, runtimeMinutes]);
 
   const recoverPlayback = useCallback((reason: string) => {
     // A fatal HLS event and the no-progress watchdog can fire together. Only
@@ -198,11 +277,24 @@ export default function PlaybackSection({
     }
     recoveryInFlightRef.current = true;
     setErrorMessage(`Luồng bị gián đoạn, đang tự khôi phục (${recoveryAttemptsRef.current}/2)…`);
+    // Recovery rebuilds the CURRENT timeline: adopt a pending seek target if
+    // the stall struck mid-seek (rebuilding from the old position would
+    // strand the viewer where they tried to leave), else keep the applied
+    // session offset. Takes its own epoch so an older in-flight resolve
+    // cannot clobber it — and vice versa.
+    const recoverAt =
+      pendingSeekRef.current ??
+      (startOffsetRef.current > 0
+        ? startOffsetRef.current
+        : initialStartAtRef.current > 0
+          ? initialStartAtRef.current
+          : 0);
+    const epoch = ++seekEpochRef.current;
     void startPlaybackResolutionRef
       .current(
         activeTokenRef.current,
         activeAudioIndexRef.current ?? undefined,
-        { preservePlayer: true },
+        { preservePlayer: true, ...(recoverAt > 0 ? { startAt: recoverAt } : {}), seekEpoch: epoch },
       )
       .finally(() => {
         recoveryInFlightRef.current = false;
@@ -210,9 +302,56 @@ export default function PlaybackSection({
   }, [selectedSourceKey]);
 
   // Isolated stalls must not accumulate: steady progress clears the counter.
-  const handlePlaybackProgress = useCallback(() => {
+  const handlePlaybackProgress = useCallback((positionSeconds: number) => {
     if (recoveryAttemptsRef.current !== 0) recoveryAttemptsRef.current = 0;
+    // Where the viewer actually is, in full-film seconds. An audio switch
+    // rebuilds the remux for the chosen track and has to start it here, not at
+    // the session's origin — see audioSwitchStartAt.
+    if (Number.isFinite(positionSeconds) && positionSeconds > 0) {
+      playheadRef.current = positionSeconds;
+    }
   }, []);
+
+  // Decoder can't keep up (audio permanently ahead of the picture): step down
+  // to the next-lighter release at the current position instead of leaving
+  // every heavy title lagging. Falls back to opening the source list when no
+  // lighter candidate is on hand.
+  const handleDecodeOverload = useCallback(() => {
+    if (decodeDowngradeDoneRef.current) return;
+    decodeDowngradeDoneRef.current = true;
+    const heightOf = (s: SourceCandidate) => {
+      const h = Number(s.resolution);
+      return Number.isFinite(h) && h > 0 ? h : 0;
+    };
+    const currentH = candidate ? heightOf(candidate) : Number.POSITIVE_INFINITY;
+    const lighter = sources
+      .filter((s) => s.playable !== false && s.sourceToken && heightOf(s) > 0 && heightOf(s) < currentH)
+      .sort((a, b) => heightOf(b) - heightOf(a))[0];
+    if (lighter?.sourceToken) {
+      const lightH = heightOf(lighter);
+      const lightLabel = lightH > 0 ? resolutionLabel(lightH) : 'bản nhẹ hơn';
+      setNotice(
+        `Máy giải mã không kịp bản hiện tại (tiếng đi trước hình) — đã tự chuyển xuống ${lightLabel} cho mượt. Đổi lại trong danh sách nguồn bất cứ lúc nào.`,
+      );
+      const at = Math.max(
+        0,
+        Math.floor((startOffsetRef.current || 0) + (videoEl?.currentTime || 0)),
+      );
+      recoveryAttemptsRef.current = 0;
+      recoveryInFlightRef.current = false;
+      void startPlaybackResolutionRef.current(
+        lighter.sourceToken,
+        activeAudioIndexRef.current ?? undefined,
+        { preservePlayer: true, ...(at > 0 ? { startAt: at } : {}) },
+      );
+    } else {
+      setNotice(
+        'Máy giải mã không kịp bản hiện tại (tiếng đi trước hình) — hãy chọn nguồn nhẹ hơn bên dưới.',
+      );
+      setShowSources(true);
+      void loadSourcesRef.current();
+    }
+  }, [candidate, sources, videoEl]);
 
   const clearPoll = () => {
     if (pollTimerRef.current) {
@@ -228,10 +367,23 @@ export default function PlaybackSection({
     }
   };
 
+  // New title, new decode budget: allow one step-down again, drop the banner.
+  useEffect(() => {
+    decodeDowngradeDoneRef.current = false;
+    setNotice(null);
+  }, [type, tmdbId, season, episode]);
+
   useEffect(() => {
     return () => {
       clearPoll();
       clearStagePoll();
+      resolveAbortRef.current?.abort();
+      resolveAbortRef.current = null;
+      resolveInFlightRef.current = null;
+      resolveInFlightEpochRef.current = null;
+      // StrictMode remount (dev) must re-seed like a fresh mount.
+      didInitialResolveRef.current = false;
+      initialStartAtRef.current = 0;
     };
   }, []);
 
@@ -260,11 +412,127 @@ export default function PlaybackSection({
    * Requests that differ (a deliberate source or audio switch) still go through.
    */
   const resolveInFlightRef = useRef<string | null>(null);
+  // Epoch of the request holding the slot above. The finally block only
+  // releases the slot when BOTH match, so a superseded (aborted) request
+  // landing late cannot clear the newer request's slot.
+  const resolveInFlightEpochRef = useRef<number | null>(null);
+  // Abort handle for the in-flight resolve HTTP call. StrictMode mounts
+  // effects twice in development: without this, the first (abandoned) mount's
+  // resolve still applies when it lands — rebuilding a player the remount
+  // just created — and two concurrent remux pipelines burn link side by side.
+  // Aborting is client-side only: the server keeps working, so the remount's
+  // resolve typically reuses the warmed session instead of starting cold.
+  const resolveAbortRef = useRef<AbortController | null>(null);
+  // Far-seek generation: each fired seek-resolve takes a number; a response
+  // whose number is stale was superseded by a retarget and must not apply.
+  // Recovery shares the same counter (see recoverPlayback): every
+  // preservePlayer re-resolve is one intent stream, and only the latest
+  // intent may replace the picture — otherwise a slow full-session recovery
+  // landing after a seek yanks playback back to the abandoned position.
+  const seekEpochRef = useRef<number>(0);
+  // Target of the in-flight seek-resolve, if any. A recovery that fires
+  // while a seek is pending adopts it instead of rebuilding from the old
+  // (stalled) position, which would strand the viewer where they tried to
+  // leave. Cleared whenever any resolve response applies.
+  const pendingSeekRef = useRef<number | null>(null);
+  // Applied session offset mirror (startOffset state): recovery and audio
+  // switches re-resolve the CURRENT timeline, not from zero.
+  const startOffsetRef = useRef<number>(0);
+
+  const handleResolveResponse = useCallback((data: any, requestEpoch: number) => {
+    if (seekEpochRef.current !== requestEpoch) return;
+
+    setCandidate(data.candidate || null);
+    setPlaybackSessionId(typeof data.sessionId === 'string' ? data.sessionId : '');
+    // How far the remux clock leads source time; the player takes it back
+    // out of subtitle lookups (see subtitleLookupTime).
+    setPresentationShiftMs(
+      typeof data.presentationShiftMs === 'number' && data.presentationShiftMs > 0
+        ? data.presentationShiftMs
+        : 0,
+    );
+    const returnedOffset = typeof data.startOffset === 'number' && data.startOffset > 0 ? data.startOffset : 0;
+    setStartOffset(returnedOffset);
+    startOffsetRef.current = returnedOffset;
+    pendingSeekRef.current = null;
+    
+    const effectiveToken = activeTokenRef.current || (typeof data.sourceToken === 'string' ? data.sourceToken : '');
+    setActiveToken(effectiveToken);
+    activeTokenRef.current = effectiveToken;
+    // Pin the release across reloads and later intents: every resume,
+    // recovery and retry re-sends it instead of re-picking a possibly
+    // different cut (subs mistimed, different audio mix) of the same title.
+    if (effectiveToken) {
+      try {
+        if (typeof window !== 'undefined') localStorage.setItem(selectedSourceKey, effectiveToken);
+      } catch {
+        // Storage blocked: the pin lasts this mount via activeTokenRef.
+      }
+    }
+
+    if (typeof data.audioIndex === 'number') {
+      setActiveAudioIndex(data.audioIndex);
+      activeAudioIndexRef.current = data.audioIndex;
+    }
+
+    const playlistUrl = data.playlistUrl || data.playUrl;
+
+    if (data.mode === 'direct' && data.url) {
+      if (Array.isArray(data.streams)) setSources(data.streams);
+      applyPlayUrl(data.url);
+      setFileName(data.fileName || '');
+      setPlayMode('direct');
+      setDurationSeconds(null);
+      setPlaybackStatus('ready');
+    } else if (data.mode === 'remux' && playlistUrl) {
+      if (Array.isArray(data.streams)) setSources(data.streams);
+      const backendBase = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:5001/api';
+      const absoluteUrl = playlistUrl.startsWith('http')
+        ? playlistUrl
+        : `${backendBase.replace(/\/api\/?$/, '')}${playlistUrl}`;
+
+      setPlaybackSessionId(typeof data.sessionId === 'string' ? data.sessionId : '');
+      setFileName(data.fileName || '');
+      setPlayMode('remux');
+      setDurationSeconds(typeof data.durationSeconds === 'number' ? data.durationSeconds : null);
+
+      if (data.warmingUp === true && data.sessionId) {
+        setPlaybackStatus('downloading');
+        setDownloadProgress(0);
+        applyPlayUrl(absoluteUrl);
+      } else {
+        applyPlayUrl(absoluteUrl);
+        setPlaybackStatus('ready');
+      }
+    }
+  }, []);
+
+  // Far seek past the written playlist head: keep the current picture up
+  // while a session beginning at the target warms up. The player debounces
+  // scrub ticks and shows its own indicator; here each call fires exactly
+  // one resolve, and stale responses are dropped by the epoch check above.
+  const requestSeekPosition = useCallback((displaySeconds: number) => {
+    const at = Math.max(0, Math.floor(displaySeconds));
+    pendingSeekRef.current = at;
+    const epoch = ++seekEpochRef.current;
+    return startPlaybackResolutionRef.current(
+      activeTokenRef.current,
+      activeAudioIndexRef.current ?? undefined,
+      { preservePlayer: true, startAt: at, seekEpoch: epoch },
+    );
+  }, []);
+
+  // The viewer went back to direct seeking while a seek-resolve was in
+  // flight: invalidate it so its late response cannot apply.
+  const cancelSeekPosition = useCallback(() => {
+    pendingSeekRef.current = null;
+    seekEpochRef.current += 1;
+  }, []);
 
   const startPlaybackResolution = useCallback(async (
     sourceToken?: string,
     audioIndex?: number,
-    options?: { preservePlayer?: boolean },
+    options?: { preservePlayer?: boolean; startAt?: number; seekEpoch?: number },
   ) => {
     // Storage can throw when blocked: never let it reject the resolve.
     let rememberedToken = '';
@@ -277,16 +545,52 @@ export default function PlaybackSection({
     const resolvedSourceToken = sourceToken || rememberedToken || '';
     const resolvedAudioIndex =
       audioIndex !== undefined ? audioIndex : activeAudioIndexRef.current;
+    const resolvedStartAt =
+      options?.startAt && options.startAt > 0 ? Math.floor(options.startAt) : 0;
+    // Every resolve takes the current generation number (seek/recovery/audio
+    // passes its own so the intent survives the 4xx retry below). Only the
+    // latest generation may replace the picture: a slow earlier resolve
+    // landing after a newer seek, source pick or recovery would otherwise
+    // yank playback back to an abandoned position.
+    const requestEpoch = options?.seekEpoch ?? ++seekEpochRef.current;
 
-    const requestKey = `${resolvedSourceToken}|${resolvedAudioIndex ?? ''}`;
-    if (resolveInFlightRef.current === requestKey) return;
+    // startAt is part of the identity: rapid seeks to different positions
+    // must each resolve instead of the second being dropped as a duplicate.
+    const requestKey = `${resolvedSourceToken}|${resolvedAudioIndex ?? ''}|${resolvedStartAt}`;
+    // Same-key take-over (not a silent bail): every fresh call above already
+    // bumped the epoch, so an in-flight same-key response is doomed by the
+    // epoch check below. Bailing here would strand the newer intent with no
+    // request at all — status stuck on 'resolving' forever after a 200.
+    // Only a true duplicate (same key AND same epoch, e.g. an explicit
+    // seekEpoch re-fired twice) may dedupe, because that in-flight request
+    // will still apply when it lands.
+    if (
+      resolveInFlightRef.current === requestKey &&
+      resolveInFlightEpochRef.current === requestEpoch
+    ) {
+      return;
+    }
     resolveInFlightRef.current = requestKey;
+    resolveInFlightEpochRef.current = requestEpoch;
+
+    // A newer intent replaces the previous HTTP call (source/audio/seek
+    // switch, retry, or StrictMode remount). The server keeps working on the
+    // abandoned one — its session simply becomes reusable — so aborting only
+    // stops us waiting for and applying a stale answer.
+    resolveAbortRef.current?.abort();
+    const resolveController = new AbortController();
+    resolveAbortRef.current = resolveController;
 
     clearPoll();
     clearStagePoll();
+    stage404sRef.current = 0;
     setErrorMessage('');
     setResolveElapsed(0);
     setResolveStageLabel('');
+    // Fresh progress for the seek overlay (it mirrors these two states while
+    // a far seek resolves). Stale warm percent from an earlier session must
+    // not leak into the new one.
+    setDownloadProgress(0);
     const preservePlayer = options?.preservePlayer === true && Boolean(playUrlRef.current);
     if (!preservePlayer) setPlaybackStatus('resolving');
 
@@ -303,13 +607,108 @@ export default function PlaybackSection({
       return `r-${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 10)}`;
     })();
     const pollResolveStage = async () => {
+      if (resolveAbortRef.current?.signal.aborted) {
+        clearStagePoll();
+        return;
+      }
       try {
         const r = await playbackAPI.getResolveStage(resolveId);
         const st = r.data?.data;
         if (st?.stage) setResolveStageLabel(formatResolveStage(st.stage, st.detail || ''));
-      } catch {
-        // 404 = unknown/expired id: keep the last label, the resolve HTTP
-        // response itself is still coming and carries the real outcome.
+        
+        // AUTO-ADOPT: If the stage poll found valid playback data while the main resolve is still pending
+        const adoptionUrl = st?.playUrl || st?.playlistUrl;
+        if (st?.mode && adoptionUrl && seekEpochRef.current === requestEpoch) {
+          // Check if this resolve is still the intended one
+          if (resolveAbortRef.current?.signal.aborted) return;
+          
+          console.log('[playback] Stage poll found ready session, adopting early...');
+          clearStagePoll();
+          // Abort the main HTTP call so its later finally/success doesn't overwrite this adoption
+          resolveAbortRef.current?.abort();
+          resolveAbortRef.current = null;
+
+          // BRIDGE: The main resolve call would normally start the warming poll
+          // timer. When adopting early, we must check if we need to start it
+          // here to avoid getting stuck in 'downloading' status with no poll.
+          if (st.mode === 'remux' && st.warmingUp === true && st.sessionId) {
+            const warmId = st.sessionId;
+            const backendBase = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:5001/api';
+            const absoluteUrl = adoptionUrl.startsWith('http')
+              ? adoptionUrl
+              : `${backendBase.replace(/\/api\/?$/, '')}${adoptionUrl}`;
+            const warmUrl = absoluteUrl;
+            const warmTarget =
+              typeof st.startupTargetSeconds === 'number' && st.startupTargetSeconds > 0
+                ? st.startupTargetSeconds
+                : (options?.startAt && options.startAt > 0) ? 4 : 15;
+
+            setPlaybackStatus('downloading');
+            setDownloadProgress(0);
+            setPlaybackSessionId(st.sessionId);
+            setFileName(st.fileName || '');
+            setPlayMode('remux');
+            setDurationSeconds(typeof st.durationSeconds === 'number' ? st.durationSeconds : null);
+            applyPlayUrl(warmUrl);
+
+            let warmPolls = 0;
+            let warmFails = 0;
+            const finishWarm = () => {
+              clearPoll();
+              applyPlayUrl(warmUrl);
+              setPlaybackStatus('ready');
+            };
+
+            clearPoll(); // Ensure clean start
+            pollTimerRef.current = setInterval(async () => {
+              warmPolls += 1;
+              try {
+                const pollRes = await playbackAPI.getSession(warmId);
+                const sessionData = pollRes.data?.data;
+                warmFails = 0;
+                if (!sessionData) return;
+                const buffered =
+                  typeof sessionData.bufferedSeconds === 'number'
+                    ? sessionData.bufferedSeconds
+                    : null;
+                if (typeof sessionData.progress === 'number') {
+                  setDownloadProgress(sessionData.progress);
+                } else if (buffered !== null) {
+                  setDownloadProgress(Math.min(99, Math.round((buffered / warmTarget) * 100)));
+                }
+                if (sessionData.ready === true) {
+                  finishWarm();
+                  return;
+                }
+                if (sessionData.writerAlive === false) {
+                  clearPoll();
+                  // In early adopt bridge, we can't easily call recoverPlayback 
+                  // without a ref refactor, but we can at least drop to error 
+                  // or trigger a fresh resolve.
+                  setPlaybackStatus('resolving');
+                  startPlaybackResolutionRef.current(activeTokenRef.current, undefined, { ...options, seekEpoch: requestEpoch });
+                  return;
+                }
+                if (warmPolls >= 30) finishWarm();
+              } catch {
+                warmFails += 1;
+                if (warmFails >= 5) finishWarm();
+              }
+            }, 2000);
+          } else {
+            handleResolveResponse(st, requestEpoch);
+          }
+          return;
+        }
+        
+        stage404sRef.current = 0;
+      } catch (err: any) {
+        if (err?.response?.status === 404) {
+          stage404sRef.current += 1;
+          if (stage404sRef.current >= 3 && stagePollRef.current) {
+            clearStagePoll();
+          }
+        }
       }
     };
     void pollResolveStage();
@@ -317,6 +716,16 @@ export default function PlaybackSection({
     // outer finally must not kill the retry's poll.
     const stageTimer = setInterval(pollResolveStage, 1500);
     stagePollRef.current = stageTimer;
+
+    // Lip-sync compensation in ms, persisted on this device (same
+    // display chain every film, so it is setup-constant). Sent to the
+    // server so the delay is baked into the HLS segments at remux
+    // time rather than relying on the browser-side audio tap alone.
+    let lipSyncMs = 0;
+    try {
+      const raw = typeof window !== 'undefined' ? localStorage.getItem('cine_player_prefs') : null;
+      if (raw) lipSyncMs = Math.max(0, Number(JSON.parse(raw)?.audio?.lipSyncMs) || 0);
+    } catch { /* ignore */ }
 
     try {
       const caps = detectCapabilities();
@@ -331,17 +740,77 @@ export default function PlaybackSection({
         ...(resolvedAudioIndex !== null && resolvedAudioIndex !== undefined
           ? { audioIndex: resolvedAudioIndex }
           : {}),
-      });
+        // Seek-start: the server begins the (re)mux at this position so
+        // far seeks do not wait for the whole prefix. 0/absent = from the start.
+        ...(resolvedStartAt > 0 ? { startAt: resolvedStartAt } : {}),
+        ...(lipSyncMs > 0 ? { lipSyncMs } : {}),
+      }, resolveController.signal);
 
       const data = res.data?.data;
       if (!data) {
         throw new Error('Dữ liệu phản hồi không hợp lệ');
       }
 
+      // Superseded resolve: a newer seek, source pick, audio switch or
+      // recovery fired while this one was in flight. Applying it would yank
+      // playback to an abandoned intent (and resurrect a session the
+      // superseded-stop pass is reaping), so the late response is dropped —
+      // the newer intent's own resolve applies.
+      if (seekEpochRef.current !== requestEpoch) {
+        if (typeof window !== 'undefined') {
+          console.debug(`[seek] dropped stale resolve (epoch ${requestEpoch}, current ${seekEpochRef.current})`);
+        }
+        return;
+      }
+
       setCandidate(data.candidate || null);
       setPlaybackSessionId(typeof data.sessionId === 'string' ? data.sessionId : '');
-      setActiveToken(resolvedSourceToken);
-      activeTokenRef.current = resolvedSourceToken;
+      // Truncated-timeline origin of this session (0 = from the start). The
+      // player maps its 0-based playlist back onto the full film with it.
+      // How far the remux clock leads source time; the player takes it back
+      // out of subtitle lookups (see subtitleLookupTime).
+      setSeekStartSupported(data.seekStartSupported !== false);
+      setPresentationShiftMs(
+        typeof data.presentationShiftMs === 'number' && data.presentationShiftMs > 0
+          ? data.presentationShiftMs
+          : 0,
+      );
+      const returnedOffset = typeof data.startOffset === 'number' && data.startOffset > 0 ? data.startOffset : 0;
+      setStartOffset(returnedOffset);
+      startOffsetRef.current = returnedOffset;
+      // This resolve's intent is fulfilled: a pending seek it supersedes (or
+      // embodies) must not linger into a later recovery.
+      pendingSeekRef.current = null;
+      // A silent source swap looks exactly like mistimed subtitles: the Vimo
+      // fallback carries its own encode (different cut/timing), so sidecars
+      // timed for the picked release cannot line up on it. Say so loudly;
+      // clear only our own banner when a later resolve comes back clean.
+      if (data.fallbackSource) {
+        setNotice(
+          `BẢN DỰ PHÒNG: nguồn chính quá chậm nên đang phát bản Vimo thay thế — video là bản khác nên phụ đề online sẽ lệch giờ. Tua lại sau ít phút để về bản gốc.`,
+        );
+      } else {
+        setNotice((prev) => (prev && prev.startsWith('BẢN DỰ PHÒNG') ? null : prev));
+      }
+      // Same materiality rule as the player's toast: a start position rounded
+      // down to the bucket is the request being honoured, not dropped.
+      if (
+        resolvedStartAt - returnedOffset > 30
+        && returnedOffset <= 0
+        && data.seekStartSupported !== false
+        && typeof window !== 'undefined'
+      ) {
+        // A seek asked for a session beginning at resolvedStartAt but the
+        // server answered from-the-start: applying it would yank playback
+        // backwards, so say so loudly in the console instead of failing blind.
+        console.warn(
+          `[seek] requested startAt=${resolvedStartAt}s but response has no startOffset; ` +
+          `sessionId=${typeof data.sessionId === 'string' ? data.sessionId : '?'} mode=${data.mode || '?'}`,
+        );
+      }
+      const effectiveToken = resolvedSourceToken || (typeof data.sourceToken === 'string' ? data.sourceToken : '');
+      setActiveToken(effectiveToken);
+      activeTokenRef.current = effectiveToken;
       if (sourceToken && typeof window !== 'undefined') {
         localStorage.setItem(selectedSourceKey, sourceToken);
       }
@@ -351,12 +820,18 @@ export default function PlaybackSection({
       }
 
       if (data.mode === 'direct' && data.url) {
+        if (Array.isArray(data.streams)) {
+          setSources(data.streams);
+        }
         applyPlayUrl(data.url);
         setFileName(data.fileName || '');
         setPlayMode('direct');
         setDurationSeconds(null);
         setPlaybackStatus('ready');
       } else if (data.mode === 'remux' && data.playlistUrl) {
+        if (Array.isArray(data.streams)) {
+          setSources(data.streams);
+        }
         const backendBase = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:5001/api';
         const absoluteUrl = data.playlistUrl.startsWith('http')
           ? data.playlistUrl
@@ -372,7 +847,7 @@ export default function PlaybackSection({
           const warmTarget =
             typeof data.startupTargetSeconds === 'number' && data.startupTargetSeconds > 0
               ? data.startupTargetSeconds
-              : 15;
+              : resolvedStartAt > 0 ? 4 : 15;
           if (!preservePlayer) setPlaybackStatus('downloading');
           setDownloadProgress(0);
           setPlaybackSessionId(typeof data.sessionId === 'string' ? data.sessionId : '');
@@ -411,7 +886,7 @@ export default function PlaybackSection({
                 // writer dies. Resolving again replaces the dead remux instead
                 // of handing VideoPlayer a stream that is guaranteed to freeze.
                 clearPoll();
-                recoverPlayback('Luồng remux đã ngừng tạo dữ liệu.');
+                recoverPlayback(isProd ? 'Luồng phát đã dừng, đang thử lại.' : 'Luồng remux đã ngừng tạo dữ liệu.');
                 return;
               }
               if (warmPolls >= 30) finishWarm();
@@ -426,6 +901,19 @@ export default function PlaybackSection({
           setPlayMode('remux');
           setDurationSeconds(typeof data.durationSeconds === 'number' ? data.durationSeconds : null);
           setPlaybackStatus('ready');
+        }
+
+        // Speculatively preload the next bucket if known
+        if (data.sessionId) {
+          const currentOffset = returnedOffset || resolvedStartAt || 0;
+          playbackAPI.preload({
+            sessionId: data.sessionId,
+            timestamps: [currentOffset + 300],
+            type,
+            tmdbId,
+            season: season ?? undefined,
+            episode: episode ?? undefined,
+          }).catch(() => {});
         }
       } else if (data.mode === 'downloading' || data.mode === 'preparing') {
         if (!preservePlayer) setPlaybackStatus('downloading');
@@ -486,6 +974,11 @@ export default function PlaybackSection({
         throw new Error('Chế độ phát không được nhận diện');
       }
     } catch (err: any) {
+      // Abandoned by design (unmount, superseded intent): never surface as an
+      // error and never disturb the newer resolve already in flight.
+      if (err?.code === 'ERR_CANCELED' || err?.name === 'CanceledError') {
+        return;
+      }
       const status = err.response?.status;
       const message = err.response?.data?.message || err.message || 'Không thể chuẩn bị nguồn phát';
 
@@ -496,9 +989,19 @@ export default function PlaybackSection({
         // Released before the retry so the follow-up is never mistaken for a
         // duplicate of the request that just failed.
         resolveInFlightRef.current = null;
+        resolveInFlightEpochRef.current = null;
+        // A failed seek retries into the same rejection channel so the player
+        // can toast over the still-playing picture instead of going silent.
+        if (options?.startAt) return startPlaybackResolution('', undefined, options);
         startPlaybackResolution('', undefined, options);
         return;
       }
+
+      // Seek-resolve failure: the old picture is still up underneath, so keep
+      // it and report through the rejection (the player toasts the reason
+      // over the video) instead of tearing down into the error screen.
+      // Ordinary resolves keep the show-error-screen behaviour below.
+      if (options?.startAt) throw err;
 
       if (status === 401 && (err.response?.data?.code === 'invalid_token' || err.response?.data?.code === 'no_token')) {
         setPlaybackStatus('needs_provider');
@@ -509,14 +1012,21 @@ export default function PlaybackSection({
         // first reason so a dead end is diagnosable instead of a blank wall.
         const rejected = err.response?.data?.rejected;
         const hint =
-          Array.isArray(rejected) && rejected[0]?.reasons?.[0]
+          !isProd && Array.isArray(rejected) && rejected[0]?.reasons?.[0]
             ? ` (VD: ${rejected[0].reasons[0]})`
             : '';
-        setErrorMessage(`${message}${hint}`);
+        setErrorMessage(getFriendlyErrorMessage(`${message}${hint}`, isProd));
       }
     } finally {
       if (stagePollRef.current === stageTimer) clearStagePoll();
-      if (resolveInFlightRef.current === requestKey) resolveInFlightRef.current = null;
+      if (
+        resolveInFlightRef.current === requestKey &&
+        resolveInFlightEpochRef.current === requestEpoch
+      ) {
+        resolveInFlightRef.current = null;
+        resolveInFlightEpochRef.current = null;
+      }
+      if (resolveAbortRef.current === resolveController) resolveAbortRef.current = null;
     }
   }, [type, tmdbId, season, episode, selectedSourceKey, recoverPlayback]);
 
@@ -559,7 +1069,14 @@ export default function PlaybackSection({
       const res = await providerAPI.getStatus();
       const torbox = res.data?.data?.torbox;
       if (torbox && torbox.connected) {
-        startPlaybackResolution();
+        // First auto-start opens at the saved position when there is one, so
+        // the player never plays from 0 just to re-resolve seconds later.
+        // Manual source picks / retries intentionally start at 0 (or their
+        // explicit startAt) and must not consume this seed.
+        const seed = didInitialResolveRef.current ? 0 : getResumeSeed();
+        didInitialResolveRef.current = true;
+        initialStartAtRef.current = seed;
+        startPlaybackResolution(undefined, undefined, seed > 0 ? { startAt: seed } : undefined);
       } else {
         setPlaybackStatus('needs_provider');
       }
@@ -571,7 +1088,7 @@ export default function PlaybackSection({
         setPlaybackStatus('needs_provider');
       }
     }
-  }, [authStatus, startPlaybackResolution]);
+  }, [authStatus, startPlaybackResolution, getResumeSeed]);
 
   useEffect(() => {
     if (playbackStatus !== 'resolving') return;
@@ -594,7 +1111,10 @@ export default function PlaybackSection({
     try {
       await providerAPI.connectTorbox(torboxKeyInput.trim());
       setTorboxKeyInput('');
-      startPlaybackResolution();
+      const seed = didInitialResolveRef.current ? 0 : getResumeSeed();
+      didInitialResolveRef.current = true;
+      initialStartAtRef.current = seed;
+      startPlaybackResolution(undefined, undefined, seed > 0 ? { startAt: seed } : undefined);
     } catch (err: any) {
       const msg = err.response?.data?.message || 'Không thể liên kết TorBox API key';
       setKeyError(msg);
@@ -810,6 +1330,16 @@ export default function PlaybackSection({
                         {src.releaseSource.toUpperCase()}
                       </span>
                     )}
+                    {src.origin === 'yastream' && (
+                      <span className="rounded bg-indigo-500/15 px-2 py-0.5 font-bold text-indigo-400">
+                        KKPHIM / OPHIM
+                      </span>
+                    )}
+                    {src.origin === 'vimo' && (
+                      <span className="rounded bg-emerald-500/15 px-2 py-0.5 font-bold text-emerald-400">
+                        VIETSUB TRỰC TIẾP
+                      </span>
+                    )}
                     {typeof src.sizeBytes === 'number' && src.sizeBytes > 0 && (
                       <span className="text-cinema-subtle">{formatSize(src.sizeBytes)}</span>
                     )}
@@ -854,6 +1384,18 @@ export default function PlaybackSection({
 
     return (
       <div className="w-full space-y-2">
+        {notice && (
+          <div className="flex items-start justify-between gap-3 rounded-xl border border-amber-primary/30 bg-amber-primary/10 px-4 py-2.5 text-xs leading-relaxed text-amber-gold">
+            <span>{notice}</span>
+            <button
+              onClick={() => setNotice(null)}
+              aria-label="Đóng thông báo"
+              className="shrink-0 rounded-full px-2 py-0.5 font-bold hover:bg-white/10"
+            >
+              ✕
+            </button>
+          </div>
+        )}
         <div className="relative">
           <CinemaLayer mode={cinemaMode} video={videoEl} />
           <div className="relative aspect-video w-full rounded-xl overflow-hidden shadow-2xl bg-black border border-white/5">
@@ -864,6 +1406,7 @@ export default function PlaybackSection({
             reloadKey={reloadKey}
             onPlaybackFailure={recoverPlayback}
             onPlaybackProgress={handlePlaybackProgress}
+            onDecodeOverload={handleDecodeOverload}
             movie={movieData}
             episode={episodeData}
             authToken={(session?.user as any)?.accessToken}
@@ -878,6 +1421,12 @@ export default function PlaybackSection({
             }}
             onPickAudio={pickAudio}
             activeAudioIndex={activeAudioIndex}
+            startAt={startOffset}
+            presentationShiftMs={presentationShiftMs}
+            seekStartSupported={seekStartSupported}
+            onSeekToPosition={requestSeekPosition}
+            onCancelSeek={cancelSeekPosition}
+            seekProgress={{ label: resolveStageLabel || null, percent: downloadProgress || null }}
           />
           {/* Live telemetry pills overlay (Stitch player pro) — display only,
               pointer-events-none so player controls stay clickable. */}
@@ -932,10 +1481,12 @@ export default function PlaybackSection({
             <span className="rounded bg-white/5 px-2 py-0.5 text-cinema-subtle ring-1 ring-white/10">{candidate.seeds} seed</span>
           )}
           <span className="rounded bg-white/5 px-2 py-0.5 text-cinema-subtle ring-1 ring-white/10">
-            {playMode === 'remux' ? 'Remux HLS (copy video)' : 'Direct stream'}
+            {isProd
+              ? 'Chất lượng cao'
+              : playMode === 'remux' ? 'Remux HLS (copy video)' : 'Direct stream'}
           </span>
           {candidate?.cached && (
-            <span className="rounded bg-green-500/15 px-2 py-0.5 font-bold text-green-400 ring-1 ring-green-500/20">TorBox cached</span>
+            <span className="rounded bg-green-500/15 px-2 py-0.5 font-bold text-green-400 ring-1 ring-green-500/20">{isProd ? 'Sẵn sàng' : 'TorBox cached'}</span>
           )}
           <button
             onClick={togglePip}
@@ -948,9 +1499,32 @@ export default function PlaybackSection({
         </div>
 
         {fileName && (
-          <div className="flex items-center justify-between px-1 text-xs text-cinema-subtle">
-            <span className="max-w-md truncate">Tệp: {fileName}</span>
-            <span className="rounded bg-white/5 px-2 py-0.5 text-cinema-subtle">TorBox Playback</span>
+          <div className="flex flex-col gap-1.5 px-1">
+            <div className="flex items-center justify-between text-xs text-cinema-subtle">
+              <span className="max-w-md truncate" title={fileName}>
+                Tệp: {fileName}
+              </span>
+              <span className="rounded bg-white/5 px-2 py-0.5 text-cinema-subtle">
+                {isProd
+                  ? 'Phát trực tuyến'
+                  : candidate?.releaseSource?.toLowerCase().includes('vimo') || candidate?.releaseSource?.toLowerCase().includes('yastream')
+                    ? 'Vietsub Playback'
+                    : playMode === 'direct'
+                      ? 'Direct Playback'
+                      : 'TorBox Playback'}
+              </span>
+            </div>
+            {resolveElapsed >= 30 && (
+              <div className="flex items-center justify-between rounded-lg bg-amber-500/10 p-2 text-[11px] text-amber-200/80 ring-1 ring-amber-500/20">
+                <span>Nguồn này phản hồi chậm hơn dự kiến, bạn có muốn thử lại hoặc đổi nguồn?</span>
+                <button 
+                  onClick={() => window.location.reload()}
+                  className="rounded bg-amber-500/20 px-2 py-1 font-bold text-amber-200 hover:bg-amber-500/30"
+                >
+                  Thử lại
+                </button>
+              </div>
+            )}
           </div>
         )}
 
@@ -967,7 +1541,7 @@ export default function PlaybackSection({
 
         {/* Pro episodes panel (Stitch player pro, TV only) — real season data */}
         {type === 'tv' && episodes.length > 0 && (
-          <section id="episodes" className="glass-panel mt-3 rounded-2xl border border-amber-primary/20 p-3.5">
+          <section id="episodes" className="glass-panel group relative mt-3 rounded-2xl border border-amber-primary/20 p-3.5">
             <div className="mb-3 flex items-center justify-between">
               <div className="flex items-center gap-2">
                 <span className="h-2 w-2 rounded-full bg-amber-400"></span>
@@ -975,18 +1549,35 @@ export default function PlaybackSection({
                   Danh Sách Tập Phim{seasonLabel ? ` (${seasonLabel})` : ''}
                 </h2>
                 {typeof activeEpisode === 'number' && (
-                  <span className="rounded-full bg-amber-primary/20 px-2 py-0.5 font-mono text-[10px] font-bold text-amber-gold ring-1 ring-amber-primary/30">
-                    Tập {activeEpisode}/{episodes.length}
+                    <span className="rounded-full bg-amber-primary/20 px-2 py-0.5 font-mono text-[10px] font-bold text-amber-gold ring-1 ring-amber-primary/30">
+                      {isProd ? `Tập ${activeEpisode}` : `Tập ${activeEpisode}/${episodes.length}`}
+                    </span>
+                  )}
+                </div>
+                <div className="flex items-center gap-3">
+                  <span className="font-mono text-[11px] text-cyan-accent">
+                    {isProd ? `${episodes.length} tập` : `${episodes.length} tập (Stitch Pro)`}
                   </span>
-                )}
+                <div className="flex gap-1">
+                  <button
+                    onClick={() => scrollEpisodes('left')}
+                    className="flex h-6 w-6 items-center justify-center rounded-md bg-white/5 text-white/60 transition hover:bg-white/10 hover:text-white"
+                  >
+                    <ChevronLeft size={14} />
+                  </button>
+                  <button
+                    onClick={() => scrollEpisodes('right')}
+                    className="flex h-6 w-6 items-center justify-center rounded-md bg-white/5 text-white/60 transition hover:bg-white/10 hover:text-white"
+                  >
+                    <ChevronRight size={14} />
+                  </button>
+                </div>
               </div>
-              <span className="font-mono text-[11px] text-cyan-accent">
-                {episodes.length} tập
-              </span>
             </div>
             <div
-              className="hide-scrollbar flex gap-3 overflow-x-auto pb-2"
-              style={{ scrollbarWidth: 'none', msOverflowStyle: 'none' }}
+              ref={episodeScrollRef}
+              className="hide-scrollbar relative flex gap-3 overflow-x-auto scroll-smooth pb-2 snap-x snap-mandatory touch-pan-x"
+              style={{ scrollbarWidth: 'none', msOverflowStyle: 'none', WebkitOverflowScrolling: 'touch' }}
             >
               {episodes.map((ep) => {
                 const isActive = ep.episodeNumber === activeEpisode;
@@ -995,7 +1586,8 @@ export default function PlaybackSection({
                     key={ep.episodeNumber}
                     href={ep.href}
                     scroll={false}
-                    className={`group w-44 shrink-0 overflow-hidden rounded-xl border transition ${
+                    data-active={isActive}
+                    className={`group w-44 shrink-0 overflow-hidden rounded-xl border transition snap-start ${
                       isActive
                         ? 'glass-panel border-amber-primary/60 shadow-[0_0_12px_rgba(245,158,11,0.25)]'
                         : 'border-white/10 bg-white/5 hover:border-white/30'
@@ -1014,7 +1606,7 @@ export default function PlaybackSection({
                         />
                       ) : null}
                       <span className="absolute left-1.5 top-1.5 rounded border border-white/10 bg-black/70 px-1.5 py-0.5 font-mono text-[9px] text-white/90">
-                        Tập {ep.episodeNumber}
+                        {isProd ? `Tập ${ep.episodeNumber}` : `Tập ${ep.episodeNumber} (Internal)`}
                       </span>
                       {isActive && (
                         <span className="absolute bottom-1 right-1 rounded bg-amber-primary px-1.5 py-0.5 font-mono text-[9px] font-bold text-surface-dark">
@@ -1037,9 +1629,9 @@ export default function PlaybackSection({
                       >
                         {ep.episodeNumber}. {ep.name}
                       </p>
-                      <p className="truncate text-[9px] text-cinema-subtle">
-                        {ep.overview || 'Chưa có mô tả.'}
-                      </p>
+              <p className="truncate text-[9px] text-cinema-subtle">
+                {(isProd && ep.overview && ep.overview.includes('Internal')) ? 'Chưa có mô tả.' : (ep.overview || 'Chưa có mô tả.')}
+              </p>
                     </div>
                   </Link>
                 );
@@ -1088,6 +1680,11 @@ export default function PlaybackSection({
                   {src.releaseSource && (
                     <span className="rounded bg-white/10 px-2 py-0.5 text-cinema-muted">
                       {src.releaseSource.toUpperCase()}
+                    </span>
+                  )}
+                  {src.origin === 'vimo' && (
+                    <span className="rounded bg-emerald-500/15 px-2 py-0.5 font-bold text-emerald-400">
+                      VIETSUB TRỰC TIẾP
                     </span>
                   )}
                   {typeof src.sizeBytes === 'number' && src.sizeBytes > 0 && (

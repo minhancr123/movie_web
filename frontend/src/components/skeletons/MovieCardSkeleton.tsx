@@ -2,7 +2,7 @@ const MovieCardSkeleton = () => {
   return (
     <div className="relative group rounded-md overflow-hidden cursor-pointer shadow-lg bg-surface-light border border-white/10">
       {/* Aspect Ratio Wrapper matching MovieCard */}
-      <div className="aspect-[2/3] w-full relative bg-surface-container animate-pulse">
+      <div className="aspect-[2/3] w-full relative bg-surface-container-high animate-pulse">
         {/* Placeholder for Poster Image */}
       </div>
 

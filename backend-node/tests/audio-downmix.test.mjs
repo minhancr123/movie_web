@@ -147,6 +147,13 @@ assert.deepEqual(selectSupersededRemuxes([], 'keep', live(['a'])), []);
 assert.deepEqual(selectSupersededRemuxes(['a'], 'keep', () => false), []);
 assert.deepEqual(selectSupersededRemuxes([null, undefined, ''], 'keep', () => true), []);
 assert.deepEqual(selectSupersededRemuxes(undefined, 'keep'), [], 'missing input must not throw');
+
+// Array of keepSessionIds preserves multiple sessions (e.g. nearby/speculative preloads).
+assert.deepEqual(
+  selectSupersededRemuxes(['a', 'keep1', 'b', 'keep2', 'c'], ['keep1', 'keep2'], live(['a', 'keep1', 'b', 'keep2', 'c'])),
+  ['a', 'b', 'c'],
+  'all sessions in keepSessionIds array must be preserved',
+);
 console.log('ok - superseded remuxes selected without ever stopping the new one');
 
 /* ---------------------------------- superseded-stop grace period bindings */

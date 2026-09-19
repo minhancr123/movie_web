@@ -16,6 +16,7 @@ const API_ORIGIN = API_BASE.replace(/\/api\/?$/, '');
 const playbackClient = axios.create({
   baseURL: API_BASE,
   headers: { 'Content-Type': 'application/json' },
+  timeout: 35000,
 });
 
 playbackClient.interceptors.request.use(async (config) => {
@@ -157,6 +158,7 @@ export interface ResolveParams {
   season?: number | null;
   episode?: number | null;
   capabilities: PlaybackCapabilities;
+  lipSyncMs?: number;
 }
 
 const unwrapError = (error: any): Error => {
@@ -198,6 +200,16 @@ export const playbackAPI = {
       return res.data?.data as PlaybackSessionState;
     } catch (error) {
       throw unwrapError(error);
+    }
+  },
+
+  async preload(params: { sessionId?: string; timestamps?: number[]; type?: string; tmdbId?: number | string; season?: number; episode?: number }) {
+    try {
+      const res = await playbackClient.post('/playback/preload', params);
+      return res.data?.data;
+    } catch (error) {
+      // Preload is speculative/fire-and-forget
+      return null;
     }
   },
 };

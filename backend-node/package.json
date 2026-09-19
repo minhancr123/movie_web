@@ -9,7 +9,7 @@
     "dev": "nodemon server.js",
     "worker": "node workers/queueWorker.js",
     "scheduler": "node workers/scheduler.js",
-    "test": "node tests/tmdb.test.mjs && node tests/opensubtitlesHash.test.mjs && node tests/sourceRanker.test.mjs && node tests/audio-downmix.test.mjs && node tests/delivery-plan.test.mjs && node tests/transcode-fallback.test.mjs && node tests/resolve-stage.test.mjs"
+    "test": "node tests/tmdb.test.mjs && node tests/opensubtitlesHash.test.mjs && node tests/sourceRanker.test.mjs && node tests/audio-downmix.test.mjs && node tests/delivery-plan.test.mjs && node tests/transcode-fallback.test.mjs && node tests/vimo-client.test.mjs && node tests/resolve-stage.test.mjs && node tests/remux-speed.test.mjs && node tests/link-expiry.test.mjs && node tests/renditions.test.mjs && node tests/presentation-shift.test.mjs && node tests/remux-concurrency.test.mjs && node tests/seek-origin.test.mjs && node tests/subtitle-variant-name.test.mjs && node tests/addon-base-url.test.mjs && node tests/seek-origin-sidecar.test.mjs && node tests/public-vocabulary.test.mjs && node tests/cors-origins.test.mjs && node tests/remux-avsync-offset.test.mjs && node tests/vietsub-picker.test.mjs"
   },
   "keywords": [
     "express",

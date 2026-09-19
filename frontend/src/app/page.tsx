@@ -4,6 +4,7 @@ import CatalogCard from '@/components/CatalogCard';
 import CatalogRow from '@/components/CatalogRow';
 import ContinueWatchingRow from '@/components/ContinueWatchingRow';
 import HeroSection from '@/components/HeroSection';
+import RecommendationsRow from '@/components/RecommendationsRow';
 import IntroAnimation from '@/components/IntroAnimation';
 import SpatialShader from '@/components/SpatialShader';
 
@@ -56,6 +57,7 @@ export default async function Home() {
 
         <div className="mt-8">
           <ContinueWatchingRow />
+          <RecommendationsRow />
         </div>
 
       <div className="mt-8 mb-6 flex items-end justify-between gap-4">

@@ -56,3 +56,9 @@ yarn-error.log*
 # Misc
 *.log
 .cache/
+
+# Playwright e2e generated media (regenerable, see e2e/media/README.md)
+e2e/media/segs/
+e2e/media/src.mp4
+test-results/
+playwright-report/

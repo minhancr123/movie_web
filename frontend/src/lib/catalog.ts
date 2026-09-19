@@ -39,10 +39,33 @@ export interface CatalogDetail extends CatalogItem {
   status: string;
   /** IMDb id — the key Stremio-protocol addons resolve sources by. */
   imdbId: string | null;
-  cast: { name: string; character: string; profile: string }[];
+  cast: { id: number | null; name: string; character: string; profile: string }[];
   directors: string[];
   trailerKey: string | null;
   seasons?: CatalogSeasonSummary[];
+}
+
+export interface PersonCredit {
+  tmdbId: number;
+  mediaType: 'movie' | 'tv';
+  title: string;
+  character: string;
+  poster: string;
+  year: number | null;
+  voteAverage: number;
+}
+
+export interface PersonDetail {
+  id: number;
+  name: string;
+  biography: string;
+  biographyLang?: 'vi' | 'en' | '';
+  birthday: string | null;
+  deathday: string | null;
+  placeOfBirth: string;
+  profile: string;
+  knownFor: string;
+  filmography: PersonCredit[];
 }
 
 export interface CatalogEpisode {
@@ -176,6 +199,9 @@ export const discoverCatalog = (params: {
 export const getCatalogDetail = (type: MediaType, tmdbId: number | string) =>
   get<CatalogDetail | null>(`/${type}/${tmdbId}`, REVALIDATE.detail, null);
 
+export const getPersonDetail = (personId: number | string) =>
+  get<PersonDetail | null>(`/person/${personId}`, REVALIDATE.detail, null);
+
 export const getSeason = (tmdbId: number | string, season: number | string) =>
   get<CatalogSeason | null>(`/tv/${tmdbId}/season/${season}`, REVALIDATE.season, null);
 
@@ -183,6 +209,50 @@ export const getGenres = (type: MediaType) =>
   get<{ genres: { id: number; name: string }[] }>(`/genres/${type}`, REVALIDATE.genres, {
     genres: [],
   });
+
+/** Fetch personalized items based on watch history or current movie. */
+export const getPersonalizedRecommendations = async (token?: string, type?: string, tmdbId?: number): Promise<CatalogItem[]> => {
+  try {
+    const qs = new URLSearchParams();
+    if (type) qs.set('type', type);
+    if (tmdbId) qs.set('tmdbId', String(tmdbId));
+
+    const res = await fetch(`${API_BASE}/catalog/recommendations?${qs}`, {
+      cache: 'no-store',
+      headers: {
+        accept: 'application/json',
+        ...(token ? { Authorization: `Bearer ${token}` } : {}),
+      },
+    });
+
+    if (!res.ok) return [];
+    const payload = await res.json();
+    if (!payload?.success || !Array.isArray(payload?.data)) return [];
+
+    return payload.data.map((item: any): CatalogItem => {
+      const mediaType: MediaType = item.mediaType || item.type || item.media_type || 'movie';
+      const tmdbId: number = Number(item.tmdbId || item.id);
+      const title: string = item.title || item.name || '';
+      return {
+        contentRef: item.contentRef || `tmdb:${mediaType}:${tmdbId}`,
+        tmdbId,
+        mediaType,
+        title,
+        originalTitle: item.originalTitle || item.original_title || item.original_name || '',
+        slug: item.slug || slugify(title),
+        overview: item.overview || '',
+        year: item.year ?? (item.release_date || item.first_air_date ? new Date(item.release_date || item.first_air_date).getFullYear() : null),
+        poster: item.poster || (item.poster_path ? `https://image.tmdb.org/t/p/w500${item.poster_path}` : ''),
+        backdrop: item.backdrop || (item.backdrop_path ? `https://image.tmdb.org/t/p/w1280${item.backdrop_path}` : ''),
+        genres: item.genres || [],
+        voteAverage: Number(item.voteAverage ?? item.vote_average ?? 0),
+      };
+    });
+  } catch (error) {
+    console.error('getPersonalizedRecommendations error:', error);
+    return [];
+  }
+};
 
 /* ---------------------------------------------------------- stored records */
 

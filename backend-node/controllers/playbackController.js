@@ -17,23 +17,40 @@ import crypto from 'crypto';
 import fs from 'fs/promises';
 import path from 'path';
 import { getDB } from '../config/database.js';
+import { publicText, publicFileName } from '../services/publicVocabulary.js';
 import { ObjectId } from 'mongodb';
 import { cached, getCache, setCache, CACHE_TTL } from '../config/redis.js';
 import { isMediaType } from '../services/contentRef.js';
 import * as tmdb from '../services/tmdb.js';
-import { getStreamCandidates, getSubtitleCandidates } from '../services/addonClient.js';
+import {
+  getStreamCandidates,
+  getSubtitleCandidates,
+  subtitleVariantLabel,
+} from '../services/addonClient.js';
 import * as torbox from '../services/debrid/torbox.js';
 import { DebridError } from '../services/debrid/torbox.js';
 import { rankCandidates, normalizeCapabilities } from '../services/playback/sourceRanker.js';
 import {
   ffprobe,
   decidePlaybackMode,
+  presentationShiftMs,
   startRemuxSession,
+  RemuxBusyError,
+  probeSeekOrigin,
+  seekOriginProbeEnabled,
+  seekStartEnabled,
+  spawnBeatsReuse,
+  cachedSeekOrigin,
   waitForPlaylist,
   getRemuxSession,
   stopRemuxSession,
   scheduleSupersededStop,
   cancelScheduledStop,
+  computeWriteSpeed,
+  SLOW_WRITER_MIN_OBSERVE_MS,
+  SLOW_WRITER_MIN_SPEED,
+  isLinkExpiryDeath,
+  REMUX_SEGMENT_SECONDS,
   activeEgressKbps,
   selectSupersededRemuxes,
   isRemuxSessionLive,
@@ -43,6 +60,7 @@ import {
   resolveVideoTranscodeCapability,
   extractSubtitleTrack,
   extractSubtitleTracks,
+  REMUX_BUILD,
   subsPath,
   isConvertibleSubtitle,
   // Single definition on purpose: a redaction that exists in two places is one
@@ -50,11 +68,21 @@ import {
   redactSecrets,
 } from '../services/playback/remuxService.js';
 import { isLanClient } from '../services/playback/clientNetwork.js';
+import {
+  buildRenditionId,
+  readRenditionState,
+  publishRendition,
+  renditionPath,
+  selectRenditionEvictions,
+  RENDITION_MAX_BYTES,
+} from '../services/playback/renditions.js';
 import { setResolveStage, getResolveStage as readResolveStage } from '../services/playback/resolveProgress.js';
 import { planAdmission } from '../services/playback/deliveryPlan.js';
 import { getDecryptedKey } from '../services/providers/connectionStore.js';
 import { computeOpenSubtitlesHash } from '../services/playback/opensubtitlesHash.js';
 import * as opensubtitles from '../services/playback/opensubtitles.js';
+import { resolveVimoSource, getVimoStreams } from '../services/playback/vimoClient.js';
+import { resolveYaStreamSource } from '../services/playback/yastreamClient.js';
 
 const PROVIDER = 'torbox';
 const SESSION_TTL_MS = 6 * 60 * 60 * 1000;
@@ -69,10 +97,30 @@ const PROBE_FACTS_TTL = 7 * 24 * 60 * 60;
  * returns to.
  */
 const PROBE_RESULT_TTL = 7 * 24 * 60 * 60;
-const probeFactsKey = (infoHash) => `playback:probe:${String(infoHash).toLowerCase()}`;
+/**
+ * Shape version for the cached ffprobe result.
+ *
+ * Entries live for a week, so a field added to the probe is absent from every
+ * entry already in Redis — and code reading it sees a legitimate-looking zero
+ * rather than a miss. That is exactly how `presentationShiftMs` came back 0 for
+ * a file with 2 B-frames: the cached probe predated `hasBFrames`. Bump this
+ * whenever the probe shape changes; old entries are then simply never read.
+ */
+const PROBE_SHAPE_VERSION = 2;
+
+const probeFactsKey = (infoHash) =>
+  `playback:probe:v${PROBE_SHAPE_VERSION}:${String(infoHash).toLowerCase()}`;
+/** Measured keyframe a given -ss lands on; the file never changes, so this keeps. */
+const seekOriginKey = (infoHash, at) =>
+  `playback:seekorigin:${String(infoHash).toLowerCase()}:${at}`;
+/** Origins are keyed on immutable bytes: one success fixes every later seek. */
+const SEEK_ORIGIN_TTL = 7 * 24 * 60 * 60;
 // OpenSubtitles hash of the picked file. Cached so repeat resolves of the same
 // source never re-issue the two range requests.
 const fileHashKey = (infoHash) => `playback:oshash:${String(infoHash).toLowerCase()}`;
+/** Clamp a lip-sync delay to the UI range [0, 1000] ms. */
+const clampLipSyncMs = (v) => Math.min(1000, Math.max(0, Math.round(Number(v) || 0)));
+
 /**
  * Full ffprobe output for one file inside one torrent.
  *
@@ -87,7 +135,7 @@ const fileHashKey = (infoHash) => `playback:oshash:${String(infoHash).toLowerCas
  * skip the probe itself.
  */
 const probeResultKey = (infoHash, fileId) =>
-  `playback:probefull:${String(infoHash).toLowerCase()}:${String(fileId ?? 'default')}`;
+  `playback:probefull:v${PROBE_SHAPE_VERSION}:${String(infoHash).toLowerCase()}:${String(fileId ?? 'default')}`;
 
 const fail = (res, status, message, extra = {}) =>
   res.status(status).json({ success: false, message, ...extra });
@@ -269,6 +317,7 @@ const rememberProbeFacts = (infoHash, probe) =>
       codec: probe?.video?.codec || null,
       height: probe?.video?.height || null,
       frameRate: probe?.video?.frameRate || null,
+      hasBFrames: probe?.video?.hasBFrames ?? null,
       audio: (probe?.audio || []).map((a) => ({
         streamIndex: a.streamIndex,
         language: a.language || '',
@@ -299,8 +348,23 @@ const rememberProbeFacts = (infoHash, probe) =>
  */
 const STARTUP_BUFFER_SECONDS = Math.max(
   4,
-  Number(process.env.PLAYBACK_STARTUP_BUFFER_SECONDS) || 15,
+  Number(process.env.PLAYBACK_STARTUP_BUFFER_SECONDS) || 12,
 );
+const SEEK_STARTUP_BUFFER_SECONDS = Math.max(
+  4,
+  Number(process.env.PLAYBACK_SEEK_STARTUP_BUFFER_SECONDS) || 4,
+);
+export const SEEK_BUCKET_SECONDS = 300;
+export const bucketStartAt = (sec = 0) => {
+  const val = Number(sec);
+  if (!Number.isFinite(val) || val <= 0) return 0;
+  // Small offsets stay exact: bucketing them to 0 silently turns every early
+  // resume/seek (< 1 bucket) into a from-start session — a duplicate remux,
+  // a supersede of the playing session, and a lost position. Buckets only
+  // pay off at/above the bucket size (shared mid-film seeks).
+  if (val < SEEK_BUCKET_SECONDS) return Math.floor(val);
+  return Math.floor(val / SEEK_BUCKET_SECONDS) * SEEK_BUCKET_SECONDS;
+};
 
 /**
  * How long resolve itself will wait before handing the session over.
@@ -322,6 +386,9 @@ const RESOLVE_BUFFER_WAIT_MS = 6000;
  * rather than written down twice.
  */
 const PLAYLIST_MIN_SECONDS = Math.min(8, STARTUP_BUFFER_SECONDS);
+const SEEK_PLAYLIST_MIN_SECONDS = Math.min(4, SEEK_STARTUP_BUFFER_SECONDS);
+const startupBufferForStartAt = (startAt = 0) => (startAt > 0 ? SEEK_STARTUP_BUFFER_SECONDS : STARTUP_BUFFER_SECONDS);
+const playlistMinForStartAt = (startAt = 0) => (startAt > 0 ? SEEK_PLAYLIST_MIN_SECONDS : PLAYLIST_MIN_SECONDS);
 
 const readPlaylistState = async (sessionId) => {
   try {
@@ -341,7 +408,7 @@ const playlistHasEnoughBuffer = async (sessionId, seconds = 120) => {
   return state.exists && state.duration >= seconds;
 };
 
-const waitForInitialBuffer = async (sessionId, seconds = 120, timeoutMs = 30000) => {
+const waitForInitialBuffer = async (sessionId, seconds = 120, timeoutMs = 15000) => {
   const start = Date.now();
   while (Date.now() - start < timeoutMs) {
     if (await playlistHasEnoughBuffer(sessionId, seconds)) return true;
@@ -356,35 +423,53 @@ const titleExpectation = (detail) => ({
 });
 
 /** Strip anything the UI must not see (magnets carry trackers; hashes add nothing). */
+/** Production hides how the stream is made; development needs to see it. */
+const PUBLIC_MODE = process.env.NODE_ENV === 'production';
+
 export const sanitizeCandidateForResponse = (candidate) => ({
+  // Resolution and HDR describe the picture a viewer is getting, so they stay.
+  // Codec, release group, size, seed count and ranking notes describe HOW it
+  // is obtained and encoded — that is the operator's business, and in
+  // production it is one devtools tab away from every viewer.
   resolution: candidate.resolution || null,
-  codec: candidate.codec || null,
+  codec: PUBLIC_MODE ? null : (candidate.codec || null),
   hdr: candidate.hdr || null,
-  releaseSource: candidate.releaseSource || null,
-  sizeBytes: candidate.sizeBytes || null,
-  seeds: typeof candidate.seeds === 'number' ? candidate.seeds : null,
+  releaseSource: PUBLIC_MODE ? null : (candidate.releaseSource || null),
+  sizeBytes: PUBLIC_MODE ? null : (candidate.sizeBytes || null),
+  seeds: PUBLIC_MODE ? null : (typeof candidate.seeds === 'number' ? candidate.seeds : null),
   cached: Boolean(candidate.cached),
-  score: candidate.score ?? null,
-  reasons: Array.isArray(candidate.reasons) ? candidate.reasons.slice(0, 6) : [],
+  score: PUBLIC_MODE ? null : (candidate.score ?? null),
+  reasons: PUBLIC_MODE ? [] : (Array.isArray(candidate.reasons) ? candidate.reasons.slice(0, 6) : []),
   audioTracks: Array.isArray(candidate.audioTracks) ? candidate.audioTracks : [],
   subtitleTracks: Array.isArray(candidate.subtitleTracks) ? candidate.subtitleTracks : [],
 });
 
 /**
+ * The infohash the client echoes back as `sourceToken` to pin a release.
+ * Every resolve success payload must carry it: without it the client
+ * re-picks freely on each resume/recovery and can land on a different cut
+ * of the same title (subs mistimed, different audio mix). The magnet still
+ * never leaves the server.
+ */
+export const resolveSourceToken = (candidate) => String(candidate?.infoHash || '').toLowerCase();
+
+/**
  * Same shape as above plus the infohash, which the client sends back as
  * `sourceToken` to force a specific release. The magnet still never leaves
- * the server.
+ * the server. `origin` survives so the picker can badge non-torrent rows
+ * (e.g. Vimo direct HLS).
  */
 const sanitizeCandidateForPicker = (candidate) => ({
   ...sanitizeCandidateForResponse(candidate),
   sourceToken: String(candidate.infoHash || '').toLowerCase(),
   filename: candidate.filename || '',
   playable: candidate.playable !== false,
+  origin: candidate.origin || null,
 });
 
 /* ------------------------------------------------------------------ resolve */
 
-const parseResolveBody = (body = {}) => {
+export const parseResolveBody = (body = {}) => {
   const type = String(body.type || body.mediaType || '').toLowerCase();
   const tmdbId = Number(body.tmdbId);
   const season = body.season === undefined || body.season === null || body.season === '' ? null : Number(body.season);
@@ -413,6 +498,23 @@ const parseResolveBody = (body = {}) => {
       typeof body.sourceToken === 'string' && /^[a-f0-9]{40}$/i.test(body.sourceToken.trim())
         ? body.sourceToken.trim().toLowerCase()
         : null,
+    // Manual Vimo pick: `vimo|<movie|series>|<vimoId>[:s:e]` from the picker.
+    // Kept separate from sourceToken (infohash-only) so torrent lookups that
+    // compare hashes never see it.
+    vimoToken:
+      typeof body.sourceToken === 'string' &&
+      /^vimo\|(movie|series)\|[A-Za-z0-9_\-]+(?::\d+:\d+)?$/.test(body.sourceToken.trim())
+        ? body.sourceToken.trim()
+        : typeof body.vimoToken === 'string' &&
+          /^vimo\|(movie|series)\|[A-Za-z0-9_\-]+(?::\d+:\d+)?$/.test(body.vimoToken.trim())
+          ? body.vimoToken.trim()
+          : null,
+    yastreamToken:
+      typeof body.yastreamToken === 'string' && /^yastream:.+$/.test(body.yastreamToken.trim())
+        ? body.yastreamToken.trim()
+        : typeof body.sourceToken === 'string' && /^yastream:.+$/.test(body.sourceToken.trim())
+          ? body.sourceToken.trim()
+          : null,
     playbackSessionId:
       typeof body.playbackSessionId === 'string' && /^[a-f0-9]{32}$/i.test(body.playbackSessionId.trim())
         ? body.playbackSessionId.trim().toLowerCase()
@@ -424,6 +526,13 @@ const parseResolveBody = (body = {}) => {
       body.audioIndex === undefined || body.audioIndex === null || body.audioIndex === ''
         ? null
         : Number(body.audioIndex),
+    // Seek-start: begin the (re)mux at this many seconds into the file so a
+    // far seek does not wait for the whole prefix. The client maps the
+    // truncated 0-based timeline back with the returned startOffset.
+    startAt:
+      Number.isFinite(Number(body.startAt)) && Number(body.startAt) > 0
+        ? Math.floor(Number(body.startAt))
+        : 0,
   };
 };
 
@@ -439,8 +548,9 @@ const saveSession = async (db, doc) => {
   return record;
 };
 
-const findReusableRemuxSession = async (db, { userId, type, tmdbId, season, episode, infoHash, audioIndex, caps }) => {
-  const session = await db.collection('playback_sessions').findOne(
+const findReusableRemuxSession = async (db, { userId, type, tmdbId, season, episode, infoHash, audioIndex, caps, startAt = 0 }) => {
+  const requestedStartAt = Number.isFinite(Number(startAt)) && Number(startAt) > 0 ? Math.floor(Number(startAt)) : 0;
+  const sessions = await db.collection('playback_sessions').find(
     {
       userIdStr: String(userId),
       provider: PROVIDER,
@@ -451,19 +561,55 @@ const findReusableRemuxSession = async (db, { userId, type, tmdbId, season, epis
       infoHash: String(infoHash).toLowerCase(),
       // A remux bakes in ONE audio track: a different choice needs its own session.
       audioIndex: audioIndex ?? 0,
+      // Candidate sessions started at or before requested offset.
+      startAt: { $lte: requestedStartAt },
       mode: 'remux',
       expiresAt: { $gt: new Date() },
     },
-    { sort: { createdAt: -1 } },
-  );
-  if (!session?.playlistUrl) return null;
+    { sort: { startAt: -1, createdAt: -1 } },
+  ).toArray();
 
-  try {
-    const playlistPath = sessionPath(session.sessionId, 'index.m3u8');
-    await fs.access(playlistPath);
-    await fs.access(sessionPath(session.sessionId, 'init.mp4'));
-    const playlist = await fs.readFile(playlistPath, 'utf8');
-    const complete = playlist.includes('#EXT-X-ENDLIST');
+  for (const session of sessions) {
+    if (!session?.playlistUrl) continue;
+    // Generation gate: bytes remuxed under an older recipe (missing stamp =
+    // build 1) predate current compensation policy and must never be served
+    // as fixed. Checked before the local ffprobe so stale sessions do not
+    // even cost a probe; they age out through normal expiry.
+    if (session.remuxBuild !== REMUX_BUILD) continue;
+
+    try {
+      const playlistPath = sessionPath(session.sessionId, 'index.m3u8');
+      await fs.access(playlistPath);
+      await fs.access(sessionPath(session.sessionId, 'init.mp4'));
+      const playlist = await fs.readFile(playlistPath, 'utf8');
+      const complete = playlist.includes('#EXT-X-ENDLIST');
+
+      // Check if session has buffered enough to cover requestedStartAt + buffer
+      const duration = [...playlist.matchAll(/#EXTINF:([\d.]+)/g)].reduce(
+        (sum, match) => sum + Number(match[1] || 0),
+        0,
+      );
+      const sessionHead = (session.startAt || 0) + duration;
+      const minRequiredCoverage = requestedStartAt + (requestedStartAt > 0 ? SEEK_STARTUP_BUFFER_SECONDS : STARTUP_BUFFER_SECONDS);
+      if (!complete && sessionHead < minRequiredCoverage) {
+        // Behind the viewer — but only worth abandoning if a replacement could
+        // start closer to where they are going. It cannot when truncated
+        // sessions are off: every writer begins at 0, so walking away here
+        // spawns an identical ffmpeg and throws this one's progress out. That
+        // is one duplicate writer per seek, which is how a single viewer
+        // filled the concurrency ceiling and got themselves a 503.
+        const freshStartAt = seekStartEnabled() ? bucketStartAt(requestedStartAt) : 0;
+        if (spawnBeatsReuse({
+          sessionStartAt: session.startAt || 0,
+          freshStartAt,
+          // What this writer can actually serve right now. Handing back one
+          // below the floor answers the player with 409s until it gives up.
+          playableSeconds: duration,
+          minPlayable: PLAYLIST_MIN_SECONDS,
+        })) {
+          continue;
+        }
+      }
 
     // Sessions created before frame-rate metadata existed can still be in the
     // cache for hours. Probe the local HLS once before reusing them; otherwise a
@@ -482,7 +628,24 @@ const findReusableRemuxSession = async (db, { userId, type, tmdbId, season, epis
         audio: [],
       };
     } else {
-      reusableProbe = await ffprobe(playlistPath);
+      // Add a timeout to ffprobe for existing sessions to avoid kinking the UI
+      reusableProbe = await Promise.race([
+        ffprobe(playlistPath),
+        new Promise((_, reject) => setTimeout(() => reject(new Error('ffprobe timeout on reusable session')), 5000))
+      ]).catch(err => {
+        console.warn(`[playback] Reusable session ${session.sessionId} probe failed: ${err.message}`);
+        return null;
+      });
+      
+      if (!reusableProbe) {
+         // Mark as failed to avoid retrying this session
+         await db.collection('playback_sessions').updateOne(
+           { sessionId: session.sessionId },
+           { $set: { mode: 'failed', failureReason: 'probe_timeout_during_reuse', failedAt: new Date() } }
+         );
+         continue;
+      }
+
       await db.collection('playback_sessions').updateOne(
         { sessionId: session.sessionId },
         {
@@ -496,80 +659,326 @@ const findReusableRemuxSession = async (db, { userId, type, tmdbId, season, epis
         },
       );
     }
-    const compatibility = decidePlaybackMode(reusableProbe, caps, audioIndex);
-    if (compatibility.mode === 'reject') {
-      await db.collection('playback_sessions').updateOne(
-        { sessionId: session.sessionId },
-        {
-          $set: {
-            mode: 'failed',
-            failureStage: 'compatibility',
-            failureReason: compatibility.reason,
-            failedAt: new Date(),
-            updatedAt: new Date(),
+      const compatibility = decidePlaybackMode(reusableProbe, caps, audioIndex);
+      if (compatibility.mode === 'reject') {
+        await db.collection('playback_sessions').updateOne(
+          { sessionId: session.sessionId },
+          {
+            $set: {
+              mode: 'failed',
+              failureStage: 'compatibility',
+              failureReason: compatibility.reason,
+              failedAt: new Date(),
+              updatedAt: new Date(),
+            },
           },
-        },
-      );
-      return null;
-    }
-    if (complete) {
-      // Back in use: revoke any pending grace-period stop.
+        );
+        continue;
+      }
+      if (complete) {
+        // Back in use: revoke any pending grace-period stop.
+        cancelScheduledStop(session.sessionId);
+        // Eager publish: a finished session other viewers may already have
+        // completed becomes tomorrow's instant start. Milliseconds of local
+        // hardlinks; failures only skip sharing, never playback.
+        if (session.renditionKey) {
+          try {
+            await enforceRenditionBudget(db);
+            const pub = await publishRendition({
+              renditionId: session.renditionKey,
+              sessionId: session.sessionId,
+            });
+            if (pub.ok && !pub.dedup) {
+              await db.collection('published_renditions').updateOne(
+                { renditionId: session.renditionKey },
+                {
+                  $set: {
+                    infoHash: session.infoHash || null,
+                    fileId: session.fileId ?? null,
+                    fileName: publicFileName(session.fileName || ''),
+                    audioIndex: session.audioIndex ?? null,
+                    bytes: pub.bytes,
+                    segments: pub.segments,
+                    durationSeconds: pub.duration,
+                    lastAccessAt: new Date(),
+                  },
+                  $setOnInsert: { createdAt: new Date() },
+                },
+                { upsert: true },
+              );
+            } else if (pub.ok) {
+              await touchPublishedRendition(db, session.renditionKey);
+            }
+          } catch {
+            // Sharing is best effort.
+          }
+        }
+        return session;
+      }
+
+      // Link-death fast path (incomplete sessions only: a complete playlist
+      // needs no link at all). A writer that exited on an auth-flavoured error
+      // was killed by its expired download URL, and the cached URL would kill
+      // the next ffmpeg the same way — no sampling wait can fix that. Drop
+      // everything and bust the link cache so the fresh attempt mints a new
+      // link instead of replaying the corpse.
+      {
+        const writer = getRemuxSession(session.sessionId);
+        if (isLinkExpiryDeath({ exitCode: writer?.exitCode, stderrTail: writer?.stderr })) {
+          try {
+            await stopRemuxSession(session.sessionId).catch(() => false);
+            await db.collection('playback_sessions').deleteOne({ sessionId: session.sessionId });
+            await fs.rm(sessionPath(session.sessionId), { recursive: true, force: true });
+            await torbox.dropDownloadUrl({
+              torrentId: session.torrentId,
+              fileId: session.fileId,
+              userId: String(userId),
+            });
+          } catch {
+            // Cleanup failure must not block fresh playback.
+          }
+          continue;
+        }
+      }
+
+      // Liveness: reject a known exited child immediately. After a Node restart
+      // the child map is empty, so sample the playlist instead of trusting its
+      // age: only an observably growing orphan still has a writer behind it.
+      const live = getRemuxSession(session.sessionId);
+      const before = await fs.stat(playlistPath);
+      const playlistFresh = Date.now() - before.mtimeMs <= SESSION_STALE_MS;
+      let playlistGrowing = false;
+      // Orphans must prove that another writer still owns them. A known child is
+      // sampled only after its playlist goes stale, which keeps healthy reuse fast
+      // while catching ffmpeg processes whose upstream socket is wedged.
+      if (!live || !playlistFresh) {
+        await new Promise((resolve) => setTimeout(resolve, 750));
+        const after = await fs.stat(playlistPath);
+        playlistGrowing = after.size > before.size || after.mtimeMs > before.mtimeMs;
+      }
+      const reusable = shouldReuseRemuxSession({
+        playlistComplete: complete,
+        hasLiveSession: Boolean(live),
+        liveExitCode: live?.exitCode,
+        playlistFresh,
+        playlistGrowing,
+      });
+      if (!reusable) {
+        // Dead writer: drop the record + partial segments (best effort) so the
+        // next resolve starts a fresh remux instead of replaying the corpse.
+        try {
+          await stopRemuxSession(session.sessionId).catch(() => false);
+          await db.collection('playback_sessions').deleteOne({ sessionId: session.sessionId });
+          await fs.rm(sessionPath(session.sessionId), { recursive: true, force: true });
+        } catch {
+          // Cleanup failure must not block fresh playback.
+        }
+        continue;
+      }
       cancelScheduledStop(session.sessionId);
       return session;
+    } catch {
+      continue;
     }
-
-    // Liveness: reject a known exited child immediately. After a Node restart
-    // the child map is empty, so sample the playlist instead of trusting its
-    // age: only an observably growing orphan still has a writer behind it.
-    const live = getRemuxSession(session.sessionId);
-    const before = await fs.stat(playlistPath);
-    const playlistFresh = Date.now() - before.mtimeMs <= SESSION_STALE_MS;
-    let playlistGrowing = false;
-    // Orphans must prove that another writer still owns them. A known child is
-    // sampled only after its playlist goes stale, which keeps healthy reuse fast
-    // while catching ffmpeg processes whose upstream socket is wedged.
-    if (!live || !playlistFresh) {
-      await new Promise((resolve) => setTimeout(resolve, 750));
-      const after = await fs.stat(playlistPath);
-      playlistGrowing = after.size > before.size || after.mtimeMs > before.mtimeMs;
-    }
-    const reusable = shouldReuseRemuxSession({
-      playlistComplete: complete,
-      hasLiveSession: Boolean(live),
-      liveExitCode: live?.exitCode,
-      playlistFresh,
-      playlistGrowing,
-    });
-    if (!reusable) {
-      // Dead writer: drop the record + partial segments (best effort) so the
-      // next resolve starts a fresh remux instead of replaying the corpse.
-      try {
-        await stopRemuxSession(session.sessionId).catch(() => false);
-        await db.collection('playback_sessions').deleteOne({ sessionId: session.sessionId });
-        await fs.rm(sessionPath(session.sessionId), { recursive: true, force: true });
-      } catch {
-        // Cleanup failure must not block fresh playback.
-      }
-      return null;
-    }
-    cancelScheduledStop(session.sessionId);
-    return session;
-  } catch {
-    return null;
   }
+  return null;
 };
 
-const SESSION_STALE_MS = 15 * 1000;
+/**
+ * Shared finished remuxes: lookup + budget, both DB-backed.
+ *
+ * findPublishedRendition re-verifies the bytes on disk (an evicted row's
+ * leftovers must never be served). enforceRenditionBudget runs before each
+ * publish so the store cannot grow without bound; expiry + LRU order comes
+ * from the pure planner, which is unit-tested.
+ */
+const findPublishedRendition = async (db, renditionKey) => {
+  if (!renditionKey) return null;
+  const row = await db.collection('published_renditions').findOne({ renditionId: renditionKey });
+  if (!row) return null;
+  const state = await readRenditionState(renditionKey);
+  if (!state.exists || !state.ended) {
+    await db.collection('published_renditions').deleteOne({ renditionId: renditionKey }).catch(() => {});
+    return null;
+  }
+  return row;
+};
+
+const enforceRenditionBudget = async (db) => {
+  const rows = await db.collection('published_renditions').find({}).toArray();
+  const { evict } = selectRenditionEvictions(
+    rows.map((row) => ({
+      renditionId: row.renditionId,
+      bytes: row.bytes,
+      lastAccessAtMs: row.lastAccessAt ? new Date(row.lastAccessAt).getTime() : 0,
+    })),
+    { now: Date.now(), maxBytes: RENDITION_MAX_BYTES },
+  );
+  for (const victim of evict) {
+    try {
+      await fs.rm(renditionPath(victim, '.'), { recursive: true, force: true });
+      await db.collection('published_renditions').deleteOne({ renditionId: victim });
+    } catch {
+      // Best effort: a half-evicted row is reaped on the next pass.
+    }
+  }
+  return evict.length;
+};
+
+const touchPublishedRendition = async (db, renditionKey) => {
+  if (!renditionKey) return;
+  await db.collection('published_renditions').updateOne(
+    { renditionId: renditionKey },
+    { $set: { lastAccessAt: new Date() } },
+  ).catch(() => {});
+};
+
+const SESSION_STALE_MS = 30 * 60 * 1000; // 30 minutes instead of 15s
+
+/**
+ * Newborn-writer amnesty for the poll-driven hung-writer kills below.
+ *
+ * A writer that is still OPENING its input (TorBox TLS + first bytes take
+ * seconds on a slow upstream) has no playlist yet, so its mtime age reads as
+ * infinity and every freshness check fails: on a single snapshot it looks
+ * exactly like a wedged writer. Killing it there creates a death loop —
+ * every candidate's writer is executed seconds after spawn (empty stderr,
+ * exit code null), resolve burns all attempts, and the pill grinds 1/5 →
+ * 5/5 forever. Resolve's own gates (waitForPlaylist 30s, 8s floor 45s)
+ * remain the authority on newborns; the poll killers only judge writers old
+ * enough to have proven themselves.
+ */
+const YOUNG_WRITER_AMNESTY_MS = 45 * 1000;
+
+const isYoungWriter = (live) => {
+  if (!live || live.exitCode !== undefined) return false;
+  const startedAtMs = live.startedAt ? new Date(live.startedAt).getTime() : NaN;
+  return Number.isFinite(startedAtMs) && Date.now() - startedAtMs < YOUNG_WRITER_AMNESTY_MS;
+};
+
+/**
+ * Serve a Vimo direct-HLS source (Vietnamese catalog, Vietsub streams).
+ *
+ * Unlike torrents this needs no TorBox, no probe and no ffmpeg: the addon's
+ * media hosts allow CORS and hotlinking, so the browser plays the m3u8
+ * directly through the existing `direct` mode. Either replays an explicit
+ * picker token (`vimo|<movie|series>|<vimoId>[:s:e]`) or bridges a fresh
+ * TMDB-detail lookup when the torrent flow has nothing.
+ *
+ * Returns `{ data }` on success, `{ empty: true }` when Vimo simply has no
+ * such title, or `{ error }` when the token/stream is unusable.
+ */
+const serveVimoDirect = async ({ db, req, detail, type, tmdbId, season, episode, vimoToken = null }) => {
+  let streamType = type === 'tv' ? 'series' : 'movie';
+  let vimoId = null;
+  let vimoName = '';
+  let epSeason = season;
+  let epEpisode = episode;
+
+  if (vimoToken) {
+    const match = /^vimo\|(movie|series)\|([A-Za-z0-9_\-]+)(?::(\d+):(\d+))?$/.exec(vimoToken);
+    if (!match) return { error: 'Token Vimo không hợp lệ' };
+    streamType = match[1];
+    vimoId = match[2];
+    if (match[3] !== undefined && match[4] !== undefined) {
+      epSeason = Number(match[3]);
+      epEpisode = Number(match[4]);
+    }
+  } else {
+    if (!detail) return { empty: true };
+    const found = await resolveVimoSource({ type, season, episode, detail });
+    if (!found?.streams?.length) return { empty: true };
+    vimoId = found.vimoId;
+    vimoName = found.name || '';
+  }
+
+  const streams = await getVimoStreams({
+    vimoId,
+    type: streamType === 'series' ? 'tv' : 'movie',
+    season: epSeason,
+    episode: epEpisode,
+  }).catch(() => []);
+  const pick = streams[0];
+  if (!pick?.url) {
+    return vimoToken
+      ? { error: 'Vimo hiện không có link cho tập này' }
+      : { empty: true };
+  }
+
+  const sessionId = buildSessionId();
+  const candidate = sanitizeCandidateForResponse({
+    resolution: pick.resolution,
+    codec: null,
+    hdr: null,
+    releaseSource: 'vimo • vietsub',
+    sizeBytes: null,
+    seeds: null,
+    cached: false,
+    score: null,
+    reasons: [],
+    audioTracks: [],
+    subtitleTracks: [],
+  });
+  await saveSession(db, {
+    sessionId,
+    userId: toObjectIdOrRaw(req.user.userId),
+    userIdStr: String(req.user.userId),
+    provider: 'vimo',
+    contentRef: detail?.contentRef,
+    mediaType: type,
+    tmdbId,
+    season: type === 'tv' ? epSeason : null,
+    episode: type === 'tv' ? epEpisode : null,
+    imdbId: detail?.imdbId || null,
+    infoHash: null,
+    torrentId: null,
+    fileId: null,
+    fileName: pick.title || vimoName || '',
+    videoHash: null,
+    videoSize: null,
+    mode: 'direct',
+    audioIndex: 0,
+    progress: 100,
+    candidate,
+  });
+  return {
+    data: {
+      mode: 'direct',
+      sessionId,
+      url: pick.url,
+      expiresIn: 900,
+      fileName: pick.title || vimoName || '',
+      audioIndex: 0,
+      candidate,
+      sourceToken: `vimo|${streamType}|${streamType === 'series' ? `${vimoId}:${epSeason}:${epEpisode}` : vimoId}`,
+      vimo: { id: vimoId, name: vimoName || pick.title || '' },
+    },
+  };
+};
 
 export const resolvePlayback = async (req, res) => {
   const parsed = parseResolveBody(req.body);
   if (parsed.error) return fail(res, 400, parsed.error);
 
-  const { type, tmdbId, season, episode, capabilities, sourceToken } = parsed;
-  const caps = normalizeCapabilities(capabilities);
-  // Preferred embedded audio track (ffprobe order); null = default first track.
-  const audioIdx =
-    Number.isInteger(parsed.audioIndex) && parsed.audioIndex >= 0 ? parsed.audioIndex : null;
+   const { type, tmdbId, season, episode, capabilities, sourceToken } = parsed;
+   const vimoToken = parsed.vimoToken || null;
+   const yastreamToken = parsed.yastreamToken || null;
+   const requestedStartAt = Number.isFinite(parsed.startAt) && parsed.startAt > 0 ? Math.floor(parsed.startAt) : 0;
+   // Kill switch for seek-started sessions (PLAYBACK_SEEK_START=off|0|false).
+   // Off, every resolve remuxes from the beginning and the player seeks inside
+   // it — the behaviour before truncated sessions existed, and the only path
+   // with no keyframe snap: no ~1.6s gap between a session's real origin and
+   // the offset it reports, so subtitles and the seek bar line up exactly.
+   // The cost is what the feature bought: a far seek waits for the prefix.
+   const startAt = seekStartEnabled() ? bucketStartAt(requestedStartAt) : 0;
+   const caps = normalizeCapabilities(capabilities);
+   // Preferred embedded audio track (ffprobe order); null = default first track.
+   const audioIdx =
+     Number.isInteger(parsed.audioIndex) && parsed.audioIndex >= 0 ? parsed.audioIndex : null;
+   // Lip-sync compensation set on this device (setup-constant, persisted
+   // in cine_player_prefs). The server bakes it into the remux as adelay
+   // so every HLS segment carries the corrected audio timestamps.
+   const lipSyncMs = clampLipSyncMs(Number(req.body?.lipSyncMs) || 0);
 
   // Client-generated progress key (see services/playback/resolveProgress.js).
   // Absent on old clients: stages are then simply not tracked.
@@ -588,7 +997,29 @@ export const resolvePlayback = async (req, res) => {
     type === 'tv' ? episode : 'full',
   ].join(':');
 
-  return withPlaybackResolveLock(resolveLockKey, async () => {
+  // Seek-resolves must not queue behind the resolve they replace: each one
+  // can take up to a minute (prepare + probe + head start), so serialising
+  // them turns scrubbing into a traffic jam. They carry distinct startAt
+  // values and the superseded-stop pass reaps the losers, so each runs on
+  // its own key. (Same-millisecond double fires share a key and serialise —
+  // the safe fallback.)
+  const lockKey = startAt > 0 ? `${resolveLockKey}:seek:${startAt}:${Date.now()}` : resolveLockKey;
+  const tResolveStart = Date.now();
+  // Source-file A/V start offset (ms, audio minus video) from the winning
+  // probe, for the summary line. Null until a probe with startTime lands.
+  let lastAvSrcOffsetMs = null;
+  // Per-file lip-sync compensation actually applied (adelay ms, 0 = none).
+  let lastAudioDelayMs = 0;
+  // Video fps as avg(r_frame): a wandering avg far from the container rate
+  // smells like VFR/timestamp wobble, the drift class no constant delay fixes.
+  let lastVfps = null;
+  // Reorder lead handed to the client for subtitle lookups; logged so a
+  // session that predates the field (or a reuse that lost it) is visible
+  // as pshift=0 instead of looking like a mistimed subtitle file.
+  let lastShiftMs = null;
+  // Where a seek-started session's bytes really begin, once measured.
+  let lastSeekOrigin = null;
+  const outcome = await withPlaybackResolveLock(lockKey, async () => {
     const db = getDB();
 
     try {
@@ -601,10 +1032,95 @@ export const resolvePlayback = async (req, res) => {
     if (type === 'tv' && (season === null || episode === null)) {
       return fail(res, 400, 'Thiếu season/episode cho nội dung TV');
     }
-    if (!detail.imdbId) {
-      return fail(res, 404, 'Nội dung này thiếu IMDb ID nên không tra được nguồn');
-    }
     const runtimeMinutes = Number(detail.runtime) > 0 ? Number(detail.runtime) : null;
+
+    // 1b. Ưu tiên Vietsub TRỰC TIẾP lên đầu CHỈ DÀNH CHO phim Việt Nam
+    const isVietnamese = detail.original_language === 'vi';
+    if (!sourceToken && !vimoToken && !yastreamToken && isVietnamese) {
+      try {
+        stage('vietsub-lookup');
+        const vietsubData = await cached(`playback:vietsub:${type}:${tmdbId}:${season}:${episode}`, 12 * 60 * 60, async () => {
+            const yaSource = await resolveYaStreamSource({ type, tmdbId, season, episode, detail }).catch(() => null);
+            if (yaSource?.streams?.length > 0) return { yastream: yaSource, vimo: null };
+
+            const vimoSource = await resolveVimoSource({ type, tmdbId, season, episode, detail }).catch(() => null);
+            return { yastream: null, vimo: vimoSource };
+        });
+
+        if (vietsubData.yastream?.streams?.length > 0) {
+            const first = vietsubData.yastream.streams[0];
+            console.log(`[playback] Resolved via YaStream (Vietnamese Priority): ${tmdbId} ${detail.title}`);
+            return res.json({
+                success: true,
+                data: {
+                    mode: 'direct', 
+                    sessionId: `yastream-${tmdbId}-${Date.now()}`,
+                    url: first.url,
+                    playlistUrl: first.url,
+                    fileName: first.title || detail.title,
+                    reason: 'YaStream Vietsub (Phim Việt)',
+                    sourceToken: first.sourceToken, 
+                    streams: vietsubData.yastream.streams,
+                    skipProbe: true
+                }
+            });
+        }
+      } catch (e) {
+        console.warn(`[playback] Vietnamese priority lookup failed: ${e.message}`);
+      }
+    }
+
+    // Manual YaStream pick: direct HLS, bypassing all torrent/debrid/probe logic.
+    if (yastreamToken) {
+      stage('yastream');
+      try {
+        let yaSource = null;
+        try {
+          const vietsubData = await cached(
+            `playback:vietsub:${type}:${tmdbId}:${season}:${episode}`,
+            12 * 60 * 60,
+            () => null,
+          );
+          if (vietsubData?.yastream?.streams?.length > 0) {
+            yaSource = vietsubData.yastream;
+          }
+        } catch {}
+        if (!yaSource) {
+          yaSource = await resolveYaStreamSource({ type, tmdbId, season, episode, detail });
+        }
+        const pick = yaSource?.streams?.find(
+          (s) => s.sourceToken === yastreamToken || s.id === yastreamToken
+        ) || yaSource?.streams?.[0];
+        if (pick?.url) {
+          return res.json({
+            success: true,
+            data: {
+              mode: 'direct',
+              sessionId: `yastream-${tmdbId}-${Date.now()}`,
+              url: pick.url,
+              playlistUrl: pick.url,
+              fileName: pick.title || detail.title,
+              reason: 'YaStream Vietsub',
+              sourceToken: pick.sourceToken,
+              streams: yaSource.streams,
+              skipProbe: true,
+            },
+          });
+        }
+      } catch (e) {
+        console.warn(`[playback] Manual YaStream lookup failed: ${e.message}`);
+      }
+      return fail(res, 404, 'YaStream hiện không có link cho nội dung này');
+    }
+
+    // 1c. Manual Vimo pick: direct HLS, no debrid key / torrent / probe needed.
+    if (vimoToken) {
+      stage('vimo');
+      const served = await serveVimoDirect({ db, req, detail, type, tmdbId, season, episode, vimoToken });
+      if (served.error) return fail(res, 404, served.error);
+      if (served.data) return res.json({ success: true, data: served.data });
+      return fail(res, 404, 'Vimo hiện không có link cho nội dung này');
+    }
 
     // 2. Caller-owned debrid key (never logged, never stored in the session).
     let debridKey;
@@ -616,16 +1132,27 @@ export const resolvePlayback = async (req, res) => {
 
     // 3. Addon candidates keyed on the Stremio id.
     stage('sources');
-    const { candidates, errors: addonErrors } = await getStreamCandidates({
-      imdbId: detail.imdbId,
-      mediaType: type,
-      season,
-      episode,
-    });
-    if (!candidates.length) {
-      return fail(res, 404, 'Không tìm thấy nguồn phát cho nội dung này', {
-        addonErrors: (addonErrors || []).slice(0, 5),
+    const { candidates, errors: addonErrors } = detail.imdbId 
+      ? await getStreamCandidates({
+          imdbId: detail.imdbId,
+          mediaType: type,
+          season,
+          episode,
+        })
+      : { candidates: [], errors: [] };
+      
+    if (!candidates.length && !yastreamToken && !vimoToken) {
+      // If we don't have torrents and we aren't already resolving a direct source,
+      // check if we have any direct sources available before failing.
+      const vietsubData = await cached(`playback:vietsub:${type}:${tmdbId}:${season}:${episode}`, 12 * 60 * 60, async () => {
+          const yaSource = await resolveYaStreamSource({ type, tmdbId, season, episode, detail }).catch(() => null);
+          const vimoSource = await resolveVimoSource({ type, tmdbId, season, episode, detail }).catch(() => null);
+          return { yastream: yaSource, vimo: vimoSource };
       });
+
+      if (!vietsubData.yastream?.streams?.length && !vietsubData.vimo) {
+        return fail(res, 404, 'Phim này hiện chưa có nguồn phát trực tuyến hoặc chưa phát hành bản kỹ thuật số.');
+      }
     }
 
     // 4. Cached check (per-user entitlements; failure degrades to "not cached").
@@ -708,22 +1235,44 @@ export const resolvePlayback = async (req, res) => {
         infoHash: candidate.infoHash,
         audioIndex: resolvedAudioForReuse,
         caps,
+        // A seek-started session holds truncated bytes: check if an existing
+        // session at or before requestedStartAt covers our target.
+        startAt: requestedStartAt,
       });
       if (reusable) {
+        // Sessions stored before this field existed would otherwise report no
+        // correction at all, leaving their subtitles early for the session's
+        // whole life. Fall back to the cached probe facts for the same file.
+        let reuseShiftMs = Number(reusable.presentationShiftMs);
+        if (!Number.isFinite(reuseShiftMs)) {
+          const facts = await getCache(probeFactsKey(candidate.infoHash));
+          reuseShiftMs = facts ? presentationShiftMs({ video: facts }) : 0;
+        }
+        lastShiftMs = reuseShiftMs;
         return res.json({
           success: true,
           data: {
             mode: 'remux',
             sessionId: reusable.sessionId,
             playlistUrl: reusable.playlistUrl,
-            reason: 'Dùng lại phiên remux đang có',
-            fileName: reusable.fileName || '',
+            reason: publicText('Dùng lại phiên remux đang có', 'Đang phát'),
+            fileName: publicFileName(reusable.fileName || ''),
             durationSeconds:
               typeof reusable.durationSeconds === 'number'
                 ? reusable.durationSeconds
                 : (reusable.runtimeMinutes ? Math.round(reusable.runtimeMinutes * 60) : null),
             audioIndex: reusable.audioIndex ?? resolvedAudioForReuse,
             candidate: sanitizeCandidateForResponse(candidate),
+            sourceToken: resolveSourceToken(candidate),
+            startOffset: reusable.startAt ?? 0,
+            // Whether truncated sessions are offered at all. Without it the
+            // client cannot tell a server that ignored the seek from one that
+            // deliberately serves the whole film, and warns about the wrong one.
+            seekStartSupported: seekStartEnabled(),
+            // fMP4 starts its clock at the first decode timestamp, so the
+            // picture sits this far ahead of source time. Subtitles are timed
+            // against the source; the player subtracts it when looking cues up.
+            presentationShiftMs: reuseShiftMs,
           },
         });
       }
@@ -814,6 +1363,10 @@ export const resolvePlayback = async (req, res) => {
       stage('probe', attemptTag);
       const probeCacheKey = probeResultKey(candidate.infoHash, file.fileId);
       let probe = await getCache(probeCacheKey);
+      // Probes cached before startTime tracking predate the A/V-offset
+      // telemetry and would keep it blind for the whole 7-day TTL: re-probe
+      // once instead (the fresh doc then serves everyone).
+      if (probe && probe.video && !('startTime' in probe.video)) probe = null;
       if (!probe) {
         try {
           probe = await ffprobe(inputUrl);
@@ -827,6 +1380,48 @@ export const resolvePlayback = async (req, res) => {
       // Record before acting on it: a rejection here is exactly the fact the
       // ranker needs next time so this source stops consuming a retry slot.
       await rememberProbeFacts(candidate.infoHash, probe);
+      // Declared here (loop-body scope) so the rendition key and the remux
+      // below share one value.
+      let audioDelayMs = 0;
+      // How far this remux's clock leads source time (B-frame reorder delay).
+      // Stored on the session so a later reuse can answer without the probe.
+      const shiftMs = presentationShiftMs(probe);
+      lastShiftMs = shiftMs;
+      // Source-level A/V start offset (container audio delay): re-encoding
+      // drops it, so a file whose audio starts far from its video plays with
+      // a constant lip-sync error no client setting can explain. Audible in
+      // logs, where "audio ahead on a strong machine" can finally be told
+      // apart from weak decode — and applied just below, so the file's own
+      // offset never reaches the viewer's per-device slider.
+      {
+        const vStart = Number(probe?.video?.startTime);
+        const firstAudio = (probe?.audio || []).find((a) => Number.isFinite(Number(a?.startTime)));
+        const aStart = firstAudio ? Number(firstAudio.startTime) : NaN;
+        if (Number.isFinite(vStart) && Number.isFinite(aStart)) {
+          const offMs = Math.round((aStart - vStart) * 1000);
+          lastAvSrcOffsetMs = offMs;
+          if (Math.abs(offMs) > 200) {
+            console.warn(
+              `[playback] source A/V start offset tmdb=${tmdbId} ${offMs}ms ` +
+                `(audio ${offMs > 0 ? 'behind' : 'ahead of'} video in the file itself)`,
+            );
+          }
+        }
+        const frAvg = Number(probe?.video?.frameRate);
+        const frR = Number(probe?.video?.frameRateR);
+        if (Number.isFinite(frAvg)) {
+          lastVfps = Number.isFinite(frR) && Math.abs(frR - frAvg) > 0.01
+            ? `${frAvg.toFixed(2)}(${frR.toFixed(2)})`
+            : frAvg.toFixed(2);
+        }
+      }
+      // No per-file compensation: the offset logged just above is the source's
+      // own, and ffmpeg carries it through the re-encode intact, so "correcting"
+      // it here would delay the audio by that amount on every title muxed that
+      // way. tests/remux-avsync-offset.test.mjs measures both directions.
+      // Lip-sync for the viewer's own display chain stays client-side, in the
+      // browser DelayNode behind "Trễ tiếng".
+      lastAudioDelayMs = audioDelayMs;
 
       // Identify the exact file for subtitle matching. Best-effort: two 64 KiB
       // range requests, and a failure only costs hash-accurate subtitles — the
@@ -879,6 +1474,45 @@ export const resolvePlayback = async (req, res) => {
         decision.reason = `${delivery.reason} (bỏ direct play để áp hạn mức)`;
       }
 
+      // The ffmpeg-side video plan: normally the delivery ladder, overridden
+      // by a codec-transcode decision (codec change + HDR tonemap). When both
+      // apply, take the narrower of the two. Declared here so the
+      // shared-rendition lookup below and startRemuxSession agree on it.
+      // startAt rides along: a seek-started session holds truncated bytes.
+      // codec rides along too: the ladder never carries it, but buildVideoArgs
+      // needs the SOURCE codec for the HEVC hvc1 tag — without the tag ffmpeg
+      // dies on HEVC-in-fMP4 ("Stream HEVC is not hvc1").
+      const sourceCodec = probe.video?.codec ?? delivery.codec ?? null;
+      let videoPlan = delivery.mode === 'transcode' || startAt > 0
+        ? { ...delivery, codec: sourceCodec, startAt }
+        : { ...delivery, codec: sourceCodec };
+
+      // Where those bytes actually begin. `-ss` cannot cut mid-GOP, so ffmpeg
+      // rewinds to a keyframe — and when the request lands on one, a whole GOP
+      // further. Labelling the session with the position we ASKED for puts the
+      // player's film clock out by that difference: subtitles early, seek bar
+      // off, resume drifting. The real number is measured with a one-frame
+      // probe below (cached per file+bucket), falling back to the request.
+      let seekOrigin = startAt;
+      if (decision.videoTranscode) {
+        const ct = decision.videoTranscode;
+        videoPlan = delivery.mode === 'transcode'
+          ? {
+            mode: 'transcode',
+            // Source codec must survive the rebuild: buildVideoArgs needs it
+            // for the HEVC hvc1 tag, and without the tag ffmpeg dies on
+            // HEVC-in-fMP4 ("Stream HEVC is not hvc1"). The ladder never
+            // carries it, so the probe is the fallback that always exists.
+            codec: delivery.codec ?? sourceCodec,
+            height: Math.min(ct.height, delivery.height),
+            kbps: Math.min(ct.kbps, delivery.kbps),
+            tonemap: ct.tonemap,
+            tenBit: ct.tenBit,
+            startAt,
+          }
+          : { ...ct, codec: ct.codec ?? delivery.codec ?? sourceCodec, startAt };
+      }
+
       if (decision.mode === 'direct') {
         await saveSession(db, {
           sessionId,
@@ -894,7 +1528,7 @@ export const resolvePlayback = async (req, res) => {
           infoHash: String(candidate.infoHash).toLowerCase(),
           torrentId: prepared.torrentId,
           fileId: file.fileId,
-          fileName: file.name || '',
+          fileName: publicFileName(file.name || ''),
           videoHash: fileHash?.videoHash ?? null,
           videoSize: fileHash?.videoSize ?? null,
           mode: 'direct',
@@ -909,9 +1543,10 @@ export const resolvePlayback = async (req, res) => {
             sessionId,
             url: inputUrl,
             expiresIn: 900,
-            fileName: file.name || '',
+            fileName: publicFileName(file.name || ''),
             audioIndex: decision.audioIndex ?? 0,
             candidate: sanitizeCandidateForResponse(candidate),
+            sourceToken: resolveSourceToken(candidate),
           },
         });
       }
@@ -945,25 +1580,92 @@ export const resolvePlayback = async (req, res) => {
         console.warn(`remux ${staleId} bị thay thế bởi ${sessionId}; giữ writer 90s phòng quay lại`);
       }
 
+      // Duration honesty lives here (not below): the published short circuit
+      // needs the full length too, and ffprobe of a slow upstream URL often
+      // yields nothing — without the TMDB fallback the player would show the
+      // live remux edge ("5:00" for a 100-minute film) instead of the length.
+      const fullDurationSeconds =
+        (Number.isFinite(probe.duration) && probe.duration > 0
+          ? Math.round(probe.duration)
+          : null)
+        ?? (runtimeMinutes ? Math.round(runtimeMinutes * 60) : null);
+
+      // Shared-rendition short circuit: an identical finished remux may
+      // already be published (this viewer earlier, or another). Serve it
+      // instantly — no ffmpeg, no buffer waits — instead of remuxing the
+      // same bytes again. Per-user session record stays (ownership, history,
+      // subtitles), only the bytes are shared.
+      const renditionKey = buildRenditionId({
+        infoHash: candidate.infoHash,
+        fileId: file.fileId,
+        audioStreamIndex: decision.audioStreamIndex ?? null,
+        audioCopy: Boolean(decision.audioCopy),
+        audioChannels: decision.audioChannels ?? null,
+        audioDelayMs,
+        video: videoPlan,
+        segmentSeconds: REMUX_SEGMENT_SECONDS,
+      });
+      stage('published', attemptTag);
+      const published = await findPublishedRendition(db, renditionKey);
+      if (published) {
+        const pubSessionId = buildSessionId();
+        // Stable cross-viewer URL (not per-session): every viewer of these
+        // exact bytes shares one CDN edge object. The per-user session record
+        // still governs history, subtitles and polling.
+        const stablePlaylistUrl = `/api/playback/hls/r/${renditionKey}/index.m3u8`;
+        await saveSession(db, {
+          sessionId: pubSessionId,
+          userId: toObjectIdOrRaw(req.user.userId),
+          userIdStr: String(req.user.userId),
+          provider: PROVIDER,
+          contentRef: detail.contentRef,
+          mediaType: type,
+          tmdbId,
+          season,
+          episode,
+          imdbId: detail.imdbId,
+          infoHash: String(candidate.infoHash).toLowerCase(),
+          torrentId: prepared.torrentId,
+          fileId: file.fileId,
+          fileName: publicFileName(file.name || ''),
+          videoHash: fileHash?.videoHash ?? null,
+          videoSize: fileHash?.videoSize ?? null,
+          runtimeMinutes,
+          durationSeconds: fullDurationSeconds,
+          videoCodec: probe.video?.codec || null,
+          mode: 'remux',
+          publishedRenditionId: renditionKey,
+          renditionKey,
+          remuxBuild: REMUX_BUILD,
+          presentationShiftMs: shiftMs,
+          audioIndex: decision.audioIndex ?? 0,
+          progress: 100,
+          playlistUrl: stablePlaylistUrl,
+          candidate: sanitizeCandidateForResponse(candidate),
+        });
+        await touchPublishedRendition(db, renditionKey);
+        return res.json({
+          success: true,
+          data: {
+            mode: 'remux',
+            sessionId: pubSessionId,
+            playlistUrl: stablePlaylistUrl,
+            durationSeconds: fullDurationSeconds,
+            reason: publicText('Dùng lại bản remux hoàn chỉnh đã có', 'Đang phát'),
+            fileName: publicFileName(file.name || ''),
+            audioIndex: decision.audioIndex ?? 0,
+            presentationShiftMs: shiftMs,
+            seekStartSupported: seekStartEnabled(),
+            published: true,
+            candidate: sanitizeCandidateForResponse(candidate),
+            sourceToken: resolveSourceToken(candidate),
+          },
+        });
+      }
+
       // Remux: ffmpeg reads the URL in-process; the URL itself stays in memory.
-      // A codec-transcode decision overrides the delivery ladder's video plan:
-      // the ladder only sizes bandwidth, while this also changes the codec
-      // (and tone-maps HDR). When both apply, take the narrower of the two.
       let warmingUp = false;
       try {
-        let videoPlan = delivery;
-        if (decision.videoTranscode) {
-          const ct = decision.videoTranscode;
-          videoPlan = delivery.mode === 'transcode'
-            ? {
-              mode: 'transcode',
-              height: Math.min(ct.height, delivery.height),
-              kbps: Math.min(ct.kbps, delivery.kbps),
-              tonemap: ct.tonemap,
-              tenBit: ct.tenBit,
-            }
-            : { ...ct };
-        }
         stage('remux', attemptTag);
         const session = await startRemuxSession({
           sessionId,
@@ -971,50 +1673,145 @@ export const resolvePlayback = async (req, res) => {
           audioCopy: Boolean(decision.audioCopy),
           audioStreamIndex: decision.audioStreamIndex ?? null,
           audioChannels: decision.audioChannels ?? null,
+          audioDelayMs,
           video: videoPlan,
         });
+        // Where `-ss` really lands: a copied stream cannot be cut mid-GOP, so
+        // the bytes begin at a keyframe at or before the request, and labelling
+        // the session with the requested position puts every subtitle early by
+        // the difference. Started BEFORE the playlist wait so the probe's
+        // range-reads overlap the writer's own startup; answered from cache
+        // afterwards on repeats (bytes are immutable). A miss, timeout, or
+        // implausible answer keeps the requested position — status quo ante.
+        let seekOriginPromise = null;
+        if (startAt > 0 && seekOriginProbeEnabled()) {
+          const originKey = seekOriginKey(candidate.infoHash, startAt);
+          seekOriginPromise = (async () => {
+            try {
+              const hit = cachedSeekOrigin(await getCache(originKey));
+              if (hit !== null) return hit;
+            } catch {
+              // Cache miss or Redis down: fall through to the probe.
+            }
+            const measured = await probeSeekOrigin(inputUrl, startAt);
+            if (measured !== null) {
+              try {
+                await setCache(originKey, measured, SEEK_ORIGIN_TTL);
+              } catch {
+                // Caching is best effort; the measured value is still used.
+              }
+              return measured;
+            }
+            return null;
+          })();
+        }
         await waitForPlaylist(session);
+        if (seekOriginPromise) {
+          const measured = await seekOriginPromise;
+          if (measured !== null) seekOrigin = measured;
+          lastSeekOrigin = seekOrigin;
+        }
         // Do not hand the browser a live playlist that has only a few segments.
-        // A short, verified head start absorbs normal upstream jitter. More
-        // importantly, a source which stops producing segments is rejected here
-        // instead of leaving the player spinning forever.
-        // Never hand over a session the HLS endpoint would refuse: below the
-        // floor the player gets nothing but 409s. A source that cannot reach
-        // even this is the dead source the old long wait existed to catch.
+        // A short, verified head start absorbs normal upstream jitter.
         stage('buffer', attemptTag);
-        const servable = await waitForInitialBuffer(sessionId, PLAYLIST_MIN_SECONDS, 45000);
+        const playlistMinSeconds = playlistMinForStartAt(startAt);
+        
+        // Use a faster check first for production speed
+        const servable = await waitForInitialBuffer(sessionId, 2, 8000); 
         if (!servable) {
-          throw new Error(`Nguồn remux không tạo nổi ${PLAYLIST_MIN_SECONDS}s đầu trong 45 giây`);
+            // Fallback to longer wait if 2s not ready
+            const finalServable = await waitForInitialBuffer(sessionId, playlistMinSeconds, 12000);
+            if (!finalServable) {
+                throw new Error(`Nguồn remux quá chậm, không tạo nổi buffer trong 20 giây`);
+            }
         }
 
         // Past the floor, the head start is worth having but not worth blocking
         // for: the client polls for the rest and shows real progress instead of
-        // a frozen caption.
+        // a frozen caption. Seek-started sessions only need one segment before
+        // handoff: the viewer asked for a jump, so latency matters more than a
+        // long head start.
         stage('warm', attemptTag);
+        const startupBufferSeconds = startupBufferForStartAt(startAt);
         warmingUp = !(await waitForInitialBuffer(
           sessionId,
-          STARTUP_BUFFER_SECONDS,
-          RESOLVE_BUFFER_WAIT_MS,
+          startupBufferSeconds,
+          startAt > 0 ? 1000 : RESOLVE_BUFFER_WAIT_MS,
         ));
+        if (warmingUp) {
+          // Slow-writer failover: handing over a producer below realtime
+          // guarantees edge stalls forever (watch N minutes, stall at the
+          // edge, wait, repeat). Reject the candidate while the loop can
+          // still try the next source; the stage feed shows the switch.
+          const writer = getRemuxSession(sessionId);
+          const startedAtMs = writer?.startedAt
+            ? new Date(writer.startedAt).getTime()
+            : NaN;
+          const edge = await readPlaylistState(sessionId);
+          const speed = computeWriteSpeed({
+            startedAtMs,
+            bufferedSeconds: edge.duration,
+          });
+          if (
+            speed
+            && speed.elapsedMs >= SLOW_WRITER_MIN_OBSERVE_MS
+            && speed.speed < SLOW_WRITER_MIN_SPEED
+          ) {
+            throw new Error(
+              `Nguồn nhả chậm (${speed.speed.toFixed(2)}x sau ${Math.round(speed.elapsedMs / 1000)}s, cần ~1x để xem mượt)`,
+            );
+          }
+        }
       } catch (error) {
+        // A full box is not this candidate's fault: every other source would
+        // hit the same ceiling, so walking the rest of the list just burns
+        // TorBox calls to arrive at the same answer. Say so and stop.
+        if (error instanceof RemuxBusyError || error?.code === 'REMUX_BUSY') {
+          console.warn(`resolvePlayback busy tmdb=${tmdbId} limit=${error.limit ?? '?'}`);
+          return fail(res, 503, error.message, { code: 'REMUX_BUSY', retryable: true });
+        }
+        // Read the corpse before stopping it: stopRemuxSession drops the map
+        // entry, and with it the only record of HOW ffmpeg died.
+        let linkDeath = false;
+        try {
+          const writer = getRemuxSession(sessionId);
+          linkDeath = isLinkExpiryDeath({
+            exitCode: writer?.exitCode,
+            stderrTail: writer?.stderr,
+          });
+        } catch {
+          linkDeath = false;
+        }
         // A failed candidate must not keep consuming bandwidth/CPU while the
         // resolver tries the next candidate.
         await stopRemuxSession(sessionId).catch(() => false);
         await fs.rm(sessionPath(sessionId), { recursive: true, force: true }).catch(() => {});
-        console.error(`resolvePlayback remux failed session=${sessionId} tmdb=${tmdbId}`);
-        lastError = error;
+        if (linkDeath) {
+          // Same poison as the reuse fast path: bust the cached URL so the
+          // next attempt (sibling candidate, or recovery's re-resolve seconds
+          // from now) mints a fresh link instead of dying on the same one.
+          // The raw ffmpeg error may echo the dead URL — a credential — so it
+          // must not reach the client as lastError either.
+          try {
+            await torbox.dropDownloadUrl({
+              torrentId: prepared.torrentId,
+              fileId: file.fileId,
+              userId: String(req.user.userId),
+            });
+          } catch {
+            // Best effort.
+          }
+          console.error(`resolvePlayback link chết session=${sessionId} tmdb=${tmdbId}; đã bust cache link`);
+          lastError = new Error('Link TorBox hết hạn giữa chừng, đã xin link mới cho lần thử sau');
+        } else {
+          console.error(`resolvePlayback remux failed session=${sessionId} tmdb=${tmdbId}`);
+          lastError = error;
+        }
         continue;
       }
 
-      // Duration honesty: ffprobe of a slow upstream URL often yields nothing,
-      // and then the player shows the live remux edge ("5:00" for a 100-minute
-      // film) instead of the real length. TMDB runtime is exact enough here.
-      const fullDurationSeconds =
-        (Number.isFinite(probe.duration) && probe.duration > 0
-          ? Math.round(probe.duration)
-          : null)
-        ?? (runtimeMinutes ? Math.round(runtimeMinutes * 60) : null);
-
+      // Duration honesty: computed once above (shared with the published
+      // short circuit) — ffprobe of a slow upstream URL often yields nothing.
       await saveSession(db, {
         sessionId,
         userId: toObjectIdOrRaw(req.user.userId),
@@ -1029,7 +1826,7 @@ export const resolvePlayback = async (req, res) => {
         infoHash: String(candidate.infoHash).toLowerCase(),
         torrentId: prepared.torrentId,
         fileId: file.fileId,
-          fileName: file.name || '',
+          fileName: publicFileName(file.name || ''),
           videoHash: fileHash?.videoHash ?? null,
           videoSize: fileHash?.videoSize ?? null,
           runtimeMinutes,
@@ -1039,6 +1836,13 @@ export const resolvePlayback = async (req, res) => {
           videoHeight: probe.video?.height || null,
           videoFrameRate: probe.video?.frameRate || null,
           mode: 'remux',
+          renditionKey,
+          remuxBuild: REMUX_BUILD,
+          // Seek-start of this session's bytes (0 = from the beginning).
+          // The MEASURED origin, not the requested one: reuse coverage maths
+          // and the client's film clock both depend on it being the truth.
+          startAt: seekOrigin,
+          presentationShiftMs: shiftMs,
           audioIndex: decision.audioIndex ?? 0,
           progress: 100,
         playlistUrl: `/api/playback/hls/${sessionId}/index.m3u8`,
@@ -1052,9 +1856,17 @@ export const resolvePlayback = async (req, res) => {
           sessionId,
           playlistUrl: `/api/playback/hls/${sessionId}/index.m3u8`,
           durationSeconds: fullDurationSeconds,
-          reason: decision.reason,
-          fileName: file.name || '',
+          reason: publicText(decision.reason, 'Đang phát'),
+          fileName: publicFileName(file.name || ''),
           audioIndex: decision.audioIndex ?? 0,
+          // Truncated-timeline origin: the playlist covers [startOffset, end],
+          // presented 0-based. 0 for ordinary from-the-start sessions.
+          startOffset: seekOrigin,
+          seekStartSupported: seekStartEnabled(),
+          // See the reuse path above: the remux clock leads source time by the
+          // B-frame reorder delay, and subtitle cues are in source time.
+          presentationShiftMs: shiftMs,
+          sourceToken: resolveSourceToken(candidate),
           // Still filling: the client polls the session and shows real progress
           // rather than guessing how long a frozen caption has left to run.
           warmingUp,
@@ -1063,6 +1875,22 @@ export const resolvePlayback = async (req, res) => {
         },
       });
     }
+
+    // 8b. Torrent flow exhausted: fall back to Vimo direct HLS (Vietsub)
+    // rather than an error screen, when it carries this title.
+      stage('vimo-fallback');
+      const vimoFallback = await serveVimoDirect({ db, req, detail, type, tmdbId, season, episode });
+      if (vimoFallback?.data) {
+        // Silent wrong-source swap is worse than an error screen: Vimo carries
+        // its own encode (different cut/timing, often hardcoded subs), so every
+        // online sidecar timed for the TorBox release mistimes on it. Flag it
+        // so the player says so instead of looking like mistimed subtitles.
+        vimoFallback.data.fallbackSource = {
+          kind: 'vimo',
+          reason: publicText(String(lastError?.message || ''), 'Nguồn phát đang bận, vui lòng thử lại').slice(0, 160),
+        };
+        return res.json({ success: true, data: vimoFallback.data });
+      }
 
     console.error(`resolvePlayback exhausted tmdb=${tmdbId} attempts=${attempts.length}`);
     // "Your browser cannot decode this" is not a gateway failure: 502 tells the
@@ -1083,6 +1911,197 @@ export const resolvePlayback = async (req, res) => {
       return fail(res, error.status || 500, error.message || 'Lỗi server');
     }
   });
+  // One line per resolve with the full phase timeline: when a viewer reports
+  // "it loads forever", this (plus their stage pill) names the slow leg
+  // instead of another round of guessing.
+  try {
+    const entry = resolveId ? readResolveStage(resolveId) : null;
+    const spans = (entry?.history || [])
+      .map((h, i, all) => {
+        const next = all[i + 1];
+        const dt = ((next ? next.at : Date.now()) - h.at) / 1000;
+        return `${h.stage}${h.detail ? `(${h.detail})` : ''}:${dt.toFixed(1)}s`;
+      })
+      .join(' ');
+    console.info(
+      `resolvePlayback ${type}:${tmdbId} total=${((Date.now() - tResolveStart) / 1000).toFixed(1)}s ` +
+      `status=${res.statusCode} reqStart=${requestedStartAt}s bucket=${startAt}s ` +
+      `token=${sourceToken ? 'pinned' : 'auto'} ` +
+      `avosrc=${lastAvSrcOffsetMs === null ? '?' : `${lastAvSrcOffsetMs}ms`} ` +
+      `adly=${lastAudioDelayMs}ms pshift=${lastShiftMs === null ? '?' : `${lastShiftMs}ms`} ` +
+      `origin=${lastSeekOrigin === null ? '-' : `${lastSeekOrigin}s`} ` +
+      `vfps=${lastVfps ?? '?'} ${spans}`,
+    );
+  } catch {
+    // Logging must never break the response path.
+  }
+  return outcome;
+};
+
+/**
+ * POST /api/playback/prewarm — cheap head start for the watch page.
+ *
+ * Runs resolve's expensive-but-idempotent prefix (candidates, cached check,
+ * rank, prepare, download link, ffprobe, probe facts) WITHOUT spawning
+ * ffmpeg or creating a session. Every result lands in the same caches
+ * resolve reads, so the real resolve skips ~10 s of refetching. Fire-and-
+ * forget from the detail page: even if the viewer never presses play, the
+ * only cost is a few API calls and one probe read.
+ */
+export const prewarmPlayback = async (req, res) => {
+  const parsed = parseResolveBody(req.body);
+  if (parsed.error) return fail(res, 400, parsed.error);
+
+  const { type, tmdbId, season, episode, capabilities } = parsed;
+  const caps = normalizeCapabilities(capabilities);
+
+  try {
+    const db = getDB();
+    const detail = await cached(`catalog:detail:${type}:${tmdbId}`, CACHE_TTL.DETAIL, () =>
+      tmdb.getDetail(type, tmdbId),
+    );
+    if (!detail?.imdbId) return fail(res, 404, 'Không tìm thấy nội dung');
+
+    let debridKey;
+    try {
+      ({ key: debridKey } = await getDecryptedKey(db, req.user.userId, PROVIDER));
+    } catch (error) {
+      return fail(res, error.status || 500, error.message, error.code ? { code: error.code } : {});
+    }
+
+    const { candidates } = await getStreamCandidates({
+      imdbId: detail.imdbId,
+      mediaType: type,
+      season,
+      episode,
+    });
+    if (!candidates.length) return fail(res, 404, 'Không tìm thấy nguồn phát');
+
+    let cachedMap = {};
+    try {
+      cachedMap = await torbox.checkCached(
+        debridKey,
+        candidates.map((c) => c.infoHash),
+      );
+    } catch {
+      cachedMap = {};
+    }
+    const enriched = await applyProbeFacts(
+      candidates.map((c) => ({
+        ...c,
+        cached: Boolean(cachedMap[String(c.infoHash).toLowerCase()]),
+      })),
+    );
+    const runtimeMinutes = Number(detail.runtime) > 0 ? Number(detail.runtime) : null;
+    const videoTranscode = await resolveVideoTranscodeCapability();
+    const { best, playable } = rankCandidates(enriched, caps, {
+      runtimeMinutes,
+      ...titleExpectation(detail),
+      videoTranscode,
+    });
+    const target = best ?? playable[0] ?? null;
+    if (!target) return fail(res, 422, 'Không có nguồn nào phát được trên thiết bị này');
+
+    let prepared;
+    try {
+      prepared = await torbox.prepareSource(debridKey, {
+        magnet: target.magnet,
+        infoHash: target.infoHash,
+      });
+    } catch (error) {
+      return fail(res, 502, error.message || 'Không chuẩn bị được nguồn');
+    }
+    if (prepared.state !== 'ready') {
+      // Still useful: the torrent is now added and TorBox is pulling it.
+      return res.json({ success: true, data: { warmed: false, state: 'downloading' } });
+    }
+
+    const file = pickBestFile(prepared.files, { season, episode });
+    if (!file) return fail(res, 422, 'Torrent không có file video nào');
+
+    let inputUrl;
+    try {
+      inputUrl = await torbox.getDownloadUrl(debridKey, {
+        torrentId: prepared.torrentId,
+        fileId: file.fileId,
+        userId: String(req.user.userId),
+      });
+    } catch (error) {
+      return fail(res, 502, error.message || 'Không lấy được link tải');
+    }
+
+    const probeCacheKey = probeResultKey(target.infoHash, file.fileId);
+    let probeHit = false;
+    let probe = await getCache(probeCacheKey);
+    if (probe) {
+      probeHit = true;
+    } else {
+      try {
+        probe = await ffprobe(inputUrl);
+      } catch (error) {
+        return fail(res, 502, 'Không đọc được thông tin file');
+      }
+      await setCache(probeCacheKey, probe, PROBE_RESULT_TTL);
+    }
+    await rememberProbeFacts(target.infoHash, probe);
+
+    return res.json({
+      success: true,
+      data: { warmed: true, cached: Boolean(target.cached), probeHit },
+    });
+  } catch (error) {
+    console.error(`prewarmPlayback error tmdb=${tmdbId}:`, error.message);
+    return fail(res, error.status || 500, error.message || 'Lỗi server');
+  }
+};
+
+/**
+ * POST /api/playback/preload — speculative preloading for scrub points/timestamps.
+ */
+export const preloadPlayback = async (req, res) => {
+  const { sessionId, timestamps, type, tmdbId, season, episode } = req.body || {};
+  const db = getDB();
+
+  try {
+    let baseSession = null;
+    if (sessionId) {
+      baseSession = await db.collection('playback_sessions').findOne({
+        sessionId: String(sessionId),
+      });
+      if (baseSession && !isSessionOwner(baseSession, req.user.userId)) {
+        return fail(res, 403, 'Không có quyền truy cập phiên phát này');
+      }
+    }
+
+    // Touch base session if provided
+    if (baseSession?.infoHash) {
+      await db.collection('playback_sessions').updateMany(
+        {
+          userIdStr: String(req.user.userId),
+          infoHash: baseSession.infoHash,
+          expiresAt: { $gt: new Date() },
+        },
+        { $set: { expiresAt: new Date(Date.now() + SESSION_TTL_MS) } },
+      ).catch(() => {});
+    }
+
+    const points = Array.isArray(timestamps)
+      ? timestamps.map((t) => Number(t)).filter((t) => Number.isFinite(t) && t >= 0)
+      : [];
+    const bucketedPoints = [...new Set(points.map((p) => bucketStartAt(p)))];
+
+    return res.json({
+      success: true,
+      data: {
+        preloaded: true,
+        buckets: bucketedPoints,
+        sessionId: baseSession?.sessionId || null,
+      },
+    });
+  } catch (error) {
+    console.error('preloadPlayback error:', error.message);
+    return fail(res, error.status || 500, error.message || 'Lỗi server');
+  }
 };
 
 /* ------------------------------------------------------------ source list */
@@ -1107,64 +2126,166 @@ export const listPlaybackSources = async (req, res) => {
       tmdb.getDetail(type, tmdbId),
     );
     if (!detail) return fail(res, 404, 'Không tìm thấy nội dung');
-    if (!detail.imdbId) return fail(res, 404, 'Nội dung này thiếu IMDb ID nên không tra được nguồn');
+    if (type === 'tv' && (season === null || episode === null)) {
+      return fail(res, 400, 'Thiếu season/episode cho nội dung TV');
+    }
     const runtimeMinutes = Number(detail.runtime) > 0 ? Number(detail.runtime) : null;
 
-    let debridKey;
+    let debridKey = null;
+    let debridError = null;
     try {
       ({ key: debridKey } = await getDecryptedKey(db, req.user.userId, PROVIDER));
     } catch (error) {
-      return fail(res, error.status || 500, error.message, error.code ? { code: error.code } : {});
+      debridError = error;
     }
 
-    const { candidates, errors: addonErrors } = await getStreamCandidates({
-      imdbId: detail.imdbId,
-      mediaType: type,
-      season,
-      episode,
-    });
-    if (!candidates.length) {
+    let candidates = [];
+    let addonErrors = [];
+    if (detail.imdbId) {
+      try {
+        const streamRes = await getStreamCandidates({
+          imdbId: detail.imdbId,
+          mediaType: type,
+          season,
+          episode,
+        });
+        candidates = streamRes?.candidates || [];
+        addonErrors = streamRes?.errors || [];
+      } catch (err) {
+        console.warn(`[listPlaybackSources] getStreamCandidates failed: ${err.message}`);
+      }
+    }
+
+    let playable = [];
+    let rejected = [];
+    if (candidates.length > 0) {
+      let cachedMap = {};
+      if (debridKey) {
+        try {
+          cachedMap = await torbox.checkCached(
+            debridKey,
+            candidates.map((c) => c.infoHash),
+          );
+        } catch (error) {
+          if (error instanceof DebridError && error.code === 'invalid_token') {
+            return fail(res, 401, 'TorBox từ chối API key, vui lòng kết nối lại', { code: error.code });
+          }
+          cachedMap = {};
+        }
+      }
+
+      // Same overlay as resolve, so the picker's badges and its playable/rejected
+      // split match what resolve will actually do.
+      const enriched = await applyProbeFacts(
+        candidates.map((c) => ({
+          ...c,
+          cached: Boolean(cachedMap[String(c.infoHash).toLowerCase()]),
+        })),
+      );
+
+      const ranked = rankCandidates(enriched, caps, {
+        runtimeMinutes,
+        ...titleExpectation(detail),
+        videoTranscode: await resolveVideoTranscodeCapability(),
+      });
+      playable = ranked.playable;
+      rejected = ranked.rejected;
+    }
+
+    // Vietsub sources (YaStream & Vimo)
+    let yaEntries = [];
+    let vimoEntry = null;
+    try {
+      let vietsubData = null;
+      try {
+        vietsubData = await cached(
+          `playback:vietsub:${type}:${tmdbId}:${season}:${episode}`,
+          12 * 60 * 60,
+          async () => {
+            const [yaSource, vimoSource] = await Promise.all([
+              resolveYaStreamSource({ type, tmdbId, season, episode, detail }).catch(() => null),
+              resolveVimoSource({ type, season, episode, detail }).catch(() => null),
+            ]);
+            return { yastream: yaSource, vimo: vimoSource };
+          },
+        );
+      } catch {
+        const [yaSource, vimoSource] = await Promise.all([
+          resolveYaStreamSource({ type, tmdbId, season, episode, detail }).catch(() => null),
+          resolveVimoSource({ type, season, episode, detail }).catch(() => null),
+        ]);
+        vietsubData = { yastream: yaSource, vimo: vimoSource };
+      }
+
+      if (vietsubData?.yastream?.streams?.length) {
+        yaEntries = vietsubData.yastream.streams.map((s) => ({
+          ...sanitizeCandidateForPicker({
+            resolution: s.resolution || null,
+            codec: null,
+            hdr: null,
+            releaseSource: s.name || 'YaStream • Vietsub',
+            sizeBytes: null,
+            seeds: null,
+            cached: false,
+            playable: true,
+            score: null,
+            reasons: [],
+            filename: s.title || s.name || 'YaStream',
+            infoHash: '',
+          }),
+          sourceToken: s.sourceToken,
+          origin: 'yastream',
+        }));
+      }
+
+      if (vietsubData?.vimo?.streams?.length) {
+        const found = vietsubData.vimo;
+        const first = found.streams[0];
+        const streamId = type === 'tv' ? `${found.vimoId}:${season}:${episode}` : found.vimoId;
+        vimoEntry = {
+          ...sanitizeCandidateForPicker({
+            resolution: first.resolution,
+            codec: null,
+            hdr: null,
+            releaseSource: 'vimo • vietsub',
+            sizeBytes: null,
+            seeds: null,
+            cached: false,
+            playable: true,
+            score: null,
+            reasons: [],
+            filename: first.title,
+            infoHash: '',
+          }),
+          sourceToken: `vimo|${type === 'tv' ? 'series' : 'movie'}|${streamId}`,
+          origin: 'vimo',
+        };
+      }
+    } catch (e) {
+      console.warn(`[listPlaybackSources] Vietsub lookup failed: ${e.message}`);
+    }
+
+    const allSources = [
+      ...yaEntries,
+      ...playable.map(sanitizeCandidateForPicker),
+      ...(vimoEntry ? [vimoEntry] : []),
+      ...rejected.map(sanitizeCandidateForPicker),
+    ];
+
+    if (allSources.length === 0) {
+      if (debridError && candidates.length > 0) {
+        return fail(res, debridError.status || 500, debridError.message, debridError.code ? { code: debridError.code } : {});
+      }
       return fail(res, 404, 'Không tìm thấy nguồn phát cho nội dung này', {
         addonErrors: (addonErrors || []).slice(0, 5),
       });
     }
 
-    let cachedMap = {};
-    try {
-      cachedMap = await torbox.checkCached(
-        debridKey,
-        candidates.map((c) => c.infoHash),
-      );
-    } catch (error) {
-      if (error instanceof DebridError && error.code === 'invalid_token') {
-        return fail(res, 401, 'TorBox từ chối API key, vui lòng kết nối lại', { code: error.code });
-      }
-      cachedMap = {};
-    }
-
-    // Same overlay as resolve, so the picker's badges and its playable/rejected
-    // split match what resolve will actually do.
-    const enriched = await applyProbeFacts(
-      candidates.map((c) => ({
-        ...c,
-        cached: Boolean(cachedMap[String(c.infoHash).toLowerCase()]),
-      })),
-    );
-
-    const { playable, rejected } = rankCandidates(enriched, caps, {
-      runtimeMinutes,
-      ...titleExpectation(detail),
-      videoTranscode: await resolveVideoTranscodeCapability(),
-    });
-
     return res.json({
       success: true,
       data: {
         caps,
-        sources: [
-          ...playable.map(sanitizeCandidateForPicker),
-          ...rejected.map(sanitizeCandidateForPicker),
-        ].slice(0, 40),
+        sources: allSources.slice(0, 40),
       },
     });
   } catch (error) {
@@ -1362,7 +2483,16 @@ export const getPlaybackSubtitles = async (req, res) => {
       return {
         id: subtitle.id,
         language: subtitle.language,
-        label: `${subLabel(subtitle.language)} ${count}`,
+        // Name the release it was timed for where the addon said so: three
+        // Vietnamese sidecars for three different releases used to arrive as
+        // "Tiếng Việt 1/2/3", so the one that matches the file was impossible
+        // to find among the ones that are a second out.
+        label: subtitleVariantLabel({
+          base: subLabel(subtitle.language),
+          name: subtitle.name,
+          source: subtitle.source,
+          index: count,
+        }),
         url: subtitle.url,
         ready: true,
         source: subtitle.source,
@@ -1679,12 +2809,18 @@ export const serveSubtitleVtt = async (req, res) => {
  * seconds. Unknown or rotted ids 404; the client keeps its last label.
  */
 export const getResolveStage = async (req, res) => {
+  // Progress polls hit one identical URL every 1.5s: without no-store the
+  // browser revalidates (HTTP 304) and the pill can freeze on a stale phase.
+  res.set('Cache-Control', 'no-store');
   const entry = readResolveStage(req.params?.resolveId);
   if (!entry) return fail(res, 404, 'Không có tiến trình nào');
   return res.json({ success: true, data: entry });
 };
 
 export const getPlaybackSession = async (req, res) => {
+  // Same reason as the resolve-stage endpoint: one identical URL polled every
+  // 2s must never be served from heuristic cache (HTTP 304 with a stale body).
+  res.set('Cache-Control', 'no-store');
   try {
     const db = getDB();
     const session = await db.collection('playback_sessions').findOne({
@@ -1695,9 +2831,48 @@ export const getPlaybackSession = async (req, res) => {
       return fail(res, 403, 'Không có quyền truy cập phiên phát này');
     }
 
+    // Touch nearby sessions for the same media/user so preloaded or adjacent seek buckets don't expire prematurely
+    if (session.infoHash) {
+      db.collection('playback_sessions')
+        .updateMany(
+          {
+            userIdStr: String(req.user.userId),
+            infoHash: session.infoHash,
+            expiresAt: { $gt: new Date() },
+          },
+          { $set: { expiresAt: new Date(Date.now() + SESSION_TTL_MS) } },
+        )
+        .catch(() => {});
+    }
+
     // A remux still filling its head start reports how far along it is, so the
     // client can show progress that means something instead of a spinner.
     if (session.mode === 'remux') {
+      // Published sessions point at immutable finished bytes: always ready,
+      // no writer to health-check. If the bytes were evicted since resolve,
+      // say so plainly and the client's stall recovery starts a fresh remux.
+      if (session.publishedRenditionId) {
+        const pub = await readRenditionState(session.publishedRenditionId);
+        if (!pub.exists || !pub.ended) {
+          return fail(res, 410, 'Bản hoàn chỉnh không còn, trình phát sẽ tự tạo lại');
+        }
+        const total = typeof session.durationSeconds === 'number'
+          ? session.durationSeconds
+          : Math.round(pub.duration || 0);
+        await touchPublishedRendition(db, session.publishedRenditionId);
+        return res.json({
+          success: true,
+          data: {
+            sessionId: session.sessionId,
+            mode: 'remux',
+            bufferedSeconds: total,
+            startupTargetSeconds: startupBufferForStartAt(session.startAt),
+            ready: true,
+            writerAlive: true,
+            progress: 100,
+          },
+        });
+      }
       const state = await readPlaylistState(session.sessionId);
       const buffered = Math.round(state.duration || 0);
       const live = getRemuxSession(session.sessionId);
@@ -1709,7 +2884,11 @@ export const getPlaybackSession = async (req, res) => {
           ageMs = Number.POSITIVE_INFINITY;
         }
       }
-      const writerHealthy = state.ended || (live
+      // Newborn amnesty folded into the verdict itself (see helper): a live
+      // writer younger than the amnesty reads as ALIVE, so neither the kill
+      // below nor the client's recovery loop can trigger around a writer that
+      // is still opening its input.
+      const writerHealthy = state.ended || isYoungWriter(live) || (live
         ? shouldReuseRemuxSession({
             playlistComplete: false,
             hasLiveSession: true,
@@ -1730,12 +2909,12 @@ export const getPlaybackSession = async (req, res) => {
           sessionId: session.sessionId,
           mode: 'remux',
           bufferedSeconds: buffered,
-          startupTargetSeconds: STARTUP_BUFFER_SECONDS,
-          ready: state.ended || buffered >= STARTUP_BUFFER_SECONDS,
+          startupTargetSeconds: startupBufferForStartAt(session.startAt),
+          ready: state.ended || buffered >= startupBufferForStartAt(session.startAt),
           // Process existence is insufficient: a wedged ffmpeg process remains
           // alive while its playlist never changes.
           writerAlive: writerHealthy,
-          progress: Math.min(100, Math.round((buffered / STARTUP_BUFFER_SECONDS) * 100)),
+          progress: Math.min(100, Math.round((buffered / startupBufferForStartAt(session.startAt)) * 100)),
         },
       });
     }
@@ -1860,12 +3039,35 @@ export const serveHlsAsset = async (req, res) => {
     if (session.mode !== 'remux') {
       return fail(res, 404, 'Phiên phát này không có luồng HLS');
     }
+    // Published sessions serve immutable finished bytes from the shared
+    // store: no writer health checks, no readiness floor (a complete
+    // playlist is servable by definition). Access bumps LRU on index reads.
+    // (Deliberately before touchTranscodeSession: that would mkdir a junk
+    // session dir for a session that owns no segments.)
+    if (session.publishedRenditionId) {
+      if (asset === 'index.m3u8') {
+        await touchPublishedRendition(db, session.publishedRenditionId);
+      }
+      const filePath = path.resolve(renditionPath(session.publishedRenditionId, asset));
+      try {
+        await fs.stat(filePath);
+      } catch {
+        return fail(res, 404, 'Tài nguyên chưa sẵn sàng');
+      }
+      const ext = asset.endsWith('.m3u8') ? '.m3u8' : asset.endsWith('.m4s') ? '.m4s' : '.mp4';
+      res.setHeader('Content-Type', ASSET_CONTENT_TYPES[ext]);
+      res.setHeader(
+        'Cache-Control',
+        ext === '.m3u8' ? 'no-store' : 'public, max-age=86400, immutable',
+      );
+      return res.sendFile(filePath);
+    }
     if (session.expiresAt && new Date(session.expiresAt) < new Date()) {
       return fail(res, 410, 'Phiên phát đã hết hạn');
     }
     if (asset === 'index.m3u8') {
       const state = await readPlaylistState(sessionId);
-      if (!state.exists || state.duration < PLAYLIST_MIN_SECONDS) {
+      if (!state.exists || state.duration < playlistMinForStartAt(session.startAt)) {
         return fail(res, 409, 'Video vẫn đang được chuẩn bị');
       }
       if (!state.ended) {
@@ -1882,7 +3084,11 @@ export const serveHlsAsset = async (req, res) => {
             })
           : ageMs <= SESSION_STALE_MS;
         const writerDead = !writerHealthy;
-        if (writerDead) {
+        // Same newborn amnesty as the session poll: the first manifest fetch
+        // can land seconds after spawn (early adopt), when no snapshot could
+        // distinguish opening-input from wedged-socket. Killing here would
+        // additionally mark the session failed and 410 the player.
+        if (writerDead && !isYoungWriter(live)) {
           await stopRemuxSession(sessionId);
           // Record why. Without this a failed session carries only a filename,
           // so a source that dies every time is indistinguishable from a
@@ -1932,11 +3138,58 @@ export const serveHlsAsset = async (req, res) => {
   }
 };
 
+/**
+ * GET /api/playback/hls/r/:renditionId/:asset — stable cross-viewer URLs for
+ * published (finished, immutable) renditions.
+ *
+ * Why a second URL shape when per-session URLs already serve the same bytes?
+ * Session URLs embed a random sessionId, so every viewer is a cache MISS even
+ * for identical bytes. These URLs depend only on content, so a CDN (or the
+ * browser cache) shares one edge object across all viewers. Auth still runs
+ * (media guard: Bearer header on MSE, ?access_token= on native), but the
+ * bytes are identical for everyone holding a valid login, so sharing the
+ * cached object is correct. Evicted renditions 404 and the player falls back
+ * to a fresh remux through the normal recovery path.
+ */
+export const serveRenditionAsset = async (req, res) => {
+  try {
+    const renditionId = String(req.params.renditionId || '');
+    const asset = String(req.params.asset || '');
+
+    if (!isAllowedAsset(asset)) return fail(res, 404, 'Không tìm thấy tài nguyên');
+    const state = await readRenditionState(renditionId);
+    if (!state.exists || !state.ended) return fail(res, 404, 'Bản hoàn chỉnh không còn');
+    if (asset === 'index.m3u8') {
+      await touchPublishedRendition(getDB(), renditionId);
+    }
+
+    const filePath = path.resolve(renditionPath(renditionId, asset));
+    try {
+      await fs.stat(filePath);
+    } catch {
+      return fail(res, 404, 'Tài nguyên chưa sẵn sàng');
+    }
+
+    const ext = asset.endsWith('.m3u8') ? '.m3u8' : asset.endsWith('.m4s') ? '.m4s' : '.mp4';
+    res.setHeader('Content-Type', ASSET_CONTENT_TYPES[ext]);
+    res.setHeader(
+      'Cache-Control',
+      ext === '.m3u8' ? 'no-store' : 'public, max-age=31536000, immutable',
+    );
+    return res.sendFile(filePath);
+  } catch (error) {
+    console.error('serveRenditionAsset error:', error.message);
+    return fail(res, 500, 'Lỗi server');
+  }
+};
+
 export default {
   resolvePlayback,
+  prewarmPlayback,
   listPlaybackSources,
   getResolveStage,
   getPlaybackSession,
   serveHlsAsset,
+  serveRenditionAsset,
   pickBestFile,
 };

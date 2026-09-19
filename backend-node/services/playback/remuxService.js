@@ -1,5 +1,6 @@
 import fs from 'fs/promises';
 import path from 'path';
+import os from 'os';
 import { spawn } from 'child_process';
 
 // Must stay absolute: res.sendFile() rejects relative paths, and ffmpeg's
@@ -9,7 +10,7 @@ const TRANSCODE_ROOT = path.resolve(
 );
 const FFMPEG_BIN = process.env.FFMPEG_BIN || 'ffmpeg';
 const FFPROBE_BIN = process.env.FFPROBE_BIN || 'ffprobe';
-const PROBE_TIMEOUT_MS = 20000;
+const PROBE_TIMEOUT_MS = 8000;
 const PLAYLIST_TIMEOUT_MS = 30000;
 const GB = 1024 ** 3;
 
@@ -25,6 +26,17 @@ const INCOMPLETE_GRACE_MS = positiveNumber(process.env.TRANSCODE_INCOMPLETE_GRAC
 const CLEANUP_INTERVAL_MS = positiveNumber(process.env.TRANSCODE_CLEANUP_INTERVAL_SECONDS, 60) * 1000;
 const VIEWER_GRACE_MS = positiveNumber(process.env.TRANSCODE_VIEWER_GRACE_SECONDS, 120) * 1000;
 const ACCESS_TOUCH_INTERVAL_MS = 30 * 1000;
+
+/** HLS segment length. Shared with the rendition identity: same bytes need the same id. */
+/**
+ * RETIRED in build 7 (export kept so old test files still import): the name
+ * the build-6 in-process sidecar used. Plain mp4 only gets its moov trailer
+ * when the whole ffmpeg process exits, so the file was never readable at
+ * resolve time — only after the film finished remuxing.
+ */
+export const SEEK_ORIGIN_FILE = 'origin.mp4';
+
+export const REMUX_SEGMENT_SECONDS = 4;
 const MAX_BROWSER_FRAME_RATE = 60.01;
 
 const sessions = new Map();
@@ -206,6 +218,10 @@ export const ffprobe = async (inputUrl) => {
   const audios = streams.filter((stream) => stream.codec_type === 'audio');
   const subtitles = streams.filter((stream) => stream.codec_type === 'subtitle');
 
+  const startSec = (s) => {
+    const v = Number(s?.start_time);
+    return Number.isFinite(v) ? v : null;
+  };
   return {
     format: data.format?.format_name || '',
     duration: Number(data.format?.duration || 0) || null,
@@ -218,9 +234,15 @@ export const ffprobe = async (inputUrl) => {
           width: video.width || null,
           height: video.height || null,
           frameRate: parseFrameRate(video.avg_frame_rate) || parseFrameRate(video.r_frame_rate),
+          frameRateR: parseFrameRate(video.r_frame_rate),
           pixFmt: video.pix_fmt || '',
           colorTransfer: video.color_transfer || '',
           colorPrimaries: video.color_primaries || '',
+          startTime: startSec(video),
+          // Frames of decode-order reorder delay; drives presentationShiftMs.
+          hasBFrames: Number.isFinite(Number(video.has_b_frames))
+            ? Number(video.has_b_frames)
+            : null,
         }
       : null,
     audio: audios.map((stream, index) => ({
@@ -231,6 +253,7 @@ export const ffprobe = async (inputUrl) => {
       channels: stream.channels || null,
       language: stream.tags?.language || '',
       title: stream.tags?.title || '',
+      startTime: startSec(stream),
     })),
     subtitles: subtitles.map((stream) => ({
       streamIndex: stream.index,
@@ -371,6 +394,32 @@ const DIALOGUE_DOWNMIX = [
  */
 const isSurroundLayout = (channels) => Number(channels) >= 6;
 
+
+/**
+ * How far the remux's clock runs ahead of the source's, in ms.
+ *
+ * An fMP4 timeline begins at the first DECODE timestamp. With B-frames the
+ * first frame is presented `has_b_frames` frames after it is decoded, so
+ * content sitting at source time T comes out at T + has_b_frames/fps. Audio
+ * rides along by the same amount — lip sync is unaffected, which is why this
+ * hid for so long — but subtitles are timed against the source, so they run
+ * early by exactly this much unless the lookup subtracts it.
+ *
+ * Measured against fixtures: 2 B-frames at 24fps shifts 83ms, 4 shifts 167ms.
+ * Returns 0 whenever the inputs cannot support an honest answer, so the client
+ * falls back to no correction rather than an invented one.
+ */
+export const presentationShiftMs = (probe) => {
+  const frames = Number(probe?.video?.hasBFrames);
+  const fps = Number(probe?.video?.frameRate);
+  if (!Number.isFinite(frames) || frames <= 0) return 0;
+  if (!Number.isFinite(fps) || fps <= 0) return 0;
+  // A reorder depth past one second is not a reorder depth; refuse it rather
+  // than shove every subtitle somewhere arbitrary.
+  const ms = Math.round((frames / fps) * 1000);
+  return ms > 1000 ? 0 : ms;
+};
+
 /**
  * Which encoder is available, resolved once.
  *
@@ -460,6 +509,43 @@ export const isHdrVideo = (video) => {
 export const isTenBitVideo = (video) =>
   /10|p010|p016/i.test(String(video?.pixFmt || ''));
 
+/**
+ * Byte-level generation of the remux recipe. Bump whenever a change alters
+ * the bytes of future sessions incompatibly with reuse (adelay policy,
+ * filter chains, segmenting). Sessions stamped with an older build are
+ * skipped by the reuse matcher so yesterday's bytes can never be served as
+ * today's fix — they age out through normal expiry instead.
+ *
+ * Build history: 1 = pre-offset era (audio-early-only compensation);
+ * 2 = symmetric per-file A/V offset compensation (both directions).
+ * 3 = VFR-tolerant fMP4 muxing (fps_mode passthrough, max_interleave_delta,
+ *     max_muxing_queue_size): fixes "Packet duration ... out of range" kills
+ *     that broke audio-track switching and seek on VFR sources.
+ * 4 = -noaccurate_seek on input seeks (audio was ~146ms ahead of the picture
+ *     whenever a seek landed on a keyframe), AND retires sessions written while
+ *     a seek-origin probe could report 0 for a mid-film request. Those records
+ *     carry startAt: 0 beside bytes that begin minutes in, so reusing one shows
+ *     the middle of a film at 00:00 with every subtitle out by that much.
+ * 5 = retires sessions stored while a seek-origin CACHE MISS read as an origin
+ *     of 0 (Number(null) is 0). Same damage as build 4's: startAt: 0 recorded
+ *     against a seek-started stream, so a reused one answers the player with a
+ *     position its bytes never contained.
+  * 6 = the remux writes its own origin sidecar, so a seek-started session is
+  *     labelled with where its bytes begin instead of where they were asked to.
+  *     Sessions from build 5 carry the requested position and are out by the
+  *     keyframe rewind (measured 1.5s), which every subtitle wears.
+  * 7 = the build-6 sidecar is retired: a plain-mp4 second output only gets its
+  *     moov trailer when the whole ffmpeg process exits, so while a film is
+  *     still remuxing (always, at resolve time) it is unreadable and every
+  *     seek-started session silently fell back to the requested position.
+  *     Proven live: origin.mp4 with ftyp+mdat but no moov, readSeekOrigin null.
+  *     The origin is measured again by a short-lived probe that exits at once
+  *     (valid mp4 immediately), cached per file+bucket, and raced with the
+  *     playlist wait so it rarely costs wall time. Build-6 sessions carry the
+  *     same wrong label as build 5 and are retired too.
+  */
+export const REMUX_BUILD = 7;
+
 /** VBR targets for codec-transcode rungs (H.264, SDR). */
 export const transcodeKbpsForHeight = (height) => {
   const h = Number(height) || 1080;
@@ -497,6 +583,11 @@ export const planCodecTranscode = (probe, caps = {}, capability = {}) => {
  * re-encodes; on the NVENC pipeline the frame never leaves the GPU, which is
  * where the CPU saving comes from — decoding to system memory first spends
  * 22 s of CPU per minute of 4K instead of 1.1 s.
+ *
+ * `video.startAt` (seconds) adds input seeking independent of copy/transcode:
+ * ffmpeg jumps straight to the requested position and resets timestamps to
+ * zero, so a far seek does not wait for the whole prefix to (re)mux. The
+ * client maps the truncated 0-based timeline back with startOffset.
  */
 /**
  * HDR -> SDR tonemap chain (zscale). Without it a transcoded HDR source
@@ -506,13 +597,38 @@ export const planCodecTranscode = (probe, caps = {}, capability = {}) => {
 const TONEMAP_FILTERS = 'zscale=transfer=linear,tonemap=hable,zscale=transfer=bt709:matrix=bt709:primaries=bt709';
 
 export const buildVideoArgs = (video, encoder) => {
-  if (!video || video.mode !== 'transcode') return { input: [], output: ['-c:v', 'copy'] };
+  const startAt = Math.floor(Number(video?.startAt) || 0);
+  // -noaccurate_seek is load-bearing, not a speed tweak. Accurate seeking cuts
+  // the re-encoded audio at the exact -ss timestamp while the copied video can
+  // only begin at a keyframe. When the seek lands *on* a keyframe, that frame's
+  // DTS sits a B-frame reorder delay before its PTS, the two streams get
+  // rebased by different amounts, and the audio comes out ~146ms ahead of the
+  // picture — the direction viewers notice first, on every resume that happens
+  // to land there. Seeking inexactly starts both streams at the same keyframe
+  // instead. Measured in tests/remux-avsync-offset.test.mjs.
+  const seekInput = startAt > 0 ? ['-noaccurate_seek', '-ss', String(startAt)] : [];
+  const transcode = video?.mode === 'transcode';
+  // HLS fMP4 requires HEVC to be tagged as hvc1 for Apple/browser compatibility.
+  // Without it, ffmpeg exits with: "Stream HEVC is not hvc1, you should use tag:v hvc1 to set it."
+  // A transcode whose encoder emits HEVC (hevc_nvenc/libx265) needs it too —
+  // checking only the source codec missed those writers and killed them.
+  const encodesHevc = transcode && /hevc|h265|x265/i.test(encoder?.encoder || '');
+  const hevcTag = ((video?.codec === 'hevc' && !transcode) || encodesHevc) ? ['-tag:v', 'hvc1'] : [];
+  if (!video || (!transcode && seekInput.length === 0)) {
+    return { input: [], output: ['-c:v', 'copy', ...hevcTag] };
+  }
 
   const height = Math.max(144, Math.round(video.height || 1080));
   const kbps = Math.max(200, Math.round(video.kbps || 3000));
   const hardware = encoder?.hardware && encoder.encoder.includes('nvenc');
   const tonemap = Boolean(video.tonemap);
   const tenBit = Boolean(video.tenBit);
+
+  // Seek + copy costs nothing extra: same stream, later start.
+  const copyOutput = ['-c:v', 'copy', ...hevcTag];
+  if (!transcode) {
+    return { input: seekInput, output: copyOutput };
+  }
 
   if (hardware) {
     // scale_cuda emits GPU frames; zscale/tonemap need system memory, so HDR
@@ -525,7 +641,7 @@ export const buildVideoArgs = (video, encoder) => {
         ? `scale_cuda=-2:${height},hwdownload,format=yuv420p,hwupload_cuda`
         : `scale_cuda=-2:${height}`;
     return {
-      input: ['-hwaccel', 'cuda', '-hwaccel_output_format', 'cuda'],
+      input: [...seekInput, '-hwaccel', 'cuda', '-hwaccel_output_format', 'cuda'],
       output: [
         // -2 keeps the aspect ratio and rounds to an even width, which the
         // encoder requires; an odd width fails the whole command.
@@ -549,7 +665,7 @@ export const buildVideoArgs = (video, encoder) => {
     ? `scale=-2:${height},${TONEMAP_FILTERS},format=yuv420p`
     : `scale=-2:${height},format=yuv420p`;
   return {
-    input: [],
+    input: seekInput,
     output: [
       '-vf', vf,
       '-c:v', encoder?.encoder || 'libx264',
@@ -563,7 +679,23 @@ export const buildVideoArgs = (video, encoder) => {
   };
 };
 
-export const buildFfmpegArgs = ({ inputUrl, outputDir, audioCopy = false, segmentSeconds = 4, audioStreamIndex = null, audioChannels = null, video = null, encoder = null }) => [
+export const buildFfmpegArgs = ({ inputUrl, outputDir, audioCopy = false, segmentSeconds = REMUX_SEGMENT_SECONDS, audioStreamIndex = null, audioChannels = null, audioDelayMs = 0, video = null, encoder = null }) => {
+  // Explicit output-side audio delay, chained onto any existing audio filter
+  // before the stereo fold. Byte-identical to the old command when 0, which is
+  // what every caller passes: a container mux offset is NOT a defect to correct
+  // here, because ffmpeg already carries the source's A/V relationship through
+  // the re-encode untouched (measured in tests/remux-avsync-offset.test.mjs).
+  // Deriving a delay from the probe's stream start times pushes the audio late
+  // by exactly that offset on every title muxed that way.
+  const delayMs = Number(audioDelayMs) > 0 && !audioCopy ? Math.round(Number(audioDelayMs)) : 0;
+  const surround = isSurroundLayout(audioChannels);
+  const afChain = [
+    ...(surround ? [DIALOGUE_DOWNMIX] : []),
+    ...(delayMs > 0 ? [`adelay=${delayMs}:all=1`] : []),
+  ].join(',');
+  const videoArgs = buildVideoArgs(video, encoder);
+  const videoCopy = !video || video.mode !== 'transcode';
+  return [
   '-hide_banner',
   '-loglevel',
   'warning',
@@ -571,7 +703,7 @@ export const buildFfmpegArgs = ({ inputUrl, outputDir, audioCopy = false, segmen
   '-fflags',
   '+genpts',
   // Hardware decode has to be declared before the input it applies to.
-  ...buildVideoArgs(video, encoder).input,
+  ...videoArgs.input,
   '-i',
   inputUrl,
   '-map',
@@ -580,7 +712,24 @@ export const buildFfmpegArgs = ({ inputUrl, outputDir, audioCopy = false, segmen
   // Explicit choice maps that exact ffprobe stream; otherwise the default
   // first audio (legacy behavior, byte-identical command).
   Number.isInteger(audioStreamIndex) ? `0:${audioStreamIndex}?` : '0:a:0?',
-  ...buildVideoArgs(video, encoder).output,
+  ...videoArgs.output,
+  // VFR tolerance: sources with variable frame rate (common in HEVC scene
+  // encodes) produce packets whose DTS deltas go negative when copied into
+  // fragmented MP4. Without these flags the mp4 muxer emits
+  // "Packet duration: -N / dts ... is out of range" per packet and eventually
+  // the whole writer stalls or is killed, making audio-track switches and
+  // seek-started sessions fail silently.
+  //
+  // -fps_mode passthrough: forward VFR timestamps untouched instead of the
+  //   default "cfr" normalisation that generates the negative deltas.
+  //   Only meaningful on the copy path (transcode emits its own timescale).
+  // -max_interleave_delta 0: disable the interleave-delta overflow check
+  //   that turns those deltas into fatal muxer errors.
+  // -max_muxing_queue_size 2048: raise the per-stream mux queue so a burst
+  //   of out-of-order packets does not overflow the default 128 entries.
+  ...(videoCopy ? ['-fps_mode:v', 'passthrough'] : []),
+  '-max_interleave_delta', '0',
+  '-max_muxing_queue_size', '2048',
   '-c:a',
   audioCopy ? 'copy' : 'aac',
   ...(audioCopy
@@ -588,8 +737,9 @@ export const buildFfmpegArgs = ({ inputUrl, outputDir, audioCopy = false, segmen
     : [
         '-b:a',
         '192k',
+        ...(afChain ? ['-af', afChain] : []),
         // The fold already emits stereo, so `-ac 2` would be redundant beside it.
-        ...(isSurroundLayout(audioChannels) ? ['-af', DIALOGUE_DOWNMIX] : ['-ac', '2']),
+        ...(!surround ? ['-ac', '2'] : []),
       ]),
   '-avoid_negative_ts',
   'make_zero',
@@ -620,7 +770,8 @@ export const buildFfmpegArgs = ({ inputUrl, outputDir, audioCopy = false, segmen
   '-hls_segment_filename',
   path.join(outputDir, 'seg_%05d.m4s'),
   path.join(outputDir, 'index.m3u8'),
-];
+  ];
+};
 
 /**
  * ffmpeg echoes its input URL on every run, and that URL is a short-lived
@@ -649,7 +800,321 @@ export const activeEgressKbps = () => {
   return total;
 };
 
-export const startRemuxSession = async ({ sessionId, inputUrl, audioCopy = false, audioStreamIndex = null, audioChannels = null, video = null }) => {
+/**
+ * Refusal when the box is already running as many ffmpeg writers as it may.
+ * 503 rather than 500: nothing is broken, there is simply no room right now.
+ */
+export class RemuxBusyError extends Error {
+  constructor(limit) {
+    super(`Máy chủ đang phục vụ tối đa ${limit} luồng cùng lúc, thử lại sau ít phút`);
+    this.name = 'RemuxBusyError';
+    this.code = 'REMUX_BUSY';
+    this.status = 503;
+    this.limit = limit;
+  }
+}
+
+/**
+ * How many ffmpeg writers this box may run at once (REMUX_MAX_WRITERS).
+ *
+ * Three by default: enough that a household is never refused, low enough that
+ * a CPU-only box is not asked to encode four films at once. Raise it only
+ * alongside cores — or a GPU, where the ceiling can go much higher. 0 drains
+ * the box before a restart; anything unparseable falls back to the default
+ * rather than silently removing the ceiling.
+ */
+export const remuxWriterLimit = (env = process.env) => {
+  // Unset and empty both mean "not configured" — Number('') is 0, which would
+  // otherwise read a blank line in .env as an instruction to drain the box.
+  const raw = String(env?.REMUX_MAX_WRITERS ?? '').trim();
+  if (!raw) return 3;
+  const n = Number(raw);
+  if (!Number.isFinite(n) || n < 0) return 3;
+  return Math.floor(n);
+};
+
+/** ffmpeg writers alive right now — reused and finished sessions cost nothing. */
+export const activeWriterCount = () => {
+  let live = 0;
+  for (const session of sessions.values()) {
+    if (!session.process || session.process.killed) continue;
+    if (session.exitCode !== undefined) continue;
+    live += 1;
+  }
+  return live;
+};
+
+/**
+ * Whether one more writer may start. Fails OPEN on unusable numbers: a
+ * miscount is a bad reason to refuse every viewer, since this is a safety
+ * valve rather than an authorisation check.
+ */
+/**
+ * Which superseded writers to stop so one more may start.
+ *
+ * A superseded writer keeps running for its grace window (see
+ * SUPERSEDE_GRACE_MS) in case the viewer comes straight back, so it holds a
+ * slot under the ceiling. Counting those against a viewer who is replacing
+ * their OWN session turned the safety valve on the person it was protecting:
+ * three seeks inside 90s and the next one came back 503. They have already
+ * been replaced and nobody is watching them, so they go first — the ceiling
+ * still bounds real concurrent work, it just stops guarding corpses.
+ *
+ * Oldest first (Map order is insertion order), and never more than needed.
+ */
+/**
+ * Whether starting a replacement writer beats waiting for the live one.
+ *
+ * A session that has not yet written as far as the viewer is seeking looks
+ * useless, but a replacement only helps if it can BEGIN closer to the target.
+ * With truncated sessions switched off every writer starts at 0, so refusing
+ * the live one spawns an identical ffmpeg, discards the progress already made,
+ * and races the same bytes — which is exactly what happened on every seek:
+ * four writers, all from the beginning, none able to reach the target any
+ * sooner than the first.
+ *
+ * Unusable numbers fall toward reuse: waiting on a writer that is already
+ * running is a cheaper mistake than a duplicate one.
+ */
+export const spawnBeatsReuse = ({
+  sessionStartAt,
+  freshStartAt,
+  playableSeconds,
+  minPlayable,
+} = {}) => {
+  // A writer with nothing servable yet cannot be handed to a player: the reuse
+  // path answers immediately, so the client gets a playlist URL that returns
+  // 409 and sits spinning. The fresh path waits for the first buffer before it
+  // replies, so below the floor that wait is exactly what is wanted.
+  const playable = Number(playableSeconds);
+  const floor = Number(minPlayable);
+  if (Number.isFinite(floor) && Number.isFinite(playable) && playable < floor) return true;
+
+  const live = Number(sessionStartAt);
+  const fresh = Number(freshStartAt);
+  if (!Number.isFinite(live) || !Number.isFinite(fresh)) return false;
+  return fresh > live;
+};
+
+export const reapPlan = ({ active, limit, superseded = [] } = {}) => {
+  const a = Number(active);
+  const l = Number(limit);
+  if (!Number.isFinite(a) || !Number.isFinite(l)) return [];
+  if (!Array.isArray(superseded) || superseded.length === 0) return [];
+  if (a < l) return [];
+  return superseded.slice(0, a - l + 1);
+};
+
+export const admitRemuxWriter = ({ active, limit } = {}) => {
+  const a = Number(active);
+  const l = Number(limit);
+  if (!Number.isFinite(a) || !Number.isFinite(l)) return true;
+  return a < l;
+};
+
+/** Budget for the one-frame seek probe. Seeking a multi-GB remote MKV means
+ *  range-reading its trailing Cues first, which routinely outlasts a short
+ *  budget — and a timed-out probe silently keeps the requested position as the
+ *  label, putting every subtitle early by the keyframe rewind. Generous on
+ *  purpose: it runs raced with the playlist/buffer waits (not after them) and
+ *  its answer is cached per file+bucket, so one success fixes every later seek
+ *  to the same neighbourhood. */
+const SEEK_PROBE_TIMEOUT_MS = Number(process.env.SEEK_PROBE_TIMEOUT_MS) || 25000;
+
+/**
+ * Where `-ss startAt` will really put the first frame, in source seconds.
+ *
+ * A copied video stream cannot be cut mid-GOP, so ffmpeg rewinds to a keyframe
+ * at or before the request — with -noaccurate_seek that can be most of a GOP.
+ * The session used to be labelled with the *requested* position anyway, so the
+ * player mapped the film clock wrong by the difference: subtitles early, seek
+ * bar off, resume drifting a little further each time.
+ *
+ * Asking costs one keyframe: decode a single frame with -copyts, which keeps
+ * source timestamps instead of rebasing to zero, and read its PTS. Measured at
+ * ~50ms and 3.5KB on local media; over HTTP it is a range request or two.
+ *
+ * Returns null whenever the answer would be a guess — no input, a source that
+ * will not seek, a position past the end, a probe that outstays its budget.
+ * Callers fall back to the requested position, which is what shipped before.
+ */
+/**
+ * Furthest a genuine keyframe rewind can reach. Real GOPs are seconds; this is
+ * generous on purpose, because the job here is only to tell a keyframe apart
+ * from a seek that never happened.
+ */
+const MAX_SEEK_REWIND_SECONDS = 60;
+
+/**
+ * Whether a measured origin can be believed.
+ *
+ * A source that will not seek does not fail loudly: ffmpeg quietly reads from
+ * the beginning and the probe reads back 0. Taken at face value that labels a
+ * session as starting from the top while the viewer asked for the middle — the
+ * client then drops the offset entirely and the player sits spinning, which is
+ * exactly what happened on a TorBox link asking for 900s and getting 0s back.
+ *
+ * After the request is impossible (bytes nobody asked for); further back than a
+ * GOP could ever reach is a failed seek wearing a plausible number.
+ */
+export const isPlausibleSeekOrigin = ({ pts, at } = {}) => {
+  const p = Number(pts);
+  const a = Number(at);
+  if (!Number.isFinite(p) || !Number.isFinite(a) || p < 0) return false;
+  if (p > a + 0.001) return false;
+  return a - p <= MAX_SEEK_REWIND_SECONDS;
+};
+
+/**
+ * Whether resolve may spend a probe learning where a seek really lands.
+ *
+ * ON unless explicitly disabled (SEEK_ORIGIN_PROBE=0).
+ *
+ * Its first trial against a real debrid link answered 0s for a 900s request and
+ * cost a playback, which is why isPlausibleSeekOrigin exists: an origin further
+ * back than a GOP could reach is now refused and the caller keeps the requested
+ * position. Measured since against an HTTP source, the probe agrees with the
+ * local answer exactly when the server honours byte ranges, and returns nothing
+ * usable when it does not — so with the guard in place it can only add accuracy
+ * or cost one small request. Set to 0 to skip it entirely.
+ */
+/**
+ * Whether resolve may build a session that starts partway into the film.
+ *
+ * ON unless explicitly disabled (PLAYBACK_SEEK_START=0).
+ *
+ * It was briefly the other way round, to escape a label error: `-ss` cannot cut
+ * mid-GOP, so the bytes begin at a keyframe before the requested position while
+ * the session carries the position asked for, and subtitles run early by the
+ * difference (measured 1.5-2.4s on real releases). Turning it off does fix that
+ * — and makes seeking unusable on any film not yet fully remuxed, because the
+ * viewer then waits for ffmpeg to write all the way to their target. A film
+ * that plays but mistimes subtitles by two seconds beats one that cannot seek,
+ * so the default went back.
+ *
+ * seekOriginProbeEnabled closes the label error when the source can be seeked;
+ * when it cannot, the label falls back to the requested position as before.
+ */
+/**
+ * A previously measured seek origin, or null when there isn't one.
+ *
+ * Exists because `Number(await getCache(key))` does not: getCache answers null
+ * on a miss — and on every call while Redis is unreachable — and `Number(null)`
+ * is 0, which is finite, non-negative, and therefore indistinguishable from a
+ * file whose seek really does land at the start. Every seek-started session was
+ * consequently stored as beginning at 0 while its bytes began minutes in, so
+ * the player asked for a position the stream did not contain and sat on a 409.
+ *
+ * Only an actual number (or a number that survived JSON as text) counts. The
+ * same trap as a blank environment variable reading as a real 0.
+ */
+export const cachedSeekOrigin = (raw) => {
+  if (raw === null || raw === undefined) return null;
+  if (typeof raw !== 'number' && typeof raw !== 'string') return null;
+  if (typeof raw === 'string' && raw.trim() === '') return null;
+  const n = Number(raw);
+  if (!Number.isFinite(n) || n < 0) return null;
+  return n;
+};
+
+export const seekStartEnabled = (env = process.env) =>
+  !/^(0|false|off|no)$/i.test(String(env?.PLAYBACK_SEEK_START ?? '').trim());
+
+export const seekOriginProbeEnabled = (env = process.env) =>
+  !/^(0|false|off|no)$/i.test(String(env?.SEEK_ORIGIN_PROBE ?? '').trim());
+
+/**
+ * RETIRED in build 7 (kept exported for tests): the build-6 sidecar the remux
+ * wrote itself. A plain-mp4 second output only receives its moov trailer when
+ * the whole ffmpeg process exits, so on a still-remuxing film — always, at
+ * resolve time — ffprobe fails with "moov atom not found" and callers silently
+ * kept the requested position. Live proof on a 2160p release: 262KB
+ * ftyp+mdat, no moov, readSeekOrigin null. The resolve path measures with
+ * probeSeekOrigin (a short-lived process whose mp4 is valid at once) instead.
+ *
+ * Where this session's bytes really begin, read from the sidecar the remux
+ * wrote (SEEK_ORIGIN_FILE). Free: the frame was produced by the same process
+ * and the same seek that built the playlist, so there is no second connection
+ * to open and no separate timeout to lose.
+ *
+ * null whenever the answer would be a guess — no sidecar (a from-the-start
+ * session never writes one), an unreadable one, or a position that cannot be a
+ * keyframe rewind. Callers then keep the position that was requested.
+ */
+export const readSeekOrigin = async (sessionId, requestedStartAt) => {
+  const id = safeId(sessionId);
+  const at = Number(requestedStartAt);
+  if (!id || !Number.isFinite(at) || at <= 0) return null;
+  try {
+    const { stdout } = await run(
+      FFPROBE_BIN,
+      ['-v', 'error', '-select_streams', 'v', '-show_entries', 'packet=pts_time',
+        '-of', 'csv=p=0', path.join(TRANSCODE_ROOT, id, SEEK_ORIGIN_FILE)],
+      { timeoutMs: 5000 },
+    );
+    const first = String(stdout).split(/[\r\n]+/).map((l) => l.trim()).filter(Boolean)[0];
+    const pts = Number(first);
+    if (!isPlausibleSeekOrigin({ pts, at })) {
+      console.warn(`[playback] seek origin ${first} không hợp lý cho -ss ${at}; dùng vị trí đã yêu cầu`);
+      return null;
+    }
+    return pts;
+  } catch {
+    return null;
+  }
+};
+
+export const probeSeekOrigin = async (inputUrl, startAt) => {
+  const at = Number(startAt);
+  if (!inputUrl || !Number.isFinite(at) || at < 0) return null;
+  // From the start there is nothing to rewind to, and no probe worth paying for.
+  if (at === 0) return 0;
+
+  const tmpFile = path.join(
+    os.tmpdir(),
+    `seekprobe-${Date.now()}-${Math.random().toString(36).slice(2)}.mp4`,
+  );
+  try {
+    await run(
+      FFMPEG_BIN,
+      [
+        '-hide_banner', '-loglevel', 'error', '-nostdin',
+        // Same seek flags as the remux, or the probe would answer for a
+        // different frame than the one the writer will actually start on.
+        '-noaccurate_seek', '-ss', String(at),
+        '-i', inputUrl,
+        '-map', '0:v:0', '-c', 'copy', '-frames:v', '1',
+        // The point of the whole exercise: keep source timestamps instead of
+        // rebasing them to zero, so the frame says where it really came from.
+        // Plain mp4 on purpose — a fragmented one rebases the fragment's own
+        // timeline and hands back the reorder delay instead of the position.
+        '-copyts',
+        '-f', 'mp4',
+        '-y', tmpFile,
+      ],
+      { timeoutMs: SEEK_PROBE_TIMEOUT_MS },
+    );
+    const { stdout } = await run(
+      FFPROBE_BIN,
+      ['-v', 'error', '-select_streams', 'v', '-show_entries', 'packet=pts_time',
+        '-of', 'csv=p=0', tmpFile],
+      { timeoutMs: SEEK_PROBE_TIMEOUT_MS },
+    );
+    const first = String(stdout).split(/[\r\n]+/).map((l) => l.trim()).filter(Boolean)[0];
+    const pts = Number(first);
+    if (!isPlausibleSeekOrigin({ pts, at })) {
+      console.warn(`[playback] seek origin ${pts} không hợp lý cho -ss ${at}; dùng vị trí đã yêu cầu`);
+      return null;
+    }
+    return pts;
+  } catch {
+    return null;
+  } finally {
+    await fs.rm(tmpFile, { force: true }).catch(() => {});
+  }
+};
+
+export const startRemuxSession = async ({ sessionId, inputUrl, audioCopy = false, audioStreamIndex = null, audioChannels = null, audioDelayMs = 0, video = null }) => {
   const id = safeId(sessionId);
   if (!id) throw new Error('sessionId không hợp lệ');
   // A pending grace-period stop belongs to the previous writer: a fresh start
@@ -659,12 +1124,31 @@ export const startRemuxSession = async ({ sessionId, inputUrl, audioCopy = false
   const existing = sessions.get(id);
   if (existing?.process && !existing.process.killed) return existing;
 
+  // Only a genuinely new writer is gated: the reuse above already returned,
+  // and finished renditions are served off disk without coming through here.
+  const limit = remuxWriterLimit();
+  if (!admitRemuxWriter({ active: activeWriterCount(), limit })) {
+    // Free the expendable slots first — writers already replaced by a newer
+    // one, still burning their grace window with nobody watching.
+    for (const doomed of reapPlan({
+      active: activeWriterCount(),
+      limit,
+      superseded: [...supersedeTimers.keys()],
+    })) {
+      cancelScheduledStop(doomed);
+      await stopRemuxSession(doomed).catch(() => false);
+    }
+  }
+  if (!admitRemuxWriter({ active: activeWriterCount(), limit })) {
+    throw new RemuxBusyError(limit);
+  }
+
   const outputDir = path.join(TRANSCODE_ROOT, id);
   await fs.rm(outputDir, { recursive: true, force: true });
   await fs.mkdir(outputDir, { recursive: true });
 
   const encoder = video?.mode === 'transcode' ? await detectVideoEncoder() : null;
-  const args = buildFfmpegArgs({ inputUrl, outputDir, audioCopy, audioStreamIndex, audioChannels, video, encoder });
+  const args = buildFfmpegArgs({ inputUrl, outputDir, audioCopy, audioStreamIndex, audioChannels, audioDelayMs, video, encoder });
   // cwd must be outputDir: ffmpeg resolves -hls_fmp4_init_filename against the
   // process cwd, not the playlist dir, so init.mp4 would otherwise land in the
   // backend root and every segment request would 404 on a missing init map.
@@ -743,13 +1227,61 @@ export const getRemuxSession = (sessionId) => {
  * segment lately" describes a healthy viewer just as well as an absent one.
  * Same viewer, same title, older session is the signal that cannot misfire.
  */
-export const selectSupersededRemuxes = (priorSessionIds = [], keepSessionId, isLive = () => false) =>
-  priorSessionIds.filter((id) => id && id !== keepSessionId && isLive(id));
+export const selectSupersededRemuxes = (
+  priorSessionIds = [],
+  keepSessionIds = [],
+  isLive = () => false,
+) => {
+  const keepSet = new Set(
+    Array.isArray(keepSessionIds) ? keepSessionIds : [keepSessionIds].filter(Boolean),
+  );
+  return priorSessionIds.filter((id) => id && !keepSet.has(id) && isLive(id));
+};
 
 /** Whether a session still has a running ffmpeg behind it. */
 export const isRemuxSessionLive = (sessionId) => {
   const session = sessions.get(safeId(sessionId));
   return Boolean(session?.process && session.exitCode === undefined);
+};
+
+/**
+ * Slow-writer failover inputs.
+ *
+ * A source whose upstream dribbles below realtime produces a playlist the
+ * viewer can never get ahead of: watch 5 minutes, stall at the live edge,
+ * wait, repeat. The speed gate in resolvePlayback rejects such a candidate
+ * outright (the loop then tries the next source) instead of handing over a
+ * doomed session. The thresholds are deliberately lenient: ffmpeg startup
+ * (input open on a slow CDN) yields nothing for the first seconds, and a
+ * software transcode that cannot hold realtime is unwatchable anyway.
+ */
+export const SLOW_WRITER_MIN_OBSERVE_MS = 45 * 1000;
+export const SLOW_WRITER_MIN_SPEED = 0.8; // playlist-seconds per wall-second
+
+export const computeWriteSpeed = ({ startedAtMs, bufferedSeconds, nowMs = Date.now() }) => {
+  if (!Number.isFinite(startedAtMs) || !Number.isFinite(bufferedSeconds) || bufferedSeconds < 0) {
+    return null;
+  }
+  const elapsedMs = nowMs - startedAtMs;
+  if (!(elapsedMs > 0)) return null;
+  return { elapsedMs, bufferedSeconds, speed: bufferedSeconds / (elapsedMs / 1000) };
+};
+
+/**
+ * Did this writer die on an expired/revoked download link?
+ *
+ * ffmpeg holds one TorBox URL for the whole remux. When it expires mid-film
+ * the child exits non-zero with auth-flavoured stderr (HTTP 401/403 and
+ * friends). Deliberate stops (SIGTERM → null, clean exit → 0) never count,
+ * and neither does a failure without that smell — those keep the existing
+ * sampling/delete path instead of skipping reuse.
+ */
+const LINK_DEATH_PATTERN = /\b(401|403)\b|forbidden|unauthori[sz]ed|expir|access[^a-z0-9]{0,8}denied|token[^a-z0-9]{0,8}(invalid|revoked|expired)|link[^a-z0-9]{0,8}(expired|invalid)/i;
+
+export const isLinkExpiryDeath = ({ exitCode = null, stderrTail = '' } = {}) => {
+  if (exitCode === 0 || exitCode === null || exitCode === undefined) return false;
+  if (typeof exitCode !== 'number') return false;
+  return LINK_DEATH_PATTERN.test(String(stderrTail || ''));
 };
 
 export const stopRemuxSession = async (sessionId) => {
@@ -1003,6 +1535,11 @@ export default {
   scheduleSupersededStop,
   cancelScheduledStop,
   SUPERSEDE_GRACE_MS,
+  computeWriteSpeed,
+  SLOW_WRITER_MIN_OBSERVE_MS,
+  SLOW_WRITER_MIN_SPEED,
+  isLinkExpiryDeath,
+  REMUX_SEGMENT_SECONDS,
   selectSupersededRemuxes,
   isRemuxSessionLive,
   touchTranscodeSession,

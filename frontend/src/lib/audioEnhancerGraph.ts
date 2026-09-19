@@ -17,11 +17,26 @@ export type AudioEnhancerSettings = {
      * "obviously a room" without exposing four knobs nobody wants to balance.
      */
     width: number;
+    /**
+     * Lip-sync compensation in milliseconds, 0 = off. Delays the whole audio
+     * path; for setups where voices arrive before lips move (late 4K picture,
+     * slow display chain) dialling this up re-aligns sound to picture. Only
+     * positive values make sense — audio that lags cannot be pulled earlier.
+     */
+    lipSyncMs: number;
 };
 
-export const DEFAULT_AUDIO_ENHANCER: AudioEnhancerSettings = { clarity: false, widen: false, width: 0.5 };
+export const DEFAULT_AUDIO_ENHANCER: AudioEnhancerSettings = { clarity: false, widen: false, width: 0.5, lipSyncMs: 0 };
 
 export const clampWidth = (v: number): number => (Number.isFinite(v) ? Math.min(1, Math.max(0, v)) : 0.5);
+
+/** Delay range the graph node is built for (createDelay max) and the UI offers. */
+export const LIP_SYNC_MAX_MS = 1000;
+
+export const clampLipSyncMs = (v: number): number => {
+    if (!Number.isFinite(v)) return 0;
+    return Math.min(LIP_SYNC_MAX_MS, Math.max(0, Math.round(v)));
+};
 
 /**
  * Web Audio may only tap the element when the pipeline is taint-free; see
@@ -112,6 +127,12 @@ export type Reflection = {
 export type EnhancerGraph = {
     ctx: BaseAudioContext;
     source: AudioNode;
+    /**
+     * Head-of-chain lip-sync delay. Always wired source -> lipSync; the rest
+     * of the routing starts at lipSync instead of source, so a 0ms setting is
+     * a transparent passthrough and no rewire clicks when the value changes.
+     */
+    lipSync: DelayNode;
     presence: BiquadFilterNode;
     compressor: DynamicsCompressorNode;
     makeup: GainNode;
@@ -183,6 +204,12 @@ const placePanner = (p: PannerNode, azimuthDeg: number) => {
  * there is exactly one place that decides what is connected to what.
  */
 export function createEnhancerGraph(ctx: BaseAudioContext, source: AudioNode): EnhancerGraph {
+    // Head-of-chain lip-sync tap. Built at the 1s maximum the setting clamps
+    // to; left unwired unless the viewer dials a delay, so tap behaviour for
+    // every existing setting is untouched.
+    const lipSync = ctx.createDelay(LIP_SYNC_MAX_MS / 1000);
+    lipSync.delayTime.value = 0;
+
     // 2.5 kHz is where consonants live — the band that decides whether a line
     // is intelligible, not merely audible.
     const presence = ctx.createBiquadFilter();
@@ -281,7 +308,7 @@ export function createEnhancerGraph(ctx: BaseAudioContext, source: AudioNode): E
     direct[1].connect(directBus);
 
     return {
-        ctx, source, presence, compressor, makeup,
+        ctx, source, lipSync, presence, compressor, makeup,
         lowpass, highpass, bassMono, splitter, direct, reflections,
         directBus, reflectSum, reflectBus, preDelay, reverb, reverbBus,
     };
@@ -297,12 +324,13 @@ export function createEnhancerGraph(ctx: BaseAudioContext, source: AudioNode): E
  */
 export function applyEnhancerSettings(graph: EnhancerGraph, settings: AudioEnhancerSettings): void {
     const {
-        ctx, source, presence, compressor, makeup,
+        ctx, source, lipSync, presence, compressor, makeup,
         lowpass, highpass, bassMono, splitter, direct,
         directBus, reflectBus, reverbBus,
     } = graph;
 
     source.disconnect();
+    lipSync.disconnect();
     presence.disconnect();
     compressor.disconnect();
     makeup.disconnect();
@@ -327,8 +355,17 @@ export function applyEnhancerSettings(graph: EnhancerGraph, settings: AudioEnhan
     reflectBus.gain.setTargetAtTime(0.85 * width, ctx.currentTime, 0.08);
     reverbBus.gain.setTargetAtTime(0.22 * width, ctx.currentTime, 0.08);
 
-    // source -> [presence -> compressor -> makeup]? -> [crossover -> widen]? -> out
+    // Lip-sync first: the whole downstream chain (dry or widened) inherits
+    // the shift, and setTargetAtTime glides value changes instead of clicking.
+    // At 0 the tap stays out of the path entirely (see createEnhancerGraph).
+    const lipMs = clampLipSyncMs(settings.lipSyncMs);
+    lipSync.delayTime.setTargetAtTime(lipMs / 1000, ctx.currentTime, 0.05);
+    // source -> [lipSync]? -> [presence -> compressor -> makeup]? -> [crossover -> widen]? -> out
     let head: AudioNode = source;
+    if (lipMs > 0) {
+        head.connect(lipSync);
+        head = lipSync;
+    }
     if (settings.clarity) {
         head.connect(presence);
         presence.connect(compressor);

@@ -2,7 +2,7 @@
 
 import { useCallback, useEffect, useRef, useState, type RefObject } from 'react';
 import {
-    canEnhanceAudio, createEnhancerGraph, applyEnhancerSettings,
+    canEnhanceAudio, createEnhancerGraph, applyEnhancerSettings, clampLipSyncMs,
     type AudioEnhancerSettings, type EnhancerGraph,
 } from '@/lib/audioEnhancerGraph';
 
@@ -20,7 +20,8 @@ export function useAudioEnhancer(
     const graphRef = useRef<EnhancerGraph | null>(null);
     const [failed, setFailed] = useState(false);
     const supported = canEnhanceAudio(src, hlsSupported);
-    const active = supported && !failed && (settings.clarity || settings.widen);
+    const lipMs = clampLipSyncMs(settings.lipSyncMs);
+    const active = supported && !failed && (settings.clarity || settings.widen || lipMs > 0);
 
     /**
      * Built on first use, never before: tapping the element is irreversible, so
@@ -58,30 +59,64 @@ export function useAudioEnhancer(
     useEffect(() => {
         if (!supported || failed) return;
         // Nothing enabled and nothing built yet: leave the element untouched.
-        if (!settings.clarity && !settings.widen && !graphRef.current) return;
+        if (!settings.clarity && !settings.widen && lipMs <= 0 && !graphRef.current) return;
 
-        const snap = `${settings.clarity}|${settings.widen}|${settings.width}`;
-        const changed = lastSnapRef.current !== null && lastSnapRef.current !== snap;
+        const snap = `${settings.clarity}|${settings.widen}|${settings.width}|${lipMs}`;
+        // First run has no snapshot to compare against. A mount happens
+        // pre-gesture (never build there — see below), but a settings change
+        // always arrives inside a user gesture (slider drag, toggle tap), so
+        // transient activation is held and an immediate build usually starts
+        // the context at once. That is what makes the lip-sync slider audible
+        // on the drag that sets it instead of one click later.
+        const gesturing = typeof navigator !== 'undefined'
+            && (navigator as Navigator & { userActivation?: { isActive?: boolean } })
+                .userActivation?.isActive === true;
+        const changed = lastSnapRef.current !== null ? lastSnapRef.current !== snap : gesturing;
         lastSnapRef.current = snap;
 
-        const build = (): boolean => {
+        const build = (): EnhancerGraph | null => {
             const graph = ensureGraph();
-            if (!graph) return false;
+            if (!graph) return null;
             try {
                 applyEnhancerSettings(graph, settings);
             } catch {
                 setFailed(true);
-                return false;
+                return null;
             }
             const ctx = graph.ctx as AudioContext;
             if (ctx.state === 'suspended') void ctx.resume();
-            return true;
+            return graph;
         };
+
+        let cancelled = false;
+        const events = ['pointerdown', 'keydown', 'touchstart'] as const;
+        const detach = () => {
+            for (const event of events) {
+                document.removeEventListener(event, onGesture, { capture: true } as EventListenerOptions);
+            }
+        };
+        function onGesture() {
+            if (cancelled) return;
+            if (build()) detach();
+        }
 
         if (graphRef.current || changed) {
             // Already tapped, or the viewer just flipped a toggle (a gesture,
             // so resume usually succeeds immediately): build/apply now.
-            build();
+            const graph = build();
+            const state = (graph?.ctx as AudioContext | undefined)?.state;
+            if (graph && state === 'suspended') {
+                // Gesture credit ran out before resume: the element is tapped
+                // to a silent context, so keep the one-time fallback — the
+                // next click finishes the job instead of permanent silence.
+                for (const event of events) {
+                    document.addEventListener(event, onGesture, { once: true, capture: true });
+                }
+                return () => {
+                    cancelled = true;
+                    detach();
+                };
+            }
             return undefined;
         }
 
@@ -98,17 +133,6 @@ export function useAudioEnhancer(
          * and double registration is harmless because the second firing finds
          * the graph already built.
          */
-        let cancelled = false;
-        const events = ['pointerdown', 'keydown', 'touchstart'] as const;
-        const detach = () => {
-            for (const event of events) {
-                document.removeEventListener(event, onGesture, { capture: true } as EventListenerOptions);
-            }
-        };
-        function onGesture() {
-            if (cancelled) return;
-            if (build()) detach();
-        }
         for (const event of events) {
             document.addEventListener(event, onGesture, { once: true, capture: true });
         }

@@ -4,7 +4,7 @@ import React, { useEffect, useRef, useState, useCallback } from 'react';
 import { createPortal } from 'react-dom';
 import Hls from 'hls.js';
 import {
-    Play, Pause, Maximize, Minimize, Volume2, VolumeX,
+    Play, Pause, Maximize, Minimize, Volume2, Volume1, VolumeX,
     RotateCcw, RotateCw, Settings, SkipForward, Loader2, Captions, X
 } from 'lucide-react';
 import { useWatchHistory } from '../hooks/useLocalStorage';
@@ -15,10 +15,12 @@ import {
     isEmbeddedTrack, trackSource, isViTrack, isEnTrack, isReadyTrack,
     type SubCue, type SubTrack,
 } from '@/lib/subtitles';
+import { computeResumeAt, pickDisplayDuration, decideSeekTarget, planResume, shouldAutoplayAfterRebuild, shouldDowngradeForDropped, subtitleLookupTime } from '@/lib/playback-progress';
 import {
     useAudioEnhancer, DEFAULT_AUDIO_ENHANCER,
     type AudioEnhancerSettings,
 } from '../hooks/useAudioEnhancer';
+import { clampLipSyncMs } from '@/lib/audioEnhancerGraph';
 import { isTaintFreePipeline } from '@/lib/mediaPipeline';
 import { CINEMA_BRIGHT_ATTR, type CinemaMode } from '@/components/CinemaLayer';
 import { readShaderEnabled, setShaderEnabled } from '@/lib/shaderPref';
@@ -78,9 +80,44 @@ interface VideoPlayerProps {
         React bails out on an unchanged src, so this forces the pipeline below
         to tear down and rebuild (fresh hls.js + resume from history). */
     reloadKey?: number;
+    /**
+     * Display offset (seconds) of this session: 0 for ordinary from-the-start
+     * sessions, >0 when the server began the (re)mux at a seek target. The
+     * playlist timeline is 0-based over truncated bytes; the viewer-facing
+     * timeline is offset by this amount.
+     */
+    startAt?: number | null;
+    /**
+     * Ask the parent resolver for a session beginning at a display position
+     * (far seeks past the written playlist head). Absent for sources that
+     * cannot re-resolve (direct files), where seeks clamp instead. May be
+     * async: the player watches settlement to clear its seeking indicator.
+     */
+    onSeekToPosition?: (displaySeconds: number) => void | Promise<unknown>;
+    /**
+     * Invalidate an in-flight seek-resolve (the viewer retargeted or went
+     * back to direct seeking): the parent drops its late response instead of
+     * yanking playback to an abandoned position.
+     */
+    onCancelSeek?: () => void;
+    /**
+     * Live progress of the in-flight seek-resolve (stage label + warm
+     * percent), so a 30-60s server warm reads as progress instead of a dead
+     * overlay that invites mashing. Null when no seek is resolving.
+     */
+    seekProgress?: { label?: string | null; percent?: number | null } | null;
     /** Fired when currentTime advances past the stall threshold. Lets the
         parent reset its recovery counter so isolated stalls don't accumulate. */
-    onPlaybackProgress?: () => void;
+    /** Live playhead in full-film seconds (display time, not element time). */
+    onPlaybackProgress?: (positionSeconds: number) => void;
+    /** How far this remux's clock leads source time (B-frame reorder delay). */
+    presentationShiftMs?: number;
+    /** False when the server serves whole films by policy, never truncated ones. */
+    seekStartSupported?: boolean;
+    /** Fired once per source when the decoder drops frames heavily
+        (audio permanently ahead of the picture). The parent can step down
+        to a lighter release instead of leaving every heavy title lagging. */
+    onDecodeOverload?: () => void;
     /**
      * The surround mode and the element to sample. Both are emitted rather than
      * used here: the player's own box clips its overflow, so the light has to be
@@ -90,7 +127,7 @@ interface VideoPlayerProps {
     onVideoReady?: (el: HTMLVideoElement | null) => void;
 }
 
-export default function VideoPlayer({ src, movie, episode, authToken, durationSeconds, onNextEpisode, subContext, onPickAudio, activeAudioIndex, onPlaybackFailure, reloadKey = 0, onPlaybackProgress, onCinemaChange, onVideoReady }: VideoPlayerProps) {
+export default function VideoPlayer({ src, movie, episode, authToken, durationSeconds, onNextEpisode, subContext, onPickAudio, activeAudioIndex, onPlaybackFailure, reloadKey = 0, onPlaybackProgress, presentationShiftMs = 0, seekStartSupported = true, onDecodeOverload, onCinemaChange, onVideoReady, startAt = 0, onSeekToPosition, onCancelSeek, seekProgress = null }: VideoPlayerProps) {
     const videoRef = useRef<HTMLVideoElement>(null);
     const containerRef = useRef<HTMLDivElement>(null);
 
@@ -108,6 +145,11 @@ export default function VideoPlayer({ src, movie, episode, authToken, durationSe
     const [buffered, setBuffered] = useState(0);
     const [isLoading, setIsLoading] = useState(true);
     const [error, setError] = useState<string | null>(null);
+    // True once the element has actually shown picture (currentTime advances
+    // past the first half second). A black loading frame with auto-hidden
+    // controls reads as "the player vanished", so the hide rules below all
+    // require this — and a poster covers the black meanwhile.
+    const [hasPicture, setHasPicture] = useState(false);
     // Audible play() rejected for lack of gesture: show tap-to-play instead of
     // silent autoplay. Cleared on the first real play event.
     const [autoplayBlocked, setAutoplayBlocked] = useState(false);
@@ -139,6 +181,9 @@ export default function VideoPlayer({ src, movie, episode, authToken, durationSe
                     // mixes and hollows out others, so it must never be the
                     // state a viewer finds themselves in without choosing it.
                     widen: parsed.audio?.widen === true,
+                    // Lip-sync compensation is setup-constant (same display
+                    // chain every film), so unlike widen it persists.
+                    lipSyncMs: clampLipSyncMs(Number(parsed.audio?.lipSyncMs)),
                 },
                 cinema: (['off', 'dim', 'ambilight'] as const).includes(parsed.cinema)
                     ? (parsed.cinema as CinemaMode)
@@ -254,7 +299,11 @@ export default function VideoPlayer({ src, movie, episode, authToken, durationSe
     const autoSubSourceRef = useRef<string | null>(null);
 
     const adjustSubDelay = useCallback((delta: number) => {
-        const next = Math.min(30, Math.max(-30, Math.round((subDelayRef.current + delta) * 2) / 2));
+        // Tenths, not halves. The pipeline's own timing is exact now, so what
+        // is left to dial out is a sidecar written for a different release —
+        // typically a few hundred milliseconds, which a 0.5s step can only
+        // overshoot. Key repeat still covers a large offset quickly.
+        const next = Math.min(30, Math.max(-30, Math.round((subDelayRef.current + delta) * 10) / 10));
         subDelayRef.current = next;
         setSubDelay(next);
         patchPrefs({ subDelay: next });
@@ -294,12 +343,55 @@ export default function VideoPlayer({ src, movie, episode, authToken, durationSe
     const lastProgressRef = useRef(0);
     const localStallRecoveryRef = useRef(false);
     const hlsRef = useRef<Hls | null>(null);
+    // Latest history save, callable from pause/pagehide handlers that live in
+    // other effects. The saver itself skips paused elements, so callers that
+    // run *because* of a pause pass force=true.
+    const saveProgressRef = useRef<((force?: boolean) => void) | null>(null);
+    // Deferred resume listener (removed in the pipeline effect cleanup).
+    const resumeListenerRef = useRef<(() => void) | null>(null);
+    // In-flight far-seek target (display seconds). Declared up here because
+    // togglePlay (below) reads it; the debounced fire effect lives further
+    // down next to handleSeek.
+    const [seekTarget, setSeekTarget] = useState<number | null>(null);
+    const seekTargetRef = useRef<number | null>(null);
+    const beginSeekLock = (at: number) => {
+        seekTargetRef.current = at;
+        setSeekTarget(at);
+        const video = videoRef.current;
+        if (video) {
+            userPausedRef.current = true;
+            try {
+                video.pause();
+            } catch {}
+            setIsPlaying(false);
+        }
+    };
+    const clearSeekLock = () => {
+        seekTargetRef.current = null;
+        setSeekTarget(null);
+    };
+    const seekFireEpochRef = useRef(0);
+    const seekFiredEpochRef = useRef(0);
+    // One auto-resume seek per title per mount. A resume past the fresh remux
+    // head fires a seek-resolve; if the server answers it from-start anyway
+    // (seek bucketing), the rebuild would resume with the SAME target again —
+    // an endless resolve/supersede loop ("hiện phim rồi mà vẫn load tiếp").
+    // Manual seeks bypass this (different path) and stay repeatable.
+    const resumeFiredKeyRef = useRef<string | null>(null);
+    // Playback intent across pipeline rebuilds (recovery, seek sessions):
+    // a rebuild of a paused player must stay paused, never auto-play.
+    // userPausedRef tracks the LATEST intent continuously (pause/play
+    // events); pausedBeforeRebuildRef snapshots the element at teardown as a
+    // backstop for rebuilds that happen without events in between.
+    const hasPlayedRef = useRef(false);
+    const pausedBeforeRebuildRef = useRef(false);
+    const userPausedRef = useRef(false);
 
     /** Restart hls.js once before replacing the server-side remux. The two
         deadlines still total 20s, but a recoverable loader stall gets nudged
         after 8s instead of leaving the viewer on a frozen frame for all 20. */
-    const LOCAL_STALL_RECOVERY_MS = 8000;
-    const ESCALATED_STALL_TIMEOUT_MS = 12000;
+    const LOCAL_STALL_RECOVERY_MS = 15000; // Increased from 8s to 15s to allow for cold resumes
+    const ESCALATED_STALL_TIMEOUT_MS = 25000; // Increased from 12s to 25s
     const armStallTimer = (timeoutMs = LOCAL_STALL_RECOVERY_MS) => {
         // This is a rolling deadline, not a one-shot "waiting" alarm. Browsers
         // can report playing/canplay and keep readyState > 0 while currentTime
@@ -543,6 +635,17 @@ export default function VideoPlayer({ src, movie, episode, authToken, durationSe
         // eslint-disable-next-line react-hooks/exhaustive-deps
     }, [subTracks]);
 
+    // An embedded track can be auto-selected before its extraction job
+    // finishes and its URL lands: at that moment ensureCues is skipped
+    // (it needs a url). Watch the selected track and fire it the moment
+    // a URL appears so subtitles appear as soon as the file is readable.
+    useEffect(() => {
+        if (selectedSub === 'off' || !selectedSub) return;
+        const track = subTracks.find((t) => t.id === selectedSub);
+        if (track?.url && !cueCache[track.id]) void ensureCues(track);
+        // eslint-disable-next-line react-hooks/exhaustive-deps
+    }, [selectedSub, subTracks, cueCache]);
+
     const ensureCues = useCallback(async (track: SubTrack) => {
         if (cueCache[track.id] || !track.url) return;
         setCuesLoading(true);
@@ -596,8 +699,23 @@ export default function VideoPlayer({ src, movie, episode, authToken, durationSe
         setSubDelay(delay);
     }, [selectedSub]);
 
-    // Lookup time shifted by manual delay: + pulls late cues earlier.
-    const subLookupTime = currentTime + subDelay;
+    // Display timeline: the element plays truncated 0-based bytes while the
+    // viewer sees positions offset by the session's start (0 = from the start).
+    const sessionStartAt = typeof startAt === 'number' && Number.isFinite(startAt) && startAt > 0 ? startAt : 0;
+    const displayTime = sessionStartAt + currentTime;
+    // Full-length duration for the seek bar and readout: the element duration
+    // of a seek-started session only covers its truncated tail.
+    const fullDuration = durationSeconds || duration || 0;
+
+    // Subtitle files are timed against the full film's source clock, which the
+    // remux leads by its B-frame reorder delay; the session offset goes back on
+    // top, and the viewer's manual nudge after that.
+    const subLookupTime = subtitleLookupTime({
+        sessionStart: sessionStartAt,
+        elementTime: currentTime,
+        delay: subDelay,
+        presentationShiftMs,
+    });
     // Secondary subtitle has its own relative offset for fine-tuning in bilingual mode.
     const secondaryLookupTime = subLookupTime + secondaryOffset;
 
@@ -633,6 +751,9 @@ export default function VideoPlayer({ src, movie, episode, authToken, durationSe
                 if (Math.abs(now - currentTimeRef.current) >= 0.04) {
                     currentTimeRef.current = now;
                     setCurrentTime(now);
+                    // Same-value sets bail out, so this is free after the
+                    // first frame: marks real picture for the hide rules.
+                    if (now > 0.5) setHasPicture(true);
                 }
             }
             rafId = requestAnimationFrame(checkTime);
@@ -680,6 +801,38 @@ export default function VideoPlayer({ src, movie, episode, authToken, durationSe
 
         setError(null);
         setIsLoading(true);
+        // Fresh pipeline, no picture yet: poster covers the black gap below
+        // until the first frame lands (set in the RAF loop).
+        setHasPicture(false);
+        // A new pipeline means the seek (if any) landed: drop its indicator.
+        // Failures clear it via the fire-promise catch above instead. If this
+        // line clears a seek but the session does NOT begin at the requested
+        // point, the mismatch toast below says so.
+        if (seekTargetRef.current !== null && typeof window !== 'undefined') {
+            console.debug(`[seek] overlay cleared by pipeline rebuild (src=${src.slice(0, 80)}, startAt=${sessionStartAt})`);
+        }
+        // A remux session that does not begin at the requested point means one
+        // of two very different things, and telling the viewer the wrong one is
+        // worse than saying nothing. When the server offers truncated sessions
+        // and still did not honour the seek, something is broken. When it serves
+        // whole films by policy, nothing is wrong — the film is simply still
+        // being built up to that point, and "restart the backend" would be
+        // nonsense advice. (Direct files and Vimo carry whole-file timelines, so
+        // the check is remux-only.)
+        // Only complain about a MATERIAL gap. The server rounds a start
+        // position down to a coarse bucket, so asking for 0:03 and being given
+        // the start is the request being honoured, not ignored — warning there
+        // taught the viewer to distrust a player that was working correctly.
+        const seekGap = seekTargetRef.current === null
+            ? 0
+            : seekTargetRef.current - sessionStartAt;
+        if (seekTargetRef.current !== null && seekGap > 30 && !(sessionStartAt > 0)
+            && src.includes('/api/playback/hls/')) {
+            showSyncToast(seekStartSupported
+                ? `Máy chủ mở luồng từ đầu thay vì ${formatTime(seekTargetRef.current)} — hãy restart backend rồi tua lại`
+                : `Đang dựng phim từ đầu — tới ${formatTime(seekTargetRef.current)} sẽ xem được, chờ một lát`);
+        }
+        clearSeekLock();
 
         const isHlsSrc = /\.m3u8(\?|#|$)/i.test(src);
 
@@ -687,9 +840,32 @@ export default function VideoPlayer({ src, movie, episode, authToken, durationSe
         // A play() promise still pending at that moment rejects with AbortError
         // ("interrupted by a new load request"), so ignore results once stale.
         let cancelled = false;
+        // Resume-coverage timeout holder: cleared if the pipeline tears down
+        // before the playlist reports how much of the film it covers yet.
+        let resumeTimer: ReturnType<typeof setTimeout> | undefined;
 
         const startPlayback = () => {
             if (cancelled) return;
+            // A rebuild of a player the viewer had paused (recovery after a
+            // dead session, a seek made while paused) stays paused instead of
+            // shouting over whatever they switched to. Fresh mounts always
+            // try: the tap-to-play prompt covers the blocked case.
+            // userPausedRef is the latest intent (pause/play events);
+            // pausedBeforeRebuildRef backs it up at teardown. Either saying
+            // "paused" wins: an unwanted autoplay is far worse than a
+            // stay-paused that one tap reverses.
+            // The explicit pause() below is belt and suspenders: it also
+            // settles any play request that slipped in around the teardown
+            // (pause on an already-paused element is a silent no-op).
+            if (!shouldAutoplayAfterRebuild(hasPlayedRef.current, pausedBeforeRebuildRef.current) || userPausedRef.current) {
+                setIsPlaying(false);
+                try {
+                    video.pause();
+                } catch {
+                    // Already paused or not yet loadable: nothing to settle.
+                }
+                return;
+            }
             // Audible-only start. By the time the async resolve (TorBox +
             // manifest) finishes, the click that opened the film is no longer
             // an active browser gesture, so audible play() rejects with
@@ -700,7 +876,9 @@ export default function VideoPlayer({ src, movie, episode, authToken, durationSe
             void video.play().then(
                 () => {
                     if (cancelled) return;
-                    setIsPlaying(true);
+                    // Believe the element, not the request: a pause that won
+                    // the race after play() was issued must keep the UI paused.
+                    setIsPlaying(!video.paused);
                     setAutoplayBlocked(false);
                 },
                 (err: unknown) => {
@@ -784,12 +962,101 @@ export default function VideoPlayer({ src, movie, episode, authToken, durationSe
                 hls.currentLevel = -1;
 
                 // Restore history (back off 2s to skip the exact stalled fragment).
+                // Seek-started sessions skip this: their truncated timeline
+                // begins at the target, so position 0 already IS the resume
+                // point and history would yank playback backwards.
                 const saved = history.find(h => h.slug === movie.slug);
-                if (saved && saved.currentEpisode === episode.slug && saved.progress) {
-                    video.currentTime = Math.max(0, saved.progress - 2);
+                const resumeAt = (sessionStartAt > 0 || !(saved && saved.currentEpisode === episode.slug))
+                    ? null
+                    : computeResumeAt(
+                        saved.progress,
+                        durationSeconds || (Number.isFinite(video.duration) ? video.duration : 0),
+                    );
+                if (resumeAt === null) {
+                    startPlayback();
+                    setIsLoading(false);
+                    return;
                 }
-                startPlayback();
-                setIsLoading(false);
+
+                // A fresh remux only covers its written prefix: restoring
+                // blindly past it makes hls.js snap back to ~0 ("pause a
+                // while -> restarts from the beginning"). Wait for the first
+                // coverage report, then restore directly (covered), clamp
+                // (finished shorter), or open a session beginning at the
+                // target (still filling). Playback holds on the spinner until
+                // the decision lands so no wrong first frame flashes.
+                let pendingResume: number | null = resumeAt;
+                const clearResumeTimer = () => {
+                    if (resumeTimer !== undefined) {
+                        clearTimeout(resumeTimer);
+                        resumeTimer = undefined;
+                    }
+                };
+                // Metadata-safe: assigning currentTime before the element has
+                // metadata throws InvalidStateError, which used to abort this
+                // handler before startPlayback() and strand the player at 0.
+                const settleResumeAt = (target: number) => {
+                    pendingResume = null;
+                    clearResumeTimer();
+                    const applyResume = () => {
+                        try {
+                            video.currentTime = target;
+                        } catch {
+                            // Metadata still not ready; the loadedmetadata
+                            // retry below applies it as soon as it is.
+                        }
+                    };
+                    // Belt and suspenders: apply now when metadata is already
+                    // here, and always leave the one-shot retry for the case
+                    // it is not (re-applying the same value is a no-op).
+                    resumeListenerRef.current = applyResume;
+                    video.addEventListener('loadedmetadata', applyResume, { once: true });
+                    applyResume();
+                    startPlayback();
+                    setIsLoading(false);
+                };
+                hls.on(Hls.Events.LEVEL_UPDATED, (_event, data) => {
+                    if (pendingResume === null) return;
+                    const head = data?.details?.totalduration;
+                    if (typeof head !== 'number' || !Number.isFinite(head)) return;
+                    const plan = planResume({
+                        resumeAt: pendingResume,
+                        head,
+                        finished: data.details?.live === false,
+                        canSeekResolve: typeof onSeekToPosition === 'function',
+                    });
+                    if (plan.kind === 'none') {
+                        pendingResume = null;
+                        clearResumeTimer();
+                        startPlayback();
+                        setIsLoading(false);
+                    } else if (plan.kind === 'seek-resolve') {
+                        pendingResume = null;
+                        clearResumeTimer();
+                        // Hand off to the debounced seek-resolve flow
+                        // (indicator + epoch guards). The spinner stays until
+                        // the new pipeline arrives and rebuilds.
+                        const resumeKey = `${movie.slug}|${episode.slug}|${plan.at}`;
+                        if (resumeFiredKeyRef.current === resumeKey) {
+                            // Already tried this exact resume this mount (the
+                            // server answered from-start): play what's buffered
+                            // instead of looping resolves forever.
+                            startPlayback();
+                            setIsLoading(false);
+                        } else {
+                            resumeFiredKeyRef.current = resumeKey;
+                            beginSeekLock(plan.at);
+                        }
+                    } else {
+                        settleResumeAt(plan.at);
+                    }
+                });
+                // Coverage report never came: fall back to a direct restore
+                // attempt rather than spinning forever.
+                resumeTimer = setTimeout(() => {
+                    if (pendingResume === null) return;
+                    settleResumeAt(pendingResume);
+                }, 8000);
             });
 
             hls.on(Hls.Events.FRAG_LOADED, () => {
@@ -852,23 +1119,40 @@ export default function VideoPlayer({ src, movie, episode, authToken, durationSe
 
         return () => {
             cancelled = true;
+            // Remember intent for the next pipeline: a paused teardown must
+            // rebuild paused, a playing one may resume playing.
+            pausedBeforeRebuildRef.current = video.paused;
+            if (resumeTimer !== undefined) {
+                clearTimeout(resumeTimer);
+                resumeTimer = undefined;
+            }
+            if (resumeListenerRef.current) {
+                video.removeEventListener('loadedmetadata', resumeListenerRef.current);
+                resumeListenerRef.current = null;
+            }
             if (hlsRef.current) {
                 hlsRef.current.destroy();
                 hlsRef.current = null;
             }
         };
-    }, [src, movie.slug, episode.slug, authToken, retryKey, reloadKey, onPlaybackFailure]);
+    }, [src, movie.slug, episode.slug, authToken, retryKey, reloadKey, onPlaybackFailure, seekStartSupported]);
 
     // History Saver
     useEffect(() => {
         const video = videoRef.current;
         if (!video) return;
 
-        const saveProgress = async () => {
-            if (video.paused || video.ended) return;
+        const saveProgress = async (force = false) => {
+            // Interval ticks skip paused elements (nothing changed), but
+            // pause/pagehide callers pass force=true: the position at the
+            // exact moment of pausing is what a later resume must restore.
+            if ((video.paused || video.ended) && !force) return;
 
             const duration = durationSeconds || (Number.isFinite(video.duration) ? video.duration : 0);
-            const currentTime = duration > 0 ? Math.min(video.currentTime, Math.max(duration - 5, 0)) : video.currentTime;
+            // Display position: element time plus the session's start offset
+            // (seek-started sessions play truncated 0-based bytes).
+            const displayNow = sessionStartAt + video.currentTime;
+            const currentTime = duration > 0 ? Math.min(displayNow, Math.max(duration - 5, 0)) : displayNow;
 
             if (currentTime > 5) {
                 // Local save
@@ -882,7 +1166,7 @@ export default function VideoPlayer({ src, movie, episode, authToken, durationSe
                     timeSaved: Date.now(),
                     currentEpisode: episode.slug,
                     progress: currentTime,
-                    duration: video.duration
+                    duration
                 });
 
                 // API sync (fire and forget to avoid blocking)
@@ -923,7 +1207,19 @@ export default function VideoPlayer({ src, movie, episode, authToken, durationSe
             }
         };
         const interval = setInterval(saveProgress, 10000); // 10s interval for API sync balance
-        return () => clearInterval(interval);
+        // Pause, backgrounding and tab close must all persist the exact stop
+        // point: without these, a dead-then-recovered session resumes from the
+        // last 10s tick instead of where the viewer actually stopped.
+        const saveNow = () => { void saveProgress(true); };
+        document.addEventListener('visibilitychange', saveNow);
+        window.addEventListener('pagehide', saveNow);
+        saveProgressRef.current = saveProgress;
+        return () => {
+            clearInterval(interval);
+            document.removeEventListener('visibilitychange', saveNow);
+            window.removeEventListener('pagehide', saveNow);
+            if (saveProgressRef.current === saveProgress) saveProgressRef.current = null;
+        };
     }, [movie, episode, addToHistory]);
 
     // Event Listeners
@@ -936,26 +1232,35 @@ export default function VideoPlayer({ src, movie, episode, authToken, durationSe
             if (video.currentTime > lastProgressRef.current + 0.25) {
                 localStallRecoveryRef.current = false;
                 armStallTimer();
-                if (onPlaybackProgress) onPlaybackProgress();
+                if (onPlaybackProgress) onPlaybackProgress(sessionStartAt + video.currentTime);
             }
             if (video.buffered.length > 0) {
                 const bufferedEnd = video.buffered.end(video.buffered.length - 1);
-                const duration = video.duration;
-                if (duration > 0) {
-                    setBuffered((bufferedEnd / duration) * 100);
+                // Display scale: element ranges are session-local, the bar is
+                // full-film (seek-started sessions play a truncated tail).
+                const base = durationSeconds || video.duration;
+                if (base > 0) {
+                    setBuffered(((sessionStartAt + bufferedEnd) / base) * 100);
                 }
             }
         };
 
-        const handleDurationChange = () => setDuration(durationSeconds || video.duration);
+        const handleDurationChange = () => setDuration(pickDisplayDuration(video.duration, durationSeconds));
         const handlePlay = () => {
+            hasPlayedRef.current = true;
+            userPausedRef.current = false;
             setIsPlaying(true);
             setAutoplayBlocked(false);
             armStallTimer();
         };
         const handlePause = () => {
+            userPausedRef.current = true;
             clearStallTimer();
             setIsPlaying(false);
+            // Persist the exact stop point now: the 10s interval skips paused
+            // elements, so without this a later recovery resumes up to 10s
+            // behind where the viewer actually paused.
+            void saveProgressRef.current?.(true);
         };
         const handleWaiting = () => {
             if (video.paused) return;
@@ -1011,7 +1316,93 @@ export default function VideoPlayer({ src, movie, episode, authToken, durationSe
             video.removeEventListener('canplay', handleCanPlay);
             video.removeEventListener('ended', handleEnded);
         }
-    }, [onNextEpisode, durationSeconds, onPlaybackFailure, onPlaybackProgress]);
+    }, [onNextEpisode, durationSeconds, onPlaybackFailure, onPlaybackProgress, sessionStartAt]);
+
+    // Decode-overload watchdog: caps report decodability, never speed. A slow
+    // decoder lags every heavy title with audio permanently ahead of the
+    // picture (and subs early against the late picture) while no stall timer
+    // fires, because currentTime keeps advancing. Sample
+    // getVideoPlaybackQuality every 5s of playing time; one report per
+    // source — the parent steps down and rebuilds, which remounts this.
+    //
+    // Two guards against false positives (a wrong downgrade also persists
+    // via the source pin, so this must be conservative):
+    // - discontinuity: any waiting/seeking/emptied since the last sample
+    //   means the drops are catch-up skips after a stall, not weak decode.
+    // - buffer health: a starved buffer (<5s ahead) blames the network.
+    // Only a healthy buffer with sustained drops, twice in a row, reports.
+    const onDecodeOverloadRef = useRef(onDecodeOverload);
+    onDecodeOverloadRef.current = onDecodeOverload;
+    const decodeDiscontinuityRef = useRef(true);
+    useEffect(() => {
+        if (typeof onDecodeOverloadRef.current !== 'function') return;
+        decodeDiscontinuityRef.current = true;
+        let prev: { decoded: number; dropped: number } | null = null;
+        let badStreak = 0;
+        let fired = false;
+        const markDiscontinuity = () => {
+            decodeDiscontinuityRef.current = true;
+        };
+        const v0 = videoRef.current;
+        v0?.addEventListener('waiting', markDiscontinuity);
+        v0?.addEventListener('seeking', markDiscontinuity);
+        v0?.addEventListener('emptied', markDiscontinuity);
+        const id = setInterval(() => {
+            if (fired) return;
+            const v = videoRef.current;
+            if (!v || v.paused || v.ended) return;
+            if (decodeDiscontinuityRef.current) {
+                decodeDiscontinuityRef.current = false;
+                prev = null;
+                badStreak = 0;
+                return;
+            }
+            let bufAhead = Number.POSITIVE_INFINITY;
+            try {
+                const b = v.buffered;
+                if (b && b.length > 0) bufAhead = b.end(b.length - 1) - v.currentTime;
+            } catch {
+                return;
+            }
+            if (!(bufAhead > 5)) {
+                prev = null;
+                badStreak = 0;
+                return;
+            }
+            let q: { totalVideoFrames?: number; droppedVideoFrames?: number } | null = null;
+            try {
+                q = typeof v.getVideoPlaybackQuality === 'function' ? v.getVideoPlaybackQuality() : null;
+            } catch {
+                return;
+            }
+            if (!q) return;
+            const next = {
+                decoded: Number(q.totalVideoFrames) || 0,
+                dropped: Number(q.droppedVideoFrames) || 0,
+            };
+            if (prev && shouldDowngradeForDropped(prev, next)) {
+                badStreak += 1;
+                if (badStreak >= 2) {
+                    fired = true;
+                    clearInterval(id);
+                    onDecodeOverloadRef.current?.();
+                    return;
+                }
+            } else {
+                badStreak = 0;
+            }
+            prev = next;
+            // 10s windows: shouldDowngradeForDropped needs ~240 decoded frames
+            // (~10s of 24fps film) per window to judge; 5s windows at film
+            // framerates could never reach the baseline and would never fire.
+        }, 10000);
+        return () => {
+            clearInterval(id);
+            v0?.removeEventListener('waiting', markDiscontinuity);
+            v0?.removeEventListener('seeking', markDiscontinuity);
+            v0?.removeEventListener('emptied', markDiscontinuity);
+        };
+    }, [src]);
 
     // Controls Visibility (touch taps reuse the same path: on touch
     // screens there is no mousemove, so without this the bar can never be
@@ -1023,16 +1414,27 @@ export default function VideoPlayer({ src, movie, episode, authToken, durationSe
         setShowControls(true);
         if (controlsTimeoutRef.current) clearTimeout(controlsTimeoutRef.current);
         controlsTimeoutRef.current = setTimeout(() => {
-            if (isPlaying && !showSettingsRef.current) setShowControls(false);
+            // Never auto-hide over a black frame: with no picture yet the
+            // hidden bar reads as "the player disappeared". (hasPicture is
+            // the value at mousemove time; erring toward visible is safe.)
+            if (isPlaying && !showSettingsRef.current && hasPicture) setShowControls(false);
         }, 3000);
     };
 
     const togglePlay = useCallback(() => {
         if (videoRef.current) {
+            // While a far seek is resolving, the element still holds the old
+            // position: neither direction is allowed, or playback visibly
+            // jumps (play starts stale footage, pause fights the incoming
+            // pipeline). The overlay below offers Hủy instead.
+            if (seekTargetRef.current !== null) {
+                showSyncToast('Đang tải tới điểm tua — đợi chút nhé');
+                return;
+            }
             if (isPlaying) videoRef.current.pause();
             else videoRef.current.play();
         }
-    }, [isPlaying]);
+    }, [isPlaying, showSyncToast]);
 
     // Fullscreen state is owned by the browser (ESC key, system gestures and
     // the mobile system UI can enter/leave at any time), so React only
@@ -1109,13 +1511,133 @@ export default function VideoPlayer({ src, movie, episode, authToken, durationSe
         };
     }, [isPlaying]);
 
-    const handleSeek = (e: React.ChangeEvent<HTMLInputElement>) => {
-        const time = Number(e.target.value);
-        if (videoRef.current) {
-            videoRef.current.currentTime = time;
-            setCurrentTime(time);
-        }
+    // Written head of the HLS playlist (seconds). While a remux is still
+    // filling, only this prefix exists server-side; NaN when unknown
+    // (level not loaded yet, or a native progressive file).
+    const playlistHeadEnd = (): number => {
+        const hls = hlsRef.current;
+        if (!hls || !Array.isArray(hls.levels) || hls.levels.length === 0) return NaN;
+        const active = hls.levels[hls.autoLevelEnabled ? hls.loadLevel : hls.currentLevel]
+            ?? hls.levels[hls.currentLevel];
+        const total = active?.details?.totalduration;
+        return typeof total === 'number' ? total : NaN;
     };
+
+    const handleSeek = (e: React.ChangeEvent<HTMLInputElement>) => {
+        const raw = Number(e.target.value);
+        const video = videoRef.current;
+        if (!video) return;
+        // Targets inside the written window play instantly; targets outside
+        // ask the server for a session beginning there instead of stalling on
+        // segments that do not exist yet. Without a re-resolve path (direct
+        // files) the target clamps to the newest watchable point.
+        const decision = decideSeekTarget({
+            target: raw,
+            startAt: sessionStartAt,
+            headLocal: playlistHeadEnd(),
+            canReresolve: typeof onSeekToPosition === 'function',
+        });
+        if (decision.kind === 'reresolve') {
+            // Hard-lock the old pipeline immediately: the current element is
+            // still showing stale media, so pause it now and keep a blocking
+            // overlay until the new seek-started session arrives or is
+            // cancelled. Re-targeting cancels the old request and replaces it.
+            if (seekTargetRef.current !== null && seekTargetRef.current !== decision.at) {
+                onCancelSeek?.();
+                seekFiredEpochRef.current += 1;
+            }
+            beginSeekLock(decision.at);
+            return;
+        }
+        // A direct seek supersedes any pending seek-resolve: invalidate it so
+        // its late response cannot yank playback to an abandoned position.
+        if (seekTargetRef.current !== null) {
+            onCancelSeek?.();
+            clearSeekLock();
+        }
+        if (decision.clamped && raw > 1) {
+            showSyncToast('Đoạn này phim chưa tải tới — đã đưa tới chỗ mới nhất xem được');
+        }
+        try {
+            video.currentTime = decision.localTime;
+        } catch {
+            // Metadata not ready yet; the element applies it on load.
+        }
+        setCurrentTime(decision.localTime);
+    };
+
+    // Tap-friendly ±10s seek shared by buttons, keyboard and gestures.
+    // Routes through decideSeekTarget so remux sessions past the written head
+    // trigger a server re-resolve instead of stalling on missing segments.
+    const seekBy = useCallback((deltaSeconds: number) => {
+        const video = videoRef.current;
+        if (!video) return;
+        if (seekTargetRef.current !== null) {
+            showSyncToast('Đang tải tới điểm tua — đợi chút nhé');
+            return;
+        }
+        const max = fullDuration > 0 ? fullDuration : Number.POSITIVE_INFINITY;
+        const rawTarget = displayTime + deltaSeconds;
+        const raw = Number.isFinite(max)
+            ? Math.min(Math.max(rawTarget, 0), Math.max(max - 0.5, 0))
+            : Math.max(rawTarget, 0);
+        const decision = decideSeekTarget({
+            target: raw,
+            startAt: sessionStartAt,
+            headLocal: playlistHeadEnd(),
+            canReresolve: typeof onSeekToPosition === 'function',
+        });
+        if (decision.kind === 'reresolve') {
+            beginSeekLock(decision.at);
+            handleMouseMove();
+            return;
+        }
+        if (decision.clamped && Math.abs(raw - displayTime) > 1) {
+            showSyncToast('Đoạn này phim chưa tải tới — đã đưa tới chỗ mới nhất xem được');
+        }
+        try {
+            video.currentTime = decision.localTime;
+        } catch {
+            // Metadata not ready yet; the element applies it on load.
+        }
+        setCurrentTime(decision.localTime);
+        handleMouseMove();
+    }, [displayTime, fullDuration, sessionStartAt, onSeekToPosition, showSyncToast, handleMouseMove]);
+
+    // In-flight far-seek target (display seconds). Set per scrub tick, fired
+    // debounced: without this, one drag spawns a resolve (and an ffmpeg)
+    // per tick and sessions pile up faster than the server reaps them.
+    // (State + epoch refs live near the top refs; togglePlay reads them.)
+    useEffect(() => {
+        if (seekTarget === null || typeof onSeekToPosition !== 'function') return;
+        const at = seekTarget;
+        const timer = setTimeout(() => {
+            const epoch = ++seekFireEpochRef.current;
+            seekFiredEpochRef.current = epoch;
+            showSyncToast(`Đang tải phim từ ${formatTime(at)}…`);
+            if (typeof window !== 'undefined') {
+                console.debug(`[seek] resolve startAt=${at}s epoch=${epoch}`);
+            }
+            void Promise.resolve()
+                .then(() => onSeekToPosition(at))
+                .catch((err: unknown) => {
+                    // Resolve failed and no newer seek superseded it: drop the
+                    // indicator and say why over the still-playing picture
+                    // instead of failing blind (the old segment keeps running).
+                    if (seekFiredEpochRef.current === epoch) {
+                        clearSeekLock();
+                        const reason = err instanceof Error && err.message
+                            ? err.message.slice(0, 140)
+                            : 'không rõ nguyên nhân';
+                        showSyncToast(`Không tua được: ${reason}`);
+                        if (typeof window !== 'undefined') {
+                            console.warn(`[seek] resolve startAt=${at}s failed:`, reason);
+                        }
+                    }
+                });
+        }, 650);
+        return () => clearTimeout(timer);
+    }, [seekTarget, onSeekToPosition]);
 
     const handleVolumeChange = (e: React.ChangeEvent<HTMLInputElement>) => {
         const vol = Number(e.target.value);
@@ -1129,6 +1651,13 @@ export default function VideoPlayer({ src, movie, episode, authToken, durationSe
             setIsMuted(vol === 0);
         }
     };
+
+    // Shared pill styling for the volume sliders (desktop hover bar + touch
+    // bar): glossy amber fill up to the current level, glass beyond it.
+    const volPct = Math.round((isMuted ? 0 : volume) * 100);
+    const volTrackBg =
+        `linear-gradient(to bottom, rgba(255,255,255,0.35) 0%, rgba(255,255,255,0) 55%), ` +
+        `linear-gradient(to right, #b45309 0%, #f59e0b ${volPct}%, rgba(255,255,255,0.22) ${volPct}%)`;
 
     const toggleMute = () => {
         const video = videoRef.current;
@@ -1179,11 +1708,11 @@ export default function VideoPlayer({ src, movie, episode, authToken, durationSe
                     break;
                 case 'arrowright':
                     e.preventDefault();
-                    if (videoRef.current) videoRef.current.currentTime += 10;
+                    seekBy(10);
                     break;
                 case 'arrowleft':
                     e.preventDefault();
-                    if (videoRef.current) videoRef.current.currentTime -= 10;
+                    seekBy(-10);
                     break;
                 case 'm':
                     toggleMute();
@@ -1194,11 +1723,11 @@ export default function VideoPlayer({ src, movie, episode, authToken, durationSe
                     break;
                 case 'g':
                     e.preventDefault();
-                    adjustSubDelay(-0.5);
+                    adjustSubDelay(-0.1);
                     break;
                 case 'h':
                     e.preventDefault();
-                    adjustSubDelay(0.5);
+                    adjustSubDelay(0.1);
                     break;
                 case '[':
                     e.preventDefault();
@@ -1217,7 +1746,7 @@ export default function VideoPlayer({ src, movie, episode, authToken, durationSe
 
         window.addEventListener('keydown', handleKeyDown);
         return () => window.removeEventListener('keydown', handleKeyDown);
-    }, [togglePlay, toggleFullscreen, adjustSubDelay, adjustSecondaryOffset]);
+    }, [togglePlay, toggleFullscreen, adjustSubDelay, adjustSecondaryOffset, seekBy]);
 
     if (error) {
         return (
@@ -1237,7 +1766,7 @@ export default function VideoPlayer({ src, movie, episode, authToken, durationSe
             onMouseMove={handleMouseMove}
             // Touch screens never fire mousemove: taps must recall the bar too.
             onTouchStart={handleMouseMove}
-            onMouseLeave={() => isPlaying && !showSettings && setShowControls(false)}
+            onMouseLeave={() => isPlaying && !showSettings && hasPicture && setShowControls(false)}
             onClick={togglePlay}
             onDoubleClick={toggleFullscreen}
         >
@@ -1326,6 +1855,18 @@ export default function VideoPlayer({ src, movie, episode, authToken, durationSe
                 </button>
             </div>
 
+            {/* Poster backdrop while no picture yet: a titled poster over black
+                reads as "loading the film", a bare black frame reads as
+                "the player is gone". Removed on the first real frame. */}
+            {!hasPicture && movie.poster_url && (
+                <img
+                    src={movie.poster_url}
+                    alt=""
+                    aria-hidden="true"
+                    draggable={false}
+                    className="pointer-events-none absolute inset-0 h-full w-full object-cover opacity-40"
+                />
+            )}
             <video
                 ref={videoRef}
                 className={`w-full h-full ${videoScale === 'cover' ? 'object-cover' : videoScale === 'fill' ? 'object-fill' : 'object-contain'}`}
@@ -1341,18 +1882,108 @@ export default function VideoPlayer({ src, movie, episode, authToken, durationSe
                 </div>
             )}
 
-            {/* Big Play Button (when paused). Clicks fall through to the
-                container's togglePlay, so one tap starts audible playback. */}
-            {!isPlaying && !isLoading && (
+            {/* Far-seek indicator: a BLOCKING overlay over the whole player.
+                While it is up the element still holds the old position, so
+                every control beneath is unreachable (play/pause are locked in
+                togglePlay too) — the viewer waits instead of mashing inputs
+                that would spawn competing resolves. The Hủy button abandons
+                the seek: the in-flight resolve's late response is dropped by
+                epoch and the old picture simply continues. */}
+            {seekTarget !== null && !isLoading && (
+                <div className="absolute inset-0 z-30 flex items-start justify-center bg-black/55 pt-16 backdrop-blur-[2px]">
+                    <div className="liquid-glass-strong flex items-center gap-3 rounded-2xl px-4 py-3">
+                        <Loader2 className="w-6 h-6 shrink-0 text-amber-gold animate-spin" />
+                        <div className="text-left">
+                            <p className="text-sm font-bold text-white">
+                                Đang tải phim từ {formatTime(seekTarget)}…
+                            </p>
+                            <p className="text-[11px] text-cinema-muted">
+                                {seekProgress?.label || 'Vui lòng đợi trong giây lát'}
+                            </p>
+                            {typeof seekProgress?.percent === 'number' && seekProgress.percent > 0 && (
+                                <div className="mt-1.5 h-1 w-44 overflow-hidden rounded-full bg-white/15">
+                                    <div
+                                        className="h-full rounded-full bg-amber-primary transition-all duration-500"
+                                        style={{ width: `${Math.min(99, Math.max(1, seekProgress.percent))}%` }}
+                                    />
+                                </div>
+                            )}
+                        </div>
+                        <button
+                            onClick={(e) => {
+                                e.stopPropagation();
+                                onCancelSeek?.();
+                                clearSeekLock();
+                            }}
+                            className="liquid-glass-btn ml-1 shrink-0 rounded-full px-3 py-1.5 text-xs font-bold text-white"
+                        >
+                            Hủy
+                        </button>
+                    </div>
+                </div>
+            )}
+
+            {/* Big Play Button (when paused). Hidden while a far seek resolves:
+                the element still holds the old position, so offering play
+                would start stale footage for a second. Clicks fall through to
+                the container's togglePlay, so one tap starts audible playback. */}
+            {!isPlaying && !isLoading && seekTarget === null && (
                 <div className="absolute inset-0 flex flex-col items-center justify-center gap-3 z-10 cursor-pointer">
-                    <div className="w-20 h-20 liquid-glass liquid-play rounded-full flex items-center justify-center pl-2 group-hover:scale-110 transition-transform duration-300">
-                        <Play className="text-white w-10 h-10 fill-white" />
+                    <div className="flex items-center justify-center gap-6 sm:gap-8">
+                        {/* Mobile quick-seek flanking the big play: thumb-friendly */}
+                        <button
+                            onClick={(e) => { e.stopPropagation(); seekBy(-10); }}
+                            aria-label="Lùi 10 giây"
+                            className="sm:hidden relative flex h-14 w-14 items-center justify-center rounded-full bg-black/55 text-white backdrop-blur-md border border-white/20 active:scale-90 touch-manipulation"
+                            style={{ minWidth: 56, minHeight: 56 }}
+                        >
+                            <RotateCcw className="w-6 h-6" />
+                            <span className="pointer-events-none absolute inset-0 flex items-center justify-center pt-[2px] text-[9px] font-bold leading-none">10</span>
+                        </button>
+                        <div className="w-20 h-20 liquid-glass liquid-play rounded-full flex items-center justify-center pl-2 group-hover:scale-110 transition-transform duration-300">
+                            <Play className="text-white w-10 h-10 fill-white" />
+                        </div>
+                        <button
+                            onClick={(e) => { e.stopPropagation(); seekBy(10); }}
+                            aria-label="Tua tới 10 giây"
+                            className="sm:hidden relative flex h-14 w-14 items-center justify-center rounded-full bg-black/55 text-white backdrop-blur-md border border-white/20 active:scale-90 touch-manipulation"
+                            style={{ minWidth: 56, minHeight: 56 }}
+                        >
+                            <RotateCw className="w-6 h-6" />
+                            <span className="pointer-events-none absolute inset-0 flex items-center justify-center pt-[2px] text-[9px] font-bold leading-none">10</span>
+                        </button>
                     </div>
                     {autoplayBlocked && (
                         <p className="rounded-full bg-black/70 backdrop-blur-md px-4 py-1.5 text-xs font-semibold text-amber-gold border border-amber-primary/40">
                             Nhấn để phát có tiếng
                         </p>
                     )}
+                </div>
+            )}
+
+            {/* Mobile side quick-seek while playing: large tap targets at mid-height.
+                Shown only on touch layouts when controls are visible so playback
+                keeps running underneath. */}
+            {isPlaying && !isLoading && seekTarget === null && showControls && (
+                <div className="sm:hidden pointer-events-none absolute inset-x-3 top-1/2 -translate-y-1/2 z-10 flex items-center justify-between">
+                    <button
+                        onClick={(e) => { e.stopPropagation(); seekBy(-10); }}
+                        aria-label="Lùi 10 giây"
+                        className="pointer-events-auto relative flex h-12 w-12 items-center justify-center rounded-full bg-black/50 text-white backdrop-blur-md border border-white/20 active:scale-90 touch-manipulation"
+                        style={{ minWidth: 48, minHeight: 48 }}
+                    >
+                        <RotateCcw className="w-5 h-5" />
+                        <span className="pointer-events-none absolute inset-0 flex items-center justify-center pt-[2px] text-[8px] font-bold leading-none">10</span>
+                    </button>
+                    <button
+                        onClick={(e) => { e.stopPropagation(); seekBy(10); }}
+                        aria-label="Tua tới 10 giây"
+                        className="pointer-events-auto relative flex h-12 w-12 items-center justify-center rounded-full bg-black/50 text-white backdrop-blur-md border border-white/20 active:scale-90 touch-manipulation"
+                        style={{ minWidth: 48, minHeight: 48 }}
+                    >
+                        <RotateCw className="w-5 h-5" />
+                        <span className="pointer-events-none absolute inset-0 flex items-center justify-center pt-[2px] text-[8px] font-bold leading-none">10</span>
+                    </button>
                 </div>
             )}
 
@@ -1406,20 +2037,20 @@ export default function VideoPlayer({ src, movie, episode, authToken, durationSe
                         </div>
                     <div
                         className="absolute top-0 left-0 h-full liquid-track-played rounded-full transition-all duration-200"
-                        style={{ width: `${(currentTime / duration) * 100}%` }}
+                        style={{ width: `${fullDuration > 0 ? (displayTime / fullDuration) * 100 : 0}%` }}
                     />
                     </div>
                     {/* Draggable Knob */}
                     <div
                         className="absolute top-1/2 -translate-y-1/2 w-4 h-4 liquid-knob rounded-full scale-[0.55] group-hover/progress:scale-110 group-active/progress:scale-110 transition-all duration-200 pointer-events-none"
-                        style={{ left: `calc(${(currentTime / duration) * 100}% - 8px)` }}
+                        style={{ left: `calc(${fullDuration > 0 ? (displayTime / fullDuration) * 100 : 0}% - 8px)` }}
                     />
                     <input
                         type="range"
                         min={0}
-                        max={duration || 100}
+                        max={fullDuration || 100}
                         step="0.1"
-                        value={currentTime}
+                        value={displayTime}
                         onChange={handleSeek}
                         aria-label="Tua video"
                         className="absolute inset-0 w-full h-full opacity-0 cursor-pointer"
@@ -1432,36 +2063,75 @@ export default function VideoPlayer({ src, movie, episode, authToken, durationSe
                             {isPlaying ? <Pause className="w-6 h-6 sm:w-7 sm:h-7" fill="currentColor" /> : <Play className="w-6 h-6 sm:w-7 sm:h-7" fill="currentColor" />}
                         </button>
 
+                        {/* ±10s seek: always visible, extra large hit area on touch */}
+                        <button
+                            onClick={(e) => { e.stopPropagation(); seekBy(-10); }}
+                            aria-label="Lùi 10 giây"
+                            title="Lùi 10s"
+                            className="liquid-glass-btn relative shrink-0 text-white hover:text-amber-gold transition-colors p-2 rounded-full active:scale-90 touch-manipulation"
+                            style={{ minWidth: 44, minHeight: 44 }}
+                        >
+                            <RotateCcw className="w-5 h-5 sm:w-6 sm:h-6" />
+                            <span className="pointer-events-none absolute inset-0 flex items-center justify-center pt-[2px] text-[8px] font-bold leading-none">10</span>
+                        </button>
+                        <button
+                            onClick={(e) => { e.stopPropagation(); seekBy(10); }}
+                            aria-label="Tua tới 10 giây"
+                            title="Tua 10s"
+                            className="liquid-glass-btn relative shrink-0 text-white hover:text-amber-gold transition-colors p-2 rounded-full active:scale-90 touch-manipulation"
+                            style={{ minWidth: 44, minHeight: 44 }}
+                        >
+                            <RotateCw className="w-5 h-5 sm:w-6 sm:h-6" />
+                            <span className="pointer-events-none absolute inset-0 flex items-center justify-center pt-[2px] text-[8px] font-bold leading-none">10</span>
+                        </button>
+
                         {/* Hover slider is desktop-only: touch has no hover,
                             so volume also lives as a slider in the settings
                             sheet below. */}
-                        <div className="hidden sm:flex items-center gap-2 group/volume">
-                            <button onClick={toggleMute} aria-label={isMuted ? 'Bật tiếng' : 'Tắt tiếng'} className="liquid-glass-btn text-white hover:text-cinema-muted transition-colors p-2 rounded-full">
-                                {isMuted || volume === 0 ? <VolumeX size={22} /> : <Volume2 size={22} />}
+                        <div className="hidden sm:flex items-center gap-2 group/volume relative">
+                            <button onClick={toggleMute} aria-label={isMuted ? 'Bật tiếng' : 'Tắt tiếng'} className="liquid-glass-btn text-white hover:text-cinema-muted transition-all p-2 rounded-full active:scale-90">
+                                {isMuted || volume === 0 ? <VolumeX size={22} /> : volume < 0.5 ? <Volume1 size={22} /> : <Volume2 size={22} />}
                             </button>
+                            {/* Volume % bubble: floats over the expanded slider */}
+                            <span className="pointer-events-none absolute -top-8 left-[94px] -translate-x-1/2 whitespace-nowrap rounded-md border border-amber-primary/40 bg-black/80 px-1.5 py-0.5 font-mono text-[10px] font-bold text-amber-gold opacity-0 shadow-lg transition-opacity duration-200 group-hover/volume:opacity-100">
+                                {volPct}
+                            </span>
                             <div className="w-0 overflow-hidden group-hover/volume:w-24 group-focus-within/volume:w-24 transition-all duration-300 flex items-center">
                                 <input
                                     type="range"
                                     min={0}
                                     max={1}
-                                    step={0.1}
+                                    step={0.05}
                                     value={isMuted ? 0 : volume}
                                     onChange={handleVolumeChange}
                                     aria-label="Âm lượng"
-                                    style={{ background: `linear-gradient(to right, #b45309 0%, #f59e0b ${Math.round((isMuted ? 0 : volume) * 100)}%, rgba(255,255,255,0.22) ${Math.round((isMuted ? 0 : volume) * 100)}%)` }}
-                                    className="w-full h-1.5 rounded-full appearance-none cursor-pointer liquid-range"
+                                    style={{ background: volTrackBg }}
+                                    className="w-full h-1.5 rounded-full appearance-none cursor-pointer active:cursor-grabbing liquid-range focus-visible:ring-2 focus-visible:ring-amber-primary/60"
                                 />
                             </div>
                         </div>
-                        {/* Compact mute toggle for touch (slider is in settings) */}
-                        <button onClick={toggleMute} aria-label={isMuted ? 'Bật tiếng' : 'Tắt tiếng'} className="liquid-glass-btn sm:hidden shrink-0 text-white hover:text-cinema-muted transition-colors p-1.5 rounded-full">
-                            {isMuted || volume === 0 ? <VolumeX className="w-5 h-5" /> : <Volume2 className="w-5 h-5" />}
-                        </button>
+                        {/* Touch volume: compact always-visible slider (settings has none) */}
+                        <div className="flex sm:hidden shrink-0 items-center gap-1.5">
+                            <button onClick={toggleMute} aria-label={isMuted ? 'Bật tiếng' : 'Tắt tiếng'} className="liquid-glass-btn shrink-0 text-white hover:text-cinema-muted transition-all p-1.5 rounded-full active:scale-90">
+                                {isMuted || volume === 0 ? <VolumeX className="w-5 h-5" /> : volume < 0.5 ? <Volume1 className="w-5 h-5" /> : <Volume2 className="w-5 h-5" />}
+                            </button>
+                            <input
+                                type="range"
+                                min={0}
+                                max={1}
+                                step={0.05}
+                                value={isMuted ? 0 : volume}
+                                onChange={handleVolumeChange}
+                                aria-label="Âm lượng"
+                                style={{ background: volTrackBg }}
+                                className="w-16 h-1.5 rounded-full appearance-none cursor-pointer liquid-range"
+                            />
+                        </div>
 
                         <div className="liquid-divider mx-1 hidden sm:block" />
 
                         <div className="hidden min-[400px]:block whitespace-nowrap text-xs sm:text-sm font-medium text-cinema-muted font-mono tracking-wider truncate liquid-chip px-2.5 py-1">
-                            {formatTime(currentTime)} / {formatTime(duration)}
+                            {formatTime(displayTime)} / {formatTime(fullDuration)}
                         </div>
                     </div>
 
@@ -1522,39 +2192,6 @@ export default function VideoPlayer({ src, movie, episode, authToken, durationSe
                                     </h4>
 
                                     <div className="min-h-0 flex-1 space-y-4 overflow-y-auto custom-scrollbar px-4 py-3">
-                                        {/* Volume (touch-friendly: the bar's hover slider is desktop-only) */}
-                                        <div>
-                                            <div className="flex justify-between items-center mb-2">
-                                                <p className="text-xs text-cinema-subtle font-bold uppercase tracking-wider">Âm lượng</p>
-                                                <button
-                                                    onClick={toggleMute}
-                                                    className="text-[11px] font-bold text-amber-gold hover:underline"
-                                                >
-                                                    {isMuted || volume === 0 ? 'Đang tắt — bật lại' : `${Math.round((isMuted ? 0 : volume) * 100)}%`}
-                                                </button>
-                                            </div>
-                                            <div className="flex items-center gap-2.5 rounded-md border border-white/10 bg-surface-container px-2.5 py-2">
-                                                <button
-                                                    onClick={toggleMute}
-                                                    aria-label={isMuted ? 'Bật tiếng' : 'Tắt tiếng'}
-                                                    className="shrink-0 text-white hover:text-amber-gold transition-colors"
-                                                >
-                                                    {isMuted || volume === 0 ? <VolumeX size={18} /> : <Volume2 size={18} />}
-                                                </button>
-                                                <input
-                                                    type="range"
-                                                    min={0}
-                                                    max={1}
-                                                    step={0.05}
-                                                    value={isMuted ? 0 : volume}
-                                                    onChange={handleVolumeChange}
-                                                    aria-label="Âm lượng"
-                                                    style={{ background: `linear-gradient(to right, #b45309 0%, #f59e0b ${Math.round((isMuted ? 0 : volume) * 100)}%, rgba(255,255,255,0.22) ${Math.round((isMuted ? 0 : volume) * 100)}%)` }}
-                                                    className="w-full h-1.5 rounded-full cursor-pointer liquid-range"
-                                                />
-                                            </div>
-                                        </div>
-
                                         {/* Speed Controller */}
                                         <div>
                                             <div className="flex justify-between items-center mb-2">
@@ -1690,6 +2327,48 @@ export default function VideoPlayer({ src, movie, episode, authToken, durationSe
                                                             </p>
                                                         </div>
                                                     )}
+                                                    <div className="px-2.5 pt-1 pb-2 rounded-md border border-white/10 bg-surface-container">
+                                                        <div className="flex items-center justify-between mb-1">
+                                                            <span className="text-[10px] text-cinema-subtle font-bold uppercase tracking-wider">Trễ tiếng</span>
+                                                            <span className="text-[10px] text-amber-gold font-bold">{audioFx.lipSyncMs}ms</span>
+                                                        </div>
+                                                        <div className="flex items-center gap-2">
+                                                            <button
+                                                                onClick={() => updateAudioFx({ ...audioFx, lipSyncMs: clampLipSyncMs(audioFx.lipSyncMs - 25) })}
+                                                                aria-label="Giảm trễ tiếng 25 mili giây"
+                                                                className="shrink-0 rounded-md border border-white/10 bg-white/5 px-2 py-1 text-[11px] font-bold text-cinema-text hover:border-amber-primary/50 active:scale-95"
+                                                            >
+                                                                −25
+                                                            </button>
+                                                            <input
+                                                                type="range"
+                                                                min={0}
+                                                                max={1000}
+                                                                step={25}
+                                                                value={audioFx.lipSyncMs}
+                                                                onChange={(e) => updateAudioFx({ ...audioFx, lipSyncMs: clampLipSyncMs(Number(e.target.value)) })}
+                                                                aria-label="Trễ tiếng (mili giây)"
+                                                                className="w-full accent-amber-primary h-1 cursor-pointer"
+                                                            />
+                                                            <button
+                                                                onClick={() => updateAudioFx({ ...audioFx, lipSyncMs: clampLipSyncMs(audioFx.lipSyncMs + 25) })}
+                                                                aria-label="Tăng trễ tiếng 25 mili giây"
+                                                                className="shrink-0 rounded-md border border-white/10 bg-white/5 px-2 py-1 text-[11px] font-bold text-cinema-text hover:border-amber-primary/50 active:scale-95"
+                                                            >
+                                                                +25
+                                                            </button>
+                                                        </div>
+                                                        <p className="text-[10px] text-cinema-muted mt-1 leading-snug">
+                                                            Dùng khi tiếng đi trước hình (môi theo sau). 0 = tắt, nhớ theo máy.
+                                                        </p>
+                                                        <button
+                                                            type="button"
+                                                            onClick={() => updateAudioFx({ ...audioFx, lipSyncMs: 0 })}
+                                                            className="mt-1 w-full text-[10px] text-amber-gold hover:text-amber-bright underline"
+                                                        >
+                                                            Đặt lại về 0
+                                                        </button>
+                                                    </div>
                                                     {audioFxStatus.failed && (
                                                         <p className="text-[10px] text-red-400 leading-snug">
                                                             Trình duyệt từ chối xử lý âm thanh — đã trả về luồng gốc.
@@ -2039,7 +2718,7 @@ export default function VideoPlayer({ src, movie, episode, authToken, durationSe
                                                             <div className="grid grid-cols-3 gap-1.5">
                                                                 <button
                                                                     type="button"
-                                                                    onClick={() => adjustSubDelay(-0.5)}
+                                                                    onClick={() => adjustSubDelay(-0.1)}
                                                                     className="px-2 py-1.5 rounded-md text-[10px] font-bold transition-all border bg-surface-container text-cinema-subtle border-white/10 hover:text-white"
                                                                 >
                                                                     −0.5s (trễ)
@@ -2064,7 +2743,7 @@ export default function VideoPlayer({ src, movie, episode, authToken, durationSe
                                                                 </button>
                                                                 <button
                                                                     type="button"
-                                                                    onClick={() => adjustSubDelay(0.5)}
+                                                                    onClick={() => adjustSubDelay(0.1)}
                                                                     className="px-2 py-1.5 rounded-md text-[10px] font-bold transition-all border bg-surface-container text-cinema-subtle border-white/10 hover:text-white"
                                                                 >
                                                                     +0.5s (sớm)

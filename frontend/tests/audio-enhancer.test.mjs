@@ -300,6 +300,42 @@ test('the tail is fed from the reflections, never from the dry signal', () => {
     assert.ok(reaches(ctx.edges, graph.reverb, ctx.destination), 'and still be audible');
 });
 
+test('lip-sync delay sits at the head of the chain when set', () => {
+    // Voices ahead of lips (late 4K picture, slow display chain) are fixed by
+    // delaying the whole audio path; the tap must precede every effect so the
+    // dry and widened routes inherit the shift together.
+    const { ctx, source, edges, graph } = setup();
+    mod.applyEnhancerSettings(graph, { clarity: false, widen: false, width: 0.5, lipSyncMs: 150 });
+    assert.ok(Math.abs(graph.lipSync.delayTime.value - 0.15) < 1e-9, 'delay must equal the setting');
+    assert.ok(edges.some((e) => e.from === source && e.to === graph.lipSync), 'source must feed the tap');
+    assert.ok(reaches(edges, graph.lipSync, ctx.destination), 'delayed audio must stay audible');
+    assert.equal(edges.filter((e) => e.from === source).length, 1, 'exactly one outgoing wire');
+
+    // And compose downstream: clarity + widen still chain after the tap.
+    mod.applyEnhancerSettings(graph, { clarity: true, widen: true, width: 0.5, lipSyncMs: 150 });
+    assert.ok(reaches(edges, graph.lipSync, graph.presence), 'tap precedes clarity');
+    assert.ok(reaches(edges, graph.makeup, graph.highpass), 'clarity still precedes widening');
+    assert.ok(reaches(edges, source, ctx.destination), 'composed chain stays audible');
+});
+
+test('lip-sync at 0 stays out of the path (historical bypass untouched)', () => {
+    const { source, edges, graph } = setup();
+    mod.applyEnhancerSettings(graph, { clarity: false, widen: false, width: 0.5, lipSyncMs: 0 });
+    assert.deepEqual(
+        edges.filter((e) => e.from === source).map((e) => e.to.kind),
+        ['destination'],
+        'zero delay must not insert a node',
+    );
+    assert.equal(graph.lipSync.delayTime.value, 0);
+});
+
+test('lip-sync setting clamps to a sane range', () => {
+    assert.equal(mod.clampLipSyncMs(150), 150);
+    assert.equal(mod.clampLipSyncMs(-40), 0, 'audio that lags cannot be pulled earlier');
+    assert.equal(mod.clampLipSyncMs(5000), 1000, 'capped at the node maximum');
+    assert.equal(mod.clampLipSyncMs(NaN), 0, 'rubbish means off, not silence');
+});
+
 test('width scales the room and stays under the direct sound', () => {
     const read = (w) => {
         const { graph } = setup();

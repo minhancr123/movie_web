@@ -3,11 +3,12 @@
   "version": "0.1.0",
   "private": true,
   "scripts": {
-    "dev": "node -e \"require('fs').rmSync('.next',{recursive:true,force:true})\" && next dev",
-    "dev:fast": "next dev",
-    "test": "node --test tests/dev-cache-reset.test.mjs tests/audio-enhancer.test.mjs tests/ambilight.test.mjs tests/autoplay.test.mjs tests/intro-route-scope.test.mjs",
+    "dev": "next dev",
+    "dev:clean": "node -e \"require('fs').rmSync('.next',{recursive:true,force:true})\" && next dev",
+    "test": "node --test tests/dev-cache-reset.test.mjs tests/audio-enhancer.test.mjs tests/ambilight.test.mjs tests/autoplay.test.mjs tests/intro-route-scope.test.mjs tests/playback-progress.test.mjs",
     "test:routes": "node --test tests/continue-watching-route.test.mjs",
     "test:dev-cache": "node --test tests/dev-cache-reset.test.mjs",
+    "test:e2e": "playwright test --browser chromium",
     "build": "next build",
     "start": "next start",
     "lint": "next lint"
@@ -28,6 +29,7 @@
     "swr": "^2.4.0"
   },
   "devDependencies": {
+    "@playwright/test": "^1.55.1",
     "@types/hls.js": "^0.13.3",
     "@types/node": "^20",
     "@types/react": "^18",

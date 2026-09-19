@@ -10,6 +10,7 @@ import {
   type PlayerEpisode,
 } from '@/lib/catalog';
 import PlaybackSection from '@/components/PlaybackSection';
+import RecommendationsRow from '@/components/RecommendationsRow';
 import SpatialShader from '@/components/SpatialShader';
 
 // No route-level revalidate: each fetch in lib/catalog.ts sets its own, and a
@@ -146,11 +147,20 @@ export default async function WatchPage({ params, searchParams }: PageParams) {
             title={detail.title}
             contentRef={detail.contentRef}
             poster={detail.poster}
+            runtimeMinutes={detail.runtime}
             episodes={episodes}
             activeEpisode={episode}
             seasonLabel={seasonName || (season ? `Mùa ${season}` : '')}
           />
         )}
+
+        <div className="mt-12">
+          <RecommendationsRow 
+            type={type} 
+            tmdbId={tmdbId} 
+            title="Nội dung tương tự" 
+          />
+        </div>
 
         <Link
           href={catalogHref(detail)}

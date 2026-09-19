@@ -348,6 +348,29 @@ export const getDownloadUrl = async (key, { torrentId, fileId, userId }) => {
   return url;
 };
 
+/**
+ * Bust one cached download URL so the next resolve mints a fresh link.
+ *
+ * The cache is what turns a single expired link into a 15-minute outage:
+ * every retry inside the TTL would otherwise receive the same dead URL and
+ * kill its ffmpeg the same way. Called when a writer dies on an
+ * auth-flavoured error, and only then — a healthy cache entry is worth more
+ * than a redundant requestdl call against a rate-limited endpoint.
+ */
+export const dropDownloadUrl = async ({ torrentId, fileId, userId }) => {
+  // Both ids are required: 'auto'-keyed entries belong to callers that never
+  // named a file, and busting the wrong key is worse than busting nothing.
+  if (torrentId === undefined || torrentId === null) return false;
+  if (fileId === undefined || fileId === null) return false;
+  const cacheKey = `torbox:link:${userId || 'anon'}:${torrentId}:${fileId}`;
+  try {
+    await cacheClient.del(cacheKey);
+    return true;
+  } catch {
+    return false;
+  }
+};
+
 /** Drop a torrent from the account. Best-effort: never block a disconnect. */
 export const removeTorrent = async (key, torrentId) => {
   try {
@@ -367,5 +390,6 @@ export default {
   checkCached,
   prepareSource,
   getDownloadUrl,
+  dropDownloadUrl,
   removeTorrent,
 };

@@ -26,10 +26,15 @@ export const setResolveStage = (resolveId, stage, detail = '') => {
   if (!stages.has(resolveId) && stages.size >= MAX_ENTRIES) {
     stages.delete(stages.keys().next().value);
   }
+  const prev = stages.get(resolveId);
+  const history = prev?.history || [];
+  history.push({ stage, detail: String(detail ?? ''), at: Date.now() });
+  while (history.length > 30) history.shift();
   stages.set(resolveId, {
     stage,
     detail: String(detail ?? ''),
     updatedAt: Date.now(),
+    history,
   });
   return true;
 };

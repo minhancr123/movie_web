@@ -15,7 +15,7 @@ import { cached, CACHE_TTL } from '../config/redis.js';
 import { safeFetchJson, assertUrlShape } from './security/safeFetch.js';
 import { parseContentRef } from './contentRef.js';
 
-const REQUEST_TIMEOUT_MS = 10000;
+const REQUEST_TIMEOUT_MS = 4000;
 const STREAM_CACHE_TTL = 600; // addon answers churn as torrents die
 const MAX_STREAMS_PER_ADDON = 60;
 const SUBTITLE_REQUEST_TIMEOUT_MS = 5000;
@@ -27,14 +27,31 @@ const DEFAULT_SUBTITLE_ADDON = 'https://opensubtitles-v3.strem.io';
 const configuredAddons = () =>
   (process.env.STREMIO_ADDONS || '')
     .split(',')
-    .map((entry) => entry.trim().replace(/\/+$/, ''))
+    .map(normalizeAddonBase)
     .filter(Boolean);
+
+/**
+ * The base URL an addon's endpoints hang off.
+ *
+ * Every addon catalogue hands out the *manifest* URL, so that is what gets
+ * pasted into configuration — but buildSubtitleUrl appends `/subtitles/...` and
+ * would produce `.../manifest.json/subtitles/movie/tt1.json`, a silent 404 that
+ * looks exactly like an addon with nothing to offer. Only a whole trailing
+ * `manifest.json` segment is removed: addons like SubDL carry their API key and
+ * language settings in the path, and that path must survive untouched.
+ */
+export const normalizeAddonBase = (entry) =>
+  String(entry ?? '')
+    .trim()
+    .replace(/\/+$/, '')
+    .replace(/\/manifest\.json$/i, '')
+    .replace(/\/+$/, '');
 
 /** Subtitle addons are independent from torrent-source addons. */
 const configuredSubtitleAddons = () =>
   (process.env.STREMIO_SUBTITLE_ADDONS || DEFAULT_SUBTITLE_ADDON)
     .split(',')
-    .map((entry) => entry.trim().replace(/\/+$/, ''))
+    .map(normalizeAddonBase)
     .filter(Boolean);
 
 export const isAddonConfigured = () => configuredAddons().length > 0;
@@ -61,6 +78,66 @@ const subtitlePriority = (language) => {
   return 2;
 };
 
+/** Longest release name worth showing; past this it crowds out the language. */
+const SUB_NAME_MAX = 120;
+
+/**
+ * The release name an addon attached to a sidecar, under any of its spellings.
+ * Whitespace is collapsed because these strings land in a menu, and a newline
+ * there breaks the row rather than describing anything.
+ */
+export const subtitleVariantName = (subtitle, url = '') => {
+  const raw = subtitle?.name ?? subtitle?.title ?? subtitle?.SubFileName ?? '';
+  const stated = String(raw).replace(/\s+/g, ' ').trim();
+  if (stated) return stated.slice(0, SUB_NAME_MAX);
+  return releaseNameFromUrl(url).slice(0, SUB_NAME_MAX);
+};
+
+/**
+ * The release a sidecar is named after, recovered from its URL.
+ *
+ * Neither addon configured here sets a name, but SubDL serves the file under
+ * its real filename — which is the only thing distinguishing four Vietnamese
+ * entries whose timings differ by seconds. OpenSubtitles serves opaque numeric
+ * ids instead, and "1962602489" is not a name, so those stay blank rather than
+ * dressing up an id as information.
+ */
+export const releaseNameFromUrl = (url) => {
+  let file;
+  try {
+    file = decodeURIComponent(new URL(String(url)).pathname.split('/').pop() || '');
+  } catch {
+    return '';
+  }
+  const stem = file
+    .replace(/\.(srt|vtt|ass|ssa|sub)$/i, '')
+    // Trailing language tag the file server appended, e.g. "...x265.vi".
+    .replace(/\.[a-z]{2,3}$/i, '')
+    .replace(/[_+]+/g, ' ')
+    .replace(/\s+/g, ' ')
+    .trim();
+  // A bare id tells the viewer nothing, and neither does a one-letter stem;
+  // only say something that could plausibly name a release.
+  if (stem.length < 3 || !/[a-z]/i.test(stem)) return '';
+  return stem;
+};
+
+/**
+ * How one variant is described in the picker.
+ *
+ * Best: the release it was timed for. Failing that, the addon it came from —
+ * still enough to tell two entries apart and to learn which source suits this
+ * library. Failing both, the bare counter this always used to be.
+ */
+export const subtitleVariantLabel = ({ base, name = '', source = '', index = 1 } = {}) => {
+  const clean = String(name).trim();
+  // A "name" that only repeats the language describes nothing.
+  if (clean && clean.toLowerCase() !== String(base).toLowerCase()) return `${base} · ${clean}`;
+  const host = String(source).trim();
+  if (host) return `${base} · ${host} ${index}`;
+  return `${base} ${index}`;
+};
+
 /**
  * Reduce an addon subtitle response to HTTPS sidecars safe for the browser.
  * Vietnamese tracks sort first so the player can auto-select immediately.
@@ -85,6 +162,11 @@ export const normalizeSubtitlePayload = (payload, addonHost = 'subtitle-addon') 
         language,
         url: parsed.href,
         source: addonHost,
+        // Which release this sidecar was timed for. Addons spell it several
+        // ways and some say nothing at all. Without it a list of same-language
+        // variants is just a numbered guess, and the one that actually matches
+        // the file is indistinguishable from the ones that are a second out.
+        name: subtitleVariantName(subtitle, parsed.href),
       };
     })
     .filter(Boolean)

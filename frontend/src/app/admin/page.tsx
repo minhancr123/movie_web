@@ -3,13 +3,15 @@
 import { useState, useEffect } from 'react';
 import { useSession } from 'next-auth/react';
 import { useRouter } from 'next/navigation';
-import { Loader2, Users, Activity, Eye, Server, RefreshCw } from 'lucide-react';
+import { Loader2, Users, Activity, Eye, Server, RefreshCw, Film } from 'lucide-react';
+import MovieRequestsManager from '@/components/admin/MovieRequestsManager';
 
 export default function AdminDashboard() {
     const { data: session, status } = useSession();
     const router = useRouter();
 
     // States for dashboard data
+    const [activeTab, setActiveTab] = useState<'overview' | 'requests'>('overview');
     const [rateLimit, setRateLimit] = useState<number>(0);
     const [newRateLimit, setNewRateLimit] = useState<number>(0);
     const [stats, setStats] = useState<{ activeUsers: number, requestRate: number, totalViews: number }>({ activeUsers: 0, requestRate: 0, totalViews: 0 });
@@ -78,7 +80,7 @@ export default function AdminDashboard() {
     return (
         <div className="min-h-screen bg-surface-dark text-white pt-24 pb-12 px-4">
             <div className="container mx-auto max-w-6xl">
-                <div className="flex justify-between items-center mb-10">
+                <div className="flex justify-between items-center mb-8">
                     <h1 className="text-3xl font-bold flex items-center gap-3">
                         <Activity className="text-amber-gold" /> Admin Dashboard
                     </h1>
@@ -87,8 +89,34 @@ export default function AdminDashboard() {
                     </div>
                 </div>
 
-                {/* Grid Stats */}
-                <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6 mb-10">
+                {/* Tab Navigation */}
+                <div className="flex border-b border-white/10 mb-10 gap-6">
+                    <button
+                        onClick={() => setActiveTab('overview')}
+                        className={`pb-4 px-2 text-sm font-bold transition-all border-b-2 flex items-center gap-2 ${
+                            activeTab === 'overview'
+                                ? 'border-amber-primary text-amber-gold'
+                                : 'border-transparent text-cinema-subtle hover:text-white'
+                        }`}
+                    >
+                        <Activity size={18} /> TỔNG QUAN
+                    </button>
+                    <button
+                        onClick={() => setActiveTab('requests')}
+                        className={`pb-4 px-2 text-sm font-bold transition-all border-b-2 flex items-center gap-2 ${
+                            activeTab === 'requests'
+                                ? 'border-amber-primary text-amber-gold'
+                                : 'border-transparent text-cinema-subtle hover:text-white'
+                        }`}
+                    >
+                        <Film size={18} /> YÊU CẦU PHIM
+                    </button>
+                </div>
+
+                {activeTab === 'overview' && (
+                    <div className="animate-in fade-in slide-in-from-bottom-4 duration-500">
+                        {/* Grid Stats */}
+                        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6 mb-10">
                     {/* Active Users */}
                     <div className="bg-surface-light p-6 rounded-2xl border border-white/10 shadow-lg relative overflow-hidden group">
                         <div className="absolute top-0 right-0 p-4 opacity-10 group-hover:opacity-20 transition-opacity">
@@ -185,6 +213,14 @@ export default function AdminDashboard() {
                         Khuyến nghị mức từ 100 - 300.
                     </div>
                 </div>
+                    </div>
+                )}
+
+                {activeTab === 'requests' && (
+                    <div className="animate-in fade-in slide-in-from-bottom-4 duration-500">
+                        <MovieRequestsManager />
+                    </div>
+                )}
             </div>
         </div>
     );

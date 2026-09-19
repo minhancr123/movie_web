@@ -4,7 +4,7 @@ import { useState, useEffect, useRef } from 'react';
 import { useSession, signOut } from 'next-auth/react';
 import Link from 'next/link';
 import Image from 'next/image';
-import { User, Heart, History, LogOut, Settings } from 'lucide-react';
+import { User, Heart, History, LogOut, Settings, Film } from 'lucide-react';
 
 export default function UserMenu() {
   const { data: session, status } = useSession();
@@ -102,6 +102,15 @@ export default function UserMenu() {
             >
               <History size={18} className="text-blue-500" />
               <span>Lịch sử xem</span>
+            </Link>
+
+            <Link
+              href="/search"
+              onClick={() => setIsOpen(false)}
+              className="flex items-center gap-3 px-4 py-2 hover:bg-surface-container transition-colors"
+            >
+              <Film size={18} className="text-green-500" />
+              <span>Yêu cầu phim</span>
             </Link>
 
             <Link

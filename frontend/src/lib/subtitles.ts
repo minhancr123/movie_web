@@ -40,8 +40,16 @@ export const isViTrack = (t: { language: string }): boolean =>
 export const isEnTrack = (t: { language: string }): boolean =>
   t.language.toLowerCase().startsWith('en');
 
-export const isReadyTrack = (t: { ready?: boolean; url: string }): boolean =>
-  t.ready !== false && !!t.url;
+/**
+ * True for a track whose timing is usable right now.
+ * Embedded tracks (extracted from the playing file) are usable even
+ * while the extraction job is still running — `ready` is only false
+ * during the initial scan, and `isEmbeddedTrack` alone tells us the
+ * timing will match the picture once it lands. Online sidecars need
+ * `url` to be present.
+ */
+export const isReadyTrack = (t: { ready?: boolean; url: string; source?: string; id: string }): boolean =>
+  t.ready === false && !isEmbeddedTrack(t) ? false : !!t.url || isEmbeddedTrack(t);
 
 const TS = '(\\d{2,}):(\\d{2}):(\\d{2})[.,](\\d{3})';
 const TS_SHORT = '(\\d{2}):(\\d{2})[.,](\\d{3})';

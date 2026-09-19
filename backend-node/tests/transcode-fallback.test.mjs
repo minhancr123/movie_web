@@ -152,6 +152,56 @@ const copy = buildVideoArgs(null, { encoder: 'h264_nvenc', hardware: true });
 assert.deepEqual(copy.output, ['-c:v', 'copy'], 'non-transcode still copies');
 console.log('ok - ffmpeg filter chains tonemap HDR and keep fast paths fast');
 
+/* ------------------------------------------------------- seek-start */
+
+const seekCopy = buildVideoArgs(
+  { mode: 'remux', height: 1080, kbps: 8000, startAt: 1800 },
+  { encoder: 'h264_nvenc', hardware: true },
+);
+// -noaccurate_seek rides with every input seek: without it a seek landing on a
+// keyframe leaves the re-encoded audio ~146ms ahead of the copied picture
+// (tests/remux-avsync-offset.test.mjs measures it).
+assert.deepEqual(
+  seekCopy.input.slice(0, 3),
+  ['-noaccurate_seek', '-ss', '1800'],
+  'seek-start seeks inexactly on input',
+);
+assert.deepEqual(seekCopy.output, ['-c:v', 'copy'], 'seek + copy stays copy (no re-encode)');
+// A seek-started HEVC copy (the 22s Moana resolve shape) must carry the hvc1
+// tag: without it ffmpeg dies on HEVC-in-fMP4 ("Stream HEVC is not hvc1") and
+// the resolve burns 30s before falling back to a different source entirely.
+const seekHevcCopy = buildVideoArgs(
+  { mode: 'remux', codec: 'hevc', height: 2160, kbps: 20000, startAt: 22 },
+  null,
+);
+assert.deepEqual(
+  seekHevcCopy.output,
+  ['-c:v', 'copy', '-tag:v', 'hvc1'],
+  'seek-started HEVC copy is tagged hvc1',
+);
+const plainHevcCopy = buildVideoArgs({ mode: 'remux', codec: 'hevc' }, null);
+assert.deepEqual(
+  plainHevcCopy.output,
+  ['-c:v', 'copy', '-tag:v', 'hvc1'],
+  'from-start HEVC copy is tagged too',
+);
+const seekH264Copy = buildVideoArgs(
+  { mode: 'remux', codec: 'h264', height: 1080, kbps: 8000, startAt: 22 },
+  null,
+);
+assert.deepEqual(seekH264Copy.output, ['-c:v', 'copy'], 'H264 copy stays untagged');
+const seekSw = buildVideoArgs(
+  { mode: 'transcode', height: 720, kbps: 4000, startAt: 61.7 },
+  { encoder: 'libx264', hardware: false },
+);
+assert.deepEqual(
+  seekSw.input.slice(0, 3),
+  ['-noaccurate_seek', '-ss', '61'],
+  'seek-start floors to whole seconds',
+);
+assert.ok(seekSw.output.includes('libx264'), 'seek + transcode still encodes');
+console.log('ok - seek-start seeks on input without forcing a transcode');
+
 /* ------------------------------------------------------- ranker gating */
 
 const hevcCandidate = {

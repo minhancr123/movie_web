@@ -138,6 +138,37 @@ export const moviesAPI = {
 };
 
 // ==================== PROVIDER & PLAYBACK APIs (new) ====================
+export interface MovieRequestItem {
+  _id: string;
+  title: string;
+  tmdbId?: string | number | null;
+  userId: string;
+  username: string;
+  status: 'pending' | 'completed' | 'rejected';
+  note?: string;
+  adminNote?: string;
+  createdAt: string;
+  updatedAt: string;
+}
+
+export const movieRequestAPI = {
+  create: (data: { title: string; tmdbId?: string | number; note?: string }) =>
+    authClient.post<{ success: boolean; message: string; request: MovieRequestItem }>('/movie-requests', data),
+
+  getAll: (params?: { page?: number; limit?: number; status?: string }) =>
+    authClient.get<{
+      success: boolean;
+      data: MovieRequestItem[];
+      pagination: { total: number; page: number; limit: number; pages: number };
+    }>('/movie-requests', { params }),
+
+  updateStatus: (id: string, data: { status: 'pending' | 'completed' | 'rejected'; adminNote?: string }) =>
+    authClient.put<{ success: boolean; message: string; request: MovieRequestItem }>(`/movie-requests/${id}`, data),
+
+  getMyRequests: () =>
+    authClient.get<{ success: boolean; data: MovieRequestItem[] }>('/movie-requests/me'),
+};
+
 export const providerAPI = {
   getStatus: () => authClient.get('/providers/status'),
   connectTorbox: (apiKey: string) => authClient.post('/providers/torbox/connect', { apiKey }),
@@ -154,7 +185,14 @@ export const playbackAPI = {
     sourceToken?: string;
     audioIndex?: number;
     resolveId?: string;
-  }) => authClient.post('/playback/resolve', data),
+  }, signal?: AbortSignal) => authClient.post('/playback/resolve', data, signal ? { signal } : {}),
+  prewarm: (data: {
+    type: string;
+    tmdbId: number;
+    season?: number;
+    episode?: number;
+    capabilities: any;
+  }) => authClient.post('/playback/prewarm', data),
   listSources: (data: {
     type: string;
     tmdbId: number;
@@ -165,6 +203,14 @@ export const playbackAPI = {
   getSession: (sessionId: string) => authClient.get(`/playback/session/${sessionId}`),
   getResolveStage: (resolveId: string) =>
     authClient.get(`/playback/resolve/${encodeURIComponent(resolveId)}/stage`),
+  preload: (data: {
+    sessionId: string;
+    timestamps: number[];
+    type?: string;
+    tmdbId?: number | string;
+    season?: number;
+    episode?: number;
+  }) => authClient.post('/playback/preload', data),
   subtitleJob: (jobId: string) => authClient.get(`/playback/subtitles/job/${jobId}`),
   subtitles: (data: {
     type: string;

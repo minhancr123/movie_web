@@ -66,6 +66,68 @@ const yearOf = (value) => {
   return Number.isInteger(year) && year > 0 ? year : null;
 };
 
+/* --------------------------------------------------- Vietnamese labels */
+
+// TMDB không dịch tên vai diễn / tên người (danh từ riêng) — chỉ dịch các
+// nhãn trạng thái / phòng ban / địa danh quen thuộc sang tiếng Việt.
+const STATUS_VI = {
+  Rumored: 'Tin đồn',
+  Planned: 'Sắp sản xuất',
+  'In Production': 'Đang sản xuất',
+  'Post Production': 'Hậu kỳ',
+  Released: 'Đã phát hành',
+  Ended: 'Đã kết thúc',
+  Canceled: 'Đã hủy',
+  Cancelled: 'Đã hủy',
+  'Returning Series': 'Đang phát sóng',
+  Pilot: 'Tập thử nghiệm',
+};
+
+const DEPARTMENT_VI = {
+  Acting: 'Diễn xuất',
+  Directing: 'Đạo diễn',
+  Production: 'Sản xuất',
+  Writing: 'Biên kịch',
+  Crew: 'Đoàn phim',
+  'Costume & Make-Up': 'Phục trang & Hóa trang',
+  'Art Department': 'Mỹ thuật',
+  'Camera Department': 'Quay phim',
+  'Sound Department': 'Âm thanh',
+  Editing: 'Dựng phim',
+  'Visual Effects': 'Kỹ xảo',
+};
+
+const COUNTRY_VI = {
+  'United States of America': 'Mỹ',
+  'United States': 'Mỹ',
+  'United Kingdom': 'Anh',
+  'South Korea': 'Hàn Quốc',
+  Vietnam: 'Việt Nam',
+  France: 'Pháp',
+  Japan: 'Nhật Bản',
+  China: 'Trung Quốc',
+  'Hong Kong': 'Hồng Kông',
+  Taiwan: 'Đài Loan',
+  Thailand: 'Thái Lan',
+  India: 'Ấn Độ',
+  Canada: 'Canada',
+  Australia: 'Úc',
+  Germany: 'Đức',
+  Italy: 'Ý',
+  Spain: 'Tây Ban Nha',
+};
+
+const translateStatus = (status) => STATUS_VI[status] || status || '';
+const translateDepartment = (dept) => DEPARTMENT_VI[dept] || dept || '';
+const translatePlace = (place) => {
+  if (!place) return '';
+  let out = String(place);
+  Object.entries(COUNTRY_VI).forEach(([en, vi]) => {
+    out = out.replace(en, vi);
+  });
+  return out;
+};
+
 /* ------------------------------------------------------------------ genres */
 
 export const getGenreMap = async (mediaType) =>
@@ -171,11 +233,12 @@ const normalizeDetail = (data, mediaType, fallbackOverview = '', englishTitle = 
     backdrop: imageUrl(data.backdrop_path, 'original'),
     genres: (data.genres || []).map((genre) => genre.name),
     runtime: mediaType === 'movie' ? data.runtime || null : data.episode_run_time?.[0] || null,
-    status: data.status || '',
+    status: translateStatus(data.status),
     voteAverage: Number(data.vote_average || 0),
     // IMDb ID is what Stremio-protocol addons key on.
     imdbId: data.external_ids?.imdb_id || null,
     cast: (data.credits?.cast || []).slice(0, 20).map((person) => ({
+      id: person.id,
       name: person.name,
       character: person.character,
       profile: imageUrl(person.profile_path, 'w185'),
@@ -275,6 +338,77 @@ export const getDetail = async (mediaType, tmdbId) => {
   const englishTitle = english?.title || english?.name || '';
 
   return normalizeDetail(data, mediaType, fallbackOverview, englishTitle);
+};
+
+export const getRecommendations = async (mediaType, tmdbId, page = 1) => {
+  const type = mediaType === 'tv' ? 'tv' : 'movie';
+  return request(`/${type}/${tmdbId}/recommendations`, {
+    language: LANGUAGE,
+    page,
+  });
+};
+
+/**
+ * Person detail + acting filmography, most popular first.
+ *
+ * Same bilingual pattern as getDetail: Vietnamese bio wins, en-US fills the
+ * gaps TMDB never translated. combined_credits rides along so one round trip
+ * serves the whole page; entries without artwork or title are dropped, and so
+ * is anything that is not a movie or series (crew-only rows, talk shows).
+ */
+export const getPerson = async (personId) => {
+  const id = Number(personId);
+  if (!Number.isInteger(id) || id <= 0) return null;
+  const [data, english] = await Promise.all([
+    request(`/person/${id}`, {
+      language: LANGUAGE,
+      append_to_response: 'combined_credits',
+    }),
+    request(`/person/${id}`, { language: FALLBACK_LANGUAGE }).catch(() => null),
+  ]);
+  if (!data) return null;
+
+  // Talk shows and news guest spots (Tonight Show et al.) dominate popularity
+  // rankings but are not acting work: drop them by genre id when present.
+  const NON_ACTING_GENRES = new Set([10767, 10763]);
+  const filmography = (data.combined_credits?.cast || [])
+    .filter(
+      (entry) =>
+        entry
+        && (entry.media_type === 'movie' || entry.media_type === 'tv')
+        && Number.isInteger(entry.id)
+        && (entry.title || entry.name)
+        && !(entry.genre_ids || []).some((id) => NON_ACTING_GENRES.has(id)),
+    )
+    .sort((a, b) => Number(b.popularity || 0) - Number(a.popularity || 0))
+    .slice(0, 30)
+    .map((entry) => {
+      const isTv = entry.media_type === 'tv';
+      return {
+        tmdbId: entry.id,
+        mediaType: entry.media_type,
+        title: entry.title || entry.name || '',
+        character: entry.character || '',
+        poster: imageUrl(entry.poster_path, 'w342'),
+        year: yearOf(isTv ? entry.first_air_date : entry.release_date),
+        voteAverage: Number(entry.vote_average || 0),
+      };
+    });
+
+  const biographyVi = String(data.biography || '').trim();
+  const biographyEn = String(english?.biography || '').trim();
+  return {
+    id: data.id,
+    name: data.name || '',
+    biography: biographyVi || biographyEn || '',
+    biographyLang: biographyVi ? 'vi' : biographyEn ? 'en' : '',
+    birthday: data.birthday || null,
+    deathday: data.deathday || null,
+    placeOfBirth: translatePlace(data.place_of_birth),
+    profile: imageUrl(data.profile_path, 'h632'),
+    knownFor: translateDepartment(data.known_for_department),
+    filmography,
+  };
 };
 
 export const getSeason = async (tmdbId, seasonNumber) => {
