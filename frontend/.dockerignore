@@ -1,9 +1,56 @@
+# Secrets and env files
+.env
+.env.*
+!.env.prod.example
+app.env
+
+# Git
 .git
 .gitignore
+
+# Build output / caches
 node_modules
 .next
-coverage
-npm-debug.log
+.next-stale-ambient
+
+# IDE / editor
+.vscode
+.idea
+*.swp
+*.swo
+
+# Test results / media fixtures
+test-results
+playwright-report
+e2e/media/segs
+e2e/media/*.mp4
+
+# Logs
+*.log
+npm-debug.log*
+
+# Docker
 Dockerfile
-fly.toml
-README.md
+.dockerignore
+
+# Private keys
+id_rsa
+id_ed25519
+*.pem
+*.key
+
+# Documentation / plans (not needed in image)
+docs/
+graft/
+
+# OS files
+.DS_Store
+Thumbs.db
+
+# QA screenshots
+*.png
+
+# Large media
+*.mp4
+*.mkv
+init.mp4
