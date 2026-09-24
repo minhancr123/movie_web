@@ -1,0 +1,26 @@
+cineon.me {
+	# Frontend
+	reverse_proxy / frontend:3000
+
+	# Backend API
+	reverse_proxy /api/* backend:5001
+
+	# Security and rate limiting headers
+	header {
+		Strict-Transport-Security "max-age=31536000; includeSubDomains; preload"
+		X-XSS-Protection "1; mode=block"
+		X-Content-Type-Options "nosniff"
+		X-Frame-Options "DENY"
+	}
+}
+
+media.cineon.me {
+	# Media playback API
+	reverse_proxy /api/playback/* backend:5001
+
+	header {
+		Access-Control-Allow-Origin "https://cineon.me"
+		Access-Control-Allow-Methods "GET, OPTIONS"
+		Access-Control-Allow-Headers "Content-Type, Authorization"
+	}
+}
