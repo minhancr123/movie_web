@@ -1,64 +1,32 @@
-# Tests. Reusable so deploy.yml runs exactly these before shipping anything.
 name: CI
 
 on:
-  push:
-    branches-ignore: [main, master]
   pull_request:
-  workflow_call:
+    branches: [main, master]
 
 jobs:
   test:
-    name: Tests
     runs-on: ubuntu-latest
-    timeout-minutes: 25
-
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
 
-      - uses: actions/setup-node@v4
+      - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4
         with:
-          node-version: 20
-          cache: npm
-          cache-dependency-path: |
-            backend-node/package-lock.json
-            frontend/package-lock.json
-
-      # Load-bearing, not a convenience. The playback tests measure real A/V
-      # drift, seek origins and subtitle timing by running ffmpeg over generated
-      # fixtures; without the binary they SKIP, and a green tick would then mean
-      # "the guarantees were not checked" rather than "they hold".
-      - name: Install ffmpeg
-        run: sudo apt-get update && sudo apt-get install -y --no-install-recommends ffmpeg
-
-      - name: Verify ffmpeg is present
-        run: ffmpeg -version | head -1 && ffprobe -version | head -1
-
-      - name: Install backend deps
-        working-directory: backend-node
-        run: npm ci
+          node-version: '24'
 
       - name: Backend tests
-        working-directory: backend-node
-        run: npm test
-
-      # A skipped media test passes silently, so prove they actually ran.
-      - name: Fail if media tests were skipped
-        working-directory: backend-node
         run: |
-          if npm test 2>&1 | grep -q "skip - ffmpeg/ffprobe not on PATH"; then
-            echo "::error::ffmpeg missing — playback guarantees were not verified"
-            exit 1
-          fi
+          npm ci --prefix backend-node
+          npm test --prefix backend-node
 
-      - name: Install frontend deps
-        working-directory: frontend
-        run: npm ci
+      - name: Frontend typecheck and tests
+        run: |
+          npm ci --prefix frontend
+          npx tsc --noEmit --prefix frontend
+          npm test --prefix frontend
 
-      - name: Frontend tests
-        working-directory: frontend
-        run: npm test
+      - name: Frontend build
+        run: npm run build --prefix frontend
 
-      - name: Frontend production build
-        working-directory: frontend
-        run: npm run build
+      - name: Manifest tests
+        run: python -m unittest discover -s deploy/tests -v

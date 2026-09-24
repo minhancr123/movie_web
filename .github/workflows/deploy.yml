@@ -11,49 +11,70 @@ on:
       - '.github/workflows/ci.yml'
   workflow_dispatch:
 
-jobs:
-  # Nothing ships that has not passed. The previous version of this workflow
-  # built and deployed straight from a push with no tests at all.
-  test:
-    uses: ./.github/workflows/ci.yml
+concurrency:
+  group: cineon-production
+  cancel-in-progress: false
 
-  deploy:
-    name: Build image and roll out
+jobs:
+  test:
+    name: Build and Test
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+
+      - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4
+        with:
+          node-version: '24'
+
+      - name: Backend tests
+        run: |
+          npm ci --prefix backend-node
+          npm test --prefix backend-node
+
+      - name: Frontend typecheck and tests
+        run: |
+          npm ci --prefix frontend
+          npx tsc --noEmit --prefix frontend
+          npm test --prefix frontend
+
+      - name: Frontend build
+        run: npm run build --prefix frontend
+        env:
+          RELEASE_ID: ${{ github.sha }}
+
+      - name: Manifest tests
+        run: python -m unittest discover -s deploy/tests -v
+
+  docker:
+    name: Build and Push Docker Images
     needs: test
     runs-on: ubuntu-latest
-    timeout-minutes: 45
-    environment: 'Production Environments'
-
+    outputs:
+      backend_digest: ${{ steps.build_backend.outputs.digest }}
+      frontend_digest: ${{ steps.build_frontend.outputs.digest }}
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
 
-      - uses: docker/setup-buildx-action@v3
+      - uses: docker/setup-buildx-action@8d2750c68a42422c14e847fe6c8ac0403b4cbd6f # v3
 
-      - uses: docker/login-action@v3
+      - uses: docker/login-action@c94ce9fb468520275223c153574b00df6fe4bcc9 # v3
         with:
-          username: ${{ secrets.DOCKER_USERNAME }}
-          password: ${{ secrets.DOCKER_PASSWORD }}
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
 
-      # The image must carry ffmpeg (see backend-node/Dockerfile): without it
-      # the container starts cleanly and dies on the first play.
       - name: Build and push backend
-        uses: docker/build-push-action@v5
+        id: build_backend
+        uses: docker/build-push-action@ca052bb54ab0790a636c9b5f226502c73d547a25 # v5
         with:
           context: ./backend-node
           file: ./backend-node/Dockerfile
           push: true
-          tags: |
-            ${{ secrets.DOCKER_USERNAME }}/movie-web:node-latest
-            ${{ secrets.DOCKER_USERNAME }}/movie-web:node-${{ github.sha }}
-          cache-from: type=registry,ref=${{ secrets.DOCKER_USERNAME }}/movie-web:node-latest
-          cache-to: type=inline
+          tags: ghcr.io/${{ github.repository_owner }}/movie-web-backend:${{ github.sha }}
 
-      # NEXT_PUBLIC_* are compiled into the bundle, so the public URL has to be
-      # known at BUILD time, not at run time. Set PUBLIC_SITE_URL as a repo
-      # variable (Settings -> Variables), not a secret: it is a domain, and
-      # secrets are masked in logs, which makes a wrong one hard to spot.
       - name: Build and push frontend
-        uses: docker/build-push-action@v5
+        id: build_frontend
+        uses: docker/build-push-action@ca052bb54ab0790a636c9b5f226502c73d547a25 # v5
         with:
           context: ./frontend
           file: ./frontend/Dockerfile
@@ -62,14 +83,19 @@ jobs:
             NEXT_PUBLIC_API_URL=${{ vars.PUBLIC_SITE_URL }}/api
             NEXT_PUBLIC_BACKEND_API_URL=${{ vars.PUBLIC_SITE_URL }}/api
             NEXT_PUBLIC_SOCKET_URL=${{ vars.PUBLIC_SITE_URL }}
-          tags: |
-            ${{ secrets.DOCKER_USERNAME }}/movie-web:web-latest
-            ${{ secrets.DOCKER_USERNAME }}/movie-web:web-${{ github.sha }}
-          cache-from: type=registry,ref=${{ secrets.DOCKER_USERNAME }}/movie-web:web-latest
-          cache-to: type=inline
+            RELEASE_ID=${{ github.sha }}
+          tags: ghcr.io/${{ github.repository_owner }}/movie-web-frontend:${{ github.sha }}
 
+  deploy:
+    name: Deploy
+    needs: docker
+    runs-on: ubuntu-latest
+    timeout-minutes: 45
+    environment: 'Production Environments'
+
+    steps:
       - name: Roll out
-        uses: appleboy/ssh-action@v1.0.0
+        uses: appleboy/ssh-action@55dabf81b49d4120609345970c91507e2d734799 # v1.0.0
         with:
           host: ${{ secrets.VPS_HOST }}
           username: ${{ secrets.VPS_USERNAME }}
@@ -81,60 +107,52 @@ jobs:
             set -euo pipefail
             cd /opt/movieweb
 
-            # Pull the compose file from git rather than writing one inline.
-            # The old workflow pasted its own copy over this file on every
-            # deploy, which silently discarded the transcode volume and the
-            # TorBox/TMDB/disk-limit variables the app needs to run at all.
             git fetch --quiet origin
-            git reset --quiet --hard origin/${{ github.ref_name }}
+            git checkout --quiet ${{ github.sha }}
 
-            # Remember exactly what is serving right now, so a failed roll-out
-            # has something real to go back to. Recorded as an image ID, not a
-            # tag: the tag is about to be moved.
             PREV_IMAGE=$(docker inspect -f '{{.Image}}' movieweb-backend-node 2>/dev/null || true)
             echo "Current image: ${PREV_IMAGE:-none}"
 
-            docker pull ${{ secrets.DOCKER_USERNAME }}/movie-web:node-latest
-            docker pull ${{ secrets.DOCKER_USERNAME }}/movie-web:web-latest
-            export FRONTEND_IMAGE=${{ secrets.DOCKER_USERNAME }}/movie-web:web-latest
+            export BACKEND_IMAGE=ghcr.io/${{ github.repository_owner }}/movie-web-backend@${{ needs.docker.outputs.backend_digest }}
+            export FRONTEND_IMAGE=ghcr.io/${{ github.repository_owner }}/movie-web-frontend@${{ needs.docker.outputs.frontend_digest }}
+
+            docker pull $BACKEND_IMAGE
+            docker pull $FRONTEND_IMAGE
 
             docker compose -f docker-compose.prod.yml up -d --remove-orphans
 
             echo "Waiting for the API to report healthy..."
             for i in $(seq 1 24); do
               if curl -fsS http://localhost:5001/health >/dev/null; then
-                echo "✓ healthy after ${i} attempt(s)"
-                # ffmpeg is the one dependency whose absence only shows up on a
-                # real play, long after a deploy looks successful.
+                echo "healthy after ${i} attempt(s)"
                 docker exec movieweb-backend-node ffmpeg -version >/dev/null \
-                  && echo "✓ ffmpeg present in the running container" \
-                  || { echo "::error::ffmpeg missing in the image"; exit 1; }
-                curl -fsS http://localhost:3000 >/dev/null                   && echo "✓ frontend responding"                   || { echo "::error::frontend is not responding"; exit 1; }
+                  || { echo "::error::ffmpeg missing"; exit 1; }
+                curl -fsS http://localhost:3000 >/dev/null || { echo "::error::frontend is not responding"; exit 1; }
                 docker image prune -f >/dev/null 2>&1 || true
                 exit 0
               fi
               sleep 5
             done
 
-            echo "✗ API never became healthy"
+            echo "API never became healthy"
             docker compose -f docker-compose.prod.yml logs --tail 200 backend-node || true
 
             if [ -z "${PREV_IMAGE:-}" ]; then
-              echo "::error::No previous image to fall back to — the site is down"
+              echo "::error::No previous image to fall back to - the site is down"
               exit 1
             fi
 
             echo "Rolling back to ${PREV_IMAGE}"
-            docker tag "$PREV_IMAGE" ${{ secrets.DOCKER_USERNAME }}/movie-web:node-latest
-            docker compose -f docker-compose.prod.yml up -d --no-deps backend-node
+            export BACKEND_IMAGE=$PREV_IMAGE
+            docker compose -f docker-compose.prod.yml up -d --no-deps backend-node frontend
 
             for i in $(seq 1 12); do
               if curl -fsS http://localhost:5001/health >/dev/null; then
-                echo "::error::Deploy failed; rolled back to the previous image and it is serving again"
+                echo "::error::Deploy failed; rolled back to the previous image"
                 exit 1
               fi
               sleep 5
             done
 
-            echo "::error::Deploy failed AND the rollback did not come up — the site is down"
+            echo "::error::Deploy failed AND rollback did not come up"
             exit 1

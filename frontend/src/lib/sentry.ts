@@ -9,7 +9,7 @@ export function initSentry() {
 
   Sentry.init({
     dsn: process.env.NEXT_PUBLIC_SENTRY_DSN,
-    beforeSend(event) {
+    beforeSend(event: any) {
       if (event.request) {
         if (event.request.url) {
           event.request.url = REDACT_STRING;
@@ -24,7 +24,7 @@ export function initSentry() {
       }
       return event;
     },
-    beforeBreadcrumb(breadcrumb) {
+    beforeBreadcrumb(breadcrumb: any) {
       if (breadcrumb.data?.url) {
         breadcrumb.data.url = REDACT_STRING;
       }
