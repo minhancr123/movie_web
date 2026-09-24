@@ -358,20 +358,23 @@ export default function CinemaLayer({ mode, video }: Props) {
     // The elliptical mask (EDGE_FADE_MASK) kills the canvas rectangle: light
     // must dissolve into the dark, never stop at a border.
     return (
-        <canvas
-            aria-hidden
-            ref={glowRef}
-            width={GLOW_W}
-            height={GLOW_H}
-            className="pointer-events-none absolute -z-10"
-            style={{
-                top: `-${SPREAD_REM / 2}rem`,
-                left: `-${SPREAD_REM / 2}rem`,
-                width: `calc(100% + ${SPREAD_REM}rem)`,
-                height: `calc(100% + ${SPREAD_REM}rem)`,
-                maskImage: EDGE_FADE_MASK,
-                WebkitMaskImage: EDGE_FADE_MASK,
-            }}
-        />
+        // Inline: the wash spills behind the player. Fullscreen: this viewport
+        // masks the same canvas to an inward edge glow above the full-size film.
+        <div aria-hidden className="cinema-glow-viewport pointer-events-none absolute inset-0 -z-10">
+            <canvas
+                ref={glowRef}
+                width={GLOW_W}
+                height={GLOW_H}
+                className="pointer-events-none absolute"
+                style={{
+                    top: `-${SPREAD_REM / 2}rem`,
+                    left: `-${SPREAD_REM / 2}rem`,
+                    width: `calc(100% + ${SPREAD_REM}rem)`,
+                    height: `calc(100% + ${SPREAD_REM}rem)`,
+                    maskImage: `var(--cinema-glow-canvas-mask, ${EDGE_FADE_MASK})`,
+                    WebkitMaskImage: `var(--cinema-glow-canvas-mask, ${EDGE_FADE_MASK})`,
+                }}
+            />
+        </div>
     );
 }

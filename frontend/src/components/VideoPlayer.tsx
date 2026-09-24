@@ -74,6 +74,8 @@ interface VideoPlayerProps {
         same release with the chosen track and resumes from history. */
     onPickAudio?: (index: number) => void;
     activeAudioIndex?: number | null;
+    /** Audio switch in flight (ffprobe-order index): spinner on the target. */
+    pendingAudioIndex?: number | null;
     /** Ask the parent resolver for a fresh URL/session after local recovery is exhausted. */
     onPlaybackFailure?: (reason: string) => void;
     /** Bumped by the parent when a recovery resolves the identical URL.
@@ -125,9 +127,14 @@ interface VideoPlayerProps {
      */
     onCinemaChange?: (mode: CinemaMode) => void;
     onVideoReady?: (el: HTMLVideoElement | null) => void;
+    /**
+     * Optional shell shared with the ambient layer. Requesting fullscreen on
+     * this element keeps the glow in the browser's fullscreen subtree.
+     */
+    fullscreenTargetRef?: React.RefObject<HTMLDivElement>;
 }
 
-export default function VideoPlayer({ src, movie, episode, authToken, durationSeconds, onNextEpisode, subContext, onPickAudio, activeAudioIndex, onPlaybackFailure, reloadKey = 0, onPlaybackProgress, presentationShiftMs = 0, seekStartSupported = true, onDecodeOverload, onCinemaChange, onVideoReady, startAt = 0, onSeekToPosition, onCancelSeek, seekProgress = null }: VideoPlayerProps) {
+export default function VideoPlayer({ src, movie, episode, authToken, durationSeconds, onNextEpisode, subContext, onPickAudio, activeAudioIndex, pendingAudioIndex = null, onPlaybackFailure, reloadKey = 0, onPlaybackProgress, presentationShiftMs = 0, seekStartSupported = true, onDecodeOverload, onCinemaChange, onVideoReady, fullscreenTargetRef, startAt = 0, onSeekToPosition, onCancelSeek, seekProgress = null }: VideoPlayerProps) {
     const videoRef = useRef<HTMLVideoElement>(null);
     const containerRef = useRef<HTMLDivElement>(null);
 
@@ -402,7 +409,11 @@ export default function VideoPlayer({ src, movie, episode, authToken, durationSe
             stallTimerRef.current = undefined;
             const video = videoRef.current;
             if (video && !video.paused && !video.ended) {
-                if (video.currentTime > lastProgressRef.current + 0.25) {
+                // A trickling CDN (a frame every ~10s) defeats a "did it move
+                // at all" check while looking frozen to the viewer: demand
+                // meaningful advance (2s per 15s window, ~0.13x). Normal
+                // playback advances ~15s and renews; genuine stalls fire.
+                if (video.currentTime > lastProgressRef.current + 2) {
                     localStallRecoveryRef.current = false;
                     armStallTimer();
                     return;
@@ -576,17 +587,11 @@ export default function VideoPlayer({ src, movie, episode, authToken, durationSe
         return () => clearTimeout(timer);
     }, [loadSubtitleInventory]);
 
-    // Auto-pick English audio track if multiple audio tracks exist and none is selected
-    useEffect(() => {
-        if (subStatus !== 'ready' || subAudio.length <= 1) return;
-        if (activeAudioIndex !== null && activeAudioIndex !== undefined) return;
-        const engIdx = subAudio.findIndex(
-            (a) => /^(en|eng|english)$/i.test(a.language?.trim()) || /tiếng anh/i.test(a.label?.trim())
-        );
-        if (engIdx > 0 && onPickAudio) {
-            onPickAudio(engIdx);
-        }
-    }, [subStatus, subAudio, activeAudioIndex, onPickAudio]);
+    // No client-side audio default: the backend picks the film's own language
+    // (TMDB original_language matched against ffprobe tags, English fallback)
+    // and every resolve response carries audioIndex, which the parent applies.
+    // The old English-first preempt here used to fire a competing resolve that
+    // overrode the backend default with English on non-English films.
 
     // Poll the background extraction job; tracks flip to ready as VTTs land.
     useEffect(() => {
@@ -952,6 +957,13 @@ export default function VideoPlayer({ src, movie, episode, authToken, durationSe
             hlsRef.current = hls;
             let fatalNetworkRecoveries = 0;
             let fatalMediaRecoveries = 0;
+            // Same-fragment failure streak: a segment the server can never
+            // serve (evicted session files read as 404, which hls.js tolerates
+            // forever on a live playlist) otherwise spins forever with no
+            // fatal error, no recovery and no message. Any loaded fragment
+            // proves progress and resets the streak.
+            let stuckFragSn: number | null = null;
+            let stuckFragCount = 0;
 
             hls.loadSource(src);
             hls.attachMedia(video);
@@ -1061,9 +1073,25 @@ export default function VideoPlayer({ src, movie, episode, authToken, durationSe
 
             hls.on(Hls.Events.FRAG_LOADED, () => {
                 fatalNetworkRecoveries = 0;
+                stuckFragSn = null;
+                stuckFragCount = 0;
             });
 
             hls.on(Hls.Events.ERROR, (event, data) => {
+                const sn = typeof data?.frag?.sn === 'number' ? data.frag.sn : null;
+                if (!data.fatal && sn !== null && data.type === Hls.ErrorTypes.NETWORK_ERROR) {
+                    if (stuckFragSn === sn) stuckFragCount += 1;
+                    else { stuckFragSn = sn; stuckFragCount = 1; }
+                    if (stuckFragCount >= 8) {
+                        stuckFragSn = null;
+                        stuckFragCount = 0;
+                        const reason = 'Đoạn video hiện tại không còn trên server (bản dựng đã bị dọn). Đang tạo lại luồng…';
+                        if (onPlaybackFailure) onPlaybackFailure(reason);
+                        else setError(`${reason} Bấm Thử lại để nối lại.`);
+                        hls.destroy();
+                        return;
+                    }
+                }
                 if (data.fatal) {
                     switch (data.type) {
                         case Hls.ErrorTypes.NETWORK_ERROR:
@@ -1444,14 +1472,15 @@ export default function VideoPlayer({ src, movie, episode, authToken, durationSe
     useEffect(() => {
         const syncFullscreen = () => {
             const el = document.fullscreenElement;
-            setIsFullscreen(!!el && (!containerRef.current || el === containerRef.current));
+            const target = fullscreenTargetRef?.current ?? containerRef.current;
+            setIsFullscreen(!!el && el === target);
         };
         document.addEventListener('fullscreenchange', syncFullscreen);
         return () => document.removeEventListener('fullscreenchange', syncFullscreen);
-    }, []);
+    }, [fullscreenTargetRef]);
 
     const toggleFullscreen = useCallback(() => {
-        const container = containerRef.current;
+        const container = fullscreenTargetRef?.current ?? containerRef.current;
         if (!document.fullscreenElement) {
             if (container?.requestFullscreen) {
                 try {
@@ -1473,7 +1502,7 @@ export default function VideoPlayer({ src, movie, episode, authToken, durationSe
                 p?.catch(() => {});
             } catch { /* already exiting */ }
         }
-    }, []);
+    }, [fullscreenTargetRef]);
 
     // Toggle Picture-in-Picture
     const togglePiP = async () => {
@@ -1926,8 +1955,12 @@ export default function VideoPlayer({ src, movie, episode, authToken, durationSe
             {/* Big Play Button (when paused). Hidden while a far seek resolves:
                 the element still holds the old position, so offering play
                 would start stale footage for a second. Clicks fall through to
-                the container's togglePlay, so one tap starts audible playback. */}
-            {!isPlaying && !isLoading && seekTarget === null && (
+                the container's togglePlay, so one tap starts audible playback.
+                Autoplay-blocked is the exception: play() was refused for lack
+                of gesture, so no frame will ever arrive and isLoading never
+                clears — without this carve-out the viewer stares at an eternal
+                spinner with no hint that one tap fixes it. */}
+            {!isPlaying && (!isLoading || autoplayBlocked) && seekTarget === null && (
                 <div className="absolute inset-0 flex flex-col items-center justify-center gap-3 z-10 cursor-pointer">
                     <div className="flex items-center justify-center gap-6 sm:gap-8">
                         {/* Mobile quick-seek flanking the big play: thumb-friendly */}
@@ -2437,8 +2470,14 @@ export default function VideoPlayer({ src, movie, episode, authToken, durationSe
                                         <div>
                                             <div className="flex justify-between items-center mb-2">
                                                 <p className="text-xs text-cinema-subtle font-bold uppercase tracking-wider">Tiếng</p>
-                                                {subStatus === 'ready' && subAudio.length > 1 && (
-                                                    <span className="text-[10px] text-cinema-muted">đổi track tải lại luồng</span>
+                                                {pendingAudioIndex !== null ? (
+                                                    <span className="flex items-center gap-1 text-[10px] text-amber-gold">
+                                                        <Loader2 size={11} className="animate-spin" /> đang đổi track…
+                                                    </span>
+                                                ) : (
+                                                    subStatus === 'ready' && subAudio.length > 1 && (
+                                                        <span className="text-[10px] text-cinema-muted">đổi track tải lại luồng</span>
+                                                    )
                                                 )}
                                             </div>
                                             {subStatus !== 'ready' ? (
@@ -2453,6 +2492,7 @@ export default function VideoPlayer({ src, movie, episode, authToken, durationSe
                                                 <div className="grid grid-cols-2 gap-1.5">
                                                     {subAudio.map((a, i) => {
                                                         const active = (activeAudioIndex ?? 0) === i;
+                                                        const switching = pendingAudioIndex === i;
                                                         const label =
                                                             !a.label || a.label === 'Không rõ'
                                                                 ? (i === 0 ? 'Âm thanh gốc' : `Track ${i + 1}`)
@@ -2461,12 +2501,18 @@ export default function VideoPlayer({ src, movie, episode, authToken, durationSe
                                                             <button
                                                                 key={i}
                                                                 onClick={() => !active && onPickAudio?.(i)}
-                                                                title={`${label}${a.codec ? ` · ${a.codec.toUpperCase()}` : ''}${a.channels ? ` · ${a.channels}ch` : ''}`}
+                                                                title={`${label}${a.codec ? ` · ${a.codec.toUpperCase()}` : ''}${a.channels ? ` · ${a.channels}ch` : ''}${switching ? ' · đang đổi…' : ''}`}
                                                                 className={`px-2 py-1.5 rounded-md text-[10px] font-bold transition-all border truncate ${active
                                                                     ? 'bg-amber-primary text-black border-amber-primary'
                                                                     : 'bg-surface-container text-cinema-subtle border-white/10 hover:text-white'}`}
                                                             >
-                                                                {label}{a.channels && a.channels >= 6 ? ` ${a.channels}ch` : ''}
+                                                                {switching ? (
+                                                                    <span className="inline-flex items-center gap-1">
+                                                                        <Loader2 size={11} className="animate-spin" /> Đang đổi…
+                                                                    </span>
+                                                                ) : (
+                                                                    <>{label}{a.channels && a.channels >= 6 ? ` ${a.channels}ch` : ''}</>
+                                                                )}
                                                             </button>
                                                         );
                                                     })}
@@ -2525,6 +2571,7 @@ export default function VideoPlayer({ src, movie, episode, authToken, durationSe
                                                         </button>
                                                         {subTracks.map((t) => {
                                                             const pending = t.ready === false;
+                                                            const verified = !pending && (isEmbeddedTrack(t) || t.matched === true);
                                                             return (
                                                                 <button
                                                                     key={t.id}
@@ -2534,14 +2581,16 @@ export default function VideoPlayer({ src, movie, episode, authToken, durationSe
                                                                         ? `${t.label} — đang trích từ file…`
                                                                         : isEmbeddedTrack(t)
                                                                             ? `${t.label} — trích từ file đang xem, khớp giờ`
-                                                                            : `${t.label} — phụ đề online, nếu lệch hãy thử track khác hoặc chỉnh độ trễ bên dưới`}
+                                                                            : t.matched === true
+                                                                                ? `${t.label} — trùng bản với file đang xem, khớp giờ`
+                                                                                : `${t.label} — phụ đề online, nếu lệch hãy thử track khác hoặc chỉnh độ trễ bên dưới`}
                                                                     className={`px-2 py-1.5 rounded-md text-[10px] font-bold transition-all border truncate ${selectedSub === t.id
                                                                         ? 'bg-amber-primary text-black border-amber-primary'
                                                                         : pending
                                                                             ? 'bg-surface-container text-cinema-subtle/50 border-white/5 cursor-wait'
                                                                             : 'bg-surface-container text-cinema-subtle border-white/10 hover:text-white'}`}
                                                                 >
-                                                                    {!pending && isEmbeddedTrack(t) ? `✓ ${t.label}` : `${t.label}${pending ? '…' : ''}`}
+                                                                    {!pending && verified ? `✓ ${t.label}` : `${t.label}${pending ? '…' : ''}`}
                                                                 </button>
                                                             );
                                                         })}

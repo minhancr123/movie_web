@@ -16,7 +16,7 @@ const responses = {
       {
         id: 550, media_type: 'movie', title: 'Sàn Đấu Sinh Tử', original_title: 'Fight Club',
         release_date: '1999-10-15', overview: 'Mô tả tiếng Việt', poster_path: '/p.jpg',
-        backdrop_path: '/b.jpg', genre_ids: [28, 878], vote_average: 8.4,
+        backdrop_path: '/b.jpg', genre_ids: [28, 878], vote_average: 8.4, original_language: 'en',
       },
       {
         id: 1399, media_type: 'tv', name: 'Trò Chơi Vương Quyền', original_name: 'Game of Thrones',
@@ -28,7 +28,7 @@ const responses = {
   },
   '/movie/550': {
     id: 550, title: 'Sàn Đấu Sinh Tử', original_title: 'Fight Club', release_date: '1999-10-15',
-    overview: '', runtime: 139, status: 'Released', vote_average: 8.4,
+    overview: '', runtime: 139, status: 'Released', vote_average: 8.4, original_language: 'en',
     poster_path: '/p.jpg', backdrop_path: '/b.jpg', genres: [{ id: 18, name: 'Chính kịch' }],
     external_ids: { imdb_id: 'tt0137523' },
     credits: {
@@ -96,6 +96,7 @@ assert.equal(movie.mediaType, 'movie');
 assert.equal(movie.title, 'Sàn Đấu Sinh Tử');
 assert.equal(movie.originalTitle, 'Fight Club');
 assert.equal(movie.slug, 'san-dau-sinh-tu');
+assert.equal(movie.originalLanguage, 'en', 'list items keep the original language for audio defaults');
 assert.equal(movie.year, 1999);
 assert.equal(movie.poster, 'https://image.tmdb.org/t/p/w500/p.jpg');
 assert.deepEqual(movie.genres, ['Hành động', 'Khoa học viễn tưởng'], 'movie genre map applied');
@@ -118,6 +119,7 @@ assert.equal(detail.cast.length, 1);
 assert.equal(detail.cast[0].id, 819, 'cast carries the TMDB person id for the actor page');
 assert.equal(detail.trailerKey, 'abc123');
 assert.equal(detail.runtime, 139);
+assert.equal(detail.originalLanguage, 'en', 'detail keeps the original language callers match audio tracks against');
 assert.equal(detail.seasons, undefined, 'movies carry no seasons');
 
 /* ---------------------------------------------------------------- season */

@@ -74,6 +74,26 @@ services:
       retries: 3
       start_period: 40s
 
+  # Next.js frontend (standalone output, served by its own Node process).
+  frontend:
+    image: ${FRONTEND_IMAGE:-movieweb-frontend}
+    container_name: movieweb-frontend
+    restart: unless-stopped
+    ports:
+      - "3000:3000"
+    environment:
+      - NODE_ENV=production
+      # Server renders talk to the API over the private network: no TLS, no
+      # round trip out to the public domain and back in through the proxy,
+      # which some hosts block outright (hairpin NAT). The browser still uses
+      # the public URL baked in at build time.
+      - INTERNAL_API_URL=http://backend-node:5001/api
+    networks:
+      - movieweb-network
+    depends_on:
+      backend-node:
+        condition: service_healthy
+
   backend-node-worker:
     image: minhancr123/movie-web:node-latest
     container_name: movieweb-backend-node-worker

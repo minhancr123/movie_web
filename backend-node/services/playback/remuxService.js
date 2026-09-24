@@ -276,6 +276,56 @@ const isBrowserAudioCodec = (codec, profile = null, channels = null) => {
 };
 const isMp4Container = (format) => String(format || '').split(',').includes('mov') || String(format || '').includes('mp4');
 
+/**
+ * TMDB original_language is ISO 639-1 ("zh"); ffprobe tags are usually
+ * ISO 639-2 ("chi"/"zho") and sometimes bare names. Match a track tag
+ * against a preferred 2-letter code through aliases, so a Chinese film
+ * defaults to its Chinese track instead of the English one.
+ */
+const AUDIO_LANG_ALIASES = {
+  en: ['en', 'eng', 'english'],
+  zh: ['zh', 'chi', 'zho', 'chinese', 'mandarin', 'cmn', 'cantonese', 'yue'],
+  vi: ['vi', 'vie', 'vietnamese'],
+  ko: ['ko', 'kor', 'korean'],
+  ja: ['ja', 'jpn', 'japanese'],
+  fr: ['fr', 'fra', 'fre', 'french'],
+  de: ['de', 'deu', 'ger', 'german'],
+  es: ['es', 'spa', 'spanish', 'castilian'],
+  th: ['th', 'tha', 'thai'],
+  id: ['id', 'ind', 'indonesian'],
+  ms: ['ms', 'msa', 'malay'],
+  ru: ['ru', 'rus', 'russian'],
+  hi: ['hi', 'hin', 'hindi'],
+  it: ['it', 'ita', 'italian'],
+  pt: ['pt', 'por', 'portuguese'],
+  nl: ['nl', 'nld', 'dutch'],
+  pl: ['pl', 'pol', 'polish'],
+  tr: ['tr', 'tur', 'turkish'],
+  ar: ['ar', 'ara', 'arabic'],
+  uk: ['uk', 'ukr', 'ukrainian'],
+  cs: ['cs', 'ces', 'cze', 'czech'],
+};
+const audioTagMatches = (tag, preferred2) => {
+  const want = String(preferred2 || '').toLowerCase();
+  if (!want) return false;
+  const aliases = AUDIO_LANG_ALIASES[want] || [want];
+  return aliases.includes(String(tag || '').trim().toLowerCase());
+};
+
+/**
+ * Default audio index for a title: the film's own language first, English
+ * as the lingua-franca fallback, first track last. -1 when there is nothing
+ * to choose from. An explicit user pick always wins (handled by callers).
+ */
+export const preferredAudioIndex = (audios, contentLanguage) => {
+  const list = Array.isArray(audios) ? audios : [];
+  if (list.length === 0) return -1;
+  const contentIdx = list.findIndex((a) => audioTagMatches(a?.language, contentLanguage));
+  if (contentIdx >= 0) return contentIdx;
+  const englishIdx = list.findIndex((a) => audioTagMatches(a?.language, 'en'));
+  return englishIdx;
+};
+
 export const decidePlaybackMode = (probe, caps = {}, preferredAudioIdx = null, opts = {}) => {
   if (!probe.video) {
     return { mode: 'reject', reason: 'Không tìm thấy video stream' };
@@ -292,17 +342,17 @@ export const decidePlaybackMode = (probe, caps = {}, preferredAudioIdx = null, o
     };
   }
 
-  // Audio track choice: preferred ffprobe-order index, or default to English if available,
-  // else first track. Out-of-range falls back to default.
+  // Audio track choice: preferred ffprobe-order index, else the film's own
+  // language (TMDB original_language via opts.contentLanguage), else English
+  // as the lingua-franca fallback, else first track. Out-of-range explicit
+  // picks fall back to the same default.
   const audios = Array.isArray(probe.audio) ? probe.audio : [];
   let targetAudioIdx = 0;
   if (Number.isInteger(preferredAudioIdx) && audios[preferredAudioIdx]) {
     targetAudioIdx = preferredAudioIdx;
   } else {
-    const englishIdx = audios.findIndex((a) =>
-      /^(en|eng|english)$/i.test(String(a.language || '').trim())
-    );
-    targetAudioIdx = englishIdx >= 0 ? englishIdx : 0;
+    const preferred = preferredAudioIndex(audios, opts.contentLanguage);
+    targetAudioIdx = preferred >= 0 ? preferred : 0;
   }
 
   const audio = audios[targetAudioIdx] || null;

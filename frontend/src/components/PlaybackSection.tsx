@@ -29,6 +29,7 @@ const formatResolveStage = (stage: string, detail: string): string => {
 import { providerAPI, playbackAPI } from '@/lib/api';
 import { detectCapabilities } from '@/lib/capabilities';
 import type { PlayerEpisode } from '@/lib/catalog';
+import { episodeScrollTarget } from '@/lib/episode-list';
 import { useWatchHistory } from '../hooks/useLocalStorage';
 import { computeResumeAt, audioSwitchStartAt } from '@/lib/playback-progress';
 
@@ -157,6 +158,7 @@ export default function PlaybackSection({
   const stage404sRef = useRef<number>(0);
   const [cinemaMode, setCinemaMode] = useState<CinemaMode>('off');
   const [videoEl, setVideoEl] = useState<HTMLVideoElement | null>(null);
+  const fullscreenTargetRef = useRef<HTMLDivElement>(null);
   const [candidate, setCandidate] = useState<SourceCandidate | null>(null);
   const [sources, setSources] = useState<SourceCandidate[]>([]);
   const [showSources, setShowSources] = useState<boolean>(false);
@@ -166,6 +168,11 @@ export default function PlaybackSection({
   // Preferred embedded audio track (ffprobe order). Survives re-resolves via ref.
   const [activeAudioIndex, setActiveAudioIndex] = useState<number | null>(null);
   const activeAudioIndexRef = useRef<number | null>(null);
+  // Audio switch in flight (ffprobe-order index): set on pick, cleared when
+  // any resolve applies or terminals. Drives the spinner on the target track
+  // button — without it the highlight flips instantly while the old audio
+  // keeps playing for seconds, reading as "bấm mà không có gì xảy ra".
+  const [pendingAudioIndex, setPendingAudioIndex] = useState<number | null>(null);
   // One-shot notice banner (e.g. decode-overload downgrade). Dismissible.
   const [notice, setNotice] = useState<string | null>(null);
   // Auto quality step-down fires once per title: no flapping between releases.
@@ -182,20 +189,56 @@ export default function PlaybackSection({
     });
   };
 
+  // The card of the episode being watched, kept so the strip can be scrolled
+  // to it again when the episode changes without the node remounting.
+  const activeCardNodeRef = useRef<HTMLElement | null>(null);
+
+  // Brings the watching episode onto the strip. Manual math, because
+  // scrollIntoView also scrolls every vertical ancestor and yanks the whole
+  // page. Card widths are fixed (w-44), so image loads cannot shift it.
+  //
+  // `instant` is load-bearing: the strip carries `scroll-smooth`, so the
+  // default `auto` resolves to a CSS-smooth animation that is still running a
+  // frame later — long enough for anything touching the strip to interrupt it,
+  // and the list stayed where it was. An instant jump lands before the next
+  // paint.
+  const revealActiveEpisode = useCallback(() => {
+    const container = episodeScrollRef.current;
+    const node = activeCardNodeRef.current;
+    if (!container || !node || !container.contains(node)) return;
+    const target = episodeScrollTarget({
+      cardOffsetLeft: node.offsetLeft,
+      cardWidth: node.clientWidth,
+      containerWidth: container.clientWidth,
+      contentWidth: container.scrollWidth,
+      currentScrollLeft: container.scrollLeft,
+    });
+    if (target === container.scrollLeft) return;
+    container.scrollTo({ left: target, behavior: 'instant' as ScrollBehavior });
+  }, []);
+
+  // Attached directly to the active card: the ref fires exactly when the node
+  // exists, so there is no mount-timing guesswork (an effect can run before
+  // the list paints and silently scroll nothing).
+  const activeCardRef = useCallback((node: HTMLElement | null) => {
+    activeCardNodeRef.current = node;
+    if (node) revealActiveEpisode();
+  }, [revealActiveEpisode]);
+
+  // Episode changes keep every card mounted (they are keyed by number), so on
+  // a move from one episode to the next the ref alone is not a reliable
+  // trigger: follow the active episode itself as well.
   useEffect(() => {
-    if (type === 'tv' && episodeScrollRef.current) {
-      const activeItem = episodeScrollRef.current.querySelector('[data-active="true"]');
-      if (activeItem) {
-        activeItem.scrollIntoView({ inline: 'center', block: 'nearest', behavior: 'smooth' });
-      }
-    }
-  }, [type, activeEpisode]);
+    revealActiveEpisode();
+  }, [activeEpisode, episodes.length, revealActiveEpisode]);
 
   const pickAudio = useCallback(
     (index: number) => {
       if (index === activeAudioIndexRef.current) return;
+      const prevIndex = activeAudioIndexRef.current;
       setActiveAudioIndex(index);
       activeAudioIndexRef.current = index;
+      setPendingAudioIndex(index);
       // Same release, different audio: keep the current stream on screen while
       // the new track's session warms up, then reload and resume via history.
       // Preserves the current timeline offset and supersedes any pending seek
@@ -214,6 +257,18 @@ export default function PlaybackSection({
         preservePlayer: true,
         ...(at > 0 ? { startAt: at } : {}),
         seekEpoch: epoch,
+      }).catch((err: unknown) => {
+        // The resolve itself throws for seek/audio intents (the player toasts
+        // over the still-running picture) — without this catch the rejection
+        // escapes as an unhandled runtime error and tears down the page.
+        // Roll the optimistic highlight back to the track still playing.
+        setActiveAudioIndex(prevIndex);
+        activeAudioIndexRef.current = prevIndex;
+        const reason = (err as { response?: { data?: { message?: string } }; message?: string })
+          ?.response?.data?.message
+          || (err instanceof Error && err.message)
+          || 'không rõ nguyên nhân';
+        setNotice(`Không đổi được track tiếng: ${String(reason).slice(0, 140)}`);
       });
     },
     []
@@ -296,6 +351,17 @@ export default function PlaybackSection({
         activeAudioIndexRef.current ?? undefined,
         { preservePlayer: true, ...(recoverAt > 0 ? { startAt: recoverAt } : {}), seekEpoch: epoch },
       )
+      .catch((err: unknown) => {
+        // Same unhandled-rejection trap as pickAudio: the resolve throws for
+        // seek intents, and .finally() alone does not catch. Surface it in
+        // the banner instead of crashing the page; the attempts counter
+        // above already bounded the retries.
+        const reason = (err as { response?: { data?: { message?: string } }; message?: string })
+          ?.response?.data?.message
+          || (err instanceof Error && err.message)
+          || 'không rõ nguyên nhân';
+        setErrorMessage(`Tự khôi phục thất bại: ${String(reason).slice(0, 140)} Thử chọn nguồn khác.`);
+      })
       .finally(() => {
         recoveryInFlightRef.current = false;
       });
@@ -343,7 +409,15 @@ export default function PlaybackSection({
         lighter.sourceToken,
         activeAudioIndexRef.current ?? undefined,
         { preservePlayer: true, ...(at > 0 ? { startAt: at } : {}) },
-      );
+      ).catch((err: unknown) => {
+        // Downgrade resolve carries a startAt, so its failure rethrows —
+        // without this catch it escapes as an unhandled runtime error.
+        const reason = (err as { response?: { data?: { message?: string } }; message?: string })
+          ?.response?.data?.message
+          || (err instanceof Error && err.message)
+          || 'không rõ nguyên nhân';
+        setNotice(`Không chuyển được xuống ${lightLabel}: ${String(reason).slice(0, 140)} Thử chọn nguồn khác.`);
+      });
     } else {
       setNotice(
         'Máy giải mã không kịp bản hiện tại (tiếng đi trước hình) — hãy chọn nguồn nhẹ hơn bên dưới.',
@@ -441,6 +515,10 @@ export default function PlaybackSection({
 
   const handleResolveResponse = useCallback((data: any, requestEpoch: number) => {
     if (seekEpochRef.current !== requestEpoch) return;
+    // Any applied resolve settles a pending audio switch: the new bytes are
+    // on screen (or warming with the new session id), so the button spinner
+    // must not outlive it.
+    setPendingAudioIndex(null);
 
     setCandidate(data.candidate || null);
     setPlaybackSessionId(typeof data.sessionId === 'string' ? data.sessionId : '');
@@ -514,6 +592,9 @@ export default function PlaybackSection({
   const requestSeekPosition = useCallback((displaySeconds: number) => {
     const at = Math.max(0, Math.floor(displaySeconds));
     pendingSeekRef.current = at;
+    // A newer seek supersedes a pending audio switch (and vice versa in
+    // pickAudio): the stale button spinner must not survive the new intent.
+    setPendingAudioIndex(null);
     const epoch = ++seekEpochRef.current;
     return startPlaybackResolutionRef.current(
       activeTokenRef.current,
@@ -526,6 +607,10 @@ export default function PlaybackSection({
   // flight: invalidate it so its late response cannot apply.
   const cancelSeekPosition = useCallback(() => {
     pendingSeekRef.current = null;
+    // Cancelling invalidates every in-flight intent by epoch, including a
+    // pending audio switch whose late response can no longer apply — its
+    // spinner must go with it.
+    setPendingAudioIndex(null);
     seekEpochRef.current += 1;
   }, []);
 
@@ -682,11 +767,20 @@ export default function PlaybackSection({
                 }
                 if (sessionData.writerAlive === false) {
                   clearPoll();
-                  // In early adopt bridge, we can't easily call recoverPlayback 
-                  // without a ref refactor, but we can at least drop to error 
+                  // In early adopt bridge, we can't easily call recoverPlayback
+                  // without a ref refactor, but we can at least drop to error
                   // or trigger a fresh resolve.
                   setPlaybackStatus('resolving');
-                  startPlaybackResolutionRef.current(activeTokenRef.current, undefined, { ...options, seekEpoch: requestEpoch });
+                  startPlaybackResolutionRef.current(activeTokenRef.current, undefined, { ...options, seekEpoch: requestEpoch }).catch((err: unknown) => {
+                    // Floating promise: the surrounding try/catch cannot see
+                    // an async rejection, so without this the 422 escapes as
+                    // an unhandled runtime error and tears down the page.
+                    const reason = (err as { response?: { data?: { message?: string } }; message?: string })
+                      ?.response?.data?.message
+                      || (err instanceof Error && err.message)
+                      || 'không rõ nguyên nhân';
+                    setNotice(`Tạo lại luồng thất bại: ${String(reason).slice(0, 140)} Thử chọn nguồn khác.`);
+                  });
                   return;
                 }
                 if (warmPolls >= 30) finishWarm();
@@ -781,6 +875,7 @@ export default function PlaybackSection({
       // This resolve's intent is fulfilled: a pending seek it supersedes (or
       // embodies) must not linger into a later recovery.
       pendingSeekRef.current = null;
+      setPendingAudioIndex(null);
       // A silent source swap looks exactly like mistimed subtitles: the Vimo
       // fallback carries its own encode (different cut/timing), so sidecars
       // timed for the picked release cannot line up on it. Say so loudly;
@@ -961,6 +1056,7 @@ export default function PlaybackSection({
               if (failures >= 5) {
                 clearPoll();
                 setPlaybackStatus('error');
+                setPendingAudioIndex(null);
                 setErrorMessage(
                   pollErr?.response?.status === 429
                     ? 'Bị giới hạn tần suất, vui lòng chờ một phút rồi thử lại'
@@ -1001,13 +1097,19 @@ export default function PlaybackSection({
       // it and report through the rejection (the player toasts the reason
       // over the video) instead of tearing down into the error screen.
       // Ordinary resolves keep the show-error-screen behaviour below.
-      if (options?.startAt) throw err;
+      // Either way the pending audio spinner is over: the switch did not land.
+      if (options?.startAt) {
+        setPendingAudioIndex(null);
+        throw err;
+      }
 
       if (status === 401 && (err.response?.data?.code === 'invalid_token' || err.response?.data?.code === 'no_token')) {
         setPlaybackStatus('needs_provider');
+        setPendingAudioIndex(null);
         setKeyError(message);
       } else {
         setPlaybackStatus('error');
+        setPendingAudioIndex(null);
         // The 422 carries why each top release was rejected — surface the
         // first reason so a dead end is diagnosable instead of a blank wall.
         const rejected = err.response?.data?.rejected;
@@ -1396,12 +1498,14 @@ export default function PlaybackSection({
             </button>
           </div>
         )}
-        <div className="relative">
-          <CinemaLayer mode={cinemaMode} video={videoEl} />
-          <div className="relative aspect-video w-full rounded-xl overflow-hidden shadow-2xl bg-black border border-white/5">
+        <div ref={fullscreenTargetRef} className="ambient-fullscreen-shell relative">
+          <div className="ambient-fullscreen-stage relative isolate w-full">
+            <CinemaLayer mode={cinemaMode} video={videoEl} />
+            <div className="ambient-fullscreen-frame relative aspect-video w-full rounded-xl overflow-hidden shadow-2xl bg-black border border-white/5">
           <VideoPlayer
             onCinemaChange={setCinemaMode}
             onVideoReady={setVideoEl}
+            fullscreenTargetRef={fullscreenTargetRef}
             src={playUrl}
             reloadKey={reloadKey}
             onPlaybackFailure={recoverPlayback}
@@ -1421,6 +1525,7 @@ export default function PlaybackSection({
             }}
             onPickAudio={pickAudio}
             activeAudioIndex={activeAudioIndex}
+            pendingAudioIndex={pendingAudioIndex}
             startAt={startOffset}
             presentationShiftMs={presentationShiftMs}
             seekStartSupported={seekStartSupported}
@@ -1454,6 +1559,7 @@ export default function PlaybackSection({
               360° AUDIO
             </div>
           </div>
+            </div>
           </div>
         </div>
         {/* Telemetry strip: every pill is real source data (Stitch pro style) */}
@@ -1587,6 +1693,7 @@ export default function PlaybackSection({
                     href={ep.href}
                     scroll={false}
                     data-active={isActive}
+                    ref={isActive ? activeCardRef : undefined}
                     className={`group w-44 shrink-0 overflow-hidden rounded-xl border transition snap-start ${
                       isActive
                         ? 'glass-panel border-amber-primary/60 shadow-[0_0_12px_rgba(245,158,11,0.25)]'

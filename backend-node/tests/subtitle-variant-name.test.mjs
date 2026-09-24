@@ -11,7 +11,7 @@
  * Run: node tests/subtitle-variant-name.test.mjs
  */
 import assert from 'node:assert/strict';
-import { normalizeSubtitlePayload, subtitleVariantLabel } from '../services/addonClient.js';
+import { normalizeSubtitlePayload, releaseNamesMatch, subtitleVariantLabel } from '../services/addonClient.js';
 
 const one = (extra) => normalizeSubtitlePayload(
   { subtitles: [{ url: 'https://example.test/a.srt', lang: 'vie', ...extra }] },
@@ -80,3 +80,43 @@ assert.equal(
   'Tiếng Việt · x 1',
 );
 console.log('ok - online subtitle variants carry the release they were timed for');
+
+/* ------------------------------------------------------- tick matching */
+
+// A tick must mean same release, not same film: strict containment with a
+// floor, so codec tags can never match alone.
+assert.equal(
+  releaseNamesMatch(
+    'The.End.of.Oak.Street.2026.1080p.WEBRip.x265.HEVC.SUBTEKS.ME',
+    'The.End.of.Oak.Street.2026.1080p.WEBRip.x265.HEVC.SUBTEKS.ME.vi.srt',
+  ),
+  true,
+  'same release, either direction',
+);
+assert.equal(
+  releaseNamesMatch(
+    'Moana.2026.1080p.MA.WEB-DL.DDP5.1.Atmos.H.264',
+    'Moana.2026.1080p.MA.WEB-DL.DDP5.1.Atmos.H.264.mkv',
+  ),
+  true,
+  'sidecar name against the playing file, extension included',
+);
+assert.equal(
+  releaseNamesMatch(
+    'The.End.of.Oak.Street.2026.1080p.WEBRip.x265.HEVC.SUBTEKS.ME',
+    'The End Of Oak Street 2026 1080p WEB-DL HEVC x265 10Bit DDP5.1.mkv',
+  ),
+  false,
+  'WEBRip-named sidecar never ticks against a WEB-DL file',
+);
+assert.equal(
+  releaseNamesMatch('Moana.2026.1080p.CAM.x264-DKS', 'Moana.2026.2160p.iTunes.WEB-DL.H.265-DreamHD.mkv'),
+  false,
+  'CAM sidecar never ticks against a WEB-DL file',
+);
+assert.equal(releaseNamesMatch('x264', 'Film.2026.1080p.WEB-DL.x264-GROUP.mkv'), false, 'codec tag alone is not a match');
+assert.equal(releaseNamesMatch('WEB-DL', 'Film.2026.1080p.WEB-DL.x264-GROUP.mkv'), false, 'source tag alone is not a match');
+assert.equal(releaseNamesMatch('Oak Street 2026', 'The End Of Oak Street 2026 1080p WEB-DL.mkv'), false, 'bare title is not a match');
+assert.equal(releaseNamesMatch('', 'Film.2026.1080p.WEB-DL.x264-GROUP.mkv'), false, 'unnamed variants stay unticked');
+assert.equal(releaseNamesMatch(null, undefined), false, 'missing names never match');
+console.log('ok - the tick only fires on same-release names');

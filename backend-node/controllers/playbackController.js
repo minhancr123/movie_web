@@ -26,6 +26,7 @@ import {
   getStreamCandidates,
   getSubtitleCandidates,
   subtitleVariantLabel,
+  releaseNamesMatch,
 } from '../services/addonClient.js';
 import * as torbox from '../services/debrid/torbox.js';
 import { DebridError } from '../services/debrid/torbox.js';
@@ -33,6 +34,7 @@ import { rankCandidates, normalizeCapabilities } from '../services/playback/sour
 import {
   ffprobe,
   decidePlaybackMode,
+  preferredAudioIndex,
   presentationShiftMs,
   startRemuxSession,
   RemuxBusyError,
@@ -548,8 +550,20 @@ const saveSession = async (db, doc) => {
   return record;
 };
 
-const findReusableRemuxSession = async (db, { userId, type, tmdbId, season, episode, infoHash, audioIndex, caps, startAt = 0 }) => {
-  const requestedStartAt = Number.isFinite(Number(startAt)) && Number(startAt) > 0 ? Math.floor(Number(startAt)) : 0;
+/**
+ * Reuse overshoot tolerance, seconds. Measured keyframe origins routinely land
+ * a fraction past a later request (178.178s vs a seek to 178s); rejecting them
+ * spawns a duplicate writer for the same spot. Serves at most this far past
+ * the request — the player starts at the session origin, off by a blink.
+ */
+export const REUSE_START_TOLERANCE_SECONDS = 2;
+const findReusableRemuxSession = async (db, { userId, type, tmdbId, season, episode, infoHash, audioIndex, caps, startAt = 0 }) => {  const requestedStartAt = Number.isFinite(Number(startAt)) && Number(startAt) > 0 ? Math.floor(Number(startAt)) : 0;
+  // A measured origin can overshoot a later request by milliseconds (session
+  // at 178.178s vs a new seek to 178s): without tolerance every such seek
+  // spawns a duplicate writer 2s apart and supersedes a healthy session.
+  // From-start requests stay exact — missing the film's first seconds
+  // silently is never acceptable.
+  const startTolerance = requestedStartAt > 0 ? REUSE_START_TOLERANCE_SECONDS : 0;
   const sessions = await db.collection('playback_sessions').find(
     {
       userIdStr: String(userId),
@@ -561,8 +575,9 @@ const findReusableRemuxSession = async (db, { userId, type, tmdbId, season, epis
       infoHash: String(infoHash).toLowerCase(),
       // A remux bakes in ONE audio track: a different choice needs its own session.
       audioIndex: audioIndex ?? 0,
-      // Candidate sessions started at or before requested offset.
-      startAt: { $lte: requestedStartAt },
+      // Candidate sessions started at or before requested offset (plus a
+      // small overshoot tolerance for measured origins, see above).
+      startAt: { $lte: requestedStartAt + startTolerance },
       mode: 'remux',
       expiresAt: { $gt: new Date() },
     },
@@ -1024,8 +1039,15 @@ export const resolvePlayback = async (req, res) => {
 
     try {
     // 1. Catalog detail -> IMDb id + runtime (cached like the catalog routes).
+    //
+    // The :vN suffix is the shape of the normalized detail, and it has to be
+    // bumped whenever a field is added to it. Entries live for a day, so a new
+    // field silently reads as undefined on every title cached before the
+    // deploy: adding originalLanguage without a bump left this route picking
+    // the English audio track for a Japanese show for the rest of the day,
+    // exactly the bug that field was added to fix.
     stage('detail');
-    const detail = await cached(`catalog:detail:${type}:${tmdbId}`, CACHE_TTL.DETAIL, () =>
+    const detail = await cached(`catalog:detail:${type}:${tmdbId}:v3`, CACHE_TTL.DETAIL, () =>
       tmdb.getDetail(type, tmdbId),
     );
     if (!detail) return fail(res, 404, 'Không tìm thấy nội dung');
@@ -1035,7 +1057,7 @@ export const resolvePlayback = async (req, res) => {
     const runtimeMinutes = Number(detail.runtime) > 0 ? Number(detail.runtime) : null;
 
     // 1b. Ưu tiên Vietsub TRỰC TIẾP lên đầu CHỈ DÀNH CHO phim Việt Nam
-    const isVietnamese = detail.original_language === 'vi';
+    const isVietnamese = detail.originalLanguage === 'vi';
     if (!sourceToken && !vimoToken && !yastreamToken && isVietnamese) {
       try {
         stage('vietsub-lookup');
@@ -1217,12 +1239,13 @@ export const resolvePlayback = async (req, res) => {
 
     for (const candidate of attempts) {
       stage('reuse');
+      // Default audio follows the film's own language (TMDB original_language
+      // matched against ffprobe tags), English as fallback, first track last —
+      // never blindly the first track or always English.
       const defaultAudioIndex = (() => {
         if (!Array.isArray(candidate.audioTracks) || candidate.audioTracks.length === 0) return 0;
-        const enIdx = candidate.audioTracks.findIndex((a) =>
-          /^(en|eng|english)$/i.test(String(a.language || '').trim())
-        );
-        return enIdx >= 0 ? enIdx : 0;
+        const preferred = preferredAudioIndex(candidate.audioTracks, detail?.originalLanguage);
+        return preferred >= 0 ? preferred : 0;
       })();
       const resolvedAudioForReuse = audioIdx !== null ? audioIdx : defaultAudioIndex;
 
@@ -1454,7 +1477,11 @@ export const resolvePlayback = async (req, res) => {
         continue;
       }
 
-      const decision = decidePlaybackMode(probe, caps, audioIdx, { videoTranscode });
+      const decision = decidePlaybackMode(probe, caps, audioIdx, {
+        videoTranscode,
+        // The film's own language for the default track (explicit picks win).
+        contentLanguage: detail?.originalLanguage ?? null,
+      });
       if (decision.mode === 'reject') {
         lastError = new Error(decision.reason);
         continue;
@@ -1957,7 +1984,7 @@ export const prewarmPlayback = async (req, res) => {
 
   try {
     const db = getDB();
-    const detail = await cached(`catalog:detail:${type}:${tmdbId}`, CACHE_TTL.DETAIL, () =>
+    const detail = await cached(`catalog:detail:${type}:${tmdbId}:v3`, CACHE_TTL.DETAIL, () =>
       tmdb.getDetail(type, tmdbId),
     );
     if (!detail?.imdbId) return fail(res, 404, 'Không tìm thấy nội dung');
@@ -2122,7 +2149,7 @@ export const listPlaybackSources = async (req, res) => {
   const db = getDB();
 
   try {
-    const detail = await cached(`catalog:detail:${type}:${tmdbId}`, CACHE_TTL.DETAIL, () =>
+    const detail = await cached(`catalog:detail:${type}:${tmdbId}:v3`, CACHE_TTL.DETAIL, () =>
       tmdb.getDetail(type, tmdbId),
     );
     if (!detail) return fail(res, 404, 'Không tìm thấy nội dung');
@@ -2386,7 +2413,7 @@ export const getPlaybackSubtitles = async (req, res) => {
   const db = getDB();
 
   try {
-    const detail = await cached(`catalog:detail:${type}:${tmdbId}`, CACHE_TTL.DETAIL, () =>
+    const detail = await cached(`catalog:detail:${type}:${tmdbId}:v3`, CACHE_TTL.DETAIL, () =>
       tmdb.getDetail(type, tmdbId),
     );
     if (!detail) return fail(res, 404, 'Không tìm thấy nội dung');
@@ -2500,6 +2527,33 @@ export const getPlaybackSubtitles = async (req, res) => {
     });
 
     const matchReport = await matchReportPromise;
+
+    // Per-track tick data: the menu can only mark a sidecar when its release
+    // name matches the release the file-exact subtitle was made for, or the
+    // playing file itself. Unnamed variants stay unticked — without a name
+    // there is nothing to prove them by, and guessing would be worse.
+    const normLang2 = (l) => String(l || '').toLowerCase().slice(0, 2);
+    const verdictFor = (lang) => {
+      const langs = matchReport?.languages || {};
+      if (langs[lang]) return langs[lang];
+      const hit = Object.entries(langs).find(([k]) => normLang2(k) === normLang2(lang));
+      return hit ? hit[1] : null;
+    };
+    const playingFileName = ownedSession?.fileName || '';
+    const trackMatched = (subtitle) => {
+      const name = String(subtitle?.name || '').trim();
+      if (!name) return false;
+      if (playingFileName && releaseNamesMatch(name, playingFileName)) return true;
+      const verdict = verdictFor(subtitle.language);
+      if (verdict?.matched && verdict.release && releaseNamesMatch(name, verdict.release)) return true;
+      return false;
+    };
+    // externalTracks was labelled before the verdict landed; join back to the
+    // addon entries (which carry the release names) by id for the tick flag.
+    const subsById = new Map((externalSubs || []).map((s) => [s.id, s]));
+    for (const track of externalTracks) {
+      if (trackMatched(subsById.get(track.id))) track.matched = true;
+    }
 
     const combinedTracks = [...embeddedTracks, ...externalTracks];
 

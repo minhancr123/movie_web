@@ -45,8 +45,8 @@ export const getPersonalizedRecommendations = async (userId, currentType = null,
           tmdb.getDetail(type, id).catch(() => null)
         ]);
         
-        if (detail?.original_language) {
-          preferredLanguages.add(detail.original_language);
+        if (detail?.originalLanguage) {
+          preferredLanguages.add(detail.originalLanguage);
         }
 
         if (res?.results) {

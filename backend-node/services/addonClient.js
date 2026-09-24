@@ -123,6 +123,26 @@ export const releaseNameFromUrl = (url) => {
 };
 
 /**
+ * Do two release names describe the same file? Both directions: a sidecar
+ * named "Film.2026.1080p.WEB-DL.H264-GROUP.srt" matches a playing
+ * "Film.2026.1080p.WEB-DL.H264-GROUP.mkv" and vice versa.
+ *
+ * Deliberately strict: containment with a 18-char floor, so codec tags
+ * ("x264", "1080p", "WEB-DL") can never match alone, and a WEBRip-named
+ * sidecar never ticks against a WEB-DL file. Returns false for anything
+ * short, blank, or merely sharing a title — a tick must mean same release,
+ * not same film.
+ */
+export const releaseNamesMatch = (a, b) => {
+  const norm = (s) => String(s || '').toLowerCase().replace(/[^a-z0-9]+/g, '');
+  const na = norm(a);
+  const nb = norm(b);
+  const short = Math.min(na.length, nb.length);
+  if (short < 18) return false;
+  return na.includes(nb) || nb.includes(na);
+};
+
+/**
  * How one variant is described in the picker.
  *
  * Best: the release it was timed for. Failing that, the addon it came from —

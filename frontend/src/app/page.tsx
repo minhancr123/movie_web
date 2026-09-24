@@ -5,7 +5,6 @@ import CatalogRow from '@/components/CatalogRow';
 import ContinueWatchingRow from '@/components/ContinueWatchingRow';
 import HeroSection from '@/components/HeroSection';
 import RecommendationsRow from '@/components/RecommendationsRow';
-import IntroAnimation from '@/components/IntroAnimation';
 import SpatialShader from '@/components/SpatialShader';
 
 export const revalidate = 1800;
@@ -51,8 +50,6 @@ export default async function Home() {
       </div>
 
       <div className="relative z-10">
-        <IntroAnimation />
-
         {heroItems.length > 0 && <HeroSection movies={heroItems.map(toHeroMovie)} />}
 
         <div className="mt-8">

@@ -19,6 +19,13 @@ export interface SubTrack {
    * online sidecar timed for some (possibly different) release.
    */
   source?: string;
+  /**
+   * Server-verified: the sidecar's release name matches the playing file (or
+   * the file-exact subtitle the match verdict found). Renders the same ✓ as
+   * embedded tracks. Absent/false proves nothing either way — unnamed
+   * variants cannot be verified, so they stay unticked rather than guessed.
+   */
+  matched?: boolean;
 }
 
 /**

@@ -7,7 +7,13 @@ import { getSession } from 'next-auth/react';
 // which still runs on the old shape and is migrated in Phase 2.
 // The .NET service is gone, so these now hit the Node API and will 404
 // until premiere is rebuilt.
-const API_URL = process.env.NEXT_PUBLIC_BACKEND_API_URL || 'http://localhost:5001/api';
+import { resolveApiBase } from './apiBase';
+
+const API_URL = resolveApiBase({
+  isServer: typeof window === 'undefined',
+  internal: process.env.INTERNAL_API_URL,
+  publicUrl: process.env.NEXT_PUBLIC_BACKEND_API_URL || process.env.NEXT_PUBLIC_API_URL,
+});
 
 const envImagePrefix = process.env.NEXT_PUBLIC_IMAGE_PREFIX || 'https://phimimg.com/';
 export const IMAGE_PREFIX = envImagePrefix.endsWith('/') ? envImagePrefix : `${envImagePrefix}/`;

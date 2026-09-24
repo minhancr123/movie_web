@@ -112,6 +112,47 @@ const fallbackAudio = remux.decidePlaybackMode(
 assert.equal(fallbackAudio.mode, 'direct', 'out-of-range audio falls back to default');
 console.log('ok - ranker prefers playable cached + ffprobe direct/remux/reject');
 
+/* --------------------------------- default audio follows the film's own language */
+const zhProbe = {
+  format: 'matroska',
+  video: { codec: 'h264' },
+  audio: [
+    { codec: 'dts', language: 'eng', streamIndex: 1, channels: 6 },
+    { codec: 'dts', language: 'chi', streamIndex: 2, channels: 6 },
+    { codec: 'aac', language: 'vie', streamIndex: 3, channels: 2 },
+  ],
+};
+const zhDefault = remux.decidePlaybackMode(zhProbe, { hevc: false }, null, { contentLanguage: 'zh' });
+assert.equal(zhDefault.audioIndex, 1, 'Chinese film defaults to the Chinese track, not English-first');
+assert.equal(zhDefault.audioStreamIndex, 2, 'remux maps the chosen Chinese stream');
+const zhExplicit = remux.decidePlaybackMode(zhProbe, { hevc: false }, 2, { contentLanguage: 'zh' });
+assert.equal(zhExplicit.audioIndex, 2, 'an explicit user pick still wins over the film language');
+const noLangDefault = remux.decidePlaybackMode(zhProbe, { hevc: false });
+assert.equal(noLangDefault.audioIndex, 0, 'without a film language the English fallback stands');
+const unknownLangDefault = remux.decidePlaybackMode(zhProbe, { hevc: false }, null, { contentLanguage: 'xx' });
+assert.equal(unknownLangDefault.audioIndex, 0, 'an unknown film language falls back to English');
+const noEnglishAtAll = remux.decidePlaybackMode(
+  {
+    format: 'matroska',
+    video: { codec: 'h264' },
+    audio: [
+      { codec: 'dts', language: 'chi', streamIndex: 1, channels: 6 },
+      { codec: 'dts', language: 'jpn', streamIndex: 2, channels: 6 },
+    ],
+  },
+  { hevc: false },
+  null,
+  { contentLanguage: 'ko' },
+);
+assert.equal(noEnglishAtAll.audioIndex, 0, 'no match and no English falls back to the first track');
+assert.equal(remux.preferredAudioIndex([], 'zh'), -1, 'empty audio list reports nothing to choose');
+assert.equal(remux.preferredAudioIndex([{ language: 'zho' }], 'zh'), 0, '639-2 aliases match the 639-1 film language');
+console.log('ok - default audio follows the film language, English fallback, first-track last');
+
+/* ---------------------------------- reuse tolerates measured-origin overshoot */
+assert.equal(playback.REUSE_START_TOLERANCE_SECONDS, 2, 'reuse overshoot tolerance stays a blink, not a scene');
+console.log('ok - reuse overshoot tolerance exported');
+
 /* ------------------------------------------------------- ownership + routes */
 assert.equal(playback.isSessionOwner({ userIdStr: userId }, userId), true);
 assert.equal(playback.isSessionOwner({ userIdStr: userId }, 'someone-else'), false);

@@ -4,7 +4,7 @@ Ngày: 24/09/2026 · Phiên bản thiết kế: 1
 
 Repo khảo sát: `C:\Users\ADMIN\Downloads\movie_web`. Các đường dẫn mã nguồn bên dưới tính từ thư mục này.
 
-**Trạng thái: phạm vi repo + tài liệu đã được chọn; thiết kế này chờ người dùng duyệt.**
+**Trạng thái: người dùng đã duyệt thiết kế ngày 24/09/2026 bằng phản hồi “duyệt”; chuyển sang lập kế hoạch thực thi.**
 Đây là đặc tả của hệ thống sẽ triển khai, không phải báo cáo rằng VPS, CDN hay các dịch vụ cloud đã hoạt động.
 
 ## 1. Mục tiêu và tiêu chí thành công
@@ -272,7 +272,7 @@ Thêm lint/typecheck, route/integration/media tests, kiểm tra cấu hình và 
 | A06 | Readiness và queue | DB/Redis lỗi làm readiness 503; phục hồi 200; job thử và heartbeat worker/scheduler hoạt động |
 | A07 | Cache web | Static versioned có HIT sau warm; API/session/RSC/user data không bị public cache |
 | A08 | Video | Direct, HLS, seek, audio, subtitle, Range và native Safari/hls.js qua đúng hostname; không lộ token |
-| A09 | Phân quyền media | Token hết hạn/sai/user khác bị từ chối; response trước đó không làm cache bỏ qua auth |
+| A09 | Phân quyền media | Token hết hạn/sai và truy cập session của user khác bị từ chối; published rendition giữ quyền chia sẻ giữa user hợp lệ, VTT giữ bearer capability; cache không bỏ qua auth |
 | A10 | Rollback ứng dụng | Gây lỗi frontend, backend và post-check riêng; toàn bộ app trở về đúng manifest; deploy trả nonzero |
 | A11 | Lỗi hạ tầng khi deploy | Pull/disk/config lỗi trước switch không làm hỏng bản hiện tại; deploy đồng thời bị serialize |
 | A12 | Observability | Lỗi thử vào đúng Sentry release; metrics/dashboard có dữ liệu; cảnh báo và resolved tới email |
@@ -330,8 +330,9 @@ Runbook cuối phải có: chuẩn bị tài khoản; cấu hình DNS/TLS; provi
 - [x] Khảo sát working tree và tái sử dụng bộ tài liệu/kit hiện có.
 - [x] Viết thiết kế, lựa chọn kiến trúc, ranh giới CDN và tiêu chí nghiệm thu.
 - [x] Tự rà soát tính nhất quán, điều kiện backup, giới hạn VPS, đầu vào và trạng thái chưa triển khai.
-- [ ] Người dùng duyệt bản thiết kế này.
-- [ ] Viết kế hoạch thực thi theo file/test/dependency và chọn cách thực thi.
+- [x] Người dùng duyệt bản thiết kế này ngày 24/09/2026.
+- [x] Viết kế hoạch thực thi theo file/test/dependency; xem [kế hoạch tổng](C:/Users/ADMIN/Downloads/movie_web/docs/superpowers/plans/2026-09-24-cineon-devops-implementation.md).
+- [ ] Người dùng duyệt kế hoạch và chọn cách thực thi.
 - [ ] Triển khai nền tảng/runtime và sửa P0, chạy baseline/regression.
 - [ ] Hoàn thiện pipeline deploy/rollback và resource/network controls.
 - [ ] Tách media/CDN, tích hợp Sentry/metrics và backup/restore.

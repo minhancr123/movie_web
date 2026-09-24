@@ -107,7 +107,11 @@ export const getDetail = async (req, res) => {
     if (!isMediaType(type)) return fail(res, 400, 'type phải là movie hoặc tv');
     if (!Number.isInteger(tmdbId) || tmdbId <= 0) return fail(res, 400, 'tmdbId không hợp lệ');
 
-    const data = await cached(`catalog:detail:${type}:${tmdbId}:v2`, CACHE_TTL.DETAIL, () =>
+    // :vN is the shape of the normalized detail: bump it with every field
+    // added to it, or entries cached before the deploy keep serving the old
+    // shape for a day and the new field reads as undefined (see the same key
+    // in playbackController, where that cost a show its own audio language).
+    const data = await cached(`catalog:detail:${type}:${tmdbId}:v3`, CACHE_TTL.DETAIL, () =>
       tmdb.getDetail(type, tmdbId)
     );
 

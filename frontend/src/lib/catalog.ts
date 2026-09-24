@@ -7,7 +7,15 @@
  * that host is not blocked.
  */
 
-const API_BASE = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:5001/api';
+import { resolveApiBase } from './apiBase';
+
+// Server renders reach the API directly; the browser goes through the public
+// domain. Self-hosted these are different addresses (see resolveApiBase).
+const API_BASE = resolveApiBase({
+  isServer: typeof window === 'undefined',
+  internal: process.env.INTERNAL_API_URL,
+  publicUrl: process.env.NEXT_PUBLIC_API_URL,
+});
 
 export type MediaType = 'movie' | 'tv';
 

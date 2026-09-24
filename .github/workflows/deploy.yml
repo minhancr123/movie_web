@@ -5,6 +5,7 @@ on:
     branches: [main, master]
     paths:
       - 'backend-node/**'
+      - 'frontend/**'
       - 'docker-compose.prod.yml'
       - '.github/workflows/deploy.yml'
       - '.github/workflows/ci.yml'
@@ -47,6 +48,26 @@ jobs:
           cache-from: type=registry,ref=${{ secrets.DOCKER_USERNAME }}/movie-web:node-latest
           cache-to: type=inline
 
+      # NEXT_PUBLIC_* are compiled into the bundle, so the public URL has to be
+      # known at BUILD time, not at run time. Set PUBLIC_SITE_URL as a repo
+      # variable (Settings -> Variables), not a secret: it is a domain, and
+      # secrets are masked in logs, which makes a wrong one hard to spot.
+      - name: Build and push frontend
+        uses: docker/build-push-action@v5
+        with:
+          context: ./frontend
+          file: ./frontend/Dockerfile
+          push: true
+          build-args: |
+            NEXT_PUBLIC_API_URL=${{ vars.PUBLIC_SITE_URL }}/api
+            NEXT_PUBLIC_BACKEND_API_URL=${{ vars.PUBLIC_SITE_URL }}/api
+            NEXT_PUBLIC_SOCKET_URL=${{ vars.PUBLIC_SITE_URL }}
+          tags: |
+            ${{ secrets.DOCKER_USERNAME }}/movie-web:web-latest
+            ${{ secrets.DOCKER_USERNAME }}/movie-web:web-${{ github.sha }}
+          cache-from: type=registry,ref=${{ secrets.DOCKER_USERNAME }}/movie-web:web-latest
+          cache-to: type=inline
+
       - name: Roll out
         uses: appleboy/ssh-action@v1.0.0
         with:
@@ -74,6 +95,8 @@ jobs:
             echo "Current image: ${PREV_IMAGE:-none}"
 
             docker pull ${{ secrets.DOCKER_USERNAME }}/movie-web:node-latest
+            docker pull ${{ secrets.DOCKER_USERNAME }}/movie-web:web-latest
+            export FRONTEND_IMAGE=${{ secrets.DOCKER_USERNAME }}/movie-web:web-latest
 
             docker compose -f docker-compose.prod.yml up -d --remove-orphans
 
@@ -86,6 +109,7 @@ jobs:
                 docker exec movieweb-backend-node ffmpeg -version >/dev/null \
                   && echo "✓ ffmpeg present in the running container" \
                   || { echo "::error::ffmpeg missing in the image"; exit 1; }
+                curl -fsS http://localhost:3000 >/dev/null                   && echo "✓ frontend responding"                   || { echo "::error::frontend is not responding"; exit 1; }
                 docker image prune -f >/dev/null 2>&1 || true
                 exit 0
               fi

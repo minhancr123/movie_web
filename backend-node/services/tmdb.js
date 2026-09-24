@@ -164,6 +164,7 @@ const normalizeListItem = (item, mediaType, genreMap = {}) => {
     mediaType,
     title: title || originalTitle || '',
     originalTitle: originalTitle || '',
+    originalLanguage: item.original_language || null,
     slug: toSlug(title || originalTitle),
     overview: item.overview || '',
     year,
@@ -226,6 +227,12 @@ const normalizeDetail = (data, mediaType, fallbackOverview = '', englishTitle = 
     // CJK (zero latin tokens). Without this, title-match rejects every
     // candidate for anime/CJK titles (e.g. Demon Slayer: Infinity Castle).
     englishTitle: englishTitle || '',
+    // Original language (ISO 639-1, e.g. "ja"): drives the default audio
+    // track (film's own language first) and language-boosted recommendations.
+    // Kept under a camelCase key because this normalized shape never carries
+    // the raw snake_case fields — reading data.original_language downstream
+    // silently yields undefined (every audio default fell back to English).
+    originalLanguage: data.original_language || null,
     slug: toSlug(title || originalTitle),
     overview: data.overview || fallbackOverview || '',
     year,
