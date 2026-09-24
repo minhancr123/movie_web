@@ -1,5 +1,6 @@
 import { MongoClient } from 'mongodb';
 import dotenv from 'dotenv';
+import { readAppConfig } from './runtime.js';
 
 dotenv.config();
 
@@ -11,7 +12,8 @@ let db;
 export const connectDB = async () => {
   try {
     await client.connect();
-    db = client.db('movieweb');
+    const config = readAppConfig(process.env);
+    db = client.db(config.databaseName);
     console.log('✅ MongoDB Atlas Connected Successfully!');
     
     // Create indexes

@@ -11,7 +11,6 @@ import { enqueueJob, JOBS } from './config/queue.js';
 
 // Import routes
 import authRoutes from './routes/auth.js';
-import { createDefaultAdmin } from './controllers/authController.js';
 import { startTranscodeCacheJanitor } from './services/playback/remuxService.js';
 import { detectVideoEncoder } from './services/playback/remuxService.js';
 import favoriteRoutes from './routes/favorites.js';
@@ -239,9 +238,6 @@ const startServer = async () => {
   try {
     // Connect to MongoDB
     await connectDB();
-
-
-    await createDefaultAdmin();
 
     const cacheCleanup = await startTranscodeCacheJanitor();
     console.log(
