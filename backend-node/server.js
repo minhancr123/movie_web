@@ -85,6 +85,26 @@ app.get('/health', (req, res) => {
   });
 });
 
+import { getReadiness } from './services/health/readiness.js';
+import { queueConnection, jobQueue } from './config/queue.js';
+
+app.get('/healthz', async (req, res) => {
+  const { ready } = await getReadiness({
+    mongoPing: async () => {
+      const db = getDB();
+      await db.command({ ping: 1 });
+    },
+    redisPing: async () => {
+      await queueConnection.ping();
+    }
+  });
+  if (ready) {
+    res.status(200).json({ ready: true });
+  } else {
+    res.status(503).json({ ready: false });
+  }
+});
+
 // API Routes
 app.use('/api/auth', authRoutes);
 app.use('/api/favorites', favoriteRoutes);
@@ -260,5 +280,36 @@ const startServer = async () => {
     process.exit(1);
   }
 };
+
+import { createShutdown } from './services/health/lifecycle.js';
+import dbClient from './config/database.js';
+import * as remuxService from './services/playback/remuxService.js';
+
+const shutdown = createShutdown({
+  stopAccepting: async () => {
+    return new Promise((resolve) => {
+      io.close(() => {
+        httpServer.close(() => {
+          resolve();
+        });
+      });
+    });
+  },
+  closeJobs: async () => {
+    await jobQueue.close();
+  },
+  closeMedia: async () => {
+    if (remuxService.stopAllRemux) {
+      await remuxService.stopAllRemux();
+    }
+  },
+  closeStores: async () => {
+    await queueConnection.quit();
+    await dbClient.close();
+  }
+});
+
+process.on('SIGTERM', () => shutdown('SIGTERM'));
+process.on('SIGINT', () => shutdown('SIGINT'));
 
 startServer();

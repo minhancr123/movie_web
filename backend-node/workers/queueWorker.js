@@ -93,6 +93,10 @@ const handlers = {
 
 };
 
+import { startHeartbeat } from '../services/health/heartbeat.js';
+import { createShutdown } from '../services/health/lifecycle.js';
+import dbClient from '../config/database.js';
+
 const start = async () => {
   await connectDB();
 
@@ -122,6 +126,31 @@ const start = async () => {
   });
 
   console.log(`[worker] started on queue: ${queueName}`);
+
+  let stopHeartbeat = null;
+  if (process.env.RELEASE_ID) {
+    stopHeartbeat = startHeartbeat({
+      redis: queueConnection,
+      service: 'worker',
+      releaseId: process.env.RELEASE_ID
+    });
+  }
+
+  const shutdown = createShutdown({
+    stopAccepting: async () => {},
+    closeJobs: async () => {
+      await worker.close();
+      if (stopHeartbeat) stopHeartbeat();
+    },
+    closeMedia: async () => {},
+    closeStores: async () => {
+      await queueConnection.quit();
+      await dbClient.close();
+    }
+  });
+
+  process.on('SIGTERM', () => shutdown('SIGTERM'));
+  process.on('SIGINT', () => shutdown('SIGINT'));
 };
 
 start().catch((err) => {
