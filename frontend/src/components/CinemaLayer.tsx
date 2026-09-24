@@ -92,7 +92,7 @@ const rootFontPx = () => {
  */
 export default function CinemaLayer({ mode, video }: Props) {
     const glowRef = useRef<HTMLCanvasElement>(null);
-    const dimRef = useRef<HTMLDivElement>(null);
+    const dimRef = useRef<HTMLDivElement | null>(null);
     const [mounted, setMounted] = useState(false);
 
     useEffect(() => setMounted(true), []);

@@ -6,7 +6,7 @@ import CatalogCard from '@/components/CatalogCard';
 import MovieRequestTrigger from '@/components/MovieRequestTrigger';
 
 interface SearchPageProps {
-  searchParams: { keyword?: string; page?: string };
+  searchParams: Promise<{ keyword?: string; page?: string }>;
 }
 
 export const metadata = {
@@ -14,8 +14,9 @@ export const metadata = {
 };
 
 export default async function SearchPage({ searchParams }: SearchPageProps) {
-  const keyword = (searchParams.keyword || '').trim();
-  const page = Number(searchParams.page) || 1;
+  const resolvedSearchParams = await searchParams;
+  const keyword = (resolvedSearchParams.keyword || '').trim();
+  const page = Number(resolvedSearchParams.page) || 1;
 
   const { items, pagination } = keyword
     ? await searchCatalog(keyword, page)

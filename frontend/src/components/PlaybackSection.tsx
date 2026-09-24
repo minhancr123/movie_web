@@ -158,7 +158,7 @@ export default function PlaybackSection({
   const stage404sRef = useRef<number>(0);
   const [cinemaMode, setCinemaMode] = useState<CinemaMode>('off');
   const [videoEl, setVideoEl] = useState<HTMLVideoElement | null>(null);
-  const fullscreenTargetRef = useRef<HTMLDivElement>(null);
+  const fullscreenTargetRef = useRef<HTMLDivElement | null>(null);
   const [candidate, setCandidate] = useState<SourceCandidate | null>(null);
   const [sources, setSources] = useState<SourceCandidate[]>([]);
   const [showSources, setShowSources] = useState<boolean>(false);
@@ -177,7 +177,7 @@ export default function PlaybackSection({
   const [notice, setNotice] = useState<string | null>(null);
   // Auto quality step-down fires once per title: no flapping between releases.
   const decodeDowngradeDoneRef = useRef<boolean>(false);
-  const episodeScrollRef = useRef<HTMLDivElement>(null);
+  const episodeScrollRef = useRef<HTMLDivElement | null>(null);
 
   const scrollEpisodes = (direction: 'left' | 'right') => {
     if (!episodeScrollRef.current) return;

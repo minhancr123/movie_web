@@ -20,18 +20,19 @@ import CommentsSection from '@/components/CommentsSection';
 // swallows the status code from notFound() / redirect().
 
 interface PageParams {
-  params: { type: string; tmdbId: string; slug: string };
-  searchParams: { season?: string };
+  params: Promise<{ type: string; tmdbId: string; slug: string }>;
+  searchParams: Promise<{ season?: string }>;
 }
 
 const parseType = (type: string): MediaType | null =>
   type === 'movie' || type === 'tv' ? type : null;
 
 export async function generateMetadata({ params }: PageParams): Promise<Metadata> {
-  const type = parseType(params.type);
+  const resolvedParams = await params;
+  const type = parseType(resolvedParams.type);
   if (!type) return { title: 'Không tìm thấy' };
 
-  const detail = await getCatalogDetail(type, params.tmdbId);
+  const detail = await getCatalogDetail(type, resolvedParams.tmdbId);
   if (!detail) return { title: 'Không tìm thấy phim' };
 
   const description =
@@ -49,19 +50,21 @@ export async function generateMetadata({ params }: PageParams): Promise<Metadata
 }
 
 export default async function CatalogDetailPage({ params, searchParams }: PageParams) {
-  const type = parseType(params.type);
+  const resolvedParams = await params;
+  const resolvedSearchParams = await searchParams;
+  const type = parseType(resolvedParams.type);
   if (!type) notFound();
 
-  const detail = await getCatalogDetail(type, params.tmdbId);
+  const detail = await getCatalogDetail(type, resolvedParams.tmdbId);
   if (!detail) notFound();
 
   // Slug is decorative, but keep the canonical one in the address bar for SEO.
-  if (params.slug !== detail.slug) {
+  if (resolvedParams.slug !== detail.slug) {
     redirect(catalogHref(detail));
   }
 
   const seasons = detail.seasons ?? [];
-  const activeSeasonNumber = Number(searchParams.season) || seasons[0]?.seasonNumber;
+  const activeSeasonNumber = Number(resolvedSearchParams.season) || seasons[0]?.seasonNumber;
   const season =
     type === 'tv' && activeSeasonNumber
       ? await getSeason(detail.tmdbId, activeSeasonNumber)

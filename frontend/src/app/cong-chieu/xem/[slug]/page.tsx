@@ -38,7 +38,7 @@ export default function LivePremierePage() {
   const [viewerCount, setViewerCount] = useState(0);
   const [showMobileChat, setShowMobileChat] = useState(false);
   const [showEmojiPicker, setShowEmojiPicker] = useState(false);
-  const chatRef = useRef<HTMLDivElement>(null);
+  const chatRef = useRef<HTMLDivElement | null>(null);
   const socketRef = useRef<Socket | null>(null);
 
   const emojis = ['😀', '😂', '❤️', '👍', '👏', '🔥', '🎉', '😍', '😢', '😮', '🤔', '💯', '👀', '🙌', '✨'];

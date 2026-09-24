@@ -12,7 +12,7 @@ export {
 } from '@/lib/audioEnhancerGraph';
 
 export function useAudioEnhancer(
-    videoRef: RefObject<HTMLVideoElement>,
+    videoRef: RefObject<HTMLVideoElement | null>,
     src: string,
     hlsSupported: boolean,
     settings: AudioEnhancerSettings,

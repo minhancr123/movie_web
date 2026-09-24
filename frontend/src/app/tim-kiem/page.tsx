@@ -1,10 +1,11 @@
 import { redirect } from 'next/navigation';
 
-export default function TimKiemRedirect({
+export default async function TimKiemRedirect({
   searchParams,
 }: {
-  searchParams: { keyword?: string };
+  searchParams: Promise<{ keyword?: string }>;
 }) {
-  const keyword = searchParams.keyword ? `?keyword=${encodeURIComponent(searchParams.keyword)}` : '';
+  const resolvedSearchParams = await searchParams;
+  const keyword = resolvedSearchParams.keyword ? `?keyword=${encodeURIComponent(resolvedSearchParams.keyword)}` : '';
   redirect(`/search${keyword}`);
 }

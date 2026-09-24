@@ -61,7 +61,7 @@ const Header = () => {
     const [isSearchOpen, setIsSearchOpen] = useState(false);
     const [isMobileSearchVisible, setIsMobileSearchVisible] = useState(false);
     const [searchQuery, setSearchQuery] = useState('');
-    const searchContainerRef = useRef<HTMLDivElement>(null);
+    const searchContainerRef = useRef<HTMLDivElement | null>(null);
     const searchInputRef = useRef<HTMLInputElement>(null);
     const mobileSearchInputRef = useRef<HTMLInputElement>(null);
     // Recent searches, newest first, max 8.

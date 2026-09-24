@@ -13,7 +13,7 @@ interface CatalogRowProps {
 }
 
 export default function CatalogRow({ title, items, path }: CatalogRowProps) {
-  const rowRef = useRef<HTMLDivElement>(null);
+  const rowRef = useRef<HTMLDivElement | null>(null);
 
   if (!items || items.length === 0) return null;
 

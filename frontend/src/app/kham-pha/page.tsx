@@ -8,7 +8,7 @@ export const metadata = {
 };
 
 interface DiscoverPageProps {
-  searchParams: { type?: string; genre?: string; year?: string; region?: string; page?: string };
+  searchParams: Promise<{ type?: string; genre?: string; year?: string; region?: string; page?: string }>;
 }
 
 const CURRENT_YEAR = new Date().getFullYear();
@@ -37,11 +37,12 @@ const REGIONS = [
 ];
 
 export default async function DiscoverPage({ searchParams }: DiscoverPageProps) {
-  const type: MediaType = searchParams.type === 'tv' ? 'tv' : 'movie';
-  const genre = searchParams.genre || '';
-  const year = searchParams.year || '';
-  const region = searchParams.region || '';
-  const page = Number(searchParams.page) || 1;
+  const resolvedSearchParams = await searchParams;
+  const type: MediaType = resolvedSearchParams.type === 'tv' ? 'tv' : 'movie';
+  const genre = resolvedSearchParams.genre || '';
+  const year = resolvedSearchParams.year || '';
+  const region = resolvedSearchParams.region || '';
+  const page = Number(resolvedSearchParams.page) || 1;
 
   const [{ genres }, { items, pagination }] = await Promise.all([
     getGenres(type),

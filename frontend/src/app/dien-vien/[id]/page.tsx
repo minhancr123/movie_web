@@ -6,11 +6,12 @@ import { Cake, MapPin, Clapperboard, Star } from 'lucide-react';
 import { getPersonDetail } from '@/lib/catalog';
 
 interface PageParams {
-  params: { id: string };
+  params: Promise<{ id: string }>;
 }
 
 export async function generateMetadata({ params }: PageParams): Promise<Metadata> {
-  const person = await getPersonDetail(params.id);
+  const { id } = await params;
+  const person = await getPersonDetail(id);
   if (!person) return { title: 'Không tìm thấy' };
   return {
     title: `${person.name} - Diễn viên`,
@@ -25,7 +26,8 @@ const formatDate = (iso: string | null) => {
 };
 
 export default async function PersonPage({ params }: PageParams) {
-  const person = await getPersonDetail(params.id);
+  const { id } = await params;
+  const person = await getPersonDetail(id);
   if (!person) notFound();
 
   const facts = [

@@ -24,7 +24,7 @@ export default function PremiereChat({ premiereId, initialMessages }: PremiereCh
     const [messages, setMessages] = useState<Message[]>(initialMessages);
     const [input, setInput] = useState('');
     const [socket, setSocket] = useState<Socket | null>(null);
-    const scrollRef = useRef<HTMLDivElement>(null);
+    const scrollRef = useRef<HTMLDivElement | null>(null);
     // Mock user for now if auth not fully integrated in this component context
     // Ideally use session.
     const [user, setUser] = useState({ id: 'guest-' + Math.floor(Math.random() * 1000), name: 'Khách ' + Math.floor(Math.random() * 1000) });

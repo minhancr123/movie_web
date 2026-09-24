@@ -37,11 +37,11 @@ export default function LiveVideoPlayer({ movieSlug, premiereStartTime, movieNam
   const [isMuted, setIsMuted] = useState(true); // Start muted for autoplay
   const [isPiP, setIsPiP] = useState(false);
   const [showKeyboardHelp, setShowKeyboardHelp] = useState(false);
-  const videoRef = useRef<HTMLVideoElement>(null);
+  const videoRef = useRef<HTMLVideoElement | null>(null);
   const hlsRef = useRef<Hls | null>(null);
-  const syncIntervalRef = useRef<NodeJS.Timeout>();
-  const containerRef = useRef<HTMLDivElement>(null);
-  const hideControlsTimeoutRef = useRef<NodeJS.Timeout>();
+  const syncIntervalRef = useRef<NodeJS.Timeout | undefined>(undefined);
+  const containerRef = useRef<HTMLDivElement | null>(null);
+  const hideControlsTimeoutRef = useRef<NodeJS.Timeout | undefined>(undefined);
 
   // Calculate elapsed time since premiere started
   useEffect(() => {

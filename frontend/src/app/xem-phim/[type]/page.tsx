@@ -6,8 +6,8 @@ import {
 } from '@/lib/catalog';
 
 interface PageParams {
-  params: { type: string };
-  searchParams: { tap?: string };
+  params: Promise<{ type: string }>;
+  searchParams: Promise<{ tap?: string }>;
 }
 
 /**
@@ -20,10 +20,12 @@ interface PageParams {
  * Next.js forbids different dynamic param names at the same path level.
  */
 export default async function LegacyWatchRedirect({ params, searchParams }: PageParams) {
+  const resolvedParams = await params;
+  const resolvedSearchParams = await searchParams;
   // Next encodes ':' inside a dynamic path segment before exposing it through
   // `params` (for example `tmdb%3Amovie%3A496243`). Decode once so history
   // contentRefs are recognized instead of being mistaken for legacy slugs.
-  let routeSegment = params.type;
+  let routeSegment = resolvedParams.type;
   try {
     routeSegment = decodeURIComponent(routeSegment);
   } catch {
@@ -44,7 +46,7 @@ export default async function LegacyWatchRedirect({ params, searchParams }: Page
   const detail = await getCatalogDetail(type, tmdbId);
   if (!detail) notFound();
 
-  const tap = searchParams.tap || '';
+  const tap = resolvedSearchParams.tap || '';
   const ep = /^s(\d+)e(\d+)$/.exec(tap);
   redirect(
     ep ? watchHref(detail, Number(ep[1]), Number(ep[2])) : watchHref(detail)

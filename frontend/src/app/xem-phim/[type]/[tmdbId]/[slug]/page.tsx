@@ -18,8 +18,8 @@ import SpatialShader from '@/components/SpatialShader';
 // swallows the status code from notFound() / redirect().
 
 interface PageParams {
-  params: { type: string; tmdbId: string; slug: string };
-  searchParams: { s?: string; e?: string };
+  params: Promise<{ type: string; tmdbId: string; slug: string }>;
+  searchParams: Promise<{ s?: string; e?: string }>;
 }
 
 const parseType = (type: string): MediaType | null =>
@@ -34,17 +34,19 @@ const parseType = (type: string): MediaType | null =>
  * POST /api/playback/resolve.
  */
 export default async function WatchPage({ params, searchParams }: PageParams) {
-  const type = parseType(params.type);
+  const resolvedParams = await params;
+  const resolvedSearchParams = await searchParams;
+  const type = parseType(resolvedParams.type);
   if (!type) notFound();
 
-  const tmdbId = Number(params.tmdbId);
+  const tmdbId = Number(resolvedParams.tmdbId);
   if (!Number.isInteger(tmdbId) || tmdbId <= 0) notFound();
 
   const detail = await getCatalogDetail(type, tmdbId);
   if (!detail) notFound();
 
-  const season = Number(searchParams.s) || null;
-  const episode = Number(searchParams.e) || null;
+  const season = Number(resolvedSearchParams.s) || null;
+  const episode = Number(resolvedSearchParams.e) || null;
   const missingEpisode = type === 'tv' && (!season || !episode);
 
   // Pro episodes panel data (Stitch player-4k-pro layout): resolved on the
