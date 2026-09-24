@@ -1,0 +1,40 @@
+version: '3.8'
+
+services:
+  cineon-test-backend:
+    image: cineon-backend:test
+    container_name: cineon-test-backend
+    environment:
+      - NODE_ENV=test
+      - MONGO_URI=mongodb://cineon-test-mongo:27017/cineon_test
+      - REDIS_URL=redis://cineon-test-redis:6379
+      - ALLOW_FIXTURE_AUTH=yes
+    networks:
+      - cineon-test-net
+    depends_on:
+      - cineon-test-mongo
+      - cineon-test-redis
+
+  cineon-test-mongo:
+    image: mongo:6.0
+    container_name: cineon-test-mongo
+    volumes:
+      - cineon-test-mongo-data:/data/db
+    networks:
+      - cineon-test-net
+
+  cineon-test-redis:
+    image: redis:7.0-alpine
+    container_name: cineon-test-redis
+    volumes:
+      - cineon-test-redis-data:/data
+    networks:
+      - cineon-test-net
+
+networks:
+  cineon-test-net:
+    driver: bridge
+
+volumes:
+  cineon-test-mongo-data:
+  cineon-test-redis-data:
