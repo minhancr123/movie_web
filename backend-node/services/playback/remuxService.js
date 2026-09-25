@@ -777,7 +777,11 @@ export const buildFfmpegArgs = ({ inputUrl, outputDir, audioCopy = false, segmen
   //   that turns those deltas into fatal muxer errors.
   // -max_muxing_queue_size 2048: raise the per-stream mux queue so a burst
   //   of out-of-order packets does not overflow the default 128 entries.
-  ...(videoCopy ? ['-fps_mode:v', 'passthrough'] : []),
+  // Strip Dolby Vision RPU / EL metadata (types 62-63) on copy mode:
+  // Malformed RPU or Profile 7 FEL from UHD Blu-ray rips causes FFmpeg's
+  // HEVC parser to fail with exit code 255 ("RPU validation failed: 0 <= el_bit_depth_minus8 = 32 <= 8").
+  // Stripping types 62-63 preserves the HDR10 base layer for browsers.
+  ...(videoCopy ? ['-fps_mode:v', 'passthrough', '-bsf:v', 'filter_units=remove_types=62-63'] : []),
   '-max_interleave_delta', '0',
   '-max_muxing_queue_size', '2048',
   '-c:a',
