@@ -80,7 +80,7 @@ export default function RootLayout({
       <body className="bg-background text-cinema-text font-sans antialiased selection:bg-amber-primary selection:text-black">
         <AuthProvider>
           <Header />
-          <main className="min-h-screen pt-20 mx-auto w-full max-w-shell px-4 md:px-8 pb-20 md:pb-12">
+          <main className="min-h-screen pt-20 mx-auto w-full max-w-shell px-4 md:px-8 pb-28 md:pb-12">
             {children}
           </main>
           <BottomNav />

@@ -118,7 +118,7 @@ const HeroSection = ({ movies }: HeroSectionProps) => {
             </div>
 
             {/* Content with 3D-ish entry */}
-            <div className="absolute bottom-0 left-0 p-6 md:p-16 w-full md:w-3/4 lg:w-2/3 flex flex-col justify-end h-full z-20">
+            <div className="absolute bottom-0 left-0 p-6 md:p-12 lg:p-16 w-full max-w-xl lg:max-w-2xl xl:max-w-[58%] flex flex-col justify-end h-full z-20">
               <div
                 className={`flex items-center gap-3 mb-4 transition-all duration-700 delay-100 ${isActive ? 'translate-y-0 opacity-100 blur-0' : 'translate-y-10 opacity-0 blur-sm'
                   }`}
@@ -200,8 +200,8 @@ const HeroSection = ({ movies }: HeroSectionProps) => {
         <ChevronRight size={24} />
       </button>
 
-      {/* Pagination - Thumbnails (Desktop) */}
-      <div className="absolute bottom-8 right-8 z-30 hidden md:flex gap-3 items-end">
+      {/* Pagination - Thumbnails (Desktop >= 1280px) */}
+      <div className="absolute bottom-8 right-8 z-30 hidden xl:flex gap-3 items-end">
         {movies.map((movie, idx) => {
           const isActive = idx === currentIndex;
           const imagePrefix = process.env.NEXT_PUBLIC_IMAGE_PREFIX || 'https://phimimg.com/';
@@ -235,8 +235,8 @@ const HeroSection = ({ movies }: HeroSectionProps) => {
         })}
       </div>
 
-      {/* Pagination - Dots (Mobile) */}
-      <div className="absolute bottom-4 right-4 z-30 flex gap-2 md:hidden">
+      {/* Pagination - Dots (Mobile & Tablet < 1280px) */}
+      <div className="absolute bottom-6 right-6 md:bottom-8 md:right-8 z-30 flex gap-2 xl:hidden">
         {movies.map((_, idx) => (
           <button
             key={idx}

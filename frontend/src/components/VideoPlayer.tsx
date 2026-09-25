@@ -2096,12 +2096,12 @@ export default function VideoPlayer({ src, movie, episode, authToken, durationSe
                             {isPlaying ? <Pause className="w-6 h-6 sm:w-7 sm:h-7" fill="currentColor" /> : <Play className="w-6 h-6 sm:w-7 sm:h-7" fill="currentColor" />}
                         </button>
 
-                        {/* ±10s seek: always visible, extra large hit area on touch */}
+                        {/* ±10s seek: desktop/tablet (mobile uses center/side overlay buttons) */}
                         <button
                             onClick={(e) => { e.stopPropagation(); seekBy(-10); }}
                             aria-label="Lùi 10 giây"
                             title="Lùi 10s"
-                            className="liquid-glass-btn relative shrink-0 text-white hover:text-amber-gold transition-colors p-2 rounded-full active:scale-90 touch-manipulation"
+                            className="liquid-glass-btn relative hidden sm:inline-flex shrink-0 text-white hover:text-amber-gold transition-colors p-2 rounded-full active:scale-90 touch-manipulation"
                             style={{ minWidth: 44, minHeight: 44 }}
                         >
                             <RotateCcw className="w-5 h-5 sm:w-6 sm:h-6" />
@@ -2111,16 +2111,14 @@ export default function VideoPlayer({ src, movie, episode, authToken, durationSe
                             onClick={(e) => { e.stopPropagation(); seekBy(10); }}
                             aria-label="Tua tới 10 giây"
                             title="Tua 10s"
-                            className="liquid-glass-btn relative shrink-0 text-white hover:text-amber-gold transition-colors p-2 rounded-full active:scale-90 touch-manipulation"
+                            className="liquid-glass-btn relative hidden sm:inline-flex shrink-0 text-white hover:text-amber-gold transition-colors p-2 rounded-full active:scale-90 touch-manipulation"
                             style={{ minWidth: 44, minHeight: 44 }}
                         >
                             <RotateCw className="w-5 h-5 sm:w-6 sm:h-6" />
                             <span className="pointer-events-none absolute inset-0 flex items-center justify-center pt-[2px] text-[8px] font-bold leading-none">10</span>
                         </button>
 
-                        {/* Hover slider is desktop-only: touch has no hover,
-                            so volume also lives as a slider in the settings
-                            sheet below. */}
+                        {/* Hover slider is desktop-only: touch has hardware buttons */}
                         <div className="hidden sm:flex items-center gap-2 group/volume relative">
                             <button onClick={toggleMute} aria-label={isMuted ? 'Bật tiếng' : 'Tắt tiếng'} className="liquid-glass-btn text-white hover:text-cinema-muted transition-all p-2 rounded-full active:scale-90">
                                 {isMuted || volume === 0 ? <VolumeX size={22} /> : volume < 0.5 ? <Volume1 size={22} /> : <Volume2 size={22} />}
@@ -2143,27 +2141,19 @@ export default function VideoPlayer({ src, movie, episode, authToken, durationSe
                                 />
                             </div>
                         </div>
-                        {/* Touch volume: compact always-visible slider (settings has none) */}
-                        <div className="flex sm:hidden shrink-0 items-center gap-1.5">
-                            <button onClick={toggleMute} aria-label={isMuted ? 'Bật tiếng' : 'Tắt tiếng'} className="liquid-glass-btn shrink-0 text-white hover:text-cinema-muted transition-all p-1.5 rounded-full active:scale-90">
-                                {isMuted || volume === 0 ? <VolumeX className="w-5 h-5" /> : volume < 0.5 ? <Volume1 className="w-5 h-5" /> : <Volume2 className="w-5 h-5" />}
-                            </button>
-                            <input
-                                type="range"
-                                min={0}
-                                max={1}
-                                step={0.05}
-                                value={isMuted ? 0 : volume}
-                                onChange={handleVolumeChange}
-                                aria-label="Âm lượng"
-                                style={{ background: volTrackBg }}
-                                className="w-16 h-1.5 rounded-full appearance-none cursor-pointer liquid-range"
-                            />
-                        </div>
+
+                        {/* Mobile quick mute button (no slider taking 64px and overflowing) */}
+                        <button
+                            onClick={toggleMute}
+                            aria-label={isMuted ? 'Bật tiếng' : 'Tắt tiếng'}
+                            className="liquid-glass-btn sm:hidden shrink-0 text-white hover:text-cinema-muted transition-all p-1.5 rounded-full active:scale-90"
+                        >
+                            {isMuted || volume === 0 ? <VolumeX className="w-5 h-5" /> : volume < 0.5 ? <Volume1 className="w-5 h-5" /> : <Volume2 className="w-5 h-5" />}
+                        </button>
 
                         <div className="liquid-divider mx-1 hidden sm:block" />
 
-                        <div className="hidden min-[400px]:block whitespace-nowrap text-xs sm:text-sm font-medium text-cinema-muted font-mono tracking-wider truncate liquid-chip px-2.5 py-1">
+                        <div className="shrink-0 whitespace-nowrap text-xs sm:text-sm font-medium text-cinema-muted font-mono tracking-wider liquid-chip px-2 sm:px-2.5 py-0.5 sm:py-1">
                             {formatTime(displayTime)} / {formatTime(fullDuration)}
                         </div>
                     </div>

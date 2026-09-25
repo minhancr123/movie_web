@@ -1658,31 +1658,33 @@ export default function PlaybackSection({
         {/* Pro episodes panel (Stitch player pro, TV only) — real season data */}
         {type === 'tv' && episodes.length > 0 && (
           <section id="episodes" className="glass-panel group relative mt-3 rounded-2xl border border-amber-primary/20 p-3.5">
-            <div className="mb-3 flex items-center justify-between">
-              <div className="flex items-center gap-2">
-                <span className="h-2 w-2 rounded-full bg-amber-400"></span>
+            <div className="mb-3 flex flex-wrap items-center justify-between gap-y-2 gap-x-3">
+              <div className="flex min-w-0 flex-wrap items-center gap-2">
+                <span className="h-2 w-2 shrink-0 rounded-full bg-amber-400"></span>
                 <h2 className="font-syne text-xs font-bold uppercase tracking-wider text-white">
                   Danh Sách Tập Phim{seasonLabel ? ` (${seasonLabel})` : ''}
                 </h2>
                 {typeof activeEpisode === 'number' && (
-                    <span className="rounded-full bg-amber-primary/20 px-2 py-0.5 font-mono text-[10px] font-bold text-amber-gold ring-1 ring-amber-primary/30">
-                      {isProd ? `Tập ${activeEpisode}` : `Tập ${activeEpisode}/${episodes.length}`}
-                    </span>
-                  )}
-                </div>
-                <div className="flex items-center gap-3">
-                  <span className="font-mono text-[11px] text-cyan-accent">
-                    {isProd ? `${episodes.length} tập` : `${episodes.length} tập (Stitch Pro)`}
+                  <span className="shrink-0 rounded-full bg-amber-primary/20 px-2 py-0.5 font-mono text-[10px] font-bold text-amber-gold ring-1 ring-amber-primary/30">
+                    {isProd ? `Tập ${activeEpisode}` : `Tập ${activeEpisode}/${episodes.length}`}
                   </span>
-                <div className="flex gap-1">
+                )}
+              </div>
+              <div className="flex shrink-0 items-center gap-2 sm:gap-3">
+                <span className="font-mono text-[11px] text-cyan-accent whitespace-nowrap">
+                  {isProd ? `${episodes.length} tập` : `${episodes.length} tập (Stitch Pro)`}
+                </span>
+                <div className="hidden sm:flex gap-1">
                   <button
                     onClick={() => scrollEpisodes('left')}
+                    aria-label="Tập trước"
                     className="flex h-6 w-6 items-center justify-center rounded-md bg-white/5 text-white/60 transition hover:bg-white/10 hover:text-white"
                   >
                     <ChevronLeft size={14} />
                   </button>
                   <button
                     onClick={() => scrollEpisodes('right')}
+                    aria-label="Tập tiếp"
                     className="flex h-6 w-6 items-center justify-center rounded-md bg-white/5 text-white/60 transition hover:bg-white/10 hover:text-white"
                   >
                     <ChevronRight size={14} />
