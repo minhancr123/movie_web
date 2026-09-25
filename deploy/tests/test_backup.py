@@ -1,4 +1,4 @@
-"""Tests for backup orchestration."""
+"""Tests for backup orchestration and restore validation."""
 
 import unittest
 from types import SimpleNamespace
@@ -14,13 +14,14 @@ class BackupTest(unittest.TestCase):
         defaults = dict(
             lock=nullcontext,
             preflight=lambda: None,
+            database_name="movieweb",
             running_services=lambda: ["backend-node"],
             maintenance_state=lambda: False,
             maintenance=lambda on: events.append(("maintenance", on)),
             stop_writers=lambda s: events.append(("stop", s)),
-            capture=lambda: "/tmp/staging/backup-001",
+            capture=lambda db: "/tmp/staging/backup-001",
             resume=lambda s: events.append(("resume", s)),
-            publish=lambda staging: "snapshot-001",
+            publish=lambda staging, metadata: "snapshot-001",
             verify_snapshot=lambda sid: None,
             mark_success=lambda sid: events.append(("success", sid)),
             notify=lambda msg, error=False: None,
@@ -30,7 +31,7 @@ class BackupTest(unittest.TestCase):
 
     def test_dump_failure_resumes_original_services(self):
         """When capture fails, services must be resumed and maintenance cleared."""
-        def fail():
+        def fail(db):
             raise RuntimeError("dump failed")
 
         io, events = self._make_io(capture=fail)
@@ -48,7 +49,7 @@ class BackupTest(unittest.TestCase):
 
     def test_maintenance_is_restored_on_failure(self):
         """If we were already in maintenance, stay in maintenance on failure."""
-        def fail():
+        def fail(db):
             raise RuntimeError("boom")
 
         io, events = self._make_io(
@@ -68,7 +69,6 @@ class BackupTest(unittest.TestCase):
         io, events = self._make_io(verify_snapshot=fail_verify)
         with self.assertRaises(RuntimeError):
             run_backup(io)
-        # mark_success should not be in events
         self.assertFalse(any(e[0] == "success" for e in events))
 
     def test_services_resumed_even_with_multiple_running(self):
@@ -88,9 +88,44 @@ class BackupTest(unittest.TestCase):
         io, events = self._make_io(preflight=fail_pre)
         with self.assertRaises(RuntimeError):
             run_backup(io)
-        # No stop or resume should have happened
         self.assertFalse(any(e[0] == "stop" for e in events))
         self.assertFalse(any(e[0] == "resume" for e in events))
+
+    def test_capture_receives_database_name(self):
+        """capture() must receive the configured database name, not hardcoded."""
+        captured_db = []
+        io, events = self._make_io(
+            database_name="cineon_prod",
+            capture=lambda db: (captured_db.append(db), "/tmp/staging")[1],
+        )
+        run_backup(io)
+        self.assertEqual(captured_db, ["cineon_prod"])
+
+    def test_publish_receives_metadata_with_db_name(self):
+        """publish() must receive metadata containing the database namespace."""
+        published = []
+        io, events = self._make_io(
+            database_name="cineon_prod",
+            publish=lambda staging, metadata: (published.append(metadata), "snap-1")[1],
+        )
+        run_backup(io)
+        self.assertEqual(published[0]["database_name"], "cineon_prod")
+
+    def test_missing_database_name_raises(self):
+        """Backup must refuse to run if database_name is empty."""
+        io, events = self._make_io(database_name="")
+        with self.assertRaises(ValueError):
+            run_backup(io)
+
+    def test_non_default_database_name_works(self):
+        """Backup with a non-default DB name must pass it through correctly."""
+        captured_db = []
+        io, events = self._make_io(
+            database_name="my_custom_db",
+            capture=lambda db: (captured_db.append(db), "/tmp/staging")[1],
+        )
+        run_backup(io)
+        self.assertEqual(captured_db, ["my_custom_db"])
 
 
 class RestoreTest(unittest.TestCase):

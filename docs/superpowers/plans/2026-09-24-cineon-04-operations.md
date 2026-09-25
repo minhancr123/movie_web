@@ -141,9 +141,9 @@ Dashboard và alerts dùng metric names trên; điều kiện: web/readiness 3 p
 
 **Files:** Create `deploy/lib/backup.py`, `backup_system.py`, `deploy/backup.sh`, `deploy/tests/test_backup.py`, `deploy/systemd/cineon-backup.service`, `cineon-backup.timer`, `deploy/backup.env.example`; extend `deploy/ops.py`, toolchain lock, provision packages/services và backup runbook.
 
-**Interfaces:** `run_backup(io:BackupIO)->str` trả snapshot ID chỉ sau verify. `BackupIO` methods: `lock`, `preflight`, `running_services`, `maintenance_state`, `maintenance`, `stop_writers`, `capture`, `resume`, `publish`, `verify_snapshot`, `mark_success`, `notify`. Capture trả private staging path, publish dùng restic encrypted repository. Marker chứa timestamp/snapshot ID, không secret.
+**Interfaces:** `run_backup(io:BackupIO)->str` trả snapshot ID chỉ sau verify. `BackupIO` methods: `lock`, `preflight`, `running_services`, `maintenance_state`, `maintenance`, `stop_writers`, `capture`, `resume`, `publish`, `verify_snapshot`, `mark_success`, `notify`. Capture trả private staging path, publish dùng restic encrypted repository. `validate_database_name(value)->str` và `mongo_dump_argv(database_name,config_file,archive)->list[str]` nằm trong `backup_system.py`; database name lấy từ effective app config theo F2, không tự áp default thứ hai. Snapshot metadata bắt buộc có `databaseName` cùng counts/indexes; marker chứa timestamp/snapshot ID, không secret.
 
-- [ ] **1. Test đỏ** fake IO fail tại stop/dump/Redis snapshot/restic/verify và interrupt; mọi nhánh resume đúng danh sách service ban đầu, không start service vốn đã stop. Không mark_success khi bất kỳ bước backup hỏng; failure notification không chứa URI. Fake runner kiểm argv mongodump không có password.
+- [ ] **1. Test đỏ** fake IO fail tại stop/dump/Redis snapshot/restic/verify và interrupt; mọi nhánh resume đúng danh sách service ban đầu, không start service vốn đã stop. Không mark_success khi bất kỳ bước backup hỏng; failure notification không chứa URI. Fake runner kiểm argv mongodump không có password. Thêm fixture app DB `cineon_prod` có sentinel và DB mồi `movieweb` có dữ liệu khác: dump/restore phải lấy sentinel của `cineon_prod`, metadata ghi đúng namespace; thiếu namespace phải fail thay vì đoán default.
 
 ```python
 import unittest
@@ -187,7 +187,22 @@ def run_backup(io):
 
 Adapter giữ journal operation và catches signal để đi qua finally; SIGKILL/power loss được phục hồi khi service/host lên bằng kiểm journal + readiness trước bỏ maintenance. `resume` xác minh readiness, lỗi resume giữ maintenance và alert ưu tiên, không mở trang khi app chưa lên. Capture error và recovery error ghi hai trạng thái riêng. Secrets staging chmod 700/600; cleanup chỉ thư mục tạm đã resolve thuộc spool, chạy sau publish/verify hoặc lưu theo retention sự cố có hạn, không xóa dữ liệu nguồn.
 
-Preflight bảo đảm single writer domain, lock D3, đủ temp/disk/RAM, correct Mongo tools version, latest release/schema, S3 endpoint private credentials và restic key có bản bên ngoài. Drain/stop tất cả app writers, ghi trạng thái trước đó; không stop Redis. `mongodump --config=<private-config-file> --db=movieweb --archive=<private-spool>/mongo.archive --gzip` khi writers đã dừng; không `--oplog` với `--db`. `redis-cli SAVE` rồi copy RDB hoàn chỉnh vào spool, không copy live AOF. Include config/current manifest/keyring/secrets cần restore, exclude video cache/layers. Resume app ngay sau capture; upload encrypted offsite sau đó nhưng vẫn giữ ops lock để không chồng thao tác.
+Preflight bảo đảm single writer domain, lock D3, đủ temp/disk/RAM, correct Mongo tools version, latest release/schema, S3 endpoint private credentials và restic key có bản bên ngoài. Host resolve `MONGODB_DB_NAME` từ cùng effective env mà Compose cấp cho app, giữ default/validator tương thích F2 bằng contract tests; không source `.env` bằng shell. Chốt `databaseName` một lần cho toàn snapshot, đối chiếu tên DB với app config rồi lưu metadata trước capture. Drain/stop tất cả app writers, ghi trạng thái trước đó; không stop Redis. Chạy argv dưới đây khi writers đã dừng; không `--oplog` với `--db`.
+
+```python
+import re
+def validate_database_name(value):
+    if not isinstance(value,str) or not re.fullmatch(r'[a-zA-Z0-9_-]+',value):
+        raise ValueError('invalid database name')
+    return value
+
+def mongo_dump_argv(database_name, config_file, archive):
+    name = validate_database_name(database_name)
+    return ['mongodump', '--config='+str(config_file), '--db='+name,
+            '--archive='+str(archive), '--gzip']
+```
+
+Private Mongo config chứa URI/credential; không đưa chúng vào argv/log. `redis-cli SAVE` rồi copy RDB hoàn chỉnh vào spool, không copy live AOF. Include config/current manifest/keyring/secrets cần restore, exclude video cache/layers. Resume app ngay sau capture; upload encrypted offsite sau đó nhưng vẫn giữ ops lock để không chồng thao tác.
 
 Timer `OnCalendar=*-*-* 03:15:00 Asia/Ho_Chi_Minh`, Persistent=true; deadline toàn operation được đặt theo baseline. Retention `--keep-daily 7 --keep-weekly 4 --keep-monthly 3`; prune job riêng sau snapshot thành công, không chạy tự động nếu repo check lỗi. S3 encryption bằng restic trước upload; repository password không nằm duy nhất trong backup; secret mount/env không xuất vào log. Restic/Mongo tools binary/version/checksum ghi toolchain inventory; snapshot metadata chứa compatible Mongo/Redis versions.
 - [ ] **4. Verify Linux** với Mongo/Redis fixture và writes trước/during maintenance: dump restore nhất quán, restic repository trên S3-compatible test service tách filesystem hoặc bucket thử; cố tình invalid credential rồi chứng minh website resumed và marker không đổi. Sau đó backup bucket thật, đọc/verify snapshot thật và gửi heartbeat.
@@ -197,7 +212,7 @@ Timer `OnCalendar=*-*-* 03:15:00 Asia/Ho_Chi_Minh`, Persistent=true; deadline to
 
 **Files:** Create `deploy/lib/restore.py`, `restore_system.py`, `deploy/restore-drill.sh`, `deploy/tests/test_restore.py`, `deploy/compose.restore.yml`, `docs/cineon-deployment/RESTORE_RUNBOOK.md`; extend runtime drill config và ops CLI.
 
-**Interfaces:** `validate_restore_target(target:str,production_db:str)->str`; `restore_drill(snapshot,target,io)->dict` báo counts/indexes/key-decrypt/health/queue/elapsed. IO target chỉ stack biệt lập, không có credential production-write. `RESTORE_DRILL=true`, DB name từ F2, JOB_QUEUE_NAME riêng, external notifications/provider requests disabled.
+**Interfaces:** `validate_restore_target(target:str,production_db:str)->str`; `restore_drill(snapshot,target,io)->dict` báo counts/indexes/key-decrypt/health/queue/elapsed. `mongo_restore_argv(metadata,target,production_db,config_file,archive)->list[str]` nằm trong `restore_system.py`, import `validate_database_name` từ B1 và `validate_restore_target` từ `restore.py`. IO target chỉ stack biệt lập, không có credential production-write. `RESTORE_DRILL=true`, DB name từ F2, JOB_QUEUE_NAME riêng, external notifications/provider requests disabled.
 
 - [ ] **1. Test đỏ target guard:**
 
@@ -222,7 +237,19 @@ def validate_restore_target(target, production_db):
     return target
 ```
 
-Runner/máy thử lấy snapshot đã verify, giữ file permissions; Mongo temporary instance/version tương thích, restore archive với namespace mapping từ `movieweb.*` sang target. Không dùng URI production user; không dùng drop trên DB khác. So counts, index và mẫu user/history/favorite với metadata snapshot; DB name app phải target thật, không chỉ URI khác.
+Runner/máy thử lấy snapshot đã verify, giữ file permissions; Mongo temporary instance/version tương thích, restore archive với namespace lấy từ `metadata.databaseName` đã ghi khi backup, không lấy default hoặc tên DB đang cấu hình trên máy restore. Thiếu/malformed metadata bị từ chối trước subprocess; snapshot cũ cần inventory/metadata xác minh riêng trước khi dùng. `production_db` là tên DB production hiệu lực để chặn nhầm target, không quyết định source namespace.
+
+```python
+# Helpers import từ backup_system.py và restore.py như contract phía trên.
+def mongo_restore_argv(metadata, target, production_db, config_file, archive):
+    source = validate_database_name(metadata.get('databaseName'))
+    destination = validate_restore_target(target, production_db)
+    return ['mongorestore', '--config='+str(config_file), '--archive='+str(archive),
+            '--gzip', '--nsInclude='+source+'.*', '--nsFrom='+source+'.*',
+            '--nsTo='+destination+'.*']
+```
+
+Không dùng URI production user; không dùng drop trên DB khác. So counts, index và mẫu user/history/favorite với metadata snapshot; DB name app phải target thật, không chỉ URI khác. Test B1/B2 cùng fixture `cineon_prod` và DB mồi `movieweb`, thêm case cấu hình máy restore khác source snapshot nhưng mapping vẫn đúng.
 
 Redis restore vào volume mới riêng: load RDB với AOF tắt, verify dataset, bật AOF và đợi rewrite, restart rồi verify lại. Không copy RDB vào instance AOF đang chạy rồi giả định dữ liệu được nạp. Giữ queue gốc dưới quarantine để kiểm tra; smoke job dùng queue riêng, worker notification/business side effects không tự chạy. Runbook production recovery phải có bước reconciliation/dedup trước mở worker; không hứa exactly-once.
 

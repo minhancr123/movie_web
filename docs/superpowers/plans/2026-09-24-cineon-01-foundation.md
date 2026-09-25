@@ -41,7 +41,7 @@
 
 **Files:** Modify `backend-node/package.json`, `frontend/package.json`, hai lockfiles, `frontend/next.config.js`, `frontend/tsconfig.json`, `.github/workflows/ci.yml`; create `frontend/eslint.config.mjs`, `tools/verify-project.mjs`, `tools/tests/verify-project.test.mjs`, `frontend/tests/production-config.test.mjs`.
 
-**Interfaces:** `runGate({command,args,cwd,outputFile,env}) -> Promise<{exitCode:number,skippedMedia:boolean}>`; nhận command/argv riêng, không shell interpolation. CLI `node tools/verify-project.mjs --phase baseline|modified` ghi evidence trong `.codex-artifacts/cineon-devops/F1/` và trả nonzero nếu bất kỳ gate lỗi.
+**Interfaces:** `runGate({command,args,cwd,outputFile,env}) -> Promise<{exitCode:number,skippedMedia:boolean}>`; nhận command/argv riêng, không shell interpolation. `npmInvocation(args,{npmCli?,nodeExe?,env?}={}) -> {command,args}` chọn Node executable + npm CLI JavaScript, không spawn `.cmd` trực tiếp. Hai helper nằm trong `tools/verify-project.mjs`; CLI entry được guard để import trong test không chạy toàn bộ gate. CLI `node tools/verify-project.mjs --phase baseline|modified` ghi evidence trong `.codex-artifacts/cineon-devops/F1/` và trả nonzero nếu bất kỳ gate lỗi.
 
 - [ ] **1. Chụp baseline trước sửa.** Lưu `git diff --binary`, danh sách file untracked liên quan (loại secrets/cache/video), SHA256 file sắp sửa và phiên bản Node/npm/FFmpeg. Chạy các lệnh sau bằng runtime hiện tại; lưu cả stdout/stderr và exit code ngay sau mỗi lệnh. Trên Windows dùng `npm.cmd`, không nối lệnh khiến exit cuối che lỗi trước.
 
@@ -79,7 +79,28 @@ npm install --prefix frontend --save-dev --save-exact eslint@9 eslint-config-nex
 
 Scripts đích: `build: next build --webpack`, `lint: eslint .`, `typecheck: tsc --noEmit`. Bỏ `eslint.ignoreDuringBuilds` và `typescript.ignoreBuildErrors`; giữ `output:'standalone'`, images hiện tại và PWA đang disabled. Flat ESLint config dùng `eslint-config-next/core-web-vitals` và `eslint-config-next/typescript`, bỏ qua output `.next*`, generated `public/sw.js`/workbox; không bỏ qua mã app. Dùng async `cookies/headers/params` theo lỗi compiler, chỉ sửa callsite cần thiết. Với trang/route phát sinh lỗi, thêm case regression sở hữu hành vi đó thay vì tắt rule cả repo. Backend/CI/Docker cùng Node 24 sau F4.
 
-Runner implementation dùng `spawn(command,args,{cwd,env,shell:false})`, ghi streams vào file, bắt `error` thành exit 127; khi `close` trả exit thực. Tìm skip marker trên log đã đóng; không chạy lại test lần hai. Inventory mọi `*.test.mjs`, phân loại unit/media/network/e2e và đảm bảo không bỏ quên test nằm ngoài npm script.
+Runner implementation dùng `spawn(command,args,{cwd,env,shell:false})`, nhưng mọi npm gate lấy `command,args` từ helper bên dưới. `npm.cmd` chỉ dùng khi nhập lệnh trực tiếp trong PowerShell; Node child process chạy `npm-cli.js` bằng `process.execPath` để tránh EINVAL trên Windows. Đường dẫn được truyền dưới dạng argv, không ghép shell string, kể cả khi chứa khoảng trắng.
+
+```js
+import {existsSync,realpathSync} from 'node:fs';
+import {isAbsolute,dirname,basename,join} from 'node:path';
+export function npmInvocation(args,{npmCli,nodeExe=process.execPath,env=process.env}={}) {
+  if (!isAbsolute(nodeExe) || !Array.isArray(args) || args.some(x=>typeof x!=='string'))
+    throw new Error('invalid npm invocation');
+  const configured = npmCli ?? env.NPM_CLI_PATH;
+  const candidates = configured !== undefined ? [configured] : [
+    env.npm_execpath,
+    join(dirname(nodeExe),'node_modules/npm/bin/npm-cli.js'),
+    join(dirname(nodeExe),'../lib/node_modules/npm/bin/npm-cli.js'),
+  ];
+  const cli = candidates.find(p=>typeof p==='string' && isAbsolute(p)
+    && basename(p)==='npm-cli.js' && existsSync(p));
+  if (!cli) throw new Error('absolute NPM_CLI_PATH to npm-cli.js required');
+  return {command:nodeExe,args:[realpathSync(cli),...args]};
+}
+```
+
+CLI tìm npm trong Node installation hoặc `npm_execpath`; cài đặt khác chuẩn phải đặt `NPM_CLI_PATH` là absolute path đã xác minh. `runGate` bắt cả exception đồng bộ khi spawn và event `error`, ghi một kết quả lỗi hữu hạn; không ghi đè kết quả đó bằng `close` về sau. Khi child thoát bình thường giữ nguyên exit code; signal termination phải là nonzero. Ghi streams vào file, tìm skip marker trên log đã đóng; không chạy lại test lần hai. Test Windows/Linux: npm `--version` chạy được, CLI fixture ở đường dẫn có khoảng trắng trả 7 vẫn giữ 7, path tương đối/thiếu CLI bị từ chối trước spawn. Inventory mọi `*.test.mjs`, phân loại unit/media/network/e2e và đảm bảo không bỏ quên test nằm ngoài npm script.
 
 - [ ] **4. Chạy lại gate và UI smoke.** `node --test tools/tests/verify-project.test.mjs`, config test, `npm run lint --prefix frontend`, `npm run typecheck --prefix frontend`, cả bốn lệnh baseline trên Node 24. Test standalone image và UI đăng nhập/catalog/player sẽ được lặp ở F4/V1. Ghi rõ baseline failures chưa sửa; không gọi green nếu vẫn có test được miễn trừ không giải thích.
 - [ ] **5. Commit đúng hunk.** Commit message `build: adopt tested Node 24 and Next 16 production baseline`. Package file đang dirty: chỉ stage phần mới bằng hunk sau review, không thu luôn thay đổi người dùng.

@@ -63,17 +63,26 @@ export const options={
     {duration:'1m',target:10},{duration:'20m',target:10},
     {duration:'1m',target:20},{duration:'20m',target:20}],
   thresholds:{'http_req_duration{kind:warm_api}':['p(95)<1000'],
-    'http_req_failed{kind:warm_api}':['rate<0.01']},
+    'http_req_failed{kind:warm_api}':['rate<0.01'],
+    'checks{kind:warm_api}':['rate==1']},
 };
+export function isCatalogHome(response){
+  if (response.status!==200) return false;
+  try {
+    const body=response.json();
+    return body?.success===true && ['trending','popularMovies','popularTv','topRatedMovies']
+      .every(key=>Array.isArray(body.data?.[key]));
+  } catch { return false; }
+}
 export default function(){
   if (!__ENV.BASE_URL || __ENV.ALLOW_LOAD_TEST!=='yes') throw new Error('explicit load-test target required');
   const r=http.get(`${__ENV.BASE_URL}/api/catalog/home`,{tags:{kind:'warm_api'}});
-  check(r,{'API returns 200':x=>x.status===200});
+  check(r,{'valid catalog response':isCatalogHome},{kind:'warm_api'});
   sleep(2+Math.random()*3);
 }
 ```
 
-Warm route trước đo; kiểm JSON content đúng để 200 trang lỗi không pass. Tách custom 5xx counter khỏi mọi HTTP failures khi phân tích, không che 429/timeouts. Thêm workload web pages/auth fixture riêng, không gộp latency external resolve vào warm API. `media.js` dùng URL fixture do test cấp, không hardcode phim hoặc token; đo bitrate/buffering, direct và remux separately, network quốc tế riêng. Thử trên staging trước, production chỉ cửa sổ và target đã xác định. Dừng khi error/OOM/disk vượt ngưỡng để bảo toàn dịch vụ, ghi failed stage thay vì giảm target rồi vẫn gọi đạt 20 VU.
+Warm route trước đo; `isCatalogHome` kiểm shape hiện có của catalog home (success và bốn arrays), còn threshold `checks{kind:warm_api}` biến check sai thành test thất bại. Tag truyền riêng vào `check`, không giả định tag của `http.get` tự áp vào checks. Thêm test k6 thật trên HTTP fixture local: HTTP 200 + JSON đúng trả exit 0; HTTP 200 + `{success:false}`, HTML hoặc data thiếu arrays đều trả exit nonzero do checks threshold, dù latency và HTTP-failure thresholds vẫn đạt. Bài fixture dùng một iteration, không chạy bài tải 63 phút để kiểm lỗi này. Unit helper/threshold syntax pass chưa thay cho k6 engine gate. Tách custom 5xx counter khỏi mọi HTTP failures khi phân tích, không che 429/timeouts. Thêm workload web pages/auth fixture riêng, không gộp latency external resolve vào warm API. `media.js` dùng URL fixture do test cấp, không hardcode phim hoặc token; đo bitrate/buffering, direct và remux separately, network quốc tế riêng. Thử trên staging trước, production chỉ cửa sổ và target đã xác định. Dừng khi error/OOM/disk vượt ngưỡng để bảo toàn dịch vụ, ghi failed stage thay vì giảm target rồi vẫn gọi đạt 20 VU.
 
 UI QA dùng browser tích hợp để đăng nhập, logout, favorites/history, premiere nếu còn tính năng, player/seek/subtitle/mobile. Native Safari cần máy thật hoặc môi trường Safari hợp lệ. Kiểm OAuth callback với tài khoản thử của người dùng khi integration đã bật; không coi route 401 của anonymous probe là đã test login.
 - [ ] **4. Run full gates và review:** Linux test suite, production images, native media, CI artifact, external integrations; tổng hợp A01–A17. Nếu thiếu tài khoản/VPS/device thì giữ row unverified và nêu đúng input cần có. Review độc lập theo cách thực thi người dùng chọn; sửa phát hiện rồi chạy lại tests liên quan và smoke cuối.

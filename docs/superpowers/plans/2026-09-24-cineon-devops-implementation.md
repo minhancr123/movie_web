@@ -120,6 +120,19 @@ Không đánh dấu test thành công khi tool thiếu, case bị skip, Docker d
 
 Tự review đã đối chiếu toàn bộ 15 mục spec với 17 tasks/A01–A17, thống nhất tên module Python và các interfaces giữa kế hoạch. Làm rõ A09 theo auth hiện có: chỉ session riêng từ chối user khác; rendition chia sẻ và VTT capability giữ đúng mô hình quyền của chúng. Đã bổ sung case proxy spoof, frontend sai release, metadata rollback, backup recovery và root/restore guards. Các code blocks được kiểm cú pháp riêng; đây không phải kết quả chạy ứng dụng hoặc deploy.
 
+### Sửa theo review ngày 25/09/2026
+
+Người dùng đồng ý xử lý bốn phát hiện bằng phản hồi “oke”. Bản kế hoạch đã sửa:
+
+| Phát hiện | Thay đổi hợp đồng và test |
+| --- | --- |
+| D3: maintenance mutation ngoài khối phục hồi | Journal trước mutation; bật maintenance trong try; khôi phục trạng thái trước đó và không restart app chưa đổi khi activation lỗi |
+| B1/B2: tên DB backup/restore cố định | Dùng effective databaseName của F2, ghi vào snapshot metadata, restore theo namespace đã ghi; test DB khác mặc định và DB mồi |
+| V1: check nội dung chưa quyết định kết quả load test | Check JSON theo catalog contract, tag checks rõ ràng và threshold rate==1; thêm gate k6 thật với HTTP 200/body sai |
+| F1: spawn npm.cmd trực tiếp trên Windows | Chạy npm-cli.js bằng Node với argv riêng; test npm thật, đường dẫn có khoảng trắng và giữ exit 7 |
+
+Kiểm chứng sửa kế hoạch thực thi helper được trích từ Markdown, dùng fake IO cho transaction, kiểm argv backup/restore, unit contract cho k6 và npm CLI thật trên Windows. Đây không phải integration MongoDB/restic/Caddy, k6 engine/load test hoặc deploy VPS. Các gate thực tế F1–V2 vẫn để mở; sửa tài liệu không tự đánh dấu ứng dụng đã hoàn thành.
+
 Kế hoạch này đề xuất **Native**: thực hiện lần lượt trong phiên hiện tại để giữ ngữ cảnh các thay đổi đang có; review độc lập toàn thay đổi ở cuối nếu người dùng chọn cách này. **Subagent-driven** là lựa chọn có implementer/reviewer riêng từng task, đổi lại nhiều lần truyền ngữ cảnh hơn.
 
 - [x] Spec được duyệt.

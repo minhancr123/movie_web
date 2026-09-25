@@ -119,9 +119,9 @@ Adopt đọc `docker inspect` mounts của service cũ; xác minh label, data v�
 
 **Files:** Create `deploy/lib/transaction.py`, `system.py`, `deploy/deploy.sh`, `rollback.sh`, `smoke.sh`, `deploy/tests/test_transaction.py`, `test_system.py`; extend `deploy/ops.py`; migrate root `deploy.sh` thành wrapper tới entry mới sau khi bảo toàn giao diện được dùng.
 
-**Interfaces:** `deploy_release(release:dict,io:DeployIO)->None`; `DeployIO` cung cấp `lock()` context manager, `current()`, `preflight(release)`, `pull(release)`, `maintenance(bool)`, `apply(release)`, `verify(release)`, `commit(release,previous)`, `restore_current(previous)`, `stop_candidate()`, `notify(event)`. `current()` giữ snapshot metadata trước transaction trong adapter; `restore_current` dùng snapshot đó để khôi phục cả pointers/journal, không đặt release thất bại thành previous. `DeploymentFailed`, `RollbackFailed` là exception riêng; CLI map cả hai sang exit 1 và event phân biệt.
+**Interfaces:** `deploy_release(release:dict,io:DeployIO)->None`; `DeployIO` cung cấp `lock()` context manager, `current()`, `maintenance_state()->bool`, `preflight(release)`, `pull(release)`, `journal_begin(release,previous,was_maintenance)`, `journal_phase(phase)`, `maintenance(bool)`, `apply(release)`, `verify(release)`, `commit(release,previous)`, `restore_current(previous)`, `stop_candidate()`, `notify(event)`. `current()` giữ snapshot metadata trước transaction trong adapter; `restore_current` dùng snapshot đó để khôi phục cả pointers/journal, không đặt release thất bại thành previous. `journal_begin` ghi atomic/durable trạng thái trước mutation đầu tiên; `journal_phase('applying')` được ghi trước khi đổi app. `DeploymentFailed`, `RollbackFailed` là exception riêng; CLI map cả hai sang exit 1 và event phân biệt.
 
-- [ ] **1. Test đỏ fault injection** fake IO ghi event list; `apply`/`verify` có failpoint chỉ cho candidate. Test frontend 200 sai release, FFmpeg missing, queue smoke lỗi, pull lỗi trước switch, rollback lỗi và first install không có previous. RF3 test tối thiểu phải assert chuỗi `apply(new), verify(new), apply(old), verify(old)` và exception `DeploymentFailed`.
+- [ ] **1. Test đỏ fault injection** fake IO ghi event list; `apply`/`verify` có failpoint chỉ cho candidate. Test frontend 200 sai release, FFmpeg missing, queue smoke lỗi, pull lỗi trước switch, rollback lỗi và first install không có previous. Thêm failpoint bật maintenance đã đổi proxy rồi mới timeout: giữ app cũ, khôi phục trạng thái maintenance ban đầu cả true/false, phát event lỗi và giữ exit nonzero; không gọi apply khi app chưa bị đổi. Journal phải đứng trước mutation; lỗi ghi journal chưa được đụng proxy. RF3 test tối thiểu phải assert chuỗi `apply(new), verify(new), apply(old), verify(old)` và exception `DeploymentFailed`.
 
 ```python
 import unittest
@@ -134,8 +134,11 @@ class TransactionTest(unittest.TestCase):
         class IO:
             def lock(self): return nullcontext()
             def current(self): return old
+            def maintenance_state(self): return False
             def preflight(self,r): return None
             def pull(self,r): return None
+            def journal_begin(self,r,p,m): events.append(('journal_begin',r['releaseId']))
+            def journal_phase(self,p): events.append(('phase',p))
             def maintenance(self,on): events.append(('maintenance',on))
             def apply(self,r): events.append(('apply',r['releaseId']))
             def verify(self,r):
@@ -156,25 +159,34 @@ class RollbackFailed(RuntimeError): pass
 def deploy_release(release, io):
     with io.lock():
         previous = io.current()
+        was_maintenance = io.maintenance_state()
         io.preflight(release)
         io.pull(release)
-        io.maintenance(True)
+        io.journal_begin(release, previous, was_maintenance)
+        apply_started = False
         try:
+            io.maintenance(True)
+            io.journal_phase('applying')
+            apply_started = True
             io.apply(release)
             io.verify(release)
             io.maintenance(False)
             io.commit(release, previous)
         except Exception as original:
             try:
-                io.maintenance(True)
-                if previous is None:
-                    io.stop_candidate()
-                    io.restore_current(None)
-                else:
-                    io.apply(previous)
-                    io.verify(previous)
+                if not apply_started:
+                    io.maintenance(was_maintenance)
                     io.restore_current(previous)
-                    io.maintenance(False)
+                else:
+                    io.maintenance(True)
+                    if previous is None:
+                        io.stop_candidate()
+                        io.restore_current(None)
+                    else:
+                        io.apply(previous)
+                        io.verify(previous)
+                        io.restore_current(previous)
+                        io.maintenance(was_maintenance)
             except Exception as rollback_error:
                 io.notify('rollback_failed')
                 raise RollbackFailed('rollback_failed') from rollback_error
@@ -183,7 +195,7 @@ def deploy_release(release, io):
         io.notify('deploy_succeeded')
 ```
 
-Adapter must make `commit` pointer updates atomic/recoverable; if interrupted while committing metadata, startup reconciles journal and validates service release before trusting current. Persist journal phase before apply; restart recovery reads journal, keeps maintenance until either candidate verified or previous restored. Notifications are best-effort and must not replace original errors; maintenance disable failure is a deployment failure requiring alert/recovery, not a success. Add tests for these adapter branches beyond the core flow.
+Adapter must make `commit` pointer updates atomic/recoverable; if interrupted while committing metadata, startup reconciles journal and validates service release before trusting current. `journal_begin` persists previous proxy/maintenance state before enabling maintenance; failure leaves proxy/app untouched. A journal still in preparation restores the old proxy state without restarting unchanged app services. Persist phase `applying` before app mutation; restart recovery in that phase keeps maintenance until either candidate verified or previous restored. Recovery restores the recorded prior maintenance state, not unconditional false; first install with a failed candidate and no previous release stays in maintenance. Notifications are best-effort and must not replace original errors; maintenance disable failure is a deployment failure requiring alert/recovery, not a success. Add tests for partial maintenance activation, journal write failure and these adapter branches beyond the core flow.
 
 `system.py` uses `fcntl.flock(LOCK_EX|LOCK_NB)` shared ops.lock; no nested lock reacquisition from rollback. Subprocess argv arrays with timeout, sanitized stderr. `apply` does Compose up for frontend/backend/worker/scheduler with stable project/env/volumes; does not use `down -v`, prune all, reset git or retag latest. Redis version unchanged in app rollout. Caddy changes validate/backup/reload then restore correct fragment on rollback.
 
