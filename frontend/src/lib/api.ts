@@ -241,7 +241,7 @@ export const apiUrl = (path: string) => {
 };
 
 // ==================== NEW: Auth & User APIs ====================
-const AUTH_API_URL = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:5001/api';
+const AUTH_API_URL = API_URL;
 
 const authClient = axios.create({
   baseURL: AUTH_API_URL,
