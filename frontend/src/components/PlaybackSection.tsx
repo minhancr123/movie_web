@@ -1458,6 +1458,16 @@ export default function PlaybackSection({
                         {src.reasons?.[0] || 'không khuyến nghị'}
                       </span>
                     )}
+                    {src.filename && (
+                      <span className="truncate max-w-[240px] text-cinema-subtle text-[11px]">
+                        {src.filename}
+                      </span>
+                    )}
+                    {!src.resolution && !src.codec && !src.hdr && !src.releaseSource && !src.origin && !src.cached && !src.filename && (
+                      <span className="rounded bg-white/10 px-2 py-0.5 text-cinema-subtle">
+                        Nguồn phát dự phòng
+                      </span>
+                    )}
                   </button>
                 );
               })}
@@ -1789,6 +1799,11 @@ export default function PlaybackSection({
                       {src.releaseSource.toUpperCase()}
                     </span>
                   )}
+                  {src.origin === 'yastream' && (
+                    <span className="rounded bg-indigo-500/15 px-2 py-0.5 font-bold text-indigo-400">
+                      KKPHIM / OPHIM
+                    </span>
+                  )}
                   {src.origin === 'vimo' && (
                     <span className="rounded bg-emerald-500/15 px-2 py-0.5 font-bold text-emerald-400">
                       VIETSUB TRỰC TIẾP
@@ -1808,6 +1823,16 @@ export default function PlaybackSection({
                   {src.playable === false && (
                     <span className="rounded bg-amber-primary/15 px-2 py-0.5 font-bold text-amber-gold">
                       {src.reasons?.[0] || 'không khuyến nghị'}
+                    </span>
+                  )}
+                  {src.filename && (
+                    <span className="truncate max-w-[240px] text-cinema-subtle text-[11px]">
+                      {src.filename}
+                    </span>
+                  )}
+                  {!src.resolution && !src.codec && !src.hdr && !src.releaseSource && !src.origin && !src.cached && !src.filename && (
+                    <span className="rounded bg-white/10 px-2 py-0.5 text-cinema-subtle">
+                      Nguồn phát dự phòng
                     </span>
                   )}
                 </button>

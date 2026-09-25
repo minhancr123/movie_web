@@ -2160,10 +2160,12 @@ export const listPlaybackSources = async (req, res) => {
 
     let debridKey = null;
     let debridError = null;
-    try {
-      ({ key: debridKey } = await getDecryptedKey(db, req.user.userId, PROVIDER));
-    } catch (error) {
-      debridError = error;
+    if (req.user?.userId) {
+      try {
+        ({ key: debridKey } = await getDecryptedKey(db, req.user.userId, PROVIDER));
+      } catch (error) {
+        debridError = error;
+      }
     }
 
     let candidates = [];
@@ -2245,23 +2247,25 @@ export const listPlaybackSources = async (req, res) => {
       }
 
       if (vietsubData?.yastream?.streams?.length) {
-        yaEntries = vietsubData.yastream.streams.map((s) => ({
+        yaEntries = vietsubData.yastream.streams.map((s, idx) => ({
           ...sanitizeCandidateForPicker({
             resolution: s.resolution || null,
             codec: null,
             hdr: null,
-            releaseSource: s.name || 'YaStream • Vietsub',
+            releaseSource: s.name || 'KKPhim / OPhim',
             sizeBytes: null,
             seeds: null,
             cached: false,
             playable: true,
             score: null,
             reasons: [],
-            filename: s.title || s.name || 'YaStream',
+            filename: s.title || s.name || `Server Vietsub #${idx + 1}`,
             infoHash: '',
           }),
           sourceToken: s.sourceToken,
           origin: 'yastream',
+          releaseSource: s.name || 'KKPhim / OPhim',
+          filename: s.title || s.name || `Server Vietsub #${idx + 1}`,
         }));
       }
 
@@ -2274,18 +2278,20 @@ export const listPlaybackSources = async (req, res) => {
             resolution: first.resolution,
             codec: null,
             hdr: null,
-            releaseSource: 'vimo • vietsub',
+            releaseSource: 'Vimo Vietsub',
             sizeBytes: null,
             seeds: null,
             cached: false,
             playable: true,
             score: null,
             reasons: [],
-            filename: first.title,
+            filename: first.title || 'Vimo Direct',
             infoHash: '',
           }),
           sourceToken: `vimo|${type === 'tv' ? 'series' : 'movie'}|${streamId}`,
           origin: 'vimo',
+          releaseSource: 'Vimo Vietsub',
+          filename: first.title || 'Vimo Direct',
         };
       }
     } catch (e) {
