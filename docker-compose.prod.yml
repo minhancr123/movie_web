@@ -139,6 +139,10 @@ services:
       - NODE_ENV=production
       - RELEASE_ID=${RELEASE_ID}
       - MONGODB_URI=${MONGODB_URI}
+      - MONGODB_DB_NAME=${MONGODB_DB_NAME:-movieweb}
+      - JWT_SECRET=${JWT_SECRET}
+      - NEXTAUTH_SECRET=${NEXTAUTH_SECRET}
+      - TOKEN_ENCRYPTION_KEYS=${TOKEN_ENCRYPTION_KEYS}
       - REDIS_URL=redis://redis:6379
       - JOB_QUEUE_NAME=movieweb-jobs
     depends_on:
@@ -147,6 +151,8 @@ services:
     networks:
       - cineon
     logging: *logging
+    healthcheck:
+      disable: true
 
   # BullMQ scheduler (repeatable jobs: cache cleanup, analytics rollup)
   backend-node-scheduler:
@@ -161,6 +167,10 @@ services:
       - NODE_ENV=production
       - RELEASE_ID=${RELEASE_ID}
       - MONGODB_URI=${MONGODB_URI}
+      - MONGODB_DB_NAME=${MONGODB_DB_NAME:-movieweb}
+      - JWT_SECRET=${JWT_SECRET}
+      - NEXTAUTH_SECRET=${NEXTAUTH_SECRET}
+      - TOKEN_ENCRYPTION_KEYS=${TOKEN_ENCRYPTION_KEYS}
       - REDIS_URL=redis://redis:6379
       - JOB_QUEUE_NAME=movieweb-jobs
     depends_on:
@@ -169,6 +179,8 @@ services:
     networks:
       - cineon
     logging: *logging
+    healthcheck:
+      disable: true
 
 volumes:
   cineon-redis:
