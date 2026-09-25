@@ -1,15 +1,36 @@
-cinevn.me, www.cinevn.me {
-	# Backend API & Socket.IO
-	reverse_proxy /api/* 127.0.0.1:5001
-	reverse_proxy /socket.io/* 127.0.0.1:5001
+www.cinevn.me {
+	redir https://cinevn.me{uri} permanent
+}
 
-	# Frontend Next.js
-	reverse_proxy 127.0.0.1:3000
+cinevn.me {
+	encode zstd gzip
+	header -Server
 
-	# Security headers
-	header {
-		X-Content-Type-Options "nosniff"
-		X-Frame-Options "DENY"
+	route {
+		@diagnostic path /api/local-playback-diagnostic /api/local-playback-diagnostic/*
+		respond @diagnostic 404
+
+		# These five routes belong to Express backend, not to NextAuth.
+		@backendAuth path_regexp auth ^/api/auth/(register|login|google-login|me|profile)/?$
+		reverse_proxy @backendAuth 127.0.0.1:5001
+
+		# Keep NextAuth providers, csrf, session, callbacks and signout in Next.js.
+		@nextAuth path /api/auth /api/auth/*
+		reverse_proxy @nextAuth 127.0.0.1:3000
+
+		@health path /healthz /health /metrics
+		reverse_proxy @health 127.0.0.1:5001
+
+		@playback path /api/playback/*
+		reverse_proxy @playback 127.0.0.1:5001 {
+			flush_interval -1
+		}
+
+		@api path /api/* /socket.io /socket.io/*
+		reverse_proxy @api 127.0.0.1:5001
+
+		# Frontend Next.js default fallback
+		reverse_proxy 127.0.0.1:3000
 	}
 }
 
