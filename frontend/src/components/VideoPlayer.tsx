@@ -131,7 +131,7 @@ interface VideoPlayerProps {
      * Optional shell shared with the ambient layer. Requesting fullscreen on
      * this element keeps the glow in the browser's fullscreen subtree.
      */
-    fullscreenTargetRef?: React.RefObject<HTMLDivElement>;
+    fullscreenTargetRef?: React.RefObject<HTMLDivElement | null>;
 }
 
 export default function VideoPlayer({ src, movie, episode, authToken, durationSeconds, onNextEpisode, subContext, onPickAudio, activeAudioIndex, pendingAudioIndex = null, onPlaybackFailure, reloadKey = 0, onPlaybackProgress, presentationShiftMs = 0, seekStartSupported = true, onDecodeOverload, onCinemaChange, onVideoReady, fullscreenTargetRef, startAt = 0, onSeekToPosition, onCancelSeek, seekProgress = null }: VideoPlayerProps) {
@@ -255,7 +255,7 @@ export default function VideoPlayer({ src, movie, episode, authToken, durationSe
     const [secondaryOffset, setSecondaryOffset] = useState<number>(0);
 
     const [syncToast, setSyncToast] = useState<string | null>(null);
-    const syncToastTimerRef = useRef<NodeJS.Timeout>();
+    const syncToastTimerRef = useRef<NodeJS.Timeout | undefined>(undefined);
 
     const showSyncToast = useCallback((msg: string) => {
         if (syncToastTimerRef.current) clearTimeout(syncToastTimerRef.current);
@@ -337,7 +337,7 @@ export default function VideoPlayer({ src, movie, episode, authToken, durationSe
 
     const currentTimeRef = useRef(0);
     useEffect(() => { currentTimeRef.current = currentTime; }, [currentTime]);
-    const rafRef = useRef<number>();
+    const rafRef = useRef<number | undefined>(undefined);
 
     const SUB_SIZES = [16, 20, 26, 32];
     const SUB_COLORS = [
@@ -346,7 +346,7 @@ export default function VideoPlayer({ src, movie, episode, authToken, durationSe
         { name: 'Cyan', value: '#67e8f9' },
         { name: 'Xanh lá', value: '#86efac' },
     ];
-    const stallTimerRef = useRef<NodeJS.Timeout>();
+    const stallTimerRef = useRef<NodeJS.Timeout | undefined>(undefined);
     const lastProgressRef = useRef(0);
     const localStallRecoveryRef = useRef(false);
     const hlsRef = useRef<Hls | null>(null);
@@ -770,8 +770,8 @@ export default function VideoPlayer({ src, movie, episode, authToken, durationSe
         };
     }, [src, retryKey]);
 
-    const controlsTimeoutRef = useRef<NodeJS.Timeout>();
-    const loadingTimeoutRef = useRef<NodeJS.Timeout>();
+    const controlsTimeoutRef = useRef<NodeJS.Timeout | undefined>(undefined);
+    const loadingTimeoutRef = useRef<NodeJS.Timeout | undefined>(undefined);
     const { history, addToHistory } = useWatchHistory();
 
     const toggleSettings = () => {
