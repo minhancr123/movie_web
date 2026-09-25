@@ -52,3 +52,8 @@ Thumbs.db
 *.mkv
 *.avi
 init.mp4
+
+# Temporary and transcode directories
+tmp/
+transcodes/
+.wrangler/
