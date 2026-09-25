@@ -1,0 +1,12 @@
+# Merge into BOTH existing .dockerignore files. Do not remove existing rules.
+.env
+.env.*
+.git
+node_modules
+.next
+.next-*
+tmp
+logs
+*.log
+playwright-report
+test-results

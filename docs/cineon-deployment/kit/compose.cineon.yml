@@ -1,0 +1,134 @@
+name: cineon
+
+x-logging: &logging
+  driver: json-file
+  options:
+    max-size: "10m"
+    max-file: "3"
+
+x-common: &common
+  restart: unless-stopped
+  logging: *logging
+  networks: [app]
+
+x-backend-env: &backend-env
+  NODE_ENV: production
+  MONGODB_URI: ${MONGODB_URI:?Set MONGODB_URI}
+  REDIS_URL: redis://redis:6379
+  JOB_QUEUE_NAME: movieweb-jobs
+
+services:
+  redis:
+    <<: *common
+    image: ${REDIS_IMAGE:-redis:7-alpine}
+    command: [redis-server, --appendonly, "yes", --maxmemory, 256mb, --maxmemory-policy, noeviction]
+    mem_limit: 512m
+    volumes: [redis-data:/data]
+    healthcheck:
+      test: [CMD, redis-cli, ping]
+      interval: 10s
+      timeout: 3s
+      retries: 5
+
+  backend-node:
+    <<: *common
+    image: ${BACKEND_IMAGE:?Set BACKEND_IMAGE to an immutable release}
+    mem_limit: 1280m
+    pids_limit: 256
+    ports: ["127.0.0.1:5001:5001"]
+    environment:
+      <<: *backend-env
+      NODE_OPTIONS: --max-old-space-size=512
+      PORT: "5001"
+      JWT_SECRET: ${JWT_SECRET:?Set JWT_SECRET}
+      JWT_EXPIRE: 30d
+      CORS_ORIGIN: https://cineon.me
+      FRONTEND_URL: https://cineon.me
+      GOOGLE_CLIENT_ID: ${GOOGLE_CLIENT_ID:-}
+      TMDB_API_KEY: ${TMDB_API_KEY:-}
+      TMDB_READ_TOKEN: ${TMDB_READ_TOKEN:-}
+      TORBOX_API_KEY: ${TORBOX_API_KEY:-}
+      TOKEN_ENCRYPTION_KEYS: ${TOKEN_ENCRYPTION_KEYS:?Set TOKEN_ENCRYPTION_KEYS}
+      STREMIO_ADDONS: ${STREMIO_ADDONS:-}
+      STREMIO_SUBTITLE_ADDONS: ${STREMIO_SUBTITLE_ADDONS:-https://opensubtitles-v3.strem.io}
+      OPENSUBTITLES_API_KEY: ${OPENSUBTITLES_API_KEY:-}
+      TRANSCODE_ROOT: /data/transcodes
+      TRANSCODE_CACHE_MAX_GB: ${TRANSCODE_CACHE_MAX_GB:-3}
+      RENDITIONS_MAX_GB: ${RENDITIONS_MAX_GB:-3}
+      VIDEO_TRANSCODE_FALLBACK: never
+      REMUX_MAX_WRITERS: ${REMUX_MAX_WRITERS:-1}
+      TRUST_PROXY: "true"
+    volumes: [transcodes:/data/transcodes]
+    depends_on:
+      redis:
+        condition: service_healthy
+    healthcheck:
+      test: [CMD, node, -e, "require('http').get('http://127.0.0.1:5001/health',r=>process.exit(r.statusCode===200?0:1)).on('error',()=>process.exit(1))"]
+      interval: 15s
+      timeout: 5s
+      retries: 6
+      start_period: 40s
+
+  frontend:
+    <<: *common
+    image: ${FRONTEND_IMAGE:?Set FRONTEND_IMAGE to an immutable release}
+    init: true
+    mem_limit: 768m
+    ports: ["127.0.0.1:3000:3000"]
+    environment:
+      NODE_ENV: production
+      NODE_OPTIONS: --max-old-space-size=512
+      HOSTNAME: 0.0.0.0
+      PORT: "3000"
+      NEXT_TELEMETRY_DISABLED: "1"
+      INTERNAL_API_URL: http://backend-node:5001/api
+      NEXTAUTH_URL: https://cineon.me
+      NEXTAUTH_SECRET: ${NEXTAUTH_SECRET:?Set NEXTAUTH_SECRET}
+      GOOGLE_CLIENT_ID: ${GOOGLE_CLIENT_ID:-}
+      GOOGLE_CLIENT_SECRET: ${GOOGLE_CLIENT_SECRET:-}
+    depends_on:
+      backend-node:
+        condition: service_healthy
+    healthcheck:
+      test: [CMD, node, -e, "require('http').get('http://127.0.0.1:3000/api/auth/providers',r=>process.exit(r.statusCode===200?0:1)).on('error',()=>process.exit(1))"]
+      interval: 20s
+      timeout: 5s
+      retries: 6
+      start_period: 40s
+
+  backend-node-worker:
+    <<: *common
+    image: ${BACKEND_IMAGE:?Set BACKEND_IMAGE}
+    command: [node, workers/queueWorker.js]
+    mem_limit: 256m
+    environment:
+      <<: *backend-env
+      NODE_OPTIONS: --max-old-space-size=128
+    healthcheck:
+      disable: true
+    depends_on:
+      backend-node:
+        condition: service_healthy
+
+  backend-node-scheduler:
+    <<: *common
+    image: ${BACKEND_IMAGE:?Set BACKEND_IMAGE}
+    command: [node, workers/scheduler.js]
+    mem_limit: 192m
+    environment:
+      <<: *backend-env
+      NODE_OPTIONS: --max-old-space-size=96
+    healthcheck:
+      disable: true
+    depends_on:
+      backend-node:
+        condition: service_healthy
+
+volumes:
+  redis-data:
+    name: cineon-redis-data
+  transcodes:
+    name: cineon-transcodes
+networks:
+  app:
+    name: cineon-app

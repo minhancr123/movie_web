@@ -1,0 +1,36 @@
+{
+ admin off
+ auto_https off
+ persist_config off
+}
+http://127.0.0.1:50836 {
+
+	encode zstd gzip
+	header -Server
+
+	route {
+		@diagnostic path /api/local-playback-diagnostic /api/local-playback-diagnostic/*
+		respond @diagnostic 404
+
+		# These five routes belong to Express, not to NextAuth.
+		@backendAuth path_regexp auth ^/api/auth/(register|login|google-login|me|profile)/?$
+		reverse_proxy @backendAuth 127.0.0.1:50834
+
+		# Keep NextAuth providers, csrf, session, callbacks and signout in Next.js.
+		@nextAuth path /api/auth /api/auth/*
+		reverse_proxy @nextAuth 127.0.0.1:50835
+
+		@health path /health
+		reverse_proxy @health 127.0.0.1:50834
+
+		@playback path /api/playback/*
+		reverse_proxy @playback 127.0.0.1:50834 {
+			flush_interval -1
+		}
+
+		@api path /api/* /socket.io /socket.io/*
+		reverse_proxy @api 127.0.0.1:50834
+
+		reverse_proxy 127.0.0.1:50835
+	}
+}

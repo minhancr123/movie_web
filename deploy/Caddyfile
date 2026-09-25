@@ -1,0 +1,42 @@
+# Caddy: TLS + one domain in front of both containers.
+#
+# Everything on ONE hostname on purpose. Split across two (site + api.site) and
+# every browser request becomes cross-origin: CORS preflights on each call, and
+# cookies need SameSite=None, which some browsers then restrict anyway. Same
+# origin sidesteps all of it, and the API is simply the /api prefix.
+#
+#   sudo cp deploy/Caddyfile /etc/caddy/Caddyfile
+#   docker run -d --name caddy --network host \
+#     -v /etc/caddy/Caddyfile:/etc/caddy/Caddyfile \
+#     -v caddy_data:/data caddy:2
+
+phim.tenban.com {
+	encode zstd gzip
+
+	# Video segments: large, immutable, and requested constantly. Caddy must
+	# stream them rather than buffer, or a 4K session sits in RAM.
+	handle /api/playback/* {
+		reverse_proxy localhost:5001 {
+			flush_interval -1
+		}
+	}
+
+	handle /api/* {
+		reverse_proxy localhost:5001
+	}
+
+	# Socket.io upgrades to a WebSocket; Caddy carries that through by default.
+	handle /socket.io/* {
+		reverse_proxy localhost:5001
+	}
+
+	handle {
+		reverse_proxy localhost:3000
+	}
+
+	# The app sets its own; keep this to what a proxy should own.
+	header {
+		-Server
+		Strict-Transport-Security "max-age=31536000"
+	}
+}

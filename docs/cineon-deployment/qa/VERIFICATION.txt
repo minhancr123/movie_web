@@ -1,0 +1,14 @@
+PASS compose syntax and semantic assertions
+CADDY v2.11.4 h1:XKxkMTgNSizEvKG6QHue6cAsFOteU2qA61w2tKkCWi0=
+PASS original Caddyfile validation
+PASS syntax of 20 Bash command blocks and smoke.sh
+PASS Caddy HTTP routing: 20 requests using two mock upstreams
+PASS / status=200
+PASS /health status=200
+PASS /api/auth/providers status=200
+PASS /api/auth/session status=200
+PASS /api/auth/csrf status=200
+PASS /api/auth/me status=401
+PASS /api/local-playback-diagnostic status=404
+SMOKE PASS (HTTP routing only; not a playback or dependency readiness test)
+NOT RUN: application npm tests, Docker application build, production DNS/TLS, VPS load test or database changes
