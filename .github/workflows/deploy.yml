@@ -105,12 +105,12 @@ jobs:
           command_timeout: '20m'
           script: |
             set -euo pipefail
-            cd /opt/movieweb
+            cd /opt/cineon
 
             git fetch --quiet origin
             git checkout --quiet ${{ github.sha }}
 
-            PREV_IMAGE=$(docker inspect -f '{{.Image}}' movieweb-backend-node 2>/dev/null || true)
+            PREV_IMAGE=$(docker inspect -f '{{.Image}}' cineon-backend 2>/dev/null || true)
             echo "Current image: ${PREV_IMAGE:-none}"
 
             export BACKEND_IMAGE=ghcr.io/${{ github.repository_owner }}/movie-web-backend@${{ needs.docker.outputs.backend_digest }}
@@ -123,11 +123,11 @@ jobs:
 
             echo "Waiting for the API to report healthy..."
             for i in $(seq 1 24); do
-              if curl -fsS http://localhost:5001/health >/dev/null; then
+              if curl -fsS http://localhost:5001/healthz >/dev/null; then
                 echo "healthy after ${i} attempt(s)"
-                docker exec movieweb-backend-node ffmpeg -version >/dev/null \
+                docker exec cineon-backend ffmpeg -version >/dev/null \
                   || { echo "::error::ffmpeg missing"; exit 1; }
-                curl -fsS http://localhost:3000 >/dev/null || { echo "::error::frontend is not responding"; exit 1; }
+                curl -fsS http://localhost:3000/api/health >/dev/null || { echo "::error::frontend is not responding"; exit 1; }
                 docker image prune -f >/dev/null 2>&1 || true
                 exit 0
               fi
@@ -147,7 +147,7 @@ jobs:
             docker compose -f docker-compose.prod.yml up -d --no-deps backend-node frontend
 
             for i in $(seq 1 12); do
-              if curl -fsS http://localhost:5001/health >/dev/null; then
+              if curl -fsS http://localhost:5001/healthz >/dev/null; then
                 echo "::error::Deploy failed; rolled back to the previous image"
                 exit 1
               fi
