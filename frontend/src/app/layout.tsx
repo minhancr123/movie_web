@@ -38,14 +38,22 @@ const beVietnamPro = Be_Vietnam_Pro({
 });
 
 export const metadata: Metadata = {
-  title: "CineStream - Xem Phim Online",
-  description: "CineStream - web xem phim trực tuyến",
+  title: "CineVN - Xem Phim Online Chất Lượng Cao",
+  description: "CineVN - Nền tảng xem phim trực tuyến 4K HDR, âm thanh vòm Spatial Audio và phụ đề Vietsub mượt mà.",
   manifest: "/manifest.json",
-  themeColor: "#f59e0b",
+  icons: {
+    icon: [
+      { url: "/favicon.ico", sizes: "any" },
+      { url: "/icon.svg", type: "image/svg+xml" },
+      { url: "/icon.png", type: "image/png", sizes: "512x512" },
+    ],
+    shortcut: "/favicon.ico",
+    apple: "/apple-touch-icon.png",
+  },
   appleWebApp: {
     capable: true,
     statusBarStyle: "black-translucent",
-    title: "MovieWeb",
+    title: "CineVN",
   },
 };
 
@@ -53,6 +61,7 @@ export const viewport: Viewport = {
   width: "device-width",
   initialScale: 1,
   maximumScale: 1,
+  themeColor: "#f59e0b",
 };
 
 export default function RootLayout({

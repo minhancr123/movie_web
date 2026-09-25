@@ -19,7 +19,7 @@ test('home loads with header and no page errors', async ({ page }) => {
 
   // Brand or nav must paint: the shell is never a blank page.
   await expect(
-    page.getByText(/CineStream|Trang chủ|Phim lẻ/i).first(),
+    page.getByText(/CineVN|CineStream|Trang chủ|Phim lẻ/i).first(),
   ).toBeVisible({ timeout: 30_000 });
 
   expect(pageErrors, `uncaught page errors:\n${pageErrors.join('\n')}`).toEqual([]);

@@ -1,4 +1,5 @@
 import Link from 'next/link';
+import Image from 'next/image';
 import { Facebook, Instagram, Twitter, Github, Mail, Phone, MapPin, PlayCircle } from 'lucide-react';
 
 const Footer = () => {
@@ -13,12 +14,18 @@ const Footer = () => {
 
           {/* Brand Column */}
           <div className="space-y-6">
-            <Link href="/" className="group flex items-center gap-2">
-              <div className="w-10 h-10 rounded-xl bg-gradient-to-br from-amber-gold via-amber-primary to-amber-700 flex items-center justify-center shadow-amber-glow group-hover:scale-110 transition-transform duration-300">
-                <PlayCircle className="text-black" size={24} />
+            <Link href="/" className="group flex items-center gap-3">
+              <div className="relative w-10 h-10 rounded-xl overflow-hidden shadow-[0_0_15px_rgba(245,158,11,0.3)] group-hover:scale-105 transition-all duration-300">
+                <Image
+                  src="/icon.png"
+                  alt="CineVN"
+                  width={40}
+                  height={40}
+                  className="w-full h-full object-cover"
+                />
               </div>
-              <span className="font-syne text-headline-lg bg-clip-text text-transparent bg-gradient-to-r from-white to-cinema-muted">
-                CineStream
+              <span className="font-syne text-headline-lg bg-clip-text text-transparent bg-gradient-to-r from-amber-100 via-amber-gold to-amber-500 font-bold">
+                CineVN
               </span>
             </Link>
             <p className="text-body-md leading-relaxed text-cinema-subtle max-w-xs">
@@ -144,7 +151,7 @@ const Footer = () => {
         </div>
 
         <div className="border-t border-white/10 pt-8 flex flex-col md:flex-row justify-between items-center text-body-md gap-4">
-          <p className="text-cinema-subtle">&copy; {new Date().getFullYear()} <span className="font-syne text-cinema-muted">CineStream</span> Inc. All rights reserved.</p>
+          <p className="text-cinema-subtle">&copy; {new Date().getFullYear()} <span className="font-syne text-cinema-muted">CineVN</span> Inc. All rights reserved.</p>
           <div className="flex gap-6 font-mono text-label-md uppercase text-cinema-subtle">
             <a href="#" className="hover:text-amber-gold transition-colors">Privacy Policy</a>
             <a href="#" className="hover:text-amber-gold transition-colors">Terms of Service</a>

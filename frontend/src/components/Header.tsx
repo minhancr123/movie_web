@@ -226,15 +226,22 @@ const Header = () => {
             >
                 <div className="mx-auto w-full max-w-shell px-4 md:px-8 flex justify-between items-center gap-3">
                     {/* Logo */}
-                    <Link href="/" className="relative z-50 group flex items-center gap-3">
-                        <div className="w-10 h-10 rounded-xl bg-gradient-to-br from-amber-gold via-amber-primary to-amber-700 flex items-center justify-center shadow-amber-glow group-hover:scale-105 transition-all duration-300">
-                            <PlayCircle className="text-black" size={20} strokeWidth={2.5} />
+                    <Link href="/" className="relative z-50 group flex items-center gap-2.5">
+                        <div className="relative w-10 h-10 rounded-xl overflow-hidden shadow-[0_0_20px_rgba(245,158,11,0.35)] group-hover:scale-105 group-hover:shadow-[0_0_25px_rgba(245,158,11,0.55)] transition-all duration-300">
+                            <Image 
+                                src="/icon.png" 
+                                alt="CineVN Logo" 
+                                width={40} 
+                                height={40} 
+                                priority
+                                className="w-full h-full object-cover"
+                            />
                         </div>
                         <div className="flex flex-col">
-                            <span className="font-syne text-2xl md:text-3xl font-black tracking-tight text-white group-hover:text-amber-gold transition-colors">
-                                CineStream
+                            <span className="font-syne text-2xl md:text-3xl font-black tracking-tight bg-gradient-to-r from-amber-100 via-amber-gold to-amber-500 bg-clip-text text-transparent group-hover:brightness-110 transition-all">
+                                CineVN
                             </span>
-                            <span className="hidden xl:block font-mono text-[9px] text-amber-gold tracking-[0.25em] -mt-1 uppercase font-bold">
+                            <span className="hidden xl:block font-mono text-[9px] text-amber-400 tracking-[0.25em] -mt-1 uppercase font-bold">
                                 Spatial Cinema 4K
                             </span>
                         </div>

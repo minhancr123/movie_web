@@ -4,6 +4,7 @@ import { useEffect, useState } from 'react';
 import { signIn } from 'next-auth/react';
 import { useRouter } from 'next/navigation';
 import Link from 'next/link';
+import Image from 'next/image';
 import { authAPI } from '@/lib/api';
 import { Loader2 } from 'lucide-react';
 import SpatialShader from '@/components/SpatialShader';
@@ -163,17 +164,18 @@ export default function AuthPage() {
       {/* Top Minimal Floating Header */}
       <div className="relative z-10 mx-auto flex w-full max-w-[1400px] items-center justify-between pb-8">
         <div className="flex items-center gap-3">
-          <Link href="/" className="group flex items-center gap-2">
-            <div className="flex h-9 w-9 items-center justify-center rounded-xl bg-gradient-to-tr from-amber-primary to-amber-gold shadow-amber-glow">
-              <span
-                className="material-symbols-outlined text-surface-dark"
-                style={{ fontVariationSettings: "'FILL' 1" }}
-              >
-                movie_filter
-              </span>
+          <Link href="/" className="group flex items-center gap-3">
+            <div className="relative w-9 h-9 rounded-xl overflow-hidden shadow-[0_0_15px_rgba(245,158,11,0.35)] group-hover:scale-105 transition-all duration-300">
+              <Image
+                src="/icon.png"
+                alt="CineVN"
+                width={36}
+                height={36}
+                className="w-full h-full object-cover"
+              />
             </div>
-            <span className="font-syne text-headline-md font-extrabold uppercase tracking-tight text-amber-gold">
-              CineStream
+            <span className="font-syne text-headline-md font-extrabold tracking-tight bg-gradient-to-r from-amber-100 via-amber-gold to-amber-500 bg-clip-text text-transparent">
+              CineVN
             </span>
           </Link>
           <span className="rounded-full border border-white/10 bg-surface-container-high/80 px-2.5 py-0.5 font-mono text-label-sm tracking-widest text-cyan-accent">
@@ -588,7 +590,7 @@ export default function AuthPage() {
 
             <div className="mt-8 border-t border-white/10 pt-6 text-center">
               <p className="text-body-md text-cinema-muted">
-                {isLogin ? 'Chưa có tài khoản CineStream?' : 'Đã có tài khoản CineStream?'}
+                {isLogin ? 'Chưa có tài khoản CineVN?' : 'Đã có tài khoản CineVN?'}
                 <button
                   type="button"
                   onClick={() => switchMode(!isLogin)}
