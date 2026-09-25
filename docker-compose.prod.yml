@@ -53,12 +53,20 @@ services:
       # --- Catalog ---
       - TMDB_API_KEY=${TMDB_API_KEY}
       - TMDB_READ_TOKEN=${TMDB_READ_TOKEN}
+      - TMDB_BASE_URL=${TMDB_BASE_URL:-}
+      - TMDB_PROXY_TOKEN=${TMDB_PROXY_TOKEN:-}
+      - VIMO_ENABLED=${VIMO_ENABLED:-}
+      - VIMO_ADDON_URL=${VIMO_ADDON_URL:-}
+      - CATALOG_PROVIDER=${CATALOG_PROVIDER:-tmdb}
+      - PLAYBACK_PROVIDER=${PLAYBACK_PROVIDER:-debrid}
       # --- Playback sources ---
       - TORBOX_API_KEY=${TORBOX_API_KEY}
+      - TORBOX_BASE_URL=${TORBOX_BASE_URL:-}
       - TOKEN_ENCRYPTION_KEYS=${TOKEN_ENCRYPTION_KEYS:?TOKEN_ENCRYPTION_KEYS required}
       - STREMIO_ADDONS=${STREMIO_ADDONS}
       - STREMIO_SUBTITLE_ADDONS=${STREMIO_SUBTITLE_ADDONS}
       - OPENSUBTITLES_API_KEY=${OPENSUBTITLES_API_KEY:-}
+      - OPENSUBTITLES_USER_AGENT=${OPENSUBTITLES_USER_AGENT:-MovieWeb/1.0}
       # --- Transcode pipeline ---
       - TRANSCODE_ROOT=/data/transcodes
       - TRANSCODE_CACHE_MAX_GB=${TRANSCODE_CACHE_MAX_GB:-3}
@@ -101,6 +109,10 @@ services:
       # Server renders talk to the API over the private network
       - INTERNAL_API_URL=http://backend-node:5001/api
       - NODE_OPTIONS=--max-old-space-size=512
+      - NEXTAUTH_URL=${FRONTEND_URL:-https://cineon.me}
+      - NEXTAUTH_SECRET=${NEXTAUTH_SECRET}
+      - GOOGLE_CLIENT_ID=${GOOGLE_CLIENT_ID:-}
+      - GOOGLE_CLIENT_SECRET=${GOOGLE_CLIENT_SECRET:-}
     networks:
       - cineon
     depends_on:
