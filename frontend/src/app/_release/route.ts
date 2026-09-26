@@ -9,6 +9,10 @@ import { NextResponse } from 'next/server';
  * tag does not work: the page is prerendered at build time, where the variable
  * does not exist yet, so it renders "dev" forever. force-dynamic makes this
  * answer at request time from the running container.
+ *
+ * Served at /_release, not /api/release: Caddy routes every /api/* path to the
+ * Node backend, so a Next.js route under /api is unreachable from the public
+ * origin — it answered 404 before this moved.
  */
 export const dynamic = 'force-dynamic';
 export const revalidate = 0;
