@@ -31,6 +31,7 @@ import {
 import * as torbox from '../services/debrid/torbox.js';
 import { DebridError } from '../services/debrid/torbox.js';
 import { rankCandidates, normalizeCapabilities } from '../services/playback/sourceRanker.js';
+import { selectDiverseSources, selectReuseCandidates } from '../services/playback/sourcePicker.js';
 import {
   ffprobe,
   decidePlaybackMode,
@@ -1237,7 +1238,8 @@ export const resolvePlayback = async (req, res) => {
       attempts = playable.slice(0, MAX_ATTEMPTS);
     }
 
-    for (const candidate of attempts) {
+    const reuseAttempts = selectReuseCandidates(attempts, caps.preferredMaxHeight, Boolean(sourceToken));
+    for (const candidate of reuseAttempts) {
       stage('reuse');
       // Default audio follows the film's own language (TMDB original_language
       // matched against ffprobe tags), English as fallback, first track last —
@@ -1303,6 +1305,15 @@ export const resolvePlayback = async (req, res) => {
 
     // 6. Try the top candidates until one yields a playable file.
     let lastError = null;
+    // A TorBox request that timed out is the provider being briefly
+    // unreachable, not a verdict on the release. With a pinned source
+    // `attempts` holds exactly ONE candidate, so a single missed 15s deadline
+    // used to end the whole torrent path and hand the viewer a foreign CDN
+    // stream mid-title. Both facts are needed below: `hadCachedCandidate` says
+    // a ready-to-read source was on the table, `transientPrepareFailure` says
+    // infrastructure is why it is not playing.
+    const hadCachedCandidate = attempts.some((candidate) => Boolean(candidate.cached));
+    let transientPrepareFailure = false;
     let attemptNo = 0;
     for (const candidate of attempts) {
       attemptNo += 1;
@@ -1313,13 +1324,32 @@ export const resolvePlayback = async (req, res) => {
         prepared = await torbox.prepareSource(debridKey, {
           magnet: candidate.magnet,
           infoHash: candidate.infoHash,
+          // checkCached already said this infohash is in the account, so read
+          // TorBox's cached list feed rather than forcing a re-scan.
+          assumeCached: Boolean(candidate.cached),
         });
       } catch (error) {
         if (error instanceof DebridError && error.code === 'invalid_token') {
           return fail(res, 401, 'TorBox từ chối API key, vui lòng kết nối lại', { code: error.code });
         }
         lastError = error;
-        continue;
+        const transient = torbox.isTransientDebridError(error);
+        if (transient && hadCachedCandidate) transientPrepareFailure = true;
+        // Ask once more, and only against the cheap cached feed: a second
+        // forced re-scan would just burn another 15s to fail identically.
+        // Nothing cheaper to offer when the first call already read the cache.
+        if (!transient || candidate.cached) continue;
+        stage('prepare', attemptTag);
+        try {
+          prepared = await torbox.prepareSource(debridKey, {
+            magnet: candidate.magnet,
+            infoHash: candidate.infoHash,
+            assumeCached: true,
+          });
+        } catch (retryError) {
+          lastError = retryError;
+          continue;
+        }
       }
 
       if (prepared.state !== 'ready') {
@@ -1905,7 +1935,26 @@ export const resolvePlayback = async (req, res) => {
 
     // 8b. Torrent flow exhausted: fall back to Vimo direct HLS (Vietsub)
     // rather than an error screen, when it carries this title.
-      stage('vimo-fallback');
+    //
+    // Unless the torrent path died on TorBox infrastructure rather than on the
+    // media. A cached release that only "failed" because a list call timed out
+    // is still sitting in the account, ready in seconds; trading it for a
+    // foreign CDN stream costs the viewer their 1080p release, mistimes every
+    // online subtitle, and on a cold CDN leaves a spinner that never resolves.
+    // So say "come back" instead, and let the client retry the source it asked
+    // for.
+    if (transientPrepareFailure && hadCachedCandidate) {
+      return fail(
+        res,
+        503,
+        publicText(
+          lastError?.message || 'Dịch vụ lưu trữ đang bận, vui lòng thử lại',
+          'Nguồn phát đang bận, vui lòng thử lại',
+        ),
+        { code: 'SOURCE_PREPARE_TIMEOUT', retryable: true },
+      );
+    }
+    stage('vimo-fallback');
       const vimoFallback = await serveVimoDirect({ db, req, detail, type, tmdbId, season, episode });
       if (vimoFallback?.data) {
         // Silent wrong-source swap is worse than an error screen: Vimo carries
@@ -2317,7 +2366,7 @@ export const listPlaybackSources = async (req, res) => {
       success: true,
       data: {
         caps,
-        sources: allSources.slice(0, 15),
+        sources: selectDiverseSources(allSources, 15),
       },
     });
   } catch (error) {

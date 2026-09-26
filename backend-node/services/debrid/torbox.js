@@ -37,6 +37,24 @@ export class DebridError extends Error {
   }
 }
 
+/**
+ * Did TorBox fail to ANSWER, rather than answer "no"?
+ *
+ * The distinction decides what playback does next. A timeout or a rate limit is
+ * the provider being briefly unreachable: the release is untouched, so the
+ * honest move is to read the account again (cheaply) and, failing that, tell
+ * the client to come back — not to write the candidate off and ship the viewer
+ * to a different source. `not_found`/`bad_request` are real verdicts and must
+ * keep failing fast.
+ */
+export const isTransientDebridError = (error) =>
+  error instanceof DebridError &&
+  (error.code === 'timeout' ||
+    error.code === 'rate_limited' ||
+    error.status === 502 ||
+    error.status === 503 ||
+    error.status === 504);
+
 const request = async (path, key, { method = 'GET', params = {}, body } = {}) => {
   if (!key) throw new DebridError('Thiếu TorBox API key', { status: 401, code: 'no_token' });
 
@@ -179,18 +197,29 @@ export const checkCached = async (key, infoHashes) => {
 
 /* ------------------------------------------------------------- add / prepare */
 
-const findTorrentByHash = async (key, infoHash) => {
-  const payload = await request('/torrents/mylist', key, { params: { bypass_cache: 'true' } });
+/**
+ * Read the account's torrent list.
+ *
+ * `bypass_cache: true` asks TorBox to re-scan instead of serving its cached
+ * feed. That is the correct default when we have no idea what the account
+ * holds, and the wrong call when `checkCached` already answered: under load the
+ * re-scan is the request that misses the 15s deadline, and a resolve that only
+ * ever wanted a torrent we KNOW is in the account dies on it.
+ */
+const findTorrentByHash = async (key, infoHash, { bypassCache = true } = {}) => {
+  const payload = await request('/torrents/mylist', key, {
+    params: { bypass_cache: bypassCache ? 'true' : 'false' },
+  });
   const wanted = String(infoHash).toLowerCase();
   return (payload?.data || []).find((t) => String(t.hash || '').toLowerCase() === wanted) || null;
 };
 
 /** Direct lookup by id: a just-added torrent can be missing from the list feed. */
-const findTorrentById = async (key, torrentId) => {
+const findTorrentById = async (key, torrentId, { bypassCache = true } = {}) => {
   if (torrentId === undefined || torrentId === null) return null;
   try {
     const payload = await request('/torrents/mylist', key, {
-      params: { bypass_cache: 'true', id: torrentId },
+      params: { bypass_cache: bypassCache ? 'true' : 'false', id: torrentId },
     });
     const data = payload?.data;
     if (Array.isArray(data)) {
@@ -226,14 +255,23 @@ const isTorrentReady = (torrent) =>
  *
  * `ready` means a file can be requested now. `downloading` means the caller
  * should poll: TorBox is still pulling it, so an immediate read would stall.
+ *
+ * `assumeCached` is the caller's `checkCached` verdict for this infohash. It
+ * only changes how the list is read (cached feed instead of a forced re-scan),
+ * never the verdict: a stale "cached" answer that finds nothing in the feed
+ * lands on the same add-magnet path as a genuine miss.
  */
-export const prepareSource = async (key, { magnet, infoHash, torrentId = null }) => {
+export const prepareSource = async (
+  key,
+  { magnet, infoHash, torrentId = null, assumeCached = false },
+) => {
   if (!magnet && !infoHash && torrentId === null) {
     throw new DebridError('Cần magnet hoặc infoHash', { status: 400, code: 'bad_request' });
   }
 
-  let torrent = infoHash ? await findTorrentByHash(key, infoHash) : null;
-  if (!torrent && torrentId !== null) torrent = await findTorrentById(key, torrentId);
+  const listOptions = { bypassCache: !assumeCached };
+  let torrent = infoHash ? await findTorrentByHash(key, infoHash, listOptions) : null;
+  if (!torrent && torrentId !== null) torrent = await findTorrentById(key, torrentId, listOptions);
 
   if (!torrent) {
     if (!magnet) {
@@ -389,6 +427,7 @@ export default {
   verifyKey,
   checkCached,
   prepareSource,
+  isTransientDebridError,
   getDownloadUrl,
   dropDownloadUrl,
   removeTorrent,
