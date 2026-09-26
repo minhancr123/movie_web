@@ -1,1 +1,117 @@
-if(!self.define){let e,a={};const s=(s,i)=>(s=new URL(s+".js",i).href,a[s]||new Promise(a=>{if("document"in self){const e=document.createElement("script");e.src=s,e.onload=a,document.head.appendChild(e)}else e=s,importScripts(s),a()}).then(()=>{let e=a[s];if(!e)throw new Error(`Module ${s} didn’t register its module`);return e}));self.define=(i,n)=>{const t=e||("document"in self?document.currentScript.src:"")||location.href;if(a[t])return;let c={};const r=e=>s(e,t),u={module:{uri:t},exports:c,require:r};a[t]=Promise.all(i.map(e=>u[e]||r(e))).then(e=>(n(...e),c))}}define(["./workbox-4754cb34"],function(e){"use strict";importScripts(),self.skipWaiting(),e.clientsClaim(),e.precacheAndRoute([{url:"/_next/app-build-manifest.json",revision:"d2186c67ebe26dc9244eb354d5641912"},{url:"/_next/static/chunks/250-e40e55dce6464340.js",revision:"gIJTrMS9iRHaB-W7YU7Ja"},{url:"/_next/static/chunks/321-705b10be295a4460.js",revision:"gIJTrMS9iRHaB-W7YU7Ja"},{url:"/_next/static/chunks/438-9370de63821913b3.js",revision:"gIJTrMS9iRHaB-W7YU7Ja"},{url:"/_next/static/chunks/6-6e82ede8638610eb.js",revision:"gIJTrMS9iRHaB-W7YU7Ja"},{url:"/_next/static/chunks/607-b9de6e559afa1b9a.js",revision:"gIJTrMS9iRHaB-W7YU7Ja"},{url:"/_next/static/chunks/69-008aed44ae7486b6.js",revision:"gIJTrMS9iRHaB-W7YU7Ja"},{url:"/_next/static/chunks/816-f178d058bf6618f2.js",revision:"gIJTrMS9iRHaB-W7YU7Ja"},{url:"/_next/static/chunks/837-fea88c9350e511f1.js",revision:"gIJTrMS9iRHaB-W7YU7Ja"},{url:"/_next/static/chunks/896-11a837137d4b4904.js",revision:"gIJTrMS9iRHaB-W7YU7Ja"},{url:"/_next/static/chunks/a4634e51-b8a970cf9eade444.js",revision:"gIJTrMS9iRHaB-W7YU7Ja"},{url:"/_next/static/chunks/app/admin/cong-chieu/page-2114eb5b6634eac1.js",revision:"gIJTrMS9iRHaB-W7YU7Ja"},{url:"/_next/static/chunks/app/auth/login/page-e1e96eb041b6bfcb.js",revision:"gIJTrMS9iRHaB-W7YU7Ja"},{url:"/_next/static/chunks/app/cong-chieu/page-c50095fb40480d17.js",revision:"gIJTrMS9iRHaB-W7YU7Ja"},{url:"/_next/static/chunks/app/cong-chieu/xem/%5Bslug%5D/layout-458bd136e9e118db.js",revision:"gIJTrMS9iRHaB-W7YU7Ja"},{url:"/_next/static/chunks/app/cong-chieu/xem/%5Bslug%5D/page-b19b06cebc1259e5.js",revision:"gIJTrMS9iRHaB-W7YU7Ja"},{url:"/_next/static/chunks/app/danh-sach-cua-toi/page-a9430b0aae341e7f.js",revision:"gIJTrMS9iRHaB-W7YU7Ja"},{url:"/_next/static/chunks/app/danh-sach/%5Bcategory%5D/loading-6f7ebfe85b76c8c6.js",revision:"gIJTrMS9iRHaB-W7YU7Ja"},{url:"/_next/static/chunks/app/danh-sach/%5Bcategory%5D/page-c41d9113f82d7bf7.js",revision:"gIJTrMS9iRHaB-W7YU7Ja"},{url:"/_next/static/chunks/app/embed/%5Bslug%5D/page-0a107f16978fa372.js",revision:"gIJTrMS9iRHaB-W7YU7Ja"},{url:"/_next/static/chunks/app/embed/layout-a0fd14f629e21990.js",revision:"gIJTrMS9iRHaB-W7YU7Ja"},{url:"/_next/static/chunks/app/favorites/page-2d867bbba3c5b78f.js",revision:"gIJTrMS9iRHaB-W7YU7Ja"},{url:"/_next/static/chunks/app/history/page-976c66e7d69140e9.js",revision:"gIJTrMS9iRHaB-W7YU7Ja"},{url:"/_next/static/chunks/app/kham-pha/page-4c0a30f808fc3182.js",revision:"gIJTrMS9iRHaB-W7YU7Ja"},{url:"/_next/static/chunks/app/layout-337539d4cac3b598.js",revision:"gIJTrMS9iRHaB-W7YU7Ja"},{url:"/_next/static/chunks/app/lich-chieu/page-46a167fd6289be01.js",revision:"gIJTrMS9iRHaB-W7YU7Ja"},{url:"/_next/static/chunks/app/loading-af019b0afc5b111f.js",revision:"gIJTrMS9iRHaB-W7YU7Ja"},{url:"/_next/static/chunks/app/not-found-7a6386665b0cfa9f.js",revision:"gIJTrMS9iRHaB-W7YU7Ja"},{url:"/_next/static/chunks/app/page-a9fbdfbd5e99ad26.js",revision:"gIJTrMS9iRHaB-W7YU7Ja"},{url:"/_next/static/chunks/app/phim/%5Bslug%5D/loading-a57c1c0f17fd785a.js",revision:"gIJTrMS9iRHaB-W7YU7Ja"},{url:"/_next/static/chunks/app/phim/%5Bslug%5D/page-65eb70d6b41b01b7.js",revision:"gIJTrMS9iRHaB-W7YU7Ja"},{url:"/_next/static/chunks/app/profile/page-1f55bc48591a000b.js",revision:"gIJTrMS9iRHaB-W7YU7Ja"},{url:"/_next/static/chunks/app/search/page-24fe059d647e93b2.js",revision:"gIJTrMS9iRHaB-W7YU7Ja"},{url:"/_next/static/chunks/app/the-loai/%5Bslug%5D/loading-794693ff0c868d35.js",revision:"gIJTrMS9iRHaB-W7YU7Ja"},{url:"/_next/static/chunks/app/the-loai/%5Bslug%5D/page-c98a7420f1c544f6.js",revision:"gIJTrMS9iRHaB-W7YU7Ja"},{url:"/_next/static/chunks/app/xem-phim/%5Bslug%5D/page-93c84306dba3761c.js",revision:"gIJTrMS9iRHaB-W7YU7Ja"},{url:"/_next/static/chunks/fd9d1056-438d075b72ed3086.js",revision:"gIJTrMS9iRHaB-W7YU7Ja"},{url:"/_next/static/chunks/framework-f66176bb897dc684.js",revision:"gIJTrMS9iRHaB-W7YU7Ja"},{url:"/_next/static/chunks/main-8f35c8ccd7908d4c.js",revision:"gIJTrMS9iRHaB-W7YU7Ja"},{url:"/_next/static/chunks/main-app-abf660ed31c0f9ae.js",revision:"gIJTrMS9iRHaB-W7YU7Ja"},{url:"/_next/static/chunks/pages/_app-75f6107b0260711c.js",revision:"gIJTrMS9iRHaB-W7YU7Ja"},{url:"/_next/static/chunks/pages/_error-9a890acb1e81c3fc.js",revision:"gIJTrMS9iRHaB-W7YU7Ja"},{url:"/_next/static/chunks/polyfills-c67a75d1b6f99dc8.js",revision:"837c0df77fd5009c9e46d446188ecfd0"},{url:"/_next/static/chunks/webpack-0928b3b791cae8ee.js",revision:"gIJTrMS9iRHaB-W7YU7Ja"},{url:"/_next/static/css/9b1230cbfc045468.css",revision:"9b1230cbfc045468"},{url:"/_next/static/gIJTrMS9iRHaB-W7YU7Ja/_buildManifest.js",revision:"e0a21c7d7f93d89dce16df0231dc76f2"},{url:"/_next/static/gIJTrMS9iRHaB-W7YU7Ja/_ssgManifest.js",revision:"b6652df95db52feb4daf4eca35380933"},{url:"/icon.svg",revision:"69974440c98b2274ea668edff703567b"},{url:"/manifest.json",revision:"f9293592268cd050a82c01fb59125a45"}],{ignoreURLParametersMatching:[]}),e.cleanupOutdatedCaches(),e.registerRoute("/",new e.NetworkFirst({cacheName:"start-url",plugins:[{cacheWillUpdate:async({request:e,response:a,event:s,state:i})=>a&&"opaqueredirect"===a.type?new Response(a.body,{status:200,statusText:"OK",headers:a.headers}):a}]}),"GET"),e.registerRoute(/^https:\/\/fonts\.(?:gstatic)\.com\/.*/i,new e.CacheFirst({cacheName:"google-fonts-webfonts",plugins:[new e.ExpirationPlugin({maxEntries:4,maxAgeSeconds:31536e3})]}),"GET"),e.registerRoute(/^https:\/\/fonts\.(?:googleapis)\.com\/.*/i,new e.StaleWhileRevalidate({cacheName:"google-fonts-stylesheets",plugins:[new e.ExpirationPlugin({maxEntries:4,maxAgeSeconds:604800})]}),"GET"),e.registerRoute(/\.(?:eot|otf|ttc|ttf|woff|woff2|font.css)$/i,new e.StaleWhileRevalidate({cacheName:"static-font-assets",plugins:[new e.ExpirationPlugin({maxEntries:4,maxAgeSeconds:604800})]}),"GET"),e.registerRoute(/\.(?:jpg|jpeg|gif|png|svg|ico|webp)$/i,new e.StaleWhileRevalidate({cacheName:"static-image-assets",plugins:[new e.ExpirationPlugin({maxEntries:64,maxAgeSeconds:86400})]}),"GET"),e.registerRoute(/\/_next\/image\?url=.+$/i,new e.StaleWhileRevalidate({cacheName:"next-image",plugins:[new e.ExpirationPlugin({maxEntries:64,maxAgeSeconds:86400})]}),"GET"),e.registerRoute(/\.(?:mp3|wav|ogg)$/i,new e.CacheFirst({cacheName:"static-audio-assets",plugins:[new e.RangeRequestsPlugin,new e.ExpirationPlugin({maxEntries:32,maxAgeSeconds:86400})]}),"GET"),e.registerRoute(/\.(?:mp4)$/i,new e.CacheFirst({cacheName:"static-video-assets",plugins:[new e.RangeRequestsPlugin,new e.ExpirationPlugin({maxEntries:32,maxAgeSeconds:86400})]}),"GET"),e.registerRoute(/\.(?:js)$/i,new e.StaleWhileRevalidate({cacheName:"static-js-assets",plugins:[new e.ExpirationPlugin({maxEntries:32,maxAgeSeconds:86400})]}),"GET"),e.registerRoute(/\.(?:css|less)$/i,new e.StaleWhileRevalidate({cacheName:"static-style-assets",plugins:[new e.ExpirationPlugin({maxEntries:32,maxAgeSeconds:86400})]}),"GET"),e.registerRoute(/\/_next\/data\/.+\/.+\.json$/i,new e.StaleWhileRevalidate({cacheName:"next-data",plugins:[new e.ExpirationPlugin({maxEntries:32,maxAgeSeconds:86400})]}),"GET"),e.registerRoute(/\.(?:json|xml|csv)$/i,new e.NetworkFirst({cacheName:"static-data-assets",plugins:[new e.ExpirationPlugin({maxEntries:32,maxAgeSeconds:86400})]}),"GET"),e.registerRoute(({url:e})=>{if(!(self.origin===e.origin))return!1;const a=e.pathname;return!a.startsWith("/api/auth/")&&!!a.startsWith("/api/")},new e.NetworkFirst({cacheName:"apis",networkTimeoutSeconds:10,plugins:[new e.ExpirationPlugin({maxEntries:16,maxAgeSeconds:86400})]}),"GET"),e.registerRoute(({url:e})=>{if(!(self.origin===e.origin))return!1;return!e.pathname.startsWith("/api/")},new e.NetworkFirst({cacheName:"others",networkTimeoutSeconds:10,plugins:[new e.ExpirationPlugin({maxEntries:32,maxAgeSeconds:86400})]}),"GET"),e.registerRoute(({url:e})=>!(self.origin===e.origin),new e.NetworkFirst({cacheName:"cross-origin",networkTimeoutSeconds:10,plugins:[new e.ExpirationPlugin({maxEntries:32,maxAgeSeconds:3600})]}),"GET")});
+/* eslint-env serviceworker */
+/**
+ * CineVN service worker.
+ *
+ * Replaces a workbox build that had been sitting in public/ since April 2026,
+ * precaching a Pages-Router route table that no longer exists (xem-phim/[slug]/,
+ * phim/[slug]/, chunks/pages/_app-*.js) against a single frozen build id. Because
+ * it lived in public/ it was copied verbatim into every image, so its bytes never
+ * changed, the browser never re-installed it, and returning visitors have had it
+ * intercepting every .js through StaleWhileRevalidate ever since. This file
+ * replaces it and purges what it left behind.
+ *
+ * Scope, deliberately small. This is a video site: the media is hundreds of
+ * megabytes per episode served immutable from /api/playback/hls/r/, and the HTTP
+ * cache already does that job correctly. Putting segments in the Cache API
+ * would duplicate 450 MB per episode into storage and serve nothing faster. So
+ * this caches the shell, and nothing else.
+ */
+
+/** Bump on any behavioural change: the old cache is purged on activate. */
+const VERSION = 'cinevn-v1';
+const SHELL_CACHE = `cinevn-shell-${VERSION}`;
+const ASSET_CACHE = `cinevn-assets-${VERSION}`;
+const OWN_CACHES = new Set([SHELL_CACHE, ASSET_CACHE]);
+
+/**
+ * Never touched, whatever the strategy would otherwise say.
+ *
+ * /api/ is the playback, catalog and auth surface: a cached resolve or session
+ * poll is worse than no response at all. The HLS routes are the media itself.
+ * Cross-origin is the font CDN, which has its own long-lived headers.
+ */
+const isUncacheable = (url) =>
+  url.pathname.startsWith('/api/')
+  || url.pathname.startsWith('/_next/image')
+  || url.origin !== self.location.origin;
+
+/** Content-hashed and served immutable, so a hit can never be wrong. */
+const isImmutableAsset = (url) => url.pathname.startsWith('/_next/static/');
+
+self.addEventListener('install', (event) => {
+  event.waitUntil(
+    caches.open(SHELL_CACHE)
+      .then((cache) => cache.addAll(['/offline.html', '/manifest.json', '/icon-192.png', '/icon.png']))
+      // An offline page that cannot be cached must not block installation.
+      .catch(() => undefined),
+  );
+});
+
+self.addEventListener('activate', (event) => {
+  event.waitUntil(
+    caches.keys()
+      .then((names) => Promise.all(
+        // Everything not named by this version goes, including the workbox
+        // caches from the old build. That is the whole point of this file: a
+        // visitor who installed the April precache is currently serving a
+        // chunk list from a Pages-Router app that has not existed since then.
+        names.filter((name) => !OWN_CACHES.has(name))
+          .map((name) => caches.delete(name)),
+      ))
+      .then(() => self.clients.claim()),
+  );
+});
+
+// The page asks for this instead of calling skipWaiting from here, so the worker
+// only advances at a moment the page chose — mid-session it would swap the code
+// under a running player.
+self.addEventListener('message', (event) => {
+  if (event.data && event.data.type === 'SKIP_WAITING') self.skipWaiting();
+});
+
+self.addEventListener('fetch', (event) => {
+  const { request } = event;
+  if (request.method !== 'GET') return;
+
+  const url = new URL(request.url);
+  if (isUncacheable(url)) return;
+
+  // Hashed build output: cache-first. The name changes when the bytes change,
+  // so there is nothing to revalidate.
+  if (isImmutableAsset(url)) {
+    event.respondWith(
+      caches.open(ASSET_CACHE).then(async (cache) => {
+        const hit = await cache.match(request);
+        if (hit) return hit;
+        const response = await fetch(request);
+        if (response.ok) cache.put(request, response.clone());
+        return response;
+      }),
+    );
+    return;
+  }
+
+  // Pages: network-first. The server sends them no-store, so a cached copy would
+  // be a stale document showing a build that is no longer deployed — the exact
+  // failure that made "which build am I running?" unanswerable from the page.
+  if (request.mode === 'navigate') {
+    event.respondWith(
+      fetch(request).catch(() => caches.match('/offline.html')),
+    );
+    return;
+  }
+
+  // Same-origin images and icons: stale-while-revalidate.
+  event.respondWith(
+    caches.open(ASSET_CACHE).then(async (cache) => {
+      const hit = await cache.match(request);
+      const network = fetch(request)
+        .then((response) => {
+          if (response.ok) cache.put(request, response.clone());
+          return response;
+        })
+        .catch(() => hit);
+      return hit || network;
+    }),
+  );
+});

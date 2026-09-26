@@ -1,34 +1,58 @@
 {
-    "name": "CineVN - Rạp Phim Trực Tuyến 4K",
-    "short_name": "CineVN",
-    "description": "Trải nghiệm điện ảnh đỉnh cao, phim bom tấn 4K HDR, âm thanh vòm Spatial Audio và phụ đề Vietsub mượt mà.",
-    "start_url": "/",
-    "scope": "/",
-    "display": "standalone",
-    "orientation": "portrait-primary",
-    "background_color": "#0a0a0a",
-    "theme_color": "#f59e0b",
-    "icons": [
-        {
-            "src": "/favicon.ico",
-            "sizes": "16x16 32x32 48x48",
-            "type": "image/x-icon"
-        },
-        {
-            "src": "/icon.svg",
-            "sizes": "any",
-            "type": "image/svg+xml",
-            "purpose": "any maskable"
-        },
-        {
-            "src": "/icon-192.png",
-            "sizes": "192x192",
-            "type": "image/png"
-        },
-        {
-            "src": "/icon.png",
-            "sizes": "512x512",
-            "type": "image/png"
-        }
-    ]
+  "name": "CineVN - Rạp Phim Trực Tuyến 4K",
+  "short_name": "CineVN",
+  "description": "Trải nghiệm điện ảnh đỉnh cao, phim bom tấn 4K HDR, âm thanh vòm Spatial Audio và phụ đề Vietsub mượt mà.",
+  "start_url": "/",
+  "scope": "/",
+  "display": "standalone",
+  "display_override": ["standalone", "minimal-ui"],
+  "orientation": "any",
+  "background_color": "#0a0a0a",
+  "theme_color": "#f59e0b",
+  "categories": ["entertainment", "video"],
+  "icons": [
+    {
+      "src": "/favicon.ico",
+      "sizes": "16x16 32x32 48x48",
+      "type": "image/x-icon"
+    },
+    {
+      "src": "/icon.svg",
+      "sizes": "any",
+      "type": "image/svg+xml",
+      "purpose": "any"
+    },
+    {
+      "src": "/icon-192.png",
+      "sizes": "192x192",
+      "type": "image/png",
+      "purpose": "any"
+    },
+    {
+      "src": "/icon.png",
+      "sizes": "512x512",
+      "type": "image/png",
+      "purpose": "any"
+    }
+  ],
+  "shortcuts": [
+    {
+      "name": "Xem tiếp",
+      "short_name": "Tiếp tục",
+      "url": "/lich-chieu",
+      "icons": [{ "src": "/icon-192.png", "sizes": "192x192" }]
+    },
+    {
+      "name": "Phim lẻ",
+      "short_name": "Phim lẻ",
+      "url": "/kham-pha?type=movie",
+      "icons": [{ "src": "/icon-192.png", "sizes": "192x192" }]
+    },
+    {
+      "name": "Phim bộ",
+      "short_name": "Phim bộ",
+      "url": "/kham-pha?type=tv",
+      "icons": [{ "src": "/icon-192.png", "sizes": "192x192" }]
+    }
+  ]
 }

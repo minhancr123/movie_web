@@ -5,7 +5,7 @@
   "scripts": {
     "dev": "next dev",
     "dev:clean": "node -e \"require('fs').rmSync('.next',{recursive:true,force:true})\" && next dev",
-    "test": "node --test tests/dev-cache-reset.test.mjs tests/audio-enhancer.test.mjs tests/ambilight.test.mjs tests/autoplay.test.mjs tests/intro-route-scope.test.mjs tests/playback-progress.test.mjs tests/api-base.test.mjs tests/episode-list.test.mjs tests/fullscreen-ambilight.test.mjs tests/source-preferences.test.mjs tests/episode-switch.test.mjs tests/prewarm-payload.test.mjs",
+    "test": "node --test tests/dev-cache-reset.test.mjs tests/audio-enhancer.test.mjs tests/ambilight.test.mjs tests/autoplay.test.mjs tests/intro-route-scope.test.mjs tests/playback-progress.test.mjs tests/api-base.test.mjs tests/episode-list.test.mjs tests/fullscreen-ambilight.test.mjs tests/source-preferences.test.mjs tests/episode-switch.test.mjs tests/prewarm-payload.test.mjs tests/pwa.test.mjs",
     "test:routes": "node --test tests/continue-watching-route.test.mjs",
     "test:dev-cache": "node --test tests/dev-cache-reset.test.mjs",
     "test:e2e": "playwright test --browser chromium",

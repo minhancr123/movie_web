@@ -5,6 +5,7 @@ import Header from "@/components/Header";
 import Footer from "@/components/Footer";
 import AuthProvider from "@/components/AuthProvider";
 import BottomNav from "@/components/BottomNav";
+import ServiceWorkerRegister from "@/components/ServiceWorkerRegister";
 
 const jakarta = Plus_Jakarta_Sans({
   subsets: ["latin", "vietnamese"],
@@ -95,6 +96,13 @@ export default function RootLayout({
             guessing from symptoms. RELEASE_ID is a runtime env of this container,
             and the root layout is a server component, so it is the real thing. */}
         <meta name="cinevn-release" content={process.env.RELEASE_ID || 'dev'} />
+        {/* iOS has no install prompt: a PWA is only addable from the Share sheet,
+            and without these it launches in a Safari tab with its own chrome. */}
+        <meta name="apple-mobile-web-app-capable" content="yes" />
+        <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent" />
+        <meta name="apple-mobile-web-app-title" content="CineVN" />
+        <link rel="apple-touch-icon" href="/apple-touch-icon.png" />
+        <link rel="manifest" href="/manifest.json" />
         <link
           rel="stylesheet"
           href="https://fonts.googleapis.com/css2?family=Material+Symbols+Outlined:opsz,wght,FILL,GRAD@20..48,100..700,0..1,-50..200&display=swap"
@@ -112,6 +120,7 @@ export default function RootLayout({
       </head>
       <body className="bg-background text-cinema-text font-sans antialiased selection:bg-amber-primary selection:text-black">
         <AuthProvider>
+          <ServiceWorkerRegister />
           <Header />
           <main className="min-h-screen pt-20 mx-auto w-full max-w-shell px-4 md:px-8 pb-28 md:pb-12">
             {children}
