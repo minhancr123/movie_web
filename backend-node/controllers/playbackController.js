@@ -1634,16 +1634,20 @@ export const resolvePlayback = async (req, res) => {
       // idle timeout expires ten minutes later. Two of those together were
       // measured saturating ~36 MB/s of link and disk, which stalls playback
       // and prompts another retry, so the failure compounded on itself.
+      //
+      // Scoped to the title, NOT the episode, even though a retry of one episode
+      // is the common case. selectSupersededRemuxes documents the signal as "same
+      // viewer, same title", and switching episodes is the same signal: someone
+      // watching episode 5 and asking for episode 3 is watching one thing at a
+      // time. Filtering by episode made the old writer invisible here, so it kept
+      // the only slot on a one-writer box and the new episode came back 503 four
+      // times in a row. The 90s grace still covers flipping back.
       const priorFilter = {
         userIdStr: String(req.user.userId),
         mode: 'remux',
         contentRef: detail.contentRef,
         sessionId: { $ne: sessionId },
       };
-      // Built conditionally: an undefined season would be matched as null and
-      // quietly select nothing.
-      if (season != null) priorFilter.season = season;
-      if (episode != null) priorFilter.episode = episode;
       const prior = await db.collection('playback_sessions')
         .find(priorFilter)
         .project({ sessionId: 1, _id: 0 })

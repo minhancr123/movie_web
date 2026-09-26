@@ -22,10 +22,20 @@ const positiveNumber = (value, fallback) => {
 const CACHE_MAX_BYTES = positiveNumber(process.env.TRANSCODE_CACHE_MAX_GB, 25) * GB;
 const CACHE_TTL_MS = positiveNumber(process.env.TRANSCODE_CACHE_TTL_HOURS, 2) * 60 * 60 * 1000;
 const LIVE_IDLE_MS = positiveNumber(process.env.TRANSCODE_LIVE_IDLE_MINUTES, 10) * 60 * 1000;
-/** How long a writer may go unrequested before it may be reaped to free a slot
- * for a viewer who is actually waiting. Distinct from LIVE_IDLE_MS on purpose:
- * that is a retention window for finished files, this is a liveness check. */
-const IDLE_REAP_MS = positiveNumber(process.env.REMUX_IDLE_REAP_SECONDS, 90) * 1000;
+/**
+ * How long a writer may go unrequested before it may be reaped to free a slot
+ * for a viewer who is actually waiting.
+ *
+ * Distinct from LIVE_IDLE_MS (a 10-minute retention window) on purpose: that one
+ * answers "may this be deleted from disk", this one answers "is anyone still
+ * watching". Longer than it looks like it should be, because silence is not
+ * absence — the player buffers up to three minutes ahead and then goes quiet
+ * while it drains, so a healthy viewer is indistinguishable from an absent one
+ * by request cadence alone over any short window. 180s clears a full buffer
+ * drain. Cross-request growth tracking would answer this properly; until then,
+ * the only safe reading of "quiet" is a long one.
+ */
+const IDLE_REAP_MS = positiveNumber(process.env.REMUX_IDLE_REAP_SECONDS, 180) * 1000;
 const INCOMPLETE_GRACE_MS = positiveNumber(process.env.TRANSCODE_INCOMPLETE_GRACE_MINUTES, 10) * 60 * 1000;
 const CLEANUP_INTERVAL_MS = positiveNumber(process.env.TRANSCODE_CLEANUP_INTERVAL_SECONDS, 60) * 1000;
 const VIEWER_GRACE_MS = positiveNumber(process.env.TRANSCODE_VIEWER_GRACE_SECONDS, 120) * 1000;

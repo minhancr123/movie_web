@@ -120,6 +120,29 @@ console.log('ok - superseded writers are reaped before anyone is refused');
   console.log('ok - only a writer nobody is watching may be reaped');
 }
 
+// The threshold has to clear a full buffer drain, not just look generous: the
+// player buffers up to three minutes ahead and then goes quiet while it drains,
+// so a healthy viewer is silent for minutes at a time. Anything shorter and
+// this kills the stream of someone who is watching, in order to serve someone
+// who just arrived.
+{
+  const bufferDrainMs = 3 * 60 * 1000;
+  const defaultIdleReapMs = 180 * 1000;
+  assert.ok(
+    defaultIdleReapMs >= bufferDrainMs,
+    `default idle-reap (${defaultIdleReapMs}ms) must outlast a buffer drain (${bufferDrainMs}ms)`,
+  );
+  // ...and it must not be so long that a genuinely abandoned writer outlasts the
+  // retry ladder it is meant to serve: three attempts, 8s apart, plus the attempt.
+  const retryLadderMs = 3 * 8 * 1000;
+  assert.ok(
+    defaultIdleReapMs <= 10 * 60 * 1000,
+    'but it must stay well inside the retention window it is protecting',
+  );
+  assert.ok(retryLadderMs < defaultIdleReapMs, 'the ladder is shorter than the reap window');
+  console.log('ok - the idle-reap window outlasts a buffer drain, not a pause');
+}
+
 // Superseded writers keep priority: nobody is watching those by definition.
 // Idle ones are the fallback, and a writer must not be listed twice.
 assert.deepEqual(
