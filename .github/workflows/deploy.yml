@@ -83,6 +83,7 @@ jobs:
             NEXT_PUBLIC_API_URL=${{ vars.PUBLIC_SITE_URL }}/api
             NEXT_PUBLIC_BACKEND_API_URL=${{ vars.PUBLIC_SITE_URL }}/api
             NEXT_PUBLIC_SOCKET_URL=${{ vars.PUBLIC_SITE_URL }}
+            NEXT_PUBLIC_SITE_URL=${{ vars.PUBLIC_SITE_URL }}
             RELEASE_ID=${{ github.sha }}
           tags: ghcr.io/${{ github.repository_owner }}/movie-web-frontend:${{ github.sha }}
 

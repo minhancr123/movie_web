@@ -109,7 +109,11 @@ services:
       # Server renders talk to the API over the private network
       - INTERNAL_API_URL=http://backend-node:5001/api
       - NODE_OPTIONS=--max-old-space-size=512
-      - NEXTAUTH_URL=${FRONTEND_URL:-https://cineon.me}
+      # Public domain cho sitemap.xml / robots.txt / canonical (runtime fallback
+      # nếu NEXT_PUBLIC_SITE_URL không được bake lúc build).
+      - FRONTEND_URL=${FRONTEND_URL:-https://cinevn.me}
+      - NEXT_PUBLIC_SITE_URL=${FRONTEND_URL:-https://cinevn.me}
+      - NEXTAUTH_URL=${FRONTEND_URL:-https://cinevn.me}
       - NEXTAUTH_SECRET=${NEXTAUTH_SECRET}
       - GOOGLE_CLIENT_ID=${GOOGLE_CLIENT_ID:-}
       - GOOGLE_CLIENT_SECRET=${GOOGLE_CLIENT_SECRET:-}

@@ -27,24 +27,44 @@ interface PageParams {
 const parseType = (type: string): MediaType | null =>
   type === 'movie' || type === 'tv' ? type : null;
 
+const SITE_URL = (
+  process.env.NEXT_PUBLIC_SITE_URL ||
+  process.env.FRONTEND_URL ||
+  'https://cinevn.me'
+).replace(/\/+$/, '');
+
 export async function generateMetadata({ params }: PageParams): Promise<Metadata> {
   const resolvedParams = await params;
   const type = parseType(resolvedParams.type);
-  if (!type) return { title: 'Không tìm thấy' };
+  if (!type) return { title: 'Không tìm thấy', robots: { index: false, follow: true } };
 
   const detail = await getCatalogDetail(type, resolvedParams.tmdbId);
-  if (!detail) return { title: 'Không tìm thấy phim' };
+  if (!detail) return { title: 'Không tìm thấy phim', robots: { index: false, follow: true } };
 
   const description =
-    detail.overview.slice(0, 155) || `Xem ${detail.title} (${detail.year ?? ''}) chất lượng cao.`;
+    detail.overview.slice(0, 155) || `Xem ${detail.title} (${detail.year ?? ''}) Vietsub chất lượng cao tại CineVN.`;
+  const canonical = catalogHref(detail);
+  const images = detail.backdrop ? [detail.backdrop] : detail.poster ? [detail.poster] : [];
 
   return {
-    title: `${detail.title}${detail.year ? ` (${detail.year})` : ''} - Xem phim`,
+    title: `${detail.title}${detail.year ? ` (${detail.year})` : ''} - Xem phim Vietsub`,
     description,
+    robots: { index: true, follow: true },
+    alternates: { canonical },
     openGraph: {
+      type: 'website',
+      locale: 'vi_VN',
+      siteName: 'CineVN',
+      url: canonical,
       title: detail.title,
       description,
-      images: detail.backdrop ? [detail.backdrop] : detail.poster ? [detail.poster] : [],
+      images,
+    },
+    twitter: {
+      card: 'summary_large_image',
+      title: detail.title,
+      description,
+      images,
     },
   };
 }
@@ -81,8 +101,33 @@ export default async function CatalogDetailPage({ params, searchParams }: PagePa
 
   const firstEpisode = season?.episodes[0];
 
+  // JSON-LD giúp Google hiểu đây là trang Phim + hiển thị rich result
+  // (poster, năm, điểm đánh giá). type movie -> Movie, tv -> TVSeries.
+  const jsonLd = {
+    '@context': 'https://schema.org',
+    '@type': type === 'movie' ? 'Movie' : 'TVSeries',
+    name: detail.title,
+    alternateName: detail.originalTitle || undefined,
+    description: detail.overview || undefined,
+    image: detail.poster || detail.backdrop || undefined,
+    datePublished: detail.year ? String(detail.year) : undefined,
+    genre: detail.genres.length > 0 ? detail.genres : undefined,
+    url: `${SITE_URL}${catalogHref(detail)}`,
+    ...(detail.voteAverage > 0
+      ? {
+          aggregateRating: {
+            '@type': 'AggregateRating',
+            ratingValue: detail.voteAverage.toFixed(1),
+            bestRating: '10',
+            ratingCount: 1,
+          },
+        }
+      : {}),
+  };
+
   return (
     <div className="pb-16">
+      <script type="application/ld+json" dangerouslySetInnerHTML={{ __html: JSON.stringify(jsonLd) }} />
       <div className="relative -mx-4 mb-8 h-[38vh] md:h-[55vh] overflow-hidden md:-mx-8">
         {detail.backdrop && (
           <Image
