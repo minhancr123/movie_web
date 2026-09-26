@@ -241,9 +241,39 @@ export default function PlaybackSection({
   // Episode changes keep every card mounted (they are keyed by number), so on
   // a move from one episode to the next the ref alone is not a reliable
   // trigger: follow the active episode itself as well.
+  //
+  // A single pass is not enough, though. Switching episodes navigates, and the
+  // route-level loading.tsx tears the panel down and rebuilds it — so the strip
+  // is a brand-new node at scrollLeft 0, and the one pass that runs on mount
+  // measures it before the browser has settled a width, which is the case
+  // episodeScrollTarget deliberately answers with "do nothing". Re-run across a
+  // couple of frames and once more after layout has had time to land; the strip
+  // ends on the active episode instead of the first one.
   useEffect(() => {
+    let cancelled = false;
     revealActiveEpisode();
+    const frame = requestAnimationFrame(() => {
+      if (!cancelled) revealActiveEpisode();
+    });
+    const settle = setTimeout(() => {
+      if (!cancelled) revealActiveEpisode();
+    }, 350);
+    return () => {
+      cancelled = true;
+      cancelAnimationFrame(frame);
+      clearTimeout(settle);
+    };
   }, [activeEpisode, episodes.length, revealActiveEpisode]);
+
+  // Rotation, a resized panel or a maximised player all change the strip's
+  // width, which re-snaps it and can walk the active card back out of view.
+  useEffect(() => {
+    const container = episodeScrollRef.current;
+    if (!container || typeof ResizeObserver === 'undefined') return;
+    const observer = new ResizeObserver(() => revealActiveEpisode());
+    observer.observe(container);
+    return () => observer.disconnect();
+  }, [revealActiveEpisode]);
 
   const pickAudio = useCallback(
     (index: number) => {
