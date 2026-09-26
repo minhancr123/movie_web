@@ -1295,12 +1295,29 @@ export const resolvePlayback = async (req, res) => {
           reuseShiftMs = facts ? presentationShiftMs({ video: facts }) : 0;
         }
         lastShiftMs = reuseShiftMs;
+        // A finished session is also a published, content-addressed rendition.
+        // Handing back the per-session URL instead makes every viewer re-fetch
+        // the same hundreds of megabytes through Node, with a database lookup per
+        // segment and nothing in the browser cache — while this exact byte stream
+        // is already addressable by content and served immutable for a year.
+        // findPublishedRendition validates the row AND the files on disk, so a
+        // stale entry cannot hand back a dead URL.
+        let reusePlaylistUrl = reusable.playlistUrl;
+        let reuseRenditionId = null;
+        if (reusable.renditionKey) {
+          const publishedReuse = await findPublishedRendition(db, reusable.renditionKey).catch(() => null);
+          if (publishedReuse) {
+            reuseRenditionId = publishedReuse.renditionId || reusable.renditionKey;
+            reusePlaylistUrl = `/api/playback/hls/r/${reuseRenditionId}/index.m3u8`;
+          }
+        }
         return res.json({
           success: true,
           data: {
             mode: 'remux',
             sessionId: reusable.sessionId,
-            playlistUrl: reusable.playlistUrl,
+            playlistUrl: reusePlaylistUrl,
+            publishedRenditionId: reuseRenditionId,
             reason: publicText('Dùng lại phiên remux đang có', 'Đang phát'),
             fileName: publicFileName(reusable.fileName || ''),
             durationSeconds:
