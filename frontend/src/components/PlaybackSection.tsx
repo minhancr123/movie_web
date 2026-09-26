@@ -239,8 +239,19 @@ export default function PlaybackSection({
   // paint.
   const revealActiveEpisode = useCallback(() => {
     const container = episodeScrollRef.current;
-    const node = activeCardNodeRef.current;
-    if (!container || !node || !container.contains(node)) return;
+    if (!container) return;
+    // Ask the DOM, not a callback ref. When the active card moves from one
+    // episode to the next in a single commit, React detaches the old ref
+    // (calling it with null) and attaches the new one; the detach is free to
+    // land AFTER the attach, which left activeCardNodeRef.current null and
+    // every later reveal bailing on `if (!node) return` — so the strip sat at
+    // episode 1 while the URL, the badge and the player all said episode 7.
+    // A query has no ordering to get wrong. The ref stays only as a fallback
+    // for the frame before React has committed the attribute.
+    const node =
+      container.querySelector<HTMLElement>('[data-active="true"]')
+      || activeCardNodeRef.current;
+    if (!node || !container.contains(node)) return;
     const target = episodeScrollTarget({
       cardOffsetLeft: node.offsetLeft,
       cardWidth: node.clientWidth,
@@ -252,12 +263,12 @@ export default function PlaybackSection({
     container.scrollTo({ left: target, behavior: 'instant' as ScrollBehavior });
   }, []);
 
-  // Attached directly to the active card: the ref fires exactly when the node
-  // exists, so there is no mount-timing guesswork (an effect can run before
-  // the list paints and silently scroll nothing).
+  // Hint only. Never stores null: that is exactly the clobber above. The
+  // attribute query is what the reveal actually uses.
   const activeCardRef = useCallback((node: HTMLElement | null) => {
+    if (!node) return;
     activeCardNodeRef.current = node;
-    if (node) revealActiveEpisode();
+    revealActiveEpisode();
   }, [revealActiveEpisode]);
 
   // Episode changes keep every card mounted (they are keyed by number), so on

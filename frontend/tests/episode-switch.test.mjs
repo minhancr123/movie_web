@@ -77,3 +77,30 @@ test('the episode strip follows the episode that is on screen', () => {
   assert.match(source, /new ResizeObserver\(\(\) => revealActiveEpisode\(\)\)/,
     're-reveal when the strip is resized, e.g. on rotation');
 });
+
+test('the strip reveal finds the active card from the DOM, not a callback ref', () => {
+  // Observed on a real session: URL said e=7, the badge said "Tập 7", the player
+  // was on episode 7 — and the strip sat on episode 1. When the active card moves
+  // between episodes in one commit, React detaches the old callback ref (null)
+  // and attaches the new one, and the detach is free to land after the attach.
+  // That left the ref null, and every reveal bailed on `if (!node) return`.
+  assert.match(
+    source,
+    /container\.querySelector<HTMLElement>\('\[data-active="true"\]'\)/,
+    'the active card is found by attribute, which has no commit ordering',
+  );
+  // The ref must not write null back, or it can clobber the attach that just
+  // happened — the failure this replaces.
+  assert.match(
+    source,
+    /const activeCardRef = useCallback\(\(node: HTMLElement \| null\) => \{\s*if \(!node\) return;/,
+    'the ref hint never stores null',
+  );
+  assert.doesNotMatch(
+    source,
+    /activeCardNodeRef\.current = node;\s*\n\s*if \(node\) revealActiveEpisode\(\);/,
+    'the old clobbering assignment is gone',
+  );
+  // And the card must actually carry the attribute the query looks for.
+  assert.match(source, /data-active=\{isActive\}/, 'cards are tagged with data-active');
+});
