@@ -22,6 +22,10 @@ const positiveNumber = (value, fallback) => {
 const CACHE_MAX_BYTES = positiveNumber(process.env.TRANSCODE_CACHE_MAX_GB, 25) * GB;
 const CACHE_TTL_MS = positiveNumber(process.env.TRANSCODE_CACHE_TTL_HOURS, 2) * 60 * 60 * 1000;
 const LIVE_IDLE_MS = positiveNumber(process.env.TRANSCODE_LIVE_IDLE_MINUTES, 10) * 60 * 1000;
+/** How long a writer may go unrequested before it may be reaped to free a slot
+ * for a viewer who is actually waiting. Distinct from LIVE_IDLE_MS on purpose:
+ * that is a retention window for finished files, this is a liveness check. */
+const IDLE_REAP_MS = positiveNumber(process.env.REMUX_IDLE_REAP_SECONDS, 90) * 1000;
 const INCOMPLETE_GRACE_MS = positiveNumber(process.env.TRANSCODE_INCOMPLETE_GRACE_MINUTES, 10) * 60 * 1000;
 const CLEANUP_INTERVAL_MS = positiveNumber(process.env.TRANSCODE_CLEANUP_INTERVAL_SECONDS, 60) * 1000;
 const VIEWER_GRACE_MS = positiveNumber(process.env.TRANSCODE_VIEWER_GRACE_SECONDS, 120) * 1000;
@@ -950,13 +954,49 @@ export const spawnBeatsReuse = ({
   return fresh > live;
 };
 
-export const reapPlan = ({ active, limit, superseded = [] } = {}) => {
+export const reapPlan = ({ active, limit, superseded = [], idle = [] } = {}) => {
   const a = Number(active);
   const l = Number(limit);
   if (!Number.isFinite(a) || !Number.isFinite(l)) return [];
-  if (!Array.isArray(superseded) || superseded.length === 0) return [];
   if (a < l) return [];
-  return superseded.slice(0, a - l + 1);
+  const need = a - l + 1;
+  // Superseded writers go first: nobody is watching those by definition. Idle
+  // ones are the fallback — a viewer is waiting, and one that has not been
+  // touched for IDLE_REAP_MS is not the viewer waiting. Oldest idle first.
+  const chosen = [
+    ...(Array.isArray(superseded) ? superseded : []),
+    ...(Array.isArray(idle) ? idle : []),
+  ].filter((id, index, all) => id && all.indexOf(id) === index);
+  if (chosen.length === 0) return [];
+  return chosen.slice(0, need);
+};
+
+/**
+ * Live writers nobody has fetched from, oldest first.
+ *
+ * A writer whose playlist and segments have not been requested for this long is
+ * not being watched. It still holds a writer slot, and on a one-slot box that
+ * slot is the whole capacity: a second viewer got 503 three times in a row and
+ * then waited out a 5s retry ladder for nothing, because the slot belonged to a
+ * session whose last request was minutes old.
+ *
+ * Deliberately much shorter than LIVE_IDLE_MS (the retention window, 10 min):
+ * that one answers "may this be deleted from disk", this one answers "is
+ * anyone still watching". Only ever consulted once admission has already
+ * failed, so a lone viewer is never disturbed.
+ */
+export const idleWriterIds = (sessions, { now = Date.now(), idleMs = IDLE_REAP_MS } = {}) => {
+  if (!(sessions instanceof Map)) return [];
+  const threshold = Number(idleMs);
+  if (!Number.isFinite(threshold) || threshold <= 0) return [];
+  const out = [];
+  for (const [id, session] of sessions) {
+    if (!session?.process || session.process.killed) continue;
+    if (session.exitCode !== undefined) continue;
+    const last = Number(session.lastAccessAt) || 0;
+    if (now - last >= threshold) out.push({ id, lastAccessAt: last });
+  }
+  return out.sort((a, b) => a.lastAccessAt - b.lastAccessAt).map((entry) => entry.id);
 };
 
 export const admitRemuxWriter = ({ active, limit } = {}) => {
@@ -1183,11 +1223,14 @@ export const startRemuxSession = async ({ sessionId, inputUrl, audioCopy = false
   const limit = remuxWriterLimit();
   if (!admitRemuxWriter({ active: activeWriterCount(), limit })) {
     // Free the expendable slots first — writers already replaced by a newer
-    // one, still burning their grace window with nobody watching.
+    // one, then writers nobody has requested from in IDLE_REAP_MS. On a box
+    // configured for one writer this is the difference between a viewer who
+    // waits and a viewer who is told to come back later.
     for (const doomed of reapPlan({
       active: activeWriterCount(),
       limit,
       superseded: [...supersedeTimers.keys()],
+      idle: idleWriterIds(sessions),
     })) {
       cancelScheduledStop(doomed);
       await stopRemuxSession(doomed).catch(() => false);

@@ -1126,18 +1126,29 @@ export default function PlaybackSection({
       // rethrow below: a far seek that stalls on a busy server is the exact
       // case that must retry itself rather than toast over a frozen frame.
       if (status === 503 && RETRYABLE_503_CODES.has(code) && (busyRetriesRef.current ?? 0) < 3) {
-        // REMUX_BUSY: server is at remux capacity.
+        // REMUX_BUSY: every ffmpeg slot is taken. On a single-slot box the slot
+        // can be held for a whole remux, so a short ladder is a coin flip — say
+        // what is happening instead of showing a spinner that means nothing.
         // SOURCE_PREPARE_TIMEOUT: the debrid provider stopped answering; the
         // release is untouched and ready in seconds once it does.
-        const waitMs = code === 'SOURCE_PREPARE_TIMEOUT' ? 10000 : 5000;
+        const busy = code === 'REMUX_BUSY';
+        const waitMs = busy ? 8000 : 10000;
         busyRetriesRef.current = (busyRetriesRef.current ?? 0) + 1;
         setResolveStageLabel(
           isProd
-            ? code === 'SOURCE_PREPARE_TIMEOUT'
-              ? `Dịch vụ lưu trữ đang phản hồi chậm, tự động thử lại (${busyRetriesRef.current}/3)…`
-              : `Máy chủ đang bận, tự động thử lại (${busyRetriesRef.current}/3)…`
+            ? busy
+              ? `Tập khác đang được chuẩn bị, thử lại (${busyRetriesRef.current}/3)…`
+              : `Dịch vụ lưu trữ đang phản hồi chậm, tự động thử lại (${busyRetriesRef.current}/3)…`
             : `${code} — retry ${busyRetriesRef.current}/3 in ${waitMs / 1000}s`,
         );
+        // Say it once, in words, at the first refusal. The stage label scrolls
+        // away; this does not, and it is the difference between "the site is
+        // broken" and "the server is finishing another episode".
+        if (busy && busyRetriesRef.current === 1) {
+          setNotice(
+            'Máy chủ đang chuẩn bị tập khác nên phải xếp hàng. Thường mất vài chục giây; tập này sẽ tự phát khi xong.',
+          );
+        }
         // The spinner stays up: the viewer is still waiting on this resolve,
         // just a few seconds later. Released before the retry so the follow-up
         // is never mistaken for a duplicate of the request that just failed.

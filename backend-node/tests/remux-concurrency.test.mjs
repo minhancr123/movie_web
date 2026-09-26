@@ -21,6 +21,7 @@ import {
   remuxWriterLimit,
   RemuxBusyError,
   reapPlan,
+  idleWriterIds,
   spawnBeatsReuse,
 } from '../services/playback/remuxService.js';
 
@@ -81,6 +82,62 @@ assert.deepEqual(reapPlan({ active: 9, limit: 3, superseded: ['a'] }), ['a'],
   'reaps what exists even when that is not enough');
 assert.deepEqual(reapPlan({}), [], 'junk reaps nothing');
 console.log('ok - superseded writers are reaped before anyone is refused');
+
+/* ------------------------------------------------------ idle-writer reaping */
+
+// On a box configured for ONE writer, the slot is the whole capacity, and a
+// writer nobody has fetched from still holds it. Measured: a viewer took 503
+// three times and then sat through a retry ladder for ~40s while the slot
+// belonged to a session whose last playlist request was minutes old. A writer
+// that has not been requested from is not the viewer who is waiting.
+{
+  const now = 1_000_000;
+  const live = { process: { killed: false }, exitCode: undefined, lastAccessAt: now - 200_000 };
+  const fresh = { process: { killed: false }, exitCode: undefined, lastAccessAt: now - 1_000 };
+  const sessions = new Map([['stale', live], ['watched', fresh]]);
+
+  assert.deepEqual(idleWriterIds(sessions, { now, idleMs: 90_000 }), ['stale'],
+    'only the unrequested writer is reapable');
+  assert.deepEqual(idleWriterIds(sessions, { now, idleMs: 500_000 }), [],
+    'nothing is stale yet');
+  // Oldest first, so the longest-abandoned slot is freed.
+  const older = { process: { killed: false }, lastAccessAt: now - 900_000 };
+  const newer = { process: { killed: false }, lastAccessAt: now - 100_000 };
+  assert.deepEqual(
+    idleWriterIds(new Map([['newer', newer], ['older', older]]), { now, idleMs: 90_000 }),
+    ['older', 'newer'],
+    'oldest access first',
+  );
+  // A writer that already exited, or was killed, holds no slot to free.
+  const exited = { process: { killed: false }, exitCode: 0, lastAccessAt: now - 900_000 };
+  const killed = { process: { killed: true }, lastAccessAt: now - 900_000 };
+  assert.deepEqual(idleWriterIds(new Map([['e', exited], ['k', killed]]), { now, idleMs: 1_000 }), [],
+    'a dead writer is not a slot');
+  // Fails safe: never reap on a shape we do not understand.
+  assert.deepEqual(idleWriterIds(null, { now, idleMs: 1_000 }), []);
+  assert.deepEqual(idleWriterIds(sessions, { now, idleMs: 0 }), []);
+  assert.deepEqual(idleWriterIds(sessions, { now, idleMs: NaN }), []);
+  console.log('ok - only a writer nobody is watching may be reaped');
+}
+
+// Superseded writers keep priority: nobody is watching those by definition.
+// Idle ones are the fallback, and a writer must not be listed twice.
+assert.deepEqual(
+  reapPlan({ active: 4, limit: 3, superseded: ['a'], idle: ['a', 'b', 'c'] }),
+  ['a', 'b'],
+  'two slots short: superseded first, then idle, never twice',
+);
+assert.deepEqual(
+  reapPlan({ active: 3, limit: 3, superseded: [], idle: ['x'] }),
+  ['x'],
+  'an idle writer is reaped when nothing is superseded',
+);
+assert.deepEqual(
+  reapPlan({ active: 2, limit: 3, superseded: ['a'], idle: ['b'] }),
+  [],
+  'room to spare still reaps nothing — a watched writer is never sacrificed',
+);
+console.log('ok - an idle writer is reaped only to make room for one who is waiting');
 
 /* ------------------------------------------------ duplicate writers on seek */
 
