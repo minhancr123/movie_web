@@ -206,6 +206,28 @@ export default function PlaybackSection({
   // to it again when the episode changes without the node remounting.
   const activeCardNodeRef = useRef<HTMLElement | null>(null);
 
+  /**
+   * Episode the player is actually on, which is not always the one the URL says.
+   *
+   * Switching episodes used to be a <Link> navigation. The watch page is an
+   * async Server Component, so every navigation re-renders it behind the
+   * route-level loading.tsx — and that fallback replaces the whole subtree: the
+   * <video> element was destroyed, playback had to resolve again from scratch,
+   * and the episode strip came back as a new node at scrollLeft 0. The server
+   * was never the slow part (measured TTFB 117-142ms with the season warm in
+   * Redis); the teardown was the cost.
+   *
+   * So the switch is client state. replaceState keeps the address bar truthful
+   * — a reload or a shared link still opens that episode — without asking the
+   * router to re-render anything, so the player is left alone. The prop still
+   * wins after a real navigation, which is what this reset is for.
+   */
+  const [switchedEpisode, setSwitchedEpisode] = useState<number | null>(null);
+  const currentEpisode = switchedEpisode ?? episode ?? null;
+  useEffect(() => {
+    setSwitchedEpisode(null);
+  }, [episode]);
+
   // Brings the watching episode onto the strip. Manual math, because
   // scrollIntoView also scrolls every vertical ancestor and yanks the whole
   // page. Card widths are fixed (w-44), so image loads cannot shift it.
@@ -263,7 +285,7 @@ export default function PlaybackSection({
       cancelAnimationFrame(frame);
       clearTimeout(settle);
     };
-  }, [activeEpisode, episodes.length, revealActiveEpisode]);
+  }, [currentEpisode, episodes.length, revealActiveEpisode]);
 
   // Rotation, a resized panel or a maximised player all change the strip's
   // width, which re-snaps it and can walk the active card back out of view.
@@ -343,7 +365,7 @@ export default function PlaybackSection({
   >(async () => {});
   const loadSourcesRef = useRef<() => Promise<void>>(async () => {});
 
-  const selectedSourceKey = `playback:selectedSource:${type}:${tmdbId}:${season ?? 'movie'}:${episode ?? 'full'}`;
+  const selectedSourceKey = `playback:selectedSource:${type}:${tmdbId}:${season ?? 'movie'}:${currentEpisode ?? 'full'}`;
 
   // Resume seed for the FIRST auto-resolve only. Without this, opening a
   // half-watched title resolves from 0, starts playing, then the player's
@@ -351,8 +373,8 @@ export default function PlaybackSection({
   // SECOND full resolve that supersedes the playing session — the "phim đã
   // hiện rồi mà vẫn load tiếp" loop from the logs (6.9s + 5.6s + supersede).
   const initialStartAtRef = useRef<number>(0);
-  const didInitialResolveRef = useRef<boolean>(false);
-  const episodeSlug = season && episode ? `s${season}e${episode}` : 'full';
+  const seedConsumedForRef = useRef<string | null>(null);
+  const episodeSlug = season && currentEpisode ? `s${season}e${currentEpisode}` : 'full';
   const getResumeSeed = useCallback((): number => {
     try {
       const saved = history.find((h) => h.slug === contentRef);
@@ -495,7 +517,7 @@ export default function PlaybackSection({
   useEffect(() => {
     decodeDowngradeDoneRef.current = false;
     setNotice(null);
-  }, [type, tmdbId, season, episode]);
+  }, [type, tmdbId, season, currentEpisode]);
 
   useEffect(() => {
     return () => {
@@ -506,7 +528,7 @@ export default function PlaybackSection({
       resolveInFlightRef.current = null;
       resolveInFlightEpochRef.current = null;
       // StrictMode remount (dev) must re-seed like a fresh mount.
-      didInitialResolveRef.current = false;
+      seedConsumedForRef.current = null;
       initialStartAtRef.current = 0;
     };
   }, []);
@@ -904,7 +926,7 @@ export default function PlaybackSection({
         type,
         tmdbId,
         season: season ?? undefined,
-        episode: episode ?? undefined,
+        episode: currentEpisode ?? undefined,
         capabilities: caps,
         resolveId,
         ...(resolvedSourceToken ? { sourceToken: resolvedSourceToken } : {}),
@@ -1084,7 +1106,7 @@ export default function PlaybackSection({
             type,
             tmdbId,
             season: season ?? undefined,
-            episode: episode ?? undefined,
+            episode: currentEpisode ?? undefined,
           }).catch(() => {});
         }
       } else if (data.mode === 'downloading' || data.mode === 'preparing') {
@@ -1257,7 +1279,7 @@ export default function PlaybackSection({
       }
       if (resolveAbortRef.current === resolveController) resolveAbortRef.current = null;
     }
-  }, [type, tmdbId, season, episode, selectedSourceKey, recoverPlayback]);
+  }, [type, tmdbId, season, currentEpisode, selectedSourceKey, recoverPlayback]);
 
   // Keep the stable mirrors in sync after every render.
   startPlaybackResolutionRef.current = startPlaybackResolution;
@@ -1269,7 +1291,7 @@ export default function PlaybackSection({
         type,
         tmdbId,
         season: season ?? undefined,
-        episode: episode ?? undefined,
+        episode: currentEpisode ?? undefined,
         capabilities: detectCapabilities(),
       });
       setSources(res.data?.data?.sources || []);
@@ -1279,7 +1301,7 @@ export default function PlaybackSection({
     } finally {
       setIsLoadingSources(false);
     }
-  }, [type, tmdbId, season, episode]);
+  }, [type, tmdbId, season, currentEpisode]);
 
   loadSourcesRef.current = loadSources;
 
@@ -1298,12 +1320,19 @@ export default function PlaybackSection({
       const res = await providerAPI.getStatus();
       const torbox = res.data?.data?.torbox;
       if (torbox && torbox.connected) {
-        // First auto-start opens at the saved position when there is one, so
-        // the player never plays from 0 just to re-resolve seconds later.
-        // Manual source picks / retries intentionally start at 0 (or their
-        // explicit startAt) and must not consume this seed.
-        const seed = didInitialResolveRef.current ? 0 : getResumeSeed();
-        didInitialResolveRef.current = true;
+        // First auto-start on an episode opens at the saved position when there
+        // is one, so the player never plays from 0 just to re-resolve seconds
+        // later. Manual source picks / retries intentionally start at 0 (or
+        // their explicit startAt) and must not consume this seed.
+        //
+        // Scoped to the episode, not to the mount. It used to be a boolean that
+        // the component's lifetime owned, which was fine only because every
+        // episode switch remounted the page and reset it. Client-side switching
+        // keeps this instance alive, so a boolean would have handed the seed to
+        // episode 1 and then started every later episode from 0 — losing the
+        // resume position the viewer came for.
+        const seed = seedConsumedForRef.current === episodeSlug ? 0 : getResumeSeed();
+        seedConsumedForRef.current = episodeSlug;
         initialStartAtRef.current = seed;
         startPlaybackResolution(undefined, undefined, seed > 0 ? { startAt: seed } : undefined);
       } else {
@@ -1340,8 +1369,8 @@ export default function PlaybackSection({
     try {
       await providerAPI.connectTorbox(torboxKeyInput.trim());
       setTorboxKeyInput('');
-      const seed = didInitialResolveRef.current ? 0 : getResumeSeed();
-      didInitialResolveRef.current = true;
+      const seed = seedConsumedForRef.current === episodeSlug ? 0 : getResumeSeed();
+      seedConsumedForRef.current = episodeSlug;
       initialStartAtRef.current = seed;
       startPlaybackResolution(undefined, undefined, seed > 0 ? { startAt: seed } : undefined);
     } catch (err: any) {
@@ -1796,9 +1825,9 @@ export default function PlaybackSection({
                 <h2 className="font-syne text-xs font-bold uppercase tracking-wider text-white">
                   Danh Sách Tập Phim{seasonLabel ? ` (${seasonLabel})` : ''}
                 </h2>
-                {typeof activeEpisode === 'number' && (
+                {typeof currentEpisode === 'number' && (
                   <span className="shrink-0 rounded-full bg-amber-primary/20 px-2 py-0.5 font-mono text-[10px] font-bold text-amber-gold ring-1 ring-amber-primary/30">
-                    {isProd ? `Tập ${activeEpisode}` : `Tập ${activeEpisode}/${episodes.length}`}
+                    {isProd ? `Tập ${currentEpisode}` : `Tập ${currentEpisode}/${episodes.length}`}
                   </span>
                 )}
               </div>
@@ -1830,7 +1859,7 @@ export default function PlaybackSection({
               style={{ scrollbarWidth: 'none', msOverflowStyle: 'none', WebkitOverflowScrolling: 'touch' }}
             >
               {episodes.map((ep) => {
-                const isActive = ep.episodeNumber === activeEpisode;
+                const isActive = ep.episodeNumber === currentEpisode;
                 return (
                   <Link
                     key={ep.episodeNumber}
@@ -1838,6 +1867,24 @@ export default function PlaybackSection({
                     scroll={false}
                     data-active={isActive}
                     ref={isActive ? activeCardRef : undefined}
+                    onClick={(clickEvent) => {
+                      // A new tab, a new window or "open in new tab" must keep
+                      // working, so only a plain left click is intercepted.
+                      if (clickEvent.defaultPrevented) return;
+                      if (clickEvent.metaKey || clickEvent.ctrlKey || clickEvent.shiftKey || clickEvent.altKey) return;
+                      if (clickEvent.button !== 0) return;
+                      clickEvent.preventDefault();
+                      if (ep.episodeNumber === currentEpisode) return;
+                      setSwitchedEpisode(ep.episodeNumber);
+                      // The address bar must stay truthful — a reload or a shared
+                      // link opens this episode — but replaceState is not a
+                      // navigation, so the player is left alone. replaceState
+                      // rather than push: walking a season should not bury the
+                      // page the viewer came from under 24 history entries.
+                      if (typeof window !== 'undefined') {
+                        window.history.replaceState(null, '', ep.href);
+                      }
+                    }}
                     className={`group w-44 shrink-0 overflow-hidden rounded-xl border transition snap-start ${
                       isActive
                         ? 'glass-panel border-amber-primary/60 shadow-[0_0_12px_rgba(245,158,11,0.25)]'
