@@ -89,6 +89,12 @@ export default function RootLayout({
   return (
     <html lang="vi" className={`dark ${jakarta.variable} ${syne.variable} ${grotesk.variable} ${beVietnamPro.variable}`}>
       <head>
+        {/* Which build is actually running, readable in View Source.
+            A content-hashed chunk means the server can never serve stale code,
+            so "did the deploy land, or is this tab old?" is otherwise answered by
+            guessing from symptoms. RELEASE_ID is a runtime env of this container,
+            and the root layout is a server component, so it is the real thing. */}
+        <meta name="cinevn-release" content={process.env.RELEASE_ID || 'dev'} />
         <link
           rel="stylesheet"
           href="https://fonts.googleapis.com/css2?family=Material+Symbols+Outlined:opsz,wght,FILL,GRAD@20..48,100..700,0..1,-50..200&display=swap"
