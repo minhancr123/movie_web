@@ -280,6 +280,8 @@ export default function PlaybackSection({
   const pollTimerRef = useRef<NodeJS.Timeout | null>(null);
   const recoveryAttemptsRef = useRef(0);
   const recoveryInFlightRef = useRef(false);
+  /** 503 REMUX_BUSY auto-retry counter (reset each fresh resolve). */
+  const busyRetriesRef = useRef(0);
   // Latest-value mirrors so stable callbacks never close over stale state.
   // Live playhead in full-film seconds, fed by the player's timeupdate.
   const playheadRef = useRef<number>(0);
@@ -672,6 +674,7 @@ export default function PlaybackSection({
     setErrorMessage('');
     setResolveElapsed(0);
     setResolveStageLabel('');
+    busyRetriesRef.current = 0;
     // Fresh progress for the seek overlay (it mirrors these two states while
     // a far seek resolves). Stale warm percent from an earlier session must
     // not leak into the new one.
@@ -1107,6 +1110,33 @@ export default function PlaybackSection({
         setPlaybackStatus('needs_provider');
         setPendingAudioIndex(null);
         setKeyError(message);
+      } else if (
+        status === 503 &&
+        err.response?.data?.code === 'REMUX_BUSY' &&
+        (busyRetriesRef.current ?? 0) < 3
+      ) {
+        // Server is at remux capacity — wait 5s and retry automatically
+        // instead of dumping the user onto a dead error screen.
+        busyRetriesRef.current = (busyRetriesRef.current ?? 0) + 1;
+        setResolveStageLabel(
+          isProd
+            ? `Máy chủ đang bận, tự động thử lại (${busyRetriesRef.current}/3)…`
+            : `REMUX_BUSY — retry ${busyRetriesRef.current}/3 in 5s`,
+        );
+        resolveInFlightRef.current = null;
+        resolveInFlightEpochRef.current = null;
+        await new Promise((r) => setTimeout(r, 5000));
+        if (seekEpochRef.current === requestEpoch) {
+          return startPlaybackResolution(sourceToken, audioIndex, {
+            ...options,
+            seekEpoch: requestEpoch,
+          });
+        }
+      } else if (err?.code === 'ECONNABORTED') {
+        // Axios timeout: connection silently hung (common on mobile networks)
+        setPlaybackStatus('error');
+        setPendingAudioIndex(null);
+        setErrorMessage('Hết thời gian chờ — mạng quá chậm hoặc server không phản hồi. Thử lại hoặc đổi nguồn.');
       } else {
         setPlaybackStatus('error');
         setPendingAudioIndex(null);

@@ -133,10 +133,10 @@ export const getMovieDetail = async (slug: string) => {
     return null;
   }
 };
-
-
-
-
+
+
+
+
 
 export const moviesAPI = {
   getLatestMovies,
@@ -191,7 +191,7 @@ export const playbackAPI = {
     sourceToken?: string;
     audioIndex?: number;
     resolveId?: string;
-  }, signal?: AbortSignal) => authClient.post('/playback/resolve', data, signal ? { signal } : {}),
+  }, signal?: AbortSignal) => authClient.post('/playback/resolve', data, { timeout: 120_000, ...(signal ? { signal } : {}) }),
   prewarm: (data: {
     type: string;
     tmdbId: number;
