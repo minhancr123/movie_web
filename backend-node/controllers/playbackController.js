@@ -2055,7 +2055,14 @@ export const resolvePlayback = async (req, res) => {
  */
 export const prewarmPlayback = async (req, res) => {
   const parsed = parseResolveBody(req.body);
-  if (parsed.error) return fail(res, 400, parsed.error);
+  if (parsed.error) {
+    // Access log records the path, not the status, so a 400 here was invisible:
+    // a watch-history row with an empty currentEpisode produced episode 0 and a
+    // console 400 with nothing to connect it to. Silent best-effort calls should
+    // not be silent when they are refused.
+    console.warn(`prewarm bị từ chối: ${parsed.error} body=${JSON.stringify(req.body).slice(0, 200)}`);
+    return fail(res, 400, parsed.error);
+  }
 
   const { type, tmdbId, season, episode, capabilities } = parsed;
   const caps = normalizeCapabilities(capabilities);

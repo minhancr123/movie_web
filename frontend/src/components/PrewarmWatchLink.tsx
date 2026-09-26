@@ -56,12 +56,23 @@ export default function PrewarmWatchLink({
     warmed.current = true;
     try {
       const caps = detectCapabilities();
+      // The API rejects a TV prewarm that names only one of season/episode, or
+      // names an episode below 1: parseResolveBody answers 400 as soon as either
+      // key is present and does not validate. Sending each key independently is
+      // how a watch-history row with an empty currentEpisode turned into
+      // "Number('') is 0, which is finite" and a 400 in the console. A half
+      // pair carries no information the server could use anyway — it would just
+      // resolve the whole season.
+      const wantsEpisode = type === 'tv';
+      const seasonNumber = wantsEpisode ? Number(season) : NaN;
+      const episodeNumber = wantsEpisode ? Number(episode) : NaN;
+      const pair = Number.isInteger(seasonNumber) && seasonNumber >= 0
+        && Number.isInteger(episodeNumber) && episodeNumber > 0;
       void playbackAPI
         .prewarm({
           type,
           tmdbId,
-          ...(season != null ? { season } : {}),
-          ...(episode != null ? { episode } : {}),
+          ...(pair ? { season: seasonNumber, episode: episodeNumber } : {}),
           capabilities: caps,
         })
         .catch(() => {

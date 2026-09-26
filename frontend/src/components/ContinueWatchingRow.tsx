@@ -44,23 +44,36 @@ function ResumeLink({
     className?: string;
     children: React.ReactNode;
 }) {
-    const href = `/xem-phim/${movie.slug}?tap=${movie.currentEpisode}`;
-    const warmable = Boolean(movie.mediaType) && Number.isFinite(Number(movie.tmdbId));
-    if (!warmable) {
-        return <Link href={href} onClick={onClick} className={className}>{children}</Link>;
-    }
-    return (
-        <PrewarmWatchLink
-            type={movie.mediaType as string}
-            tmdbId={Number(movie.tmdbId)}
-            season={Number.isFinite(Number(movie.season)) ? Number(movie.season) : null}
-            episode={Number.isFinite(Number(movie.currentEpisode)) ? Number(movie.currentEpisode) : null}
-            href={href}
-            className={className}
-        >
-            {children}
-        </PrewarmWatchLink>
-    );
+  const href = `/xem-phim/${movie.slug}?tap=${movie.currentEpisode}`;
+  // Strict, because Number() lies about the cases that matter here:
+  // Number('') is 0 and Number(null) is 0, both "finite" and both rejected by the
+  // API as episode 0. An empty currentEpisode must read as absent.
+  const positiveInt = (value: unknown): number | null => {
+    const n = Number(value);
+    return Number.isInteger(n) && n > 0 ? n : null;
+  };
+  const nonNegativeInt = (value: unknown): number | null => {
+    const n = Number(value);
+    return Number.isInteger(n) && n >= 0 ? n : null;
+  };
+  const episode = positiveInt(movie.currentEpisode);
+  const season = nonNegativeInt(movie.season);
+  const warmable = Boolean(movie.mediaType) && positiveInt(movie.tmdbId) !== null;
+  if (!warmable) {
+    return <Link href={href} onClick={onClick} className={className}>{children}</Link>;
+  }
+  return (
+    <PrewarmWatchLink
+      type={movie.mediaType as string}
+      tmdbId={Number(movie.tmdbId)}
+      season={season}
+      episode={episode}
+      href={href}
+      className={className}
+    >
+      {children}
+    </PrewarmWatchLink>
+  );
 }
 
 export default function ContinueWatchingRow() {

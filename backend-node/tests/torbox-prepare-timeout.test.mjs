@@ -187,6 +187,12 @@ if (!/isTransientDebridError\(error\)/.test(controllerSource)) {
   failures.push('controller-retries-transient-prepare');
 }
 
+// 4b. A refused prewarm must say why. The access log records the path, not the
+// status, so a 400 was a console line with nothing to connect it to.
+if (!/prewarm bị từ chối/.test(controllerSource)) {
+  failures.push('prewarm-refusal-is-logged-with-its-reason');
+}
+
 // 5. The client has to act on that code, including for a far seek.
 const sectionSource = fs.readFileSync(
   new URL('../../frontend/src/components/PlaybackSection.tsx', import.meta.url),
