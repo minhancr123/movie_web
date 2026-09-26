@@ -813,8 +813,27 @@ export default function PlaybackSection({
                 }
                 if (warmPolls >= 30) finishWarm();
               } catch {
+                // A failed poll means the session is unreachable — most often
+                // the server restarted and took the writer with it. Counting
+                // failures and giving up turned that into a 60s dead end on a
+                // stream that could never grow again; re-resolving is what the
+                // writerAlive===false branch above already does, and it is the
+                // only thing that recovers.
                 warmFails += 1;
-                if (warmFails >= 5) finishWarm();
+                if (warmFails >= 3) {
+                  clearPoll();
+                  setPlaybackStatus('resolving');
+                  startPlaybackResolutionRef
+                    .current(activeTokenRef.current, undefined, { ...options, seekEpoch: requestEpoch })
+                    .catch((err: unknown) => {
+                      const reason = (err as { response?: { data?: { message?: string } }; message?: string })
+                        ?.response?.data?.message
+                        || (err instanceof Error && err.message)
+                        || 'không rõ nguyên nhân';
+                      setNotice(`Tạo lại luồng thất bại: ${String(reason).slice(0, 140)} Thử chọn nguồn khác.`);
+                    });
+                  return;
+                }
               }
             }, 2000);
           } else {

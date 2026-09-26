@@ -852,6 +852,27 @@ const touchPublishedRendition = async (db, renditionKey) => {
 const SESSION_STALE_MS = 30 * 60 * 1000; // 30 minutes instead of 15s
 
 /**
+ * The same question, asked of a writer this process does not own.
+ *
+ * SESSION_STALE_MS is the window a LIVE writer gets to look healthy on
+ * playlist freshness alone, because it can renew: every segment it writes moves
+ * the mtime forward. A session with no in-memory writer cannot renew anything —
+ * its playlist is frozen at whatever it last reached — so the generous window
+ * stops measuring liveness and starts measuring nothing.
+ *
+ * That is not hypothetical. A backend restart orphans every writer, and the
+ * orphaned session then answered "alive, not ready" for half an hour: the
+ * client polled faithfully for 52s and beyond against a playlist that could
+ * never grow again, and the viewer's only way out was the 60s warning in the
+ * UI. A restart is the cheapest, most common way to orphan a writer, so it has
+ * to be the cheapest one to detect.
+ */
+const ORPHANED_SESSION_STALE_MS = (() => {
+  const n = Number(process.env.PLAYBACK_ORPHAN_STALE_SECONDS);
+  return (Number.isFinite(n) && n > 0 ? n : 15) * 1000;
+})();
+
+/**
  * Newborn-writer amnesty for the poll-driven hung-writer kills below.
  *
  * A writer that is still OPENING its input (TorBox TLS + first bytes take
@@ -3008,7 +3029,10 @@ export const getPlaybackSession = async (req, res) => {
             playlistFresh: ageMs <= SESSION_STALE_MS,
             playlistGrowing: false,
           })
-        : state.exists && ageMs <= SESSION_STALE_MS);
+        // No writer of ours: only a playlist touched moments ago can speak for
+        // it, and only because something else is still writing. Judged on the
+        // orphan window, not the live one — see ORPHANED_SESSION_STALE_MS.
+        : state.exists && ageMs <= ORPHANED_SESSION_STALE_MS);
       if (!state.ended && !writerHealthy) {
         // An ffmpeg child may stay alive after its upstream socket wedges.
         // Killing it here ensures the client's automatic re-resolve can create
