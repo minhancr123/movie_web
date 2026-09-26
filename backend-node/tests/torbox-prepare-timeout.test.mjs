@@ -95,6 +95,52 @@ console.log('Testing TorBox prepare timeout handling...');
   check('default-still-bypasses-cache', listCall && listCall.includes('bypass_cache=true'));
 }
 
+// The forced re-scan gets its own, shorter deadline. It only answers "is this
+// already in the account?", and the caller already retries against the cached
+// feed when it cannot — so paying the full 15s to learn "no" is pure waiting.
+// Measured: a 4.7s candidate behind a 15.0s one.
+{
+  const seen = [];
+  await withStubbedTorbox(
+    (href) => { seen.push(href); return jsonResponse(cachedTorrentPayload()); },
+    () => prepareSource('key-abc', { infoHash: HASH }),
+  );
+  check('fresh-scan-happened', seen.some((href) => href.includes('bypass_cache=true')));
+}
+{
+  // A slow upstream must surface as a timeout inside the SHORT budget, not the
+  // provider-wide one, or nothing is actually saved.
+  let message = null;
+  const originalFetch = globalThis.fetch;
+  globalThis.fetch = async (url, init) => {
+    const signal = init?.signal;
+    if (signal?.aborted) {
+      const err = new Error('aborted');
+      err.name = 'AbortError';
+      throw err;
+    }
+    return new Promise((_resolve, reject) => {
+      signal?.addEventListener('abort', () => {
+        const err = new Error('aborted');
+        err.name = 'AbortError';
+        reject(err);
+      });
+    });
+  };
+  try {
+    await prepareSource('key-abc', { infoHash: HASH });
+  } catch (error) {
+    message = error?.message || '';
+  } finally {
+    globalThis.fetch = originalFetch;
+  }
+  check('fresh-scan-timeout-is-classified', /không phản hồi/.test(message));
+  check('fresh-scan-timeout-is-not-15s', !/15s/.test(message), `message was: ${message}`);
+  check('fresh-scan-timeout-is-transient', isTransientDebridError(
+    new DebridError(message, { status: 504, code: 'timeout' }),
+  ));
+}
+
 // 2. A timeout is a provider that stopped answering, not a verdict on the file.
 check('timeout-is-transient', isTransientDebridError(new DebridError('x', { status: 504, code: 'timeout' })));
 check('rate-limit-is-transient', isTransientDebridError(new DebridError('x', { status: 429, code: 'rate_limited' })));

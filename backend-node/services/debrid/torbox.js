@@ -55,7 +55,7 @@ export const isTransientDebridError = (error) =>
     error.status === 503 ||
     error.status === 504);
 
-const request = async (path, key, { method = 'GET', params = {}, body } = {}) => {
+const request = async (path, key, { method = 'GET', params = {}, body, timeoutMs = REQUEST_TIMEOUT_MS } = {}) => {
   if (!key) throw new DebridError('Thiếu TorBox API key', { status: 401, code: 'no_token' });
 
   const url = new URL(`${BASE_URL}${path}`);
@@ -65,8 +65,11 @@ const request = async (path, key, { method = 'GET', params = {}, body } = {}) =>
     }
   });
 
+  const budget = Number.isFinite(Number(timeoutMs)) && Number(timeoutMs) > 0
+    ? Number(timeoutMs)
+    : REQUEST_TIMEOUT_MS;
   const controller = new AbortController();
-  const timer = setTimeout(() => controller.abort(), REQUEST_TIMEOUT_MS);
+  const timer = setTimeout(() => controller.abort(), budget);
 
   try {
     const response = await fetch(url, {
@@ -109,7 +112,7 @@ const request = async (path, key, { method = 'GET', params = {}, body } = {}) =>
   } catch (error) {
     if (error instanceof DebridError) throw error;
     if (error.name === 'AbortError') {
-      throw new DebridError(`TorBox ${path} quá ${REQUEST_TIMEOUT_MS / 1000}s không phản hồi`, {
+      throw new DebridError(`TorBox ${path} quá ${budget / 1000}s không phản hồi`, {
         status: 504,
         code: 'timeout',
       });
@@ -206,9 +209,30 @@ export const checkCached = async (key, infoHashes) => {
  * re-scan is the request that misses the 15s deadline, and a resolve that only
  * ever wanted a torrent we KNOW is in the account dies on it.
  */
-const findTorrentByHash = async (key, infoHash, { bypassCache = true } = {}) => {
+/** Env number with a fallback. Unset, blank and junk all take the default, so a
+ *  blank line in .env can never mean "zero timeout". */
+const positiveNumber = (raw, fallback) => {
+  const n = Number(String(raw ?? '').trim());
+  return Number.isFinite(n) && n > 0 ? n : fallback;
+};
+
+/**
+ * How long the FORCED re-scan may take.
+ *
+ * That scan only answers one question: "is this infohash already in the
+ * account?" When it cannot answer quickly, the cached feed plus the
+ * magnet-add (which is idempotent, and is what a not-cached release needs
+ * anyway) is a complete substitute — the caller already retries against the
+ * cached feed on a timeout. Spending the full 15s to learn "no" is what turned
+ * a 4.7s candidate into a 15s one, and the viewer waited for the difference.
+ */
+const FRESH_LIST_TIMEOUT_MS =
+  positiveNumber(process.env.TORBOX_FRESH_LIST_TIMEOUT_SECONDS, 6) * 1000;
+
+const findTorrentByHash = async (key, infoHash, { bypassCache = true, timeoutMs } = {}) => {
   const payload = await request('/torrents/mylist', key, {
     params: { bypass_cache: bypassCache ? 'true' : 'false' },
+    ...(timeoutMs ? { timeoutMs } : {}),
   });
   const wanted = String(infoHash).toLowerCase();
   return (payload?.data || []).find((t) => String(t.hash || '').toLowerCase() === wanted) || null;
@@ -270,7 +294,12 @@ export const prepareSource = async (
   }
 
   const listOptions = { bypassCache: !assumeCached };
-  let torrent = infoHash ? await findTorrentByHash(key, infoHash, listOptions) : null;
+  // Only the forced re-scan gets the short deadline; a cached read is already
+  // the cheap answer, and the post-add confirmation below must keep the full
+  // budget because a wrong answer there stalls playback instead of just
+  // costing a retry.
+  const lookupOptions = assumeCached ? listOptions : { ...listOptions, timeoutMs: FRESH_LIST_TIMEOUT_MS };
+  let torrent = infoHash ? await findTorrentByHash(key, infoHash, lookupOptions) : null;
   if (!torrent && torrentId !== null) torrent = await findTorrentById(key, torrentId, listOptions);
 
   if (!torrent) {

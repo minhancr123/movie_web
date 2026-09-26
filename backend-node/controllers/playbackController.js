@@ -2002,6 +2002,10 @@ export const resolvePlayback = async (req, res) => {
     console.info(
       `resolvePlayback ${type}:${tmdbId} total=${((Date.now() - tResolveStart) / 1000).toFixed(1)}s ` +
       `status=${res.statusCode} reqStart=${requestedStartAt}s bucket=${startAt}s ` +
+      // Which episode, not just how far in. "Which episode was slow" is
+      // unanswerable from the rest of this line: two viewers on the same title
+      // at the same offset are different problems.
+      `s=${season ?? '-'} e=${episode ?? '-'} ` +
       `token=${sourceToken ? 'pinned' : 'auto'} ` +
       `avosrc=${lastAvSrcOffsetMs === null ? '?' : `${lastAvSrcOffsetMs}ms`} ` +
       `adly=${lastAudioDelayMs}ms pshift=${lastShiftMs === null ? '?' : `${lastShiftMs}ms`} ` +
