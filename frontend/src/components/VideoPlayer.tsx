@@ -394,6 +394,33 @@ export default function VideoPlayer({ src, movie, episode, authToken, durationSe
     const pausedBeforeRebuildRef = useRef(false);
     const userPausedRef = useRef(false);
 
+    /**
+     * Time from "the player was handed this source" to "pixels are moving".
+     *
+     * The server timeline logs resolve stages, but the leg it cannot see is the
+     * one that decides how the wait feels: request → playlist → first segment
+     * → first frame. Logged once per source, so the next slow title can be
+     * compared against this instead of re-guessed. Re-arms on every src change
+     * because a recovery replaces the stream under the same element.
+     */
+    const firstFrameAtRef = useRef<number | null>(null);
+    useEffect(() => {
+        firstFrameAtRef.current =
+            typeof performance !== 'undefined' ? performance.now() : null;
+    }, [src, reloadKey]);
+    const reportTimeToFirstFrame = (video: HTMLVideoElement) => {
+        const startedAt = firstFrameAtRef.current;
+        if (startedAt === null || firstFrameAtRef.current === undefined) return;
+        // One report per source.
+        firstFrameAtRef.current = null;
+        const seconds = (performance.now() - startedAt) / 1000;
+        console.info(
+            `[ttff] ${seconds.toFixed(2)}s readyState=${video.readyState} ` +
+            `buffered=${video.buffered.length ? video.buffered.end(0).toFixed(1) : '0'}s ` +
+            `src=${String(src).slice(0, 120)}`
+        );
+    };
+
     /** Restart hls.js once before replacing the server-side remux. The two
         deadlines still total 20s, but a recoverable loader stall gets nudged
         after 8s instead of leaving the viewer on a frozen frame for all 20. */
@@ -1194,7 +1221,11 @@ export default function VideoPlayer({ src, movie, episode, authToken, durationSe
                     timeSaved: Date.now(),
                     currentEpisode: episode.slug,
                     progress: currentTime,
-                    duration
+                    duration,
+                    // Lets the Continue Watching row warm this resolve on hover.
+                    mediaType: subContext?.type,
+                    tmdbId: subContext?.tmdbId,
+                    season: subContext?.season ?? undefined,
                 });
 
                 // API sync (fire and forget to avoid blocking)
@@ -1305,6 +1336,7 @@ export default function VideoPlayer({ src, movie, episode, authToken, durationSe
                 loadingTimeoutRef.current = undefined;
             }
             setIsLoading(false);
+            reportTimeToFirstFrame(video);
         };
         const handleCanPlay = () => {
             armStallTimer();

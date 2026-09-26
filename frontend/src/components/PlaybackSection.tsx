@@ -26,8 +26,21 @@ const formatResolveStage = (stage: string, detail: string): string => {
   }
   return detail ? `${base} (${detail})` : base;
 };
+
+/**
+ * 503 codes that mean "the work is fine, the server is not answering yet" — the
+ * client waits and asks again instead of showing a dead end.
+ *
+ * REMUX_BUSY: every remux slot is taken.
+ * SOURCE_PREPARE_TIMEOUT: the debrid provider stopped responding, so a release
+ * that is already in the account never got read. Retrying is the whole point:
+ * the alternative the server used to take (hand over a Vietsub CDN stream) is
+ * a different cut, mistimed subtitles, and a spinner on a cold CDN.
+ */
+const RETRYABLE_503_CODES = new Set(['REMUX_BUSY', 'SOURCE_PREPARE_TIMEOUT']);
 import { providerAPI, playbackAPI } from '@/lib/api';
 import { detectCapabilities } from '@/lib/capabilities';
+import { groupPlaybackSources } from '@/lib/source-groups';
 import type { PlayerEpisode } from '@/lib/catalog';
 import { episodeScrollTarget } from '@/lib/episode-list';
 import { useWatchHistory } from '../hooks/useLocalStorage';
@@ -290,7 +303,12 @@ export default function PlaybackSection({
     (
       sourceToken?: string,
       audioIndex?: number,
-      options?: { preservePlayer?: boolean; startAt?: number; seekEpoch?: number },
+      options?: {
+        preservePlayer?: boolean;
+        startAt?: number;
+        seekEpoch?: number;
+        serverRetry?: boolean;
+      },
     ) => Promise<void>
   >(async () => {});
   const loadSourcesRef = useRef<() => Promise<void>>(async () => {});
@@ -619,7 +637,12 @@ export default function PlaybackSection({
   const startPlaybackResolution = useCallback(async (
     sourceToken?: string,
     audioIndex?: number,
-    options?: { preservePlayer?: boolean; startAt?: number; seekEpoch?: number },
+    options?: {
+      preservePlayer?: boolean;
+      startAt?: number;
+      seekEpoch?: number;
+      serverRetry?: boolean;
+    },
   ) => {
     // Storage can throw when blocked: never let it reject the resolve.
     let rememberedToken = '';
@@ -674,7 +697,9 @@ export default function PlaybackSection({
     setErrorMessage('');
     setResolveElapsed(0);
     setResolveStageLabel('');
-    busyRetriesRef.current = 0;
+    // A server-asked retry continues the SAME resolve: resetting here would let
+    // it clear its own counter and retry forever.
+    if (options?.serverRetry !== true) busyRetriesRef.current = 0;
     // Fresh progress for the seek overlay (it mirrors these two states while
     // a far seek resolves). Stale warm percent from an earlier session must
     // not leak into the new one.
@@ -1079,6 +1104,7 @@ export default function PlaybackSection({
         return;
       }
       const status = err.response?.status;
+      const code = err.response?.data?.code;
       const message = err.response?.data?.message || err.message || 'Không thể chuẩn bị nguồn phát';
 
       if (!sourceToken && resolvedSourceToken && status && status >= 400 && status < 500 && typeof window !== 'undefined') {
@@ -1096,6 +1122,39 @@ export default function PlaybackSection({
         return;
       }
 
+      // Server-side "come back in a moment" answers. Handled BEFORE the seek
+      // rethrow below: a far seek that stalls on a busy server is the exact
+      // case that must retry itself rather than toast over a frozen frame.
+      if (status === 503 && RETRYABLE_503_CODES.has(code) && (busyRetriesRef.current ?? 0) < 3) {
+        // REMUX_BUSY: server is at remux capacity.
+        // SOURCE_PREPARE_TIMEOUT: the debrid provider stopped answering; the
+        // release is untouched and ready in seconds once it does.
+        const waitMs = code === 'SOURCE_PREPARE_TIMEOUT' ? 10000 : 5000;
+        busyRetriesRef.current = (busyRetriesRef.current ?? 0) + 1;
+        setResolveStageLabel(
+          isProd
+            ? code === 'SOURCE_PREPARE_TIMEOUT'
+              ? `Dịch vụ lưu trữ đang phản hồi chậm, tự động thử lại (${busyRetriesRef.current}/3)…`
+              : `Máy chủ đang bận, tự động thử lại (${busyRetriesRef.current}/3)…`
+            : `${code} — retry ${busyRetriesRef.current}/3 in ${waitMs / 1000}s`,
+        );
+        // The spinner stays up: the viewer is still waiting on this resolve,
+        // just a few seconds later. Released before the retry so the follow-up
+        // is never mistaken for a duplicate of the request that just failed.
+        resolveInFlightRef.current = null;
+        resolveInFlightEpochRef.current = null;
+        setPendingAudioIndex(null);
+        await new Promise((r) => setTimeout(r, waitMs));
+        if (seekEpochRef.current === requestEpoch) {
+          return startPlaybackResolution(sourceToken, audioIndex, {
+            ...options,
+            seekEpoch: requestEpoch,
+            serverRetry: true,
+          });
+        }
+        return;
+      }
+
       // Seek-resolve failure: the old picture is still up underneath, so keep
       // it and report through the rejection (the player toasts the reason
       // over the video) instead of tearing down into the error screen.
@@ -1110,28 +1169,6 @@ export default function PlaybackSection({
         setPlaybackStatus('needs_provider');
         setPendingAudioIndex(null);
         setKeyError(message);
-      } else if (
-        status === 503 &&
-        err.response?.data?.code === 'REMUX_BUSY' &&
-        (busyRetriesRef.current ?? 0) < 3
-      ) {
-        // Server is at remux capacity — wait 5s and retry automatically
-        // instead of dumping the user onto a dead error screen.
-        busyRetriesRef.current = (busyRetriesRef.current ?? 0) + 1;
-        setResolveStageLabel(
-          isProd
-            ? `Máy chủ đang bận, tự động thử lại (${busyRetriesRef.current}/3)…`
-            : `REMUX_BUSY — retry ${busyRetriesRef.current}/3 in 5s`,
-        );
-        resolveInFlightRef.current = null;
-        resolveInFlightEpochRef.current = null;
-        await new Promise((r) => setTimeout(r, 5000));
-        if (seekEpochRef.current === requestEpoch) {
-          return startPlaybackResolution(sourceToken, audioIndex, {
-            ...options,
-            seekEpoch: requestEpoch,
-          });
-        }
       } else if (err?.code === 'ECONNABORTED') {
         // Axios timeout: connection silently hung (common on mobile networks)
         setPlaybackStatus('error');
@@ -1426,7 +1463,11 @@ export default function PlaybackSection({
             )}
 
             <div className="max-h-80 space-y-1.5 overflow-y-auto">
-              {sources.filter((s) => s.playable !== false).map((src) => {
+              {groupPlaybackSources(sources).flatMap((group) => [
+                <h5 key={`group-${group.key}`} className="sticky top-0 z-10 rounded-lg bg-surface-dark px-3 py-2 text-xs font-bold text-white">
+                  {group.label} <span className="text-cinema-subtle">({group.sources.length})</span>
+                </h5>,
+                ...group.sources.map((src) => {
                 const isActive = Boolean(src.sourceToken && src.sourceToken === activeToken);
                 return (
                   <button
@@ -1500,7 +1541,8 @@ export default function PlaybackSection({
                     )}
                   </button>
                 );
-              })}
+              }),
+              ])}
             </div>
           </div>
         )}
@@ -1794,7 +1836,11 @@ export default function PlaybackSection({
             {sources.length === 0 && (
               <p className="p-3 text-xs text-cinema-subtle">Không có nguồn nào.</p>
             )}
-            {sources.filter((s) => s.playable !== false).map((src) => {
+            {groupPlaybackSources(sources).flatMap((group) => [
+                <h5 key={`group-${group.key}`} className="sticky top-0 z-10 rounded-lg bg-surface-dark px-3 py-2 text-xs font-bold text-white">
+                  {group.label} <span className="text-cinema-subtle">({group.sources.length})</span>
+                </h5>,
+                ...group.sources.map((src) => {
               const isActive = Boolean(src.sourceToken && src.sourceToken === activeToken);
               return (
                 <button
@@ -1869,7 +1915,8 @@ export default function PlaybackSection({
                   )}
                 </button>
               );
-            })}
+            }),
+              ])}
           </div>
         )}
       </div>

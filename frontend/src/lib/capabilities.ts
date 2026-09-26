@@ -3,6 +3,8 @@ export interface ClientCapabilities {
   av1: boolean;
   hdr: boolean;
   maxHeight: number;
+  /** Auto-selection preference only; never a ban on manually selecting 4K. */
+  preferredMaxHeight?: number;
   maxBitrateMbps: number;
   eac3: boolean;
 }
@@ -14,6 +16,7 @@ export function detectCapabilities(): ClientCapabilities {
       av1: false,
       hdr: false,
       maxHeight: 1080,
+      preferredMaxHeight: 0,
       maxBitrateMbps: 0,
       eac3: false,
     };
@@ -44,6 +47,13 @@ export function detectCapabilities(): ClientCapabilities {
   const screenHeight = Math.round(window.screen.height * (window.devicePixelRatio || 1));
   const maxHeight = screenHeight >= 2160 ? 2160 : screenHeight >= 1440 ? 1440 : 1080;
 
+  // A phone's portrait height is not a request for 4K. Keep decoding
+  // capabilities intact for manual picks, but prefer a lighter Auto source.
+  const phoneScreen = Math.min(window.screen.width, window.screen.height) <= 768;
+  const coarsePointer = typeof window.matchMedia === 'function'
+    && window.matchMedia('(pointer: coarse)').matches;
+  const preferredMaxHeight = phoneScreen && coarsePointer ? 1080 : 0;
+
   // Network downlink estimate if Network Information API is available
   const navAny = navigator as any;
   const downlink = navAny.connection?.downlink || 0;
@@ -59,6 +69,7 @@ export function detectCapabilities(): ClientCapabilities {
     av1,
     hdr,
     maxHeight,
+    preferredMaxHeight,
     maxBitrateMbps,
     eac3,
   };

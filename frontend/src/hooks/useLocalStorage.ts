@@ -13,6 +13,17 @@ interface SavedMovie {
   currentEpisode?: string;
   progress?: number; // seconds
   duration?: number; // seconds
+  /**
+   * Enough identity to warm the resolve before the viewer presses play.
+   *
+   * The Continue Watching row is the most common way into a title, and it is a
+   * plain link: without these the row cannot prewarm, so the viewer pays the
+   * full prepare + probe before the first frame. Absent on rows written before
+   * this existed, which simply keep today's behaviour.
+   */
+  mediaType?: string;
+  tmdbId?: number;
+  season?: number;
 }
 
 export function useLocalStorage<T>(key: string, initialValue: T) {

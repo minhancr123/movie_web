@@ -64,6 +64,23 @@ export const viewport: Viewport = {
   themeColor: "#f59e0b",
 };
 
+/**
+ * API origin (no trailing /api) for the preconnect hint. NEXT_PUBLIC_API_URL is
+ * the same variable lib/api.ts and lib/catalog.ts resolve against, so the hint
+ * can never point somewhere the app does not actually call. localhost gets no
+ * hint: it is already "connected" and the link would only add noise.
+ */
+const apiOrigin = (() => {
+  const raw = process.env.NEXT_PUBLIC_API_URL || "http://localhost:5001/api";
+  try {
+    const { origin, hostname } = new URL(raw);
+    if (!hostname || hostname === "localhost" || hostname === "127.0.0.1") return null;
+    return origin;
+  } catch {
+    return null;
+  }
+})();
+
 export default function RootLayout({
   children,
 }: Readonly<{
@@ -76,6 +93,16 @@ export default function RootLayout({
           rel="stylesheet"
           href="https://fonts.googleapis.com/css2?family=Material+Symbols+Outlined:opsz,wght,FILL,GRAD@20..48,100..700,0..1,-50..200&display=swap"
         />
+        {apiOrigin && (
+          <>
+            {/* The API is a different origin from the site, so the first resolve on
+                a cold visit pays DNS + TCP + TLS before a byte moves — 100-300ms on
+                a phone, on the critical path to the first frame. Open the socket
+                while the head is parsed instead. */}
+            <link rel="preconnect" href={apiOrigin} crossOrigin="anonymous" />
+            <link rel="dns-prefetch" href={apiOrigin} />
+          </>
+        )}
       </head>
       <body className="bg-background text-cinema-text font-sans antialiased selection:bg-amber-primary selection:text-black">
         <AuthProvider>

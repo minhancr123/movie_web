@@ -8,6 +8,60 @@ import Image from 'next/image';
 import { Play, X, ImagePlus } from 'lucide-react';
 import { useEffect, useMemo, useState } from 'react';
 import { IMAGE_PREFIX } from '@/lib/api';
+import PrewarmWatchLink from '@/components/PrewarmWatchLink';
+
+interface ResumeTarget {
+    slug: string;
+    name: string;
+    currentEpisode?: string;
+    mediaType?: string;
+    tmdbId?: number;
+    season?: number;
+}
+
+/**
+ * A Continue Watching link that warms the resolve on hover/tap, the way the
+ * detail page's play button already does.
+ *
+ * This row is the most common way back into a title and it used to be a bare
+ * link, so the viewer paid the full TorBox prepare + ffprobe before the first
+ * frame. Rows written before the identity fields existed cannot be warmed
+ * (prewarm needs a tmdb id) and keep today's behaviour rather than firing a
+ * request that would 404.
+ *
+ * Declared at module scope on purpose: a component defined inside the row
+ * remounts on every render, which would reset PrewarmWatchLink's `warmed` ref
+ * and re-fire the prewarm on each hover.
+ */
+function ResumeLink({
+    movie,
+    onClick,
+    className,
+    children,
+}: {
+    movie: ResumeTarget;
+    onClick: (e: React.MouseEvent) => void;
+    className?: string;
+    children: React.ReactNode;
+}) {
+    const href = `/xem-phim/${movie.slug}?tap=${movie.currentEpisode}`;
+    const warmable = Boolean(movie.mediaType) && Number.isFinite(Number(movie.tmdbId));
+    if (!warmable) {
+        return <Link href={href} onClick={onClick} className={className}>{children}</Link>;
+    }
+    return (
+        <PrewarmWatchLink
+            type={movie.mediaType as string}
+            tmdbId={Number(movie.tmdbId)}
+            season={Number.isFinite(Number(movie.season)) ? Number(movie.season) : null}
+            episode={Number.isFinite(Number(movie.currentEpisode)) ? Number(movie.currentEpisode) : null}
+            href={href}
+            className={className}
+        >
+            {children}
+        </PrewarmWatchLink>
+    );
+}
 
 export default function ContinueWatchingRow() {
     const { history, removeFromHistory, patchHistoryPosters } = useWatchHistory();
@@ -133,7 +187,7 @@ export default function ContinueWatchingRow() {
                                 </button>
                             </div>
 
-                            <Link href={`/xem-phim/${movie.slug}?tap=${movie.currentEpisode}`} onClick={(e) => goResume(e, movie)} className="block relative aspect-[2/3] overflow-hidden">
+                            <ResumeLink movie={movie} onClick={(e) => goResume(e, movie)} className="block relative aspect-[2/3] overflow-hidden">
                                 {imageUrl ? (
                                     <Image
                                         src={imageUrl}
@@ -163,12 +217,12 @@ export default function ContinueWatchingRow() {
                                         style={{ width: `${progressPercent}%` }}
                                     />
                                 </div>
-                            </Link>
+                            </ResumeLink>
 
                             <div className="p-4 bg-surface">
-                                <Link href={`/xem-phim/${movie.slug}?tap=${movie.currentEpisode}`} onClick={(e) => goResume(e, movie)} className="block mb-1.5">
+                                <ResumeLink movie={movie} onClick={(e) => goResume(e, movie)} className="block mb-1.5">
                                     <h3 className="text-sm font-bold text-cinema-text truncate group-hover:text-primary transition-colors">{movie.name}</h3>
-                                </Link>
+                                </ResumeLink>
 
                                 <div className="flex justify-between items-center text-[10px] sm:text-xs text-cinema-subtle">
                                     <span>Tập {movie.currentEpisode}</span>

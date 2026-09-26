@@ -1,7 +1,7 @@
 'use client';
 
 import Link from 'next/link';
-import { useRef, type ReactNode } from 'react';
+import { useEffect, useRef, type ReactNode } from 'react';
 import { playbackAPI } from '@/lib/api';
 import { detectCapabilities } from '@/lib/capabilities';
 
@@ -14,6 +14,16 @@ interface PrewarmWatchLinkProps {
   className?: string;
   children: ReactNode;
 }
+
+/**
+ * How long the pointer must rest on a link before a HOVER prewarm fires.
+ *
+ * Prewarm shares its rate-limit bucket with resolve (30/min, playbackRateLimit),
+ * so a mouse sweeping across an episode list would otherwise spend the whole
+ * budget on rows nobody wanted — and 429 the actual resolve that follows. Touch
+ * and click are deliberate, so they still fire immediately; only hover waits.
+ */
+const HOVER_DWELL_MS = 250;
 
 /**
  * Watch link that warms the resolve caches ahead of navigation.
@@ -35,6 +45,11 @@ export default function PrewarmWatchLink({
   children,
 }: PrewarmWatchLinkProps) {
   const warmed = useRef(false);
+  const dwellTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
+
+  useEffect(() => () => {
+    if (dwellTimer.current) clearTimeout(dwellTimer.current);
+  }, []);
 
   const fire = () => {
     if (warmed.current) return;
@@ -58,11 +73,27 @@ export default function PrewarmWatchLink({
     }
   };
 
+  const fireAfterDwell = () => {
+    if (warmed.current || dwellTimer.current) return;
+    dwellTimer.current = setTimeout(() => {
+      dwellTimer.current = null;
+      fire();
+    }, HOVER_DWELL_MS);
+  };
+
+  const cancelDwell = () => {
+    if (dwellTimer.current) {
+      clearTimeout(dwellTimer.current);
+      dwellTimer.current = null;
+    }
+  };
+
   return (
     <Link
       href={href}
       className={className}
-      onMouseEnter={fire}
+      onMouseEnter={fireAfterDwell}
+      onMouseLeave={cancelDwell}
       onTouchStart={fire}
       onClick={fire}
     >

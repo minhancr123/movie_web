@@ -251,10 +251,47 @@ export const normalizeCapabilities = (caps = {}) => ({
   av1: Boolean(caps.av1),
   hdr: Boolean(caps.hdr),
   maxHeight: Number(caps.maxHeight) > 0 ? Number(caps.maxHeight) : 1080,
+  // This affects Auto ordering, not codec support or manual source selection.
+  preferredMaxHeight: Number.isFinite(Number(caps.preferredMaxHeight)) && Number(caps.preferredMaxHeight) > 0
+    ? Math.min(2160, Number(caps.preferredMaxHeight)) : 0,
   // Mbps the client says it can sustain; 0 means "unknown, do not filter".
   maxBitrateMbps: Number(caps.maxBitrateMbps) > 0 ? Number(caps.maxBitrateMbps) : 0,
   eac3: Boolean(caps.eac3),
 });
+
+/**
+ * Did the release name actually state a height?
+ *
+ * The distinction matters because a release with no stated height is not a tall
+ * one: it is an unknown one, and must never be filtered out for being tall.
+ */
+export const hasKnownHeight = (source) => {
+  const height = Number(source?.resolution);
+  return Number.isFinite(height) && height > 0;
+};
+
+/**
+ * Would Auto pick this release on a client that asked for a lighter source?
+ *
+ * Two things must hold, and both belong here rather than in the comparator:
+ *
+ *   - the height fits the request. This outranks readiness on purpose. A
+ *     cached 4K must not beat a 1080p the phone asked for, or "phone ⇒ 1080p"
+ *     only stays true until TorBox happens to hold the 4K — and a phone then
+ *     pays 4K bandwidth to get it.
+ *   - the release can actually be obtained. A 0-seed release TorBox does not
+ *     already hold is not something to send a phone to wait for, however good
+ *     its label looks. So readiness is part of the test, not only a tie-break.
+ *
+ * `preferredMaxHeight` of 0 means "no preference expressed": every caller then
+ * leaves ordering to `score`, exactly as before this existed.
+ */
+export const isPreferredAutoSource = (source, preferredMaxHeight) => {
+  const cap = Number(preferredMaxHeight) || 0;
+  if (cap <= 0 || !hasKnownHeight(source)) return false;
+  if (Number(source.resolution) > cap) return false;
+  return Boolean(source.cached) || Number(source.seeds ?? 0) > 0;
+};
 
 /* --------------------------------------------------------------- estimation */
 
@@ -502,6 +539,17 @@ export const rankCandidates = (
     })
     .sort((a, b) => {
       if (a.playable !== b.playable) return a.playable ? -1 : 1;
+      if (caps.preferredMaxHeight) {
+        // Height preference first, readiness second. The order is the whole
+        // point: asked for a lighter source, a phone takes the 1080p even when
+        // TorBox is already holding the 4K (see isPreferredAutoSource).
+        const aPreferred = isPreferredAutoSource(a, caps.preferredMaxHeight);
+        const bPreferred = isPreferredAutoSource(b, caps.preferredMaxHeight);
+        if (aPreferred !== bPreferred) return aPreferred ? -1 : 1;
+        // Within the preferred band, take the highest resolution it offers.
+        if (aPreferred && a.resolution !== b.resolution) return b.resolution - a.resolution;
+        if (Boolean(a.cached) !== Boolean(b.cached)) return a.cached ? -1 : 1;
+      }
       return b.score - a.score;
     });
 
@@ -516,6 +564,8 @@ export const rankCandidates = (
 export default {
   parseCandidate,
   normalizeCapabilities,
+  hasKnownHeight,
+  isPreferredAutoSource,
   scoreCandidate,
   rankCandidates,
   estimateBitrateMbps,

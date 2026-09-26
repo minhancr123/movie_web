@@ -252,8 +252,12 @@ export default async function CatalogDetailPage({ params, searchParams }: PagePa
           {season && (
             <div className="grid gap-3 md:grid-cols-2">
               {season.episodes.map((episode) => (
-                <Link
+                <PrewarmWatchLink
                   key={episode.contentRef}
+                  type={detail.mediaType}
+                  tmdbId={detail.tmdbId}
+                  season={season.seasonNumber}
+                  episode={episode.episodeNumber}
                   href={watchHref(detail, season.seasonNumber, episode.episodeNumber)}
                   className="glass-panel glass-panel-hover flex gap-3 rounded-xl p-3"
                 >
@@ -276,7 +280,7 @@ export default async function CatalogDetailPage({ params, searchParams }: PagePa
                       {episode.overview || 'Chưa có mô tả.'}
                     </p>
                   </div>
-                </Link>
+                </PrewarmWatchLink>
               ))}
             </div>
           )}
