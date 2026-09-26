@@ -2302,7 +2302,6 @@ export const listPlaybackSources = async (req, res) => {
       ...yaEntries,
       ...playable.map(sanitizeCandidateForPicker),
       ...(vimoEntry ? [vimoEntry] : []),
-      ...rejected.map(sanitizeCandidateForPicker),
     ];
 
     if (allSources.length === 0) {
@@ -2318,7 +2317,7 @@ export const listPlaybackSources = async (req, res) => {
       success: true,
       data: {
         caps,
-        sources: allSources.slice(0, 40),
+        sources: allSources.slice(0, 15),
       },
     });
   } catch (error) {

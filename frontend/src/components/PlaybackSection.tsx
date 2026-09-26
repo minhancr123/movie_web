@@ -1381,7 +1381,7 @@ export default function PlaybackSection({
                 <Layers size={16} className="text-amber-gold" />
                 <span>Danh sách nguồn phát thay thế</span>
               </h4>
-              <span className="text-xs text-cinema-subtle font-mono">{sources.length} nguồn khả dụng</span>
+              <span className="text-xs text-cinema-subtle font-mono">{sources.filter((s) => s.playable !== false).length} nguồn khả dụng</span>
             </div>
 
             {isLoadingSources && (
@@ -1396,7 +1396,7 @@ export default function PlaybackSection({
             )}
 
             <div className="max-h-80 space-y-1.5 overflow-y-auto">
-              {sources.map((src) => {
+              {sources.filter((s) => s.playable !== false).map((src) => {
                 const isActive = Boolean(src.sourceToken && src.sourceToken === activeToken);
                 return (
                   <button
@@ -1764,7 +1764,7 @@ export default function PlaybackSection({
             {sources.length === 0 && (
               <p className="p-3 text-xs text-cinema-subtle">Không có nguồn nào.</p>
             )}
-            {sources.map((src) => {
+            {sources.filter((s) => s.playable !== false).map((src) => {
               const isActive = Boolean(src.sourceToken && src.sourceToken === activeToken);
               return (
                 <button
