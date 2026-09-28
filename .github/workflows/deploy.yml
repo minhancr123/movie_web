@@ -22,6 +22,8 @@ jobs:
   test:
     name: Build and Test
     runs-on: ubuntu-latest
+    permissions:
+      contents: read
     steps:
       - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
 
@@ -58,6 +60,11 @@ jobs:
     name: Build and Push Docker Images
     needs: test
     runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      # Without this the GHCR push fails with
+      # "denied: installation not allowed to Create organization package".
+      packages: write
     outputs:
       backend_digest: ${{ steps.build_backend.outputs.digest }}
       frontend_digest: ${{ steps.build_frontend.outputs.digest }}
