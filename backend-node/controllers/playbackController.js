@@ -1625,21 +1625,21 @@ export const resolvePlayback = async (req, res) => {
 
       if (decision.mode === 'remux' && inputUrl && file) {
         // A session this size may not fit on the box at all: a 4K remux was
-        // measured at 33GB against a floor of 12GB free, and video transcode is
-        // off, so there is no smaller rung to step down to. The film is still
-        // watchable — play it straight from the provider's CDN, which uses no
-        // disk at all.
+        // measured at 33GB against a floor of 12GB free, and video transcode
+        // is off, so there is no smaller rung to step down to. The film is
+        // still watchable — play it straight from the provider's CDN, which
+        // uses no disk at all.
         //
-        // This is the same trade already made in reverse above: a direct source
-        // is given up to apply the egress cap, so treating it as the fallback
-        // when the cap cannot be met is symmetric rather than new machinery.
-        // Refusing here is what sent the viewer back to the start of the film:
-        // the seek-resolve failed, and recovery re-resolved from zero.
+        // Priced from runtimeMinutes, not fullDurationSeconds: that const is
+        // declared further down (it prefers the probe duration), and reading
+        // it here throws a TDZ ReferenceError that fails the whole resolve.
+        // The TMDB runtime is the coarser but always-available input, and the
+        // estimator already prices the full duration with margin.
         const diskFit = admitRemuxDisk({
           freeBytes: await freeDiskBytes(),
           needBytes: estimateSessionBytes({
             kbps: videoPlan.kbps,
-            durationSeconds: fullDurationSeconds,
+            durationSeconds: runtimeMinutes ? Math.round(runtimeMinutes * 60) : null,
             height: videoPlan.height,
           }),
         });
