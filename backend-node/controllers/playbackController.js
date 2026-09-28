@@ -1667,8 +1667,25 @@ export const resolvePlayback = async (req, res) => {
             + `remux can ~${Math.round(diskFit.needBytes / 1024 ** 3)}GB, `
             + `trong ${Math.round((diskFit.freeBytes || 0) / 1024 ** 3)}GB`,
           );
-          decision.mode = 'direct';
-          decision.reason = 'Đang phát trực tiếp bản gốc.';
+          // Only downgrade when the browser can actually decode this file's
+          // audio. Direct play hands over the untouched source, so for a track
+          // Chrome cannot read the viewer gets video and no sound at all — a
+          // worse outcome than waiting, and one they cannot fix from the
+          // player. Such a candidate is dropped instead so the next source
+          // gets its turn; if every source needs the remux the loop ends on
+          // lastError and the viewer is told to retry, which is the same
+          // reading RemuxNoSpaceError already gives them.
+          if (decision.audioBrowserSafe) {
+            decision.mode = 'direct';
+            decision.reason = 'Đang phát trực tiếp bản gốc.';
+          } else {
+            console.warn(
+              `resolvePlayback bo qua nguon cho tmdb=${tmdbId}: `
+              + `audio khong giai ma duoc tren client, va remux la thieu cho ngay`,
+            );
+            lastError = new Error('Không đủ dung lượng để chuẩn hoá âm thanh cho nguồn này');
+            continue;
+          }
         }
       }
 

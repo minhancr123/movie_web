@@ -278,9 +278,26 @@ export const ffprobe = async (inputUrl) => {
 };
 
 const isBrowserVideoCodec = (codec) => ['h264', 'hevc', 'av1', 'vp9'].includes(String(codec || '').toLowerCase());
-const isBrowserAudioCodec = (codec, profile = null, channels = null) => {
+/**
+ * Whether the client can play a source audio stream as-is, so ffmpeg copies it
+ * instead of re-encoding.
+ *
+ * E-AC 3 is why this takes caps. Most Bluray remuxes carry 5.1 E-AC 3, and the
+ * browser is already asked what it can decode (frontend/src/lib/capabilities.ts
+ * sends `eac3` from canPlayType) — but the answer was only ever used to rank
+ * sources away from E-AC 3, never to decide the copy. So on a client that
+ * handles it, every one of those titles still paid a full audio re-encode to
+ * AAC-LC: disk, CPU and a remux that could fail for space, all to produce a
+ * stream the client already had. Support is a property of the client, not of
+ * the format, so it cannot live in a table here.
+ *
+ * AC-3 (plain Dolby Digital) stays out: canPlayType for it is not a reliable
+ * signal across browsers, and the copy lands in fMP4 that Chrome then rejects.
+ */
+const isBrowserAudioCodec = (codec, profile = null, channels = null, caps = {}) => {
   const c = String(codec || '').toLowerCase();
   if (c === 'mp3' || c === 'opus') return true;
+  if (c === 'eac3' || c === 'ec-3' || c === 'ddp' || c === 'dd+') return Boolean(caps?.eac3);
   if (c === 'aac') {
     if (profile && !String(profile).toUpperCase().includes('LC')) return false;
     if (channels && Number(channels) > 2) return false;
@@ -370,7 +387,13 @@ export const decidePlaybackMode = (probe, caps = {}, preferredAudioIdx = null, o
   }
 
   const audio = audios[targetAudioIdx] || null;
-  const audioCopy = audio && isBrowserAudioCodec(audio.codec, audio.profile, audio.channels);
+  const audioCopy = audio && isBrowserAudioCodec(audio.codec, audio.profile, audio.channels, caps);
+  // The chosen track decodes in the client or it does not, and the disk guard
+  // downstream needs to know before it downgrades a remux to direct play: a
+  // direct fallback for a track the browser cannot decode is a silent film,
+  // not a cheaper one. Carried on the decision so the caller does not have to
+  // re-probe the same stream to find out.
+  const audioBrowserSafe = Boolean(audioCopy);
   const containerOk = isMp4Container(probe.format);
 
   // Codec the client cannot decode directly (HEVC/AV1 on most desktop
@@ -395,14 +418,28 @@ export const decidePlaybackMode = (probe, caps = {}, preferredAudioIdx = null, o
       videoTranscode: plan,
       videoCopy: false,
       audioCopy: false,
+      audioBrowserSafe,
       audioStreamIndex: audio ? audio.streamIndex : null,
       audioChannels: audio ? audio.channels : null,
       audioIndex: targetAudioIdx,
     };
   }
 
-  if (containerOk && audioCopy && targetAudioIdx === 0) {
-    return { mode: 'direct', reason: 'Container và codec đã phù hợp browser', audioStreamIndex: null, audioIndex: targetAudioIdx };
+  // Direct play hands the client the file untouched: no ffmpeg, no disk, no
+  // wait. Safe when the browser will play the track that was chosen — and it
+  // can only ever play the container's first one, so a choice past index 0
+  // still needs the remux to map the right stream. A file carrying a single
+  // audio track has no such ambiguity whatever the index reads, and those are
+  // common enough (older and lower-bitrate releases) to be worth skipping a
+  // full remux for.
+  if (containerOk && audioCopy && (targetAudioIdx === 0 || audios.length === 1)) {
+    return {
+      mode: 'direct',
+      reason: 'Container và codec đã phù hợp browser',
+      audioStreamIndex: null,
+      audioIndex: targetAudioIdx,
+      audioBrowserSafe,
+    };
   }
 
   return {
@@ -412,7 +449,10 @@ export const decidePlaybackMode = (probe, caps = {}, preferredAudioIdx = null, o
     // In HLS fMP4 remux, always transcode audio to standard AAC-LC stereo (-c:a aac -b:a 192k -ac 2).
     // Copying arbitrary source audio (e.g. AAC Main profile, HE-AAC, 5.1/7.1 channels) directly into fMP4
     // causes Chrome/MSE to reject the SourceBuffer or throw MEDIA_ERROR. Video remains copy (0% CPU).
+    // E-AC 3 is the one exception now, and only on a client that said it
+    // decodes it — see isBrowserAudioCodec.
     audioCopy: false,
+    audioBrowserSafe,
     // Absolute ffprobe stream index so ffmpeg maps exactly this track.
     audioStreamIndex: audio ? audio.streamIndex : null,
     audioIndex: targetAudioIdx,
