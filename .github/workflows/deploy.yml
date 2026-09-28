@@ -147,8 +147,16 @@ jobs:
                 echo "::error::No previous images to fall back to - the site is down"
                 exit 1
               }
-              BACKEND_IMAGE="$PREV_BACKEND" FRONTEND_IMAGE="$PREV_FRONTEND" \
-                docker compose -f docker-compose.prod.yml up -d --no-deps backend-node frontend
+              # The running containers report RELEASE_ID, so a rollback that
+              # keeps the failed SHA makes /release lie about what is live.
+              # .env still holds the previous release: it is only rewritten
+              # on success, below.
+              ROLLBACK_RELEASE=$(grep -E '^RELEASE_ID=' .env 2>/dev/null | cut -d= -f2 || true)
+              [ -n "${ROLLBACK_RELEASE:-}" ] || ROLLBACK_RELEASE="$SHA"
+              # All node services share BACKEND_IMAGE: a scoped restart would
+              # leave the worker and scheduler on the failed image.
+              BACKEND_IMAGE="$PREV_BACKEND" FRONTEND_IMAGE="$PREV_FRONTEND" RELEASE_ID="$ROLLBACK_RELEASE" \
+                docker compose -f docker-compose.prod.yml up -d
               for i in $(seq 1 12); do
                 if curl -fsS http://localhost:5001/healthz >/dev/null; then
                   echo "::error::Deploy failed; rolled back to the previous images"
@@ -172,17 +180,22 @@ jobs:
             export BACKEND_IMAGE FRONTEND_IMAGE RELEASE_ID="$SHA"
             docker compose -f docker-compose.prod.yml up -d --remove-orphans
 
-            echo "Waiting for the API to report healthy..."
-            ok=1
-            for i in $(seq 1 24); do
-              if curl -fsS http://localhost:5001/healthz >/dev/null; then
-                echo "healthy after ${i} attempt(s)"
-                break
-              fi
-              sleep 5
-              [ "$i" = 24 ] && ok=0
-            done
-            [ "$ok" = 1 ] || {
+            echo "Waiting for the stack to report healthy..."
+            wait_for() {
+              local url=$1
+              local tries=$2
+              local i
+              for i in $(seq 1 "$tries"); do
+                if curl -fsS --max-time 15 "$url" >/dev/null; then
+                  echo "ok  $url (${i})"
+                  return 0
+                fi
+                sleep 5
+              done
+              echo "FAILED  $url"
+              return 1
+            }
+            wait_for http://localhost:5001/healthz 24 || {
               echo "API never became healthy"
               docker compose -f docker-compose.prod.yml logs --tail 200 backend-node || true
               rollback
@@ -190,9 +203,12 @@ jobs:
 
             docker exec cineon-backend ffmpeg -version >/dev/null \
               || { echo "::error::ffmpeg missing"; rollback; }
-            curl -fsS http://localhost:3000/api/health >/dev/null \
+            # The frontend needs tens of seconds to boot on this box. A single
+            # shot right after the backend turns healthy only proves it is
+            # still starting — this exact check once rolled a good deploy back.
+            wait_for http://localhost:3000/api/health 18 \
               || { echo "::error::frontend is not responding"; rollback; }
-            curl -fsS --max-time 15 https://cinevn.me/ >/dev/null \
+            wait_for https://cinevn.me/ 12 \
               || { echo "::error::public site is not responding"; rollback; }
 
             # Health alone proves nothing about which image is live: the old

@@ -42,8 +42,10 @@ say "deploy $SHA  (rollback: ${PREV_FRONTEND:0:19} / ${PREV_BACKEND:0:19} / $PRE
 
 rollback() {
   say 'ROLLING BACK'
+  # All node services share BACKEND_IMAGE: a scoped restart would leave the
+  # worker and scheduler on the failed image, so roll the whole stack.
   BACKEND_IMAGE="$PREV_BACKEND" FRONTEND_IMAGE="$PREV_FRONTEND" RELEASE_ID="$PREV_RELEASE" \
-    docker compose -f docker-compose.prod.yml up -d --no-deps backend-node frontend
+    docker compose -f docker-compose.prod.yml up -d
   wait_for http://localhost:5001/healthz 18 && wait_for http://localhost:3000/api/health 18 \
     && say 'rolled back and healthy' || say 'ROLLBACK DID NOT COME UP'
 }
