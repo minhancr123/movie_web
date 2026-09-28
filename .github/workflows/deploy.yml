@@ -37,7 +37,7 @@ jobs:
       - name: Frontend typecheck and tests
         run: |
           npm ci --prefix frontend
-          npx tsc --noEmit --prefix frontend
+          npm run typecheck --prefix frontend
           npm test --prefix frontend
 
       - name: Frontend build

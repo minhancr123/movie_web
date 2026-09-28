@@ -22,11 +22,16 @@ jobs:
       - name: Frontend typecheck and tests
         run: |
           npm ci --prefix frontend
-          npx tsc --noEmit --prefix frontend
+          npm run typecheck --prefix frontend
           npm test --prefix frontend
 
       - name: Frontend build
         run: npm run build --prefix frontend
+        env:
+          NEXT_PUBLIC_API_URL: ${{ vars.PUBLIC_SITE_URL }}/api
+          NEXT_PUBLIC_BACKEND_API_URL: ${{ vars.PUBLIC_SITE_URL }}/api
+          NEXT_PUBLIC_SOCKET_URL: ${{ vars.PUBLIC_SITE_URL }}
+          NEXT_PUBLIC_SITE_URL: ${{ vars.PUBLIC_SITE_URL }}
 
       - name: Manifest tests
         run: python -m unittest discover -s deploy/tests -v
