@@ -154,9 +154,45 @@ const Header = () => {
     // Active-link detection that understands query strings (pathname alone
     // can never equal '/kham-pha?type=movie'). Read from window.location on
     // navigation instead of useSearchParams to avoid a Suspense boundary.
+    //
+    // The history wrapper is the load-bearing part. 'Phim Lẻ', 'Phim Bộ' and
+    // 'Hoạt Hình' all live on /kham-pha and differ only by query string, so
+    // pathname stays '/kham-pha' while moving between them and an effect keyed
+    // on pathname alone never re-ran: the highlight kept whichever tab was
+    // opened first, so a click could leave every tab unlit. App Router pushes
+    // those navigations through history, so listening for push/replace/pop
+    // covers every client-side move. Keyed on pathname as well so a real route
+    // change still resyncs.
     const [queryString, setQueryString] = useState('');
     useEffect(() => {
-        setQueryString(window.location.search);
+        const sync = () => setQueryString(window.location.search);
+
+        const NAVIGATE_EVENT = 'cine:navigate';
+        const history = window.history;
+        const pushState = history.pushState;
+        const replaceState = history.replaceState;
+
+        const notify = () => window.dispatchEvent(new Event(NAVIGATE_EVENT));
+        history.pushState = function (...args: Parameters<History['pushState']>) {
+            const result = pushState.apply(this, args);
+            notify();
+            return result;
+        };
+        history.replaceState = function (...args: Parameters<History['replaceState']>) {
+            const result = replaceState.apply(this, args);
+            notify();
+            return result;
+        };
+
+        sync();
+        window.addEventListener('popstate', sync);
+        window.addEventListener(NAVIGATE_EVENT, sync);
+        return () => {
+            window.removeEventListener('popstate', sync);
+            window.removeEventListener(NAVIGATE_EVENT, sync);
+            history.pushState = pushState;
+            history.replaceState = replaceState;
+        };
     }, [pathname]);
     const query = useMemo(() => new URLSearchParams(queryString), [queryString]);
 
