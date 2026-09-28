@@ -1633,13 +1633,31 @@ export const resolvePlayback = async (req, res) => {
         // Priced from runtimeMinutes, not fullDurationSeconds: that const is
         // declared further down (it prefers the probe duration), and reading
         // it here throws a TDZ ReferenceError that fails the whole resolve.
-        // The TMDB runtime is the coarser but always-available input, and the
-        // estimator already prices the full duration with margin.
+        // The TMDB runtime is the coarser input, and the estimator already
+        // prices the full duration with margin.
+        //
+        // A null duration, though, sent estimateSessionBytes to its
+        // unknown-length branch — a flat 17GB, the documented 4K worst case —
+        // and TMDB carries no runtime for an episode, so every one of them was
+        // priced as the worst case. Against a 30GB box holding 11GB free and a
+        // 6GB reserve, that left 5GB to fit 17, the remux was refused, and the
+        // film fell through to direct. Direct is not the softer option it
+        // looks: it hands the client the source file untouched, so the 5.1/6ch
+        // AAC, AC3 or DTS track Chrome cannot decode plays as silent video,
+        // and the direct response carries no presentationShiftMs, so the
+        // subtitle clock also loses the B-frame reorder delay (83ms on the
+        // episode that first showed it). The probe is already in hand here and
+        // knows the real file length, so it backs the TMDB value up rather
+        // than pricing the film as unknown.
+        const probedDurationSec = Number(probe?.duration);
+        const pricedDurationSec = runtimeMinutes
+          ? Math.round(runtimeMinutes * 60)
+          : (Number.isFinite(probedDurationSec) && probedDurationSec > 0 ? probedDurationSec : null);
         const diskFit = admitRemuxDisk({
           freeBytes: await freeDiskBytes(),
           needBytes: estimateSessionBytes({
             kbps: videoPlan.kbps,
-            durationSeconds: runtimeMinutes ? Math.round(runtimeMinutes * 60) : null,
+            durationSeconds: pricedDurationSec,
             height: videoPlan.height,
           }),
         });
