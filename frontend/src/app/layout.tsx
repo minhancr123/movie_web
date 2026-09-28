@@ -38,9 +38,35 @@ const beVietnamPro = Be_Vietnam_Pro({
   variable: "--font-bevn",
 });
 
+const SITE_URL = (
+  process.env.NEXT_PUBLIC_SITE_URL ||
+  process.env.FRONTEND_URL ||
+  'https://cinevn.me'
+).replace(/\/+$/, '');
+
 export const metadata: Metadata = {
-  title: "CineVN - Xem Phim Online Chất Lượng Cao",
-  description: "CineVN - Nền tảng xem phim trực tuyến 4K HDR, âm thanh vòm Spatial Audio và phụ đề Vietsub mượt mà.",
+  metadataBase: new URL(SITE_URL),
+  title: {
+    default: "CineVN - Xem Phim Online Chất Lượng Cao, Vietsub 4K",
+    template: "%s | CineVN",
+  },
+  description: "CineVN - Xem phim lẻ, phim bộ, phim chiếu rạp Vietsub, Thuyết minh chất lượng 4K HDR, cập nhật nhanh, không quảng cáo.",
+  keywords: ["xem phim", "phim vietsub", "phim lẻ", "phim bộ", "phim chiếu rạp", "cinevn"],
+  robots: { index: true, follow: true },
+  alternates: { canonical: "/" },
+  openGraph: {
+    type: "website",
+    locale: "vi_VN",
+    url: "/",
+    siteName: "CineVN",
+    title: "CineVN - Xem Phim Online Chất Lượng Cao, Vietsub 4K",
+    description: "Xem phim lẻ, phim bộ Vietsub 4K HDR, cập nhật nhanh mỗi ngày.",
+  },
+  twitter: {
+    card: "summary_large_image",
+    title: "CineVN - Xem Phim Online Vietsub 4K",
+    description: "Xem phim lẻ, phim bộ Vietsub 4K HDR, cập nhật nhanh mỗi ngày.",
+  },
   manifest: "/manifest.json",
   icons: {
     icon: [

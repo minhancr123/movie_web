@@ -1,19 +1,21 @@
 import { MetadataRoute } from 'next';
 import { getHome, catalogHref } from '@/lib/catalog';
 
-const BASE_URL = process.env.NEXT_PUBLIC_SITE_URL || 'https://movieweb-ten.vercel.app';
+export const revalidate = 1800;
+
+const BASE_URL = (
+  process.env.NEXT_PUBLIC_SITE_URL ||
+  process.env.FRONTEND_URL ||
+  'https://cinevn.me'
+).replace(/\/+$/, '');
 
 export default async function sitemap(): Promise<MetadataRoute.Sitemap> {
   const now = new Date().toISOString();
 
-  const staticRoutes = [
-    '',
-    '/kham-pha',
-    '/kham-pha?type=tv',
-    '/lich-chieu',
-    '/cong-chieu',
-    '/danh-sach-cua-toi',
-  ].map((route) => ({
+  // Chỉ route canonical tĩnh. Không đưa query (?type=tv), route login-walled
+  // (/danh-sach-cua-toi) hay /xem-phim vào sitemap — Google phạt nội dung
+  // mỏng/trùng lặp và phí crawl budget.
+  const staticRoutes = ['', '/kham-pha', '/lich-chieu', '/cong-chieu'].map((route) => ({
     url: `${BASE_URL}${route}`,
     lastModified: now,
     changeFrequency: 'daily' as const,

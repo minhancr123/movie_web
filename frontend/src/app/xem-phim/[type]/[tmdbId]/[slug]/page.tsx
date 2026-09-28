@@ -1,5 +1,6 @@
 import Link from 'next/link';
 import { notFound } from 'next/navigation';
+import type { Metadata } from 'next';
 import { ArrowLeft, ListVideo } from 'lucide-react';
 import {
   getCatalogDetail,
@@ -24,6 +25,33 @@ interface PageParams {
 
 const parseType = (type: string): MediaType | null =>
   type === 'movie' || type === 'tv' ? type : null;
+
+/**
+ * Trang xem là nội dung mỏng, trùng với trang /phim/* và cần query ?s=&e=
+ * mới đủ nghĩa. Chặn index để Google dồn ranking về trang chi tiết,
+ * canonical cũng trỏ về đó.
+ */
+export async function generateMetadata({ params }: PageParams): Promise<Metadata> {
+  const resolvedParams = await params;
+  const type = parseType(resolvedParams.type);
+  if (!type) return { robots: { index: false, follow: false } };
+  const tmdbId = Number(resolvedParams.tmdbId);
+  if (!Number.isInteger(tmdbId) || tmdbId <= 0)
+    return { robots: { index: false, follow: false } };
+  try {
+    const detail = await getCatalogDetail(type, tmdbId);
+    if (!detail)
+      return { title: 'Xem phim', robots: { index: false, follow: false } };
+    return {
+      title: `Xem ${detail.title} - CineVN`,
+      description: `Xem ${detail.title}${detail.year ? ` (${detail.year})` : ''} Vietsub chất lượng cao.`,
+      robots: { index: false, follow: true },
+      alternates: { canonical: catalogHref(detail) },
+    };
+  } catch {
+    return { robots: { index: false, follow: false } };
+  }
+}
 
 /**
  * Watch page wired to the Phase 2 playback API.
