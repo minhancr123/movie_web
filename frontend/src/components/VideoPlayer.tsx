@@ -15,7 +15,7 @@ import {
     isEmbeddedTrack, trackSource, isViTrack, isEnTrack, isReadyTrack,
     type SubCue, type SubTrack,
 } from '@/lib/subtitles';
-import { computeResumeAt, pickDisplayDuration, decideSeekTarget, planResume, shouldAutoplayAfterRebuild, shouldDowngradeForDropped, subtitleLookupTime } from '@/lib/playback-progress';
+import { computeResumeAt, pickDisplayDuration, decideSeekTarget, planResume, shouldAutoplayAfterRebuild, shouldDowngradeForDropped, subtitleLookupTime, classifyStartAt } from '@/lib/playback-progress';
 import {
     useAudioEnhancer, DEFAULT_AUDIO_ENHANCER,
     type AudioEnhancerSettings,
@@ -116,6 +116,13 @@ interface VideoPlayerProps {
     presentationShiftMs?: number;
     /** False when the server serves whole films by policy, never truncated ones. */
     seekStartSupported?: boolean;
+    /**
+     * True when the server answered with a session it is already filling rather
+     * than one it started for this request. A reused whole-film session begins
+     * at 0 by design, so without this the player cannot tell that apart from a
+     * server that dropped the seek, and blames the wrong one.
+     */
+    sessionReused?: boolean;
     /** Fired once per source when the decoder drops frames heavily
         (audio permanently ahead of the picture). The parent can step down
         to a lighter release instead of leaving every heavy title lagging. */
@@ -134,7 +141,7 @@ interface VideoPlayerProps {
     fullscreenTargetRef?: React.RefObject<HTMLDivElement | null>;
 }
 
-export default function VideoPlayer({ src, movie, episode, authToken, durationSeconds, onNextEpisode, subContext, onPickAudio, activeAudioIndex, pendingAudioIndex = null, onPlaybackFailure, reloadKey = 0, onPlaybackProgress, presentationShiftMs = 0, seekStartSupported = true, onDecodeOverload, onCinemaChange, onVideoReady, fullscreenTargetRef, startAt = 0, onSeekToPosition, onCancelSeek, seekProgress = null }: VideoPlayerProps) {
+export default function VideoPlayer({ src, movie, episode, authToken, durationSeconds, onNextEpisode, subContext, onPickAudio, activeAudioIndex, pendingAudioIndex = null, onPlaybackFailure, reloadKey = 0, onPlaybackProgress, presentationShiftMs = 0, seekStartSupported = true, sessionReused = false, onDecodeOverload, onCinemaChange, onVideoReady, fullscreenTargetRef, startAt = 0, onSeekToPosition, onCancelSeek, seekProgress = null }: VideoPlayerProps) {
     const videoRef = useRef<HTMLVideoElement>(null);
     const containerRef = useRef<HTMLDivElement>(null);
 
@@ -845,24 +852,32 @@ export default function VideoPlayer({ src, movie, episode, authToken, durationSe
         }
         // A remux session that does not begin at the requested point means one
         // of two very different things, and telling the viewer the wrong one is
-        // worse than saying nothing. When the server offers truncated sessions
-        // and still did not honour the seek, something is broken. When it serves
-        // whole films by policy, nothing is wrong — the film is simply still
-        // being built up to that point, and "restart the backend" would be
-        // nonsense advice. (Direct files and Vimo carry whole-file timelines, so
-        // the check is remux-only.)
+        // worse than saying nothing. When the server offers truncated sessions,
+        // did not reuse one, and still did not honour the seek, something is
+        // broken. The other two cases are the film being built up to that point,
+        // and "restart the backend" would be nonsense advice for both: a server
+        // that serves whole films by policy, and a server that deliberately kept
+        // a session it is already filling instead of spawning a second writer
+        // (see findReusableRemuxSession). The reuse flag is what separates them
+        // — a reused whole-film session and a dropped seek both answer a 29:58
+        // request with an origin of 0. (Direct files and Vimo carry whole-file
+        // timelines, so the check is remux-only.)
         // Only complain about a MATERIAL gap. The server rounds a start
         // position down to a coarse bucket, so asking for 0:03 and being given
         // the start is the request being honoured, not ignored — warning there
         // taught the viewer to distrust a player that was working correctly.
-        const seekGap = seekTargetRef.current === null
-            ? 0
-            : seekTargetRef.current - sessionStartAt;
-        if (seekTargetRef.current !== null && seekGap > 30 && !(sessionStartAt > 0)
-            && src.includes('/api/playback/hls/')) {
-            showSyncToast(seekStartSupported
-                ? `Máy chủ mở luồng từ đầu thay vì ${formatTime(seekTargetRef.current)} — hãy restart backend rồi tua lại`
-                : `Đang dựng phim từ đầu — tới ${formatTime(seekTargetRef.current)} sẽ xem được, chờ một lát`);
+        if (seekTargetRef.current !== null && src.includes('/api/playback/hls/')) {
+            const verdict = classifyStartAt({
+                requestedStartAt: seekTargetRef.current,
+                sessionStartAt,
+                seekStartSupported,
+                reused: sessionReused,
+            });
+            if (verdict !== 'ok') {
+                showSyncToast(verdict === 'seek-ignored'
+                    ? `Máy chủ mở luồng từ đầu thay vì ${formatTime(seekTargetRef.current)} — hãy restart backend rồi tua lại`
+                    : `Đang dựng phim từ đầu — tới ${formatTime(seekTargetRef.current)} sẽ xem được, chờ một lát`);
+            }
         }
         clearSeekLock();
 

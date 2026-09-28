@@ -149,6 +149,8 @@ export default function PlaybackSection({
   // Whether the server offers truncated (seek-started) sessions at all.
   // Assume yes until told otherwise, so an older backend behaves as before.
   const [seekStartSupported, setSeekStartSupported] = useState<boolean>(true);
+  /** True when this response reused a session already being filled. */
+  const [sessionReused, setSessionReused] = useState<boolean>(false);
   // Chosen inside the player, drawn here: the surround must escape the player's
   // own overflow-hidden frame to read as light spilling onto the page.
   /**
@@ -615,6 +617,9 @@ export default function PlaybackSection({
     const returnedOffset = typeof data.startOffset === 'number' && data.startOffset > 0 ? data.startOffset : 0;
     setStartOffset(returnedOffset);
     startOffsetRef.current = returnedOffset;
+    // See the seek-resolve path: a reused whole-film session is a deliberate
+    // choice by the server, not a dropped seek, and the player says so.
+    setSessionReused(data.reused === true);
     pendingSeekRef.current = null;
     
     const effectiveToken = activeTokenRef.current || (typeof data.sourceToken === 'string' ? data.sourceToken : '');
@@ -974,6 +979,12 @@ export default function PlaybackSection({
       // How far the remux clock leads source time; the player takes it back
       // out of subtitle lookups (see subtitleLookupTime).
       setSeekStartSupported(data.seekStartSupported !== false);
+      // A reused session is one somebody is already filling from the start, and
+      // the server kept it because a fresh seek-started writer would not have
+      // got the viewer closer. The player needs this: a reused whole-film
+      // session and a server that dropped the seek both answer startAt>0 with
+      // startOffset=0, and only this flag tells them apart.
+      setSessionReused(data.reused === true);
       setPresentationShiftMs(
         typeof data.presentationShiftMs === 'number' && data.presentationShiftMs > 0
           ? data.presentationShiftMs
@@ -1711,6 +1722,7 @@ export default function PlaybackSection({
             startAt={startOffset}
             presentationShiftMs={presentationShiftMs}
             seekStartSupported={seekStartSupported}
+            sessionReused={sessionReused}
             onSeekToPosition={requestSeekPosition}
             onCancelSeek={cancelSeekPosition}
             seekProgress={{ label: resolveStageLabel || null, percent: downloadProgress || null }}

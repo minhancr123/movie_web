@@ -1328,6 +1328,17 @@ export const resolvePlayback = async (req, res) => {
             candidate: sanitizeCandidateForResponse(candidate),
             sourceToken: resolveSourceToken(candidate),
             startOffset: reusable.startAt ?? 0,
+            // This response reuses a session somebody else is already filling,
+            // which findReusableRemuxSession chose over spawning one closer to
+            // the target. A reused whole-film session therefore answers a
+            // startAt=1798 request with startOffset=0 while a fresh one would
+            // have begun near 1798 — and the player reads those two numbers
+            // identically unless it is told which happened. `seekStartSupported`
+            // below is a global capability and cannot carry that distinction:
+            // with only it, a healthy server gets reported as having dropped
+            // the seek, and the viewer is told to restart a backend doing
+            // exactly the right thing.
+            reused: true,
             // Whether truncated sessions are offered at all. Without it the
             // client cannot tell a server that ignored the seek from one that
             // deliberately serves the whole film, and warns about the wrong one.

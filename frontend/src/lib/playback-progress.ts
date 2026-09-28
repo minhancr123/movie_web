@@ -28,6 +28,64 @@ export const computeResumeAt = (
   return resumeAt;
 };
 
+/** How a session answered a request to start partway into a film. */
+export type StartAtVerdict =
+  /** Nothing worth telling the viewer. */
+  | 'ok'
+  /** The server began at the start on purpose: it is building the whole film,
+   *  and the requested position becomes reachable as the playlist grows. */
+  | 'building-from-start'
+  /** The server offers truncated sessions and still began at the start, so the
+   *  seek was dropped. Only this case is a fault worth reporting. */
+  | 'seek-ignored';
+
+/**
+ * Classify why a session did not begin at the position the viewer asked for.
+ *
+ * Two very different situations produce the same numbers — a session whose
+ * origin is 0 while the request was 29:58 — and telling the viewer the wrong
+ * one is worse than saying nothing:
+ *
+ * - The server reused a session that is already building the film from 0
+ *   (findReusableRemuxSession keeps it when a fresh seek-started writer
+ *   would not actually get the viewer closer). Nothing is broken; the target
+ *   simply is not written yet.
+ * - The server offers truncated sessions and still answered from the start.
+ *   That is a real fault.
+ *
+ * `reused` is what separates them. Without it the player can only guess, and
+ * guessing wrong tells a working server to be restarted.
+ *
+ * The gap is measured against 30s for the same reason elsewhere in the player:
+ * a start position rounded down to a coarse bucket is the request being
+ * honoured, not dropped, and a warning there teaches viewers to distrust a
+ * player that was working correctly.
+ */
+export const classifyStartAt = (args: {
+  /** Where the viewer asked to start, in full-film seconds. */
+  requestedStartAt: number | null | undefined;
+  /** The session's actual origin: the resolve response's `startOffset`. */
+  sessionStartAt: number;
+  /** Whether the server offers truncated (seek-started) sessions at all. */
+  seekStartSupported: boolean;
+  /** Whether the server reused an existing session for this response. */
+  reused?: boolean;
+}): StartAtVerdict => {
+  const requested = Number(args.requestedStartAt);
+  if (!Number.isFinite(requested) || requested <= 0) return 'ok';
+
+  const origin = Number(args.sessionStartAt);
+  const sessionStartAt = Number.isFinite(origin) && origin > 0 ? origin : 0;
+  // Already at (or ahead of) where they asked to be: nothing to report.
+  if (requested - sessionStartAt <= 30) return 'ok';
+
+  // From the start on purpose, or by policy — either way it is the server
+  // building the film, not a dropped seek.
+  if (args.reused || !args.seekStartSupported) return 'building-from-start';
+
+  return 'seek-ignored';
+};
+
 /**
  * Clamp a seek target to the written playlist head. An unknown head (NaN)
  * means "no information" and the target passes through untouched.

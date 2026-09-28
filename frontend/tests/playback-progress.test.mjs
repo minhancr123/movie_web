@@ -17,7 +17,7 @@ execFileSync(
     { cwd: root, stdio: 'pipe' },
 );
 
-const { computeResumeAt, clampSeekToHead, pickDisplayDuration, decideSeekTarget, planResume, shouldAutoplayAfterRebuild, shouldDowngradeForDropped, audioSwitchStartAt, subtitleLookupTime } = await import(
+const { computeResumeAt, clampSeekToHead, pickDisplayDuration, decideSeekTarget, planResume, shouldAutoplayAfterRebuild, shouldDowngradeForDropped, audioSwitchStartAt, subtitleLookupTime, classifyStartAt } = await import(
     pathToFileURL(path.join(outDir, 'playback-progress.js')).href
 );
 process.on('exit', () => rmSync(outDir, { recursive: true, force: true }));
@@ -202,5 +202,65 @@ test('subtitleLookupTime undoes the remux clock lead', () => {
     assert.equal(
         subtitleLookupTime({ sessionStart: 0, elementTime: 0.05, delay: 0, presentationShiftMs: 167 }),
         0,
+    );
+});
+
+test('classifyStartAt only blames a server that actually dropped the seek', () => {
+    // The case that shipped the false alarm: a 29:58 resume answered by a
+    // session already being filled from 0. Nothing is broken, so the viewer
+    // must not be told to restart the backend.
+    assert.equal(
+        classifyStartAt({ requestedStartAt: 1798, sessionStartAt: 0, seekStartSupported: true, reused: true }),
+        'building-from-start',
+    );
+    // Same numbers, no reuse flag: a fresh session that ignored the seek.
+    assert.equal(
+        classifyStartAt({ requestedStartAt: 1798, sessionStartAt: 0, seekStartSupported: true }),
+        'seek-ignored',
+    );
+    // A server that serves whole films by policy is never at fault.
+    assert.equal(
+        classifyStartAt({ requestedStartAt: 1798, sessionStartAt: 0, seekStartSupported: false }),
+        'building-from-start',
+    );
+    // Reuse outranks the capability flag: a reused session is a deliberate
+    // choice even on a server that does offer truncated sessions.
+    assert.equal(
+        classifyStartAt({ requestedStartAt: 1798, sessionStartAt: 0, seekStartSupported: true, reused: true }),
+        'building-from-start',
+    );
+});
+
+test('classifyStartAt stays quiet about honoured seeks, buckets and no request', () => {
+    // The bucket rounding is the request being honoured, not dropped.
+    assert.equal(
+        classifyStartAt({ requestedStartAt: 1798, sessionStartAt: 1794, seekStartSupported: true }),
+        'ok',
+    );
+    // Inside the 30s materiality threshold: asking 0:03 and getting 0 is normal.
+    assert.equal(
+        classifyStartAt({ requestedStartAt: 3, sessionStartAt: 0, seekStartSupported: true }),
+        'ok',
+    );
+    // Nothing was asked for, or the session is already ahead of the target.
+    for (const bad of [null, undefined, 0, -1, NaN, 'x']) {
+        assert.equal(
+            classifyStartAt({ requestedStartAt: bad, sessionStartAt: 0, seekStartSupported: true }),
+            'ok',
+            `no request: ${String(bad)}`,
+        );
+    }
+    assert.equal(
+        classifyStartAt({ requestedStartAt: 600, sessionStartAt: 900, seekStartSupported: true }),
+        'ok',
+    );
+    // A junk origin reads as 0 rather than as a negative gap.
+    assert.equal(
+        classifyStartAt({ requestedStartAt: 1798, sessionStartAt: NaN, seekStartSupported: true }),
+        'seek-ignored',
+    );
+    assert.equal(
+        classifyStartAt({ requestedStartAt: 1798, sessionStartAt: NaN, seekStartSupported: true, reused: true }),
+        'building-from-start',
     );
 });
