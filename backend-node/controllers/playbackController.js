@@ -83,7 +83,7 @@ import {
   selectRenditionEvictions,
   RENDITION_MAX_BYTES,
 } from '../services/playback/renditions.js';
-import { setResolveStage, getResolveStage as readResolveStage } from '../services/playback/resolveProgress.js';
+import { setResolveStage, getResolveStage as readResolveStage, isResolveId } from '../services/playback/resolveProgress.js';
 import { planAdmission } from '../services/playback/deliveryPlan.js';
 import { getDecryptedKey } from '../services/providers/connectionStore.js';
 import { computeOpenSubtitlesHash } from '../services/playback/opensubtitlesHash.js';
@@ -1078,7 +1078,7 @@ export const resolvePlayback = async (req, res) => {
     );
     if (!detail) return fail(res, 404, 'Không tìm thấy nội dung');
     if (type === 'tv' && (season === null || episode === null)) {
-      return fail(res, 400, 'Thiếu season/episode cho nội dung TV');
+      return fail(res, 400, 'Thiếu thông tin tập phim truyền hình');
     }
     const runtimeMinutes = Number(detail.runtime) > 0 ? Number(detail.runtime) : null;
 
@@ -1650,7 +1650,7 @@ export const resolvePlayback = async (req, res) => {
             + `trong ${Math.round((diskFit.freeBytes || 0) / 1024 ** 3)}GB`,
           );
           decision.mode = 'direct';
-          decision.reason = `Nguồn này quá lớn cho đĩa của máy chủ (cần ~${Math.round(diskFit.needBytes / 1024 ** 3)}GB) — phát trực tiếp từ nguồn`;
+          decision.reason = 'Đang phát trực tiếp bản gốc.';
         }
       }
 
@@ -2316,7 +2316,7 @@ export const listPlaybackSources = async (req, res) => {
     );
     if (!detail) return fail(res, 404, 'Không tìm thấy nội dung');
     if (type === 'tv' && (season === null || episode === null)) {
-      return fail(res, 400, 'Thiếu season/episode cho nội dung TV');
+      return fail(res, 400, 'Thiếu thông tin tập phim truyền hình');
     }
     const runtimeMinutes = Number(detail.runtime) > 0 ? Number(detail.runtime) : null;
 
@@ -3033,8 +3033,19 @@ export const getResolveStage = async (req, res) => {
   // Progress polls hit one identical URL every 1.5s: without no-store the
   // browser revalidates (HTTP 304) and the pill can freeze on a stale phase.
   res.set('Cache-Control', 'no-store');
-  const entry = readResolveStage(req.params?.resolveId);
-  if (!entry) return fail(res, 404, 'Không có tiến trình nào');
+  const resolveId = req.params?.resolveId;
+  const entry = readResolveStage(resolveId);
+  if (!entry) {
+    // A well-formed key that maps to nothing is usually not a client bug: the
+    // stage map is process-local, so every restart wipes it while tabs opened
+    // before the deploy keep polling the same key. Answering 404 is REST-correct
+    // and the browser logs every one of them, so a shaped-right but unknown
+    // key gets a terminal state instead: the poller stops at the first 'gone'
+    // and the console stays quiet. Malformed ids stay 404 — those ARE client
+    // bugs, and silence would hide them.
+    if (!isResolveId(resolveId)) return fail(res, 404, 'Không tìm thấy yêu cầu này.');
+    return res.json({ success: true, data: { stage: 'gone', detail: 'Yêu cầu này không còn được xử lý.' } });
+  }
   return res.json({ success: true, data: entry });
 };
 

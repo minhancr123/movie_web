@@ -33,7 +33,7 @@ test('the worker purges caches it does not own, which is how the April one dies'
   assert.match(sw, /const OWN_CACHES = new Set/, 'owned cache names are declared');
   assert.match(sw, /names\.filter\(\(name\) => !OWN_CACHES\.has\(name\)\)/,
     'activate deletes every foreign cache, not just its own predecessor');
-  assert.match(sw, /VERSION = 'cinevn-v1'/, 'cache names are versioned, so a change purges');
+  assert.match(sw, /VERSION = 'cinevn-v2'/, 'cache names are versioned, so a change purges');
   assert.match(sw, /SKIP_WAITING/, 'it honours the page asking to take over');
 });
 
@@ -57,11 +57,22 @@ test('pages are network-first so a cached document cannot outrun a deploy', () =
   // The server serves HTML no-store. Caching it would pin a build that is no
   // longer deployed — the failure that made "which build am I running?"
   // unanswerable from the page.
-  assert.match(sw, /request\.mode === 'navigate'[\s\S]{0,200}fetch\(request\)\.catch\(\(\) => caches\.match\('\/offline\.html'\)\)/,
-    'navigations go to the network, with the offline page as the floor');
+  assert.match(sw, /request\.mode === 'navigate'[\s\S]{0,400}offlineResponse\(\)/,
+    'navigations go to the network, with a guaranteed Response as the floor');
   assert.match(sw, /isImmutableAsset[\s\S]{0,120}cache\.match\(request\)[\s\S]{0,220}const response = await fetch\(request\)/,
     'hashed build output is cache-first');
   assert.ok(existsSync(path.join(root, 'public/offline.html')), 'the offline page exists');
+});
+
+test('a failed request can never resolve to undefined', () => {
+  // catch(() => hit) resolves to undefined when the fetch fails and nothing
+  // was cached, and respondWith(undefined) throws "Failed to convert value
+  // to 'Response'" as an unhandled rejection — leaving the request hanging
+  // rather than failing the way the network did.
+  assert.match(sw, /\.catch\(\(\) => hit \|\| offlineResponse\(\)\)/,
+    'the stale-while-revalidate fallback always resolves to a Response');
+  assert.match(sw, /const offlineResponse = \(\) => new Response\(''/,
+    'the fallback is a real Response, and catch sites use it');
 });
 
 test('the worker is registered, and its updates are applied', () => {

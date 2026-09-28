@@ -875,8 +875,8 @@ export default function VideoPlayer({ src, movie, episode, authToken, durationSe
             });
             if (verdict !== 'ok') {
                 showSyncToast(verdict === 'seek-ignored'
-                    ? `Máy chủ mở luồng từ đầu thay vì ${formatTime(seekTargetRef.current)} — hãy restart backend rồi tua lại`
-                    : `Đang dựng phim từ đầu — tới ${formatTime(seekTargetRef.current)} sẽ xem được, chờ một lát`);
+                    ? `Không mở được đúng đoạn đã chọn. Phim bắt đầu lại từ đầu — thử tua lại sau ít phút`
+                    : `Phim đang được chuẩn bị từ đầu — tới ${formatTime(seekTargetRef.current)} sẽ xem được, chờ một lát nhé`);
             }
         }
         clearSeekLock();
@@ -1127,7 +1127,7 @@ export default function VideoPlayer({ src, movie, episode, authToken, durationSe
                     if (stuckFragCount >= 8) {
                         stuckFragSn = null;
                         stuckFragCount = 0;
-                        const reason = 'Đoạn video hiện tại không còn trên server (bản dựng đã bị dọn). Đang tạo lại luồng…';
+                        const reason = 'Đoạn đang xem không còn nữa. Đang mở lại…';
                         if (onPlaybackFailure) onPlaybackFailure(reason);
                         else setError(`${reason} Bấm Thử lại để nối lại.`);
                         hls.destroy();
@@ -1141,7 +1141,7 @@ export default function VideoPlayer({ src, movie, episode, authToken, durationSe
                             if (fatalNetworkRecoveries <= 2) {
                                 hls.startLoad(video.currentTime || -1);
                             } else {
-                                const reason = 'Máy chủ không còn cung cấp segment của luồng hiện tại.';
+                                const reason = 'Đường truyền bị ngắt. Đang mở lại…';
                                 if (onPlaybackFailure) onPlaybackFailure(reason);
                                 else setError(`${reason} Bấm Thử lại để nối lại.`);
                                 hls.destroy();

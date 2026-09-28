@@ -37,7 +37,7 @@ const formatResolveStage = (stage: string, detail: string): string => {
  * the alternative the server used to take (hand over a Vietsub CDN stream) is
  * a different cut, mistimed subtitles, and a spinner on a cold CDN.
  */
-const RETRYABLE_503_CODES = new Set(['REMUX_BUSY', 'SOURCE_PREPARE_TIMEOUT']);
+const RETRYABLE_503_CODES = new Set(['REMUX_BUSY', 'REMUX_NO_SPACE', 'SOURCE_PREPARE_TIMEOUT']);
 import { providerAPI, playbackAPI } from '@/lib/api';
 import { detectCapabilities } from '@/lib/capabilities';
 import { groupPlaybackSources } from '@/lib/source-groups';
@@ -407,7 +407,7 @@ export default function PlaybackSection({
     recoveryAttemptsRef.current += 1;
     if (recoveryAttemptsRef.current > 2) {
       setPlaybackStatus('error');
-      setErrorMessage(`${reason} Đã thử tạo lại luồng 2 lần; hãy chọn nguồn khác.`);
+      setErrorMessage(`${reason} Đã thử mở lại 2 lần không được. Hãy chọn bản phát khác.`);
       if (typeof window !== 'undefined') {
         localStorage.removeItem(selectedSourceKey);
       }
@@ -482,7 +482,7 @@ export default function PlaybackSection({
       const lightH = heightOf(lighter);
       const lightLabel = lightH > 0 ? resolutionLabel(lightH) : 'bản nhẹ hơn';
       setNotice(
-        `Máy giải mã không kịp bản hiện tại (tiếng đi trước hình) — đã tự chuyển xuống ${lightLabel} cho mượt. Đổi lại trong danh sách nguồn bất cứ lúc nào.`,
+        `Thiết bị của bạn không chạy kịp bản đang xem (tiếng đi trước hình) — đã tự chuyển xuống ${lightLabel} cho mượt. Đổi lại trong danh sách các bản bất cứ lúc nào.`,
       );
       const at = Math.max(
         0,
@@ -501,11 +501,11 @@ export default function PlaybackSection({
           ?.response?.data?.message
           || (err instanceof Error && err.message)
           || 'không rõ nguyên nhân';
-        setNotice(`Không chuyển được xuống ${lightLabel}: ${String(reason).slice(0, 140)} Thử chọn nguồn khác.`);
+        setNotice(`Không chuyển được xuống ${lightLabel}: ${String(reason).slice(0, 140)} Thử chọn bản phát khác.`);
       });
     } else {
       setNotice(
-        'Máy giải mã không kịp bản hiện tại (tiếng đi trước hình) — hãy chọn nguồn nhẹ hơn bên dưới.',
+        'Thiết bị của bạn không chạy kịp bản đang xem (tiếng đi trước hình) — hãy chọn bản nhẹ hơn bên dưới.',
       );
       setShowSources(true);
       void loadSourcesRef.current();
@@ -795,6 +795,15 @@ export default function PlaybackSection({
       try {
         const r = await playbackAPI.getResolveStage(resolveId);
         const st = r.data?.data;
+        // Terminal state: this key will never produce data — stop at the first
+        // one instead of polling until the browser has logged three 404s.
+        // Reached whenever the server restarted after the resolve was issued:
+        // the stage map is process-local and the restart wiped it. The main
+        // resolve call fails on its own, so nothing else is needed here.
+        if (st?.stage === 'gone') {
+          clearStagePoll();
+          return;
+        }
         if (st?.stage) setResolveStageLabel(formatResolveStage(st.stage, st.detail || ''));
         
         // AUTO-ADOPT: If the stage poll found valid playback data while the main resolve is still pending
@@ -875,7 +884,7 @@ export default function PlaybackSection({
                       ?.response?.data?.message
                       || (err instanceof Error && err.message)
                       || 'không rõ nguyên nhân';
-                    setNotice(`Tạo lại luồng thất bại: ${String(reason).slice(0, 140)} Thử chọn nguồn khác.`);
+                    setNotice(`Không mở lại được phim: ${String(reason).slice(0, 140)} Thử chọn bản phát khác.`);
                   });
                   return;
                 }
@@ -898,7 +907,7 @@ export default function PlaybackSection({
                         ?.response?.data?.message
                         || (err instanceof Error && err.message)
                         || 'không rõ nguyên nhân';
-                      setNotice(`Tạo lại luồng thất bại: ${String(reason).slice(0, 140)} Thử chọn nguồn khác.`);
+                      setNotice(`Không mở lại được phim: ${String(reason).slice(0, 140)} Thử chọn bản phát khác.`);
                     });
                   return;
                 }
@@ -1003,10 +1012,10 @@ export default function PlaybackSection({
       // clear only our own banner when a later resolve comes back clean.
       if (data.fallbackSource) {
         setNotice(
-          `BẢN DỰ PHÒNG: nguồn chính quá chậm nên đang phát bản Vimo thay thế — video là bản khác nên phụ đề online sẽ lệch giờ. Tua lại sau ít phút để về bản gốc.`,
+          `Đang phát bản dự phòng vì bản chính tải quá chậm. Phụ đề có thể bị lệch giờ một chút — tua lại sau ít phút để xem bản gốc.`,
         );
       } else {
-        setNotice((prev) => (prev && prev.startsWith('BẢN DỰ PHÒNG') ? null : prev));
+        setNotice((prev) => (prev && prev.startsWith('Đang phát bản dự phòng') ? null : prev));
       }
       // Same materiality rule as the player's toast: a start position rounded
       // down to the bucket is the request being honoured, not dropped.
@@ -1102,7 +1111,7 @@ export default function PlaybackSection({
                 // writer dies. Resolving again replaces the dead remux instead
                 // of handing VideoPlayer a stream that is guaranteed to freeze.
                 clearPoll();
-                recoverPlayback(isProd ? 'Luồng phát đã dừng, đang thử lại.' : 'Luồng remux đã ngừng tạo dữ liệu.');
+                recoverPlayback(isProd ? 'Video bị đứng, đang mở lại.' : 'Luồng remux đã ngừng tạo dữ liệu.');
                 return;
               }
               if (warmPolls >= 30) finishWarm();
@@ -1181,7 +1190,7 @@ export default function PlaybackSection({
                 setErrorMessage(
                   pollErr?.response?.status === 429
                     ? 'Bị giới hạn tần suất, vui lòng chờ một phút rồi thử lại'
-                    : 'Mất kết nối tới server khi theo dõi tiến trình tải',
+                    : 'Mất kết nối khi đang theo dõi tiến độ tải',
                 );
               }
             }
@@ -1225,21 +1234,28 @@ export default function PlaybackSection({
         // SOURCE_PREPARE_TIMEOUT: the debrid provider stopped answering; the
         // release is untouched and ready in seconds once it does.
         const busy = code === 'REMUX_BUSY';
-        const waitMs = busy ? 8000 : 10000;
+        const noSpace = code === 'REMUX_NO_SPACE';
+        const waitMs = busy ? 8000 : noSpace ? 20000 : 10000;
         busyRetriesRef.current = (busyRetriesRef.current ?? 0) + 1;
         setResolveStageLabel(
           isProd
             ? busy
               ? `Tập khác đang được chuẩn bị, thử lại (${busyRetriesRef.current}/3)…`
-              : `Dịch vụ lưu trữ đang phản hồi chậm, tự động thử lại (${busyRetriesRef.current}/3)…`
+              : noSpace
+                ? `Đang dọn chỗ để mở phim, tự động thử lại (${busyRetriesRef.current}/3)…`
+                : `Dịch vụ lưu trữ đang phản hồi chậm, tự động thử lại (${busyRetriesRef.current}/3)…`
             : `${code} — retry ${busyRetriesRef.current}/3 in ${waitMs / 1000}s`,
         );
         // Say it once, in words, at the first refusal. The stage label scrolls
         // away; this does not, and it is the difference between "the site is
-        // broken" and "the server is finishing another episode".
-        if (busy && busyRetriesRef.current === 1) {
+        // broken" and the server finishing another episode.
+        if (busyRetriesRef.current === 1) {
           setNotice(
-            'Máy chủ đang chuẩn bị tập khác nên phải xếp hàng. Thường mất vài chục giây; tập này sẽ tự phát khi xong.',
+            busy
+              ? 'Đang chuẩn bị tập khác nên phải chờ lượt. Thường mất vài chục giây; tập này sẽ tự phát khi xong.'
+              : noSpace
+                ? 'Phim cần thêm chỗ trống để mở. Hệ thống đang tự dọn, tập này sẽ tự phát khi xong.'
+                : 'Dịch vụ lưu trữ đang phản hồi chậm. Tập này sẽ tự phát khi xong.',
           );
         }
         // The spinner stays up: the viewer is still waiting on this resolve,
@@ -1495,9 +1511,9 @@ export default function PlaybackSection({
     return (
       <div className="aspect-video w-full rounded-xl bg-surface-dark flex flex-col items-center justify-center border border-white/10 p-6 text-center">
         <Download className="w-10 h-10 text-blue-400 animate-bounce mb-3" />
-        <h3 className="text-base font-bold text-white mb-1">TorBox đang lưu vào bộ nhớ đệm</h3>
+        <h3 className="text-base font-bold text-white mb-1">Phim đang được chuẩn bị</h3>
         <p className="text-xs text-cinema-subtle max-w-md mb-4">
-          Nguồn phim chưa có sẵn trên máy chủ TorBox và đang được tải về. Trình phát sẽ tự động kích hoạt khi hoàn tất.
+          Bản này chưa có sẵn nên cần một lúc để lấy về. Video sẽ tự phát khi xong.
         </p>
         <div className="w-64 bg-surface-container rounded-full h-2 overflow-hidden mb-2">
           <div

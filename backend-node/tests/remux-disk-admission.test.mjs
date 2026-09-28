@@ -20,6 +20,7 @@ import {
   estimateSessionBytes,
   RemuxNoSpaceError,
 } from '../services/playback/remuxService.js';
+import { hasTechnicalTerm } from '../services/publicVocabulary.js';
 
 const GB = 1024 ** 3;
 
@@ -98,7 +99,10 @@ assert.equal(
 const err = new RemuxNoSpaceError({ needBytes: 17 * GB, freeBytes: 13 * GB, reserveBytes: 6 * GB });
 assert.equal(err.status, 503, '503: the viewer is early, not locked out');
 assert.equal(err.code, 'REMUX_NO_SPACE');
-assert.match(err.message, /17GB/, 'the message names what the film needs');
-assert.match(err.message, /13GB/, '...and what is actually free');
+// Machines read the numbers from the fields: the human message stays plain,
+// so it can reach a viewer untouched by the vocabulary scrubber.
+assert.equal(err.needBytes, 17 * GB, 'carries what the film needs');
+assert.equal(err.freeBytes, 13 * GB, 'carries what is actually free');
+assert.equal(hasTechnicalTerm(err.message), false, 'message is viewer-safe');
 
 console.log('ok - disk admission: estimation, floor, fail-open, error shape');

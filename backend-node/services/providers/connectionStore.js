@@ -70,7 +70,7 @@ export const getDecryptedKey = async (db, userId, provider) => {
     try {
       plaintext = decryptToken(doc, { userId: String(doc.userId), provider: name });
     } catch {
-      const error = new Error('Token đã lưu không còn giải mã được, vui lòng kết nối lại');
+      const error = new Error('Phiên kết nối với TorBox đã hết hạn, vui lòng kết nối lại');
       error.status = 401;
       error.code = 'invalid_token';
       throw error;

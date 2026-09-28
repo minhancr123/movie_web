@@ -33,6 +33,15 @@ const TECHNICAL_TERMS = [
   'webrip', 'webdl', 'bluray', 'bdrip', 'hdrip', 'remaster',
   // Acquisition
   'torrent', 'magnet', 'infohash', 'seed', 'peer', 'tracker',
+  // Infrastructure and implementation: nothing a viewer can act on. These are
+  // what operators reach for first when naming a fault ("server", "backend",
+  // "database"), and none of them ever helps the person reading the message.
+  // The Vietnamese forms are included alongside the English ones because the
+  // messages are written in Vietnamese.
+  'backend', 'frontend', 'server', 'máy chủ', 'may chu',
+  'postgres', 'postgresql', 'mongodb', 'mongo', 'redis',
+  'database', 'cơ sở dữ liệu', 'co so du lieu',
+  'endpoint', 'deploy', 'restart', 'khởi động lại',
 ];
 
 // `H.264` and `WEB-DL` carry punctuation, so the boundary has to allow it.

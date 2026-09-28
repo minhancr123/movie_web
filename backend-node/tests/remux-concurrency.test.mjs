@@ -24,6 +24,7 @@ import {
   idleWriterIds,
   spawnBeatsReuse,
 } from '../services/playback/remuxService.js';
+import { hasTechnicalTerm } from '../services/publicVocabulary.js';
 
 /* ------------------------------------------------------------- admission */
 
@@ -60,7 +61,11 @@ const err = new RemuxBusyError(3);
 assert.ok(err instanceof Error, 'is an Error so existing handlers still work');
 assert.equal(err.code, 'REMUX_BUSY', 'carries a code the controller can branch on');
 assert.equal(err.status, 503, 'maps to Service Unavailable, not a 500');
-assert.match(err.message, /3/, 'says what the ceiling was');
+// Machines read the ceiling from the field, not the prose: the human message
+// must not carry infra numbers ("3 luồng" tells a viewer nothing), so the
+// test pins the field rather than the sentence.
+assert.equal(err.limit, 3, 'carries the ceiling for logs and controllers');
+assert.equal(hasTechnicalTerm(err.message), false, 'message is viewer-safe');
 console.log('ok - busy refusal is typed, not a generic crash');
 
 /* ------------------------------------------------------------------ reaping */

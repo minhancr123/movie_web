@@ -24,15 +24,25 @@ for (const term of [
   'transcode', 'ffmpeg', 'ffprobe', 'HLS', 'm3u8', 'HEVC', 'x265', 'x264',
   'H.264', 'AVC', 'WEB-DL', 'WEBRip', 'BluRay', 'NVENC', 'libx264', 'AAC-LC',
   'eac3', 'DDP5.1', 'OpenSubtitles', 'SubDL', 'infoHash', 'torrent', 'magnet',
+  // Infrastructure: operators name the fault, viewers cannot act on it.
+  'backend', 'frontend', 'server', 'Máy chủ', 'may chu',
+  'postgres', 'PostgreSQL', 'mongodb', 'mongo', 'Redis',
+  'database', 'cơ sở dữ liệu', 'endpoint', 'deploy', 'restart',
 ]) {
   assert.equal(hasTechnicalTerm(`Nguồn ${term} sẵn sàng`), true, `should catch: ${term}`);
 }
+
+// Whole infrastructure-flavoured messages fail closed, not patched.
+assert.equal(hasTechnicalTerm('Backend đang bận, thử lại sau'), true);
+assert.equal(hasTechnicalTerm('Không kết nối được database'), true);
+assert.equal(hasTechnicalTerm('Máy chủ hết dung lượng, cần thêm 33GB'), true);
+assert.equal(hasTechnicalTerm('Hãy restart backend rồi thử lại'), true);
 
 // Ordinary Vietnamese must survive untouched, including words that merely
 // contain a term as a substring.
 for (const safe of [
   'Không tìm thấy nguồn phát phù hợp',
-  'Máy chủ đang bận, thử lại sau',
+  'Đang đông người xem, thử lại sau',
   'Phim đang được chuẩn bị',
   'Chất lượng 4K',
   'Đang tải phụ đề',

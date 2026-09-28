@@ -7,9 +7,13 @@
  * by elapsed seconds. The client generates a resolveId, sends it with the
  * resolve body, and polls GET /playback/resolve/:id/stage while it waits.
  *
- * Process-local and bounded: unknown ids 404, entries rot after a few
- * minutes, and the map is capped. A failed resolve simply stops updating —
- * the client already holds the HTTP error, so no terminal state is needed.
+ * Process-local and bounded: entries rot after a few minutes, and the map is
+ * capped. A failed resolve simply stops updating — the client already holds
+ * the HTTP error, so no terminal state is needed. One exception: a restart
+ * wipes the whole map while open tabs keep polling their keys, and every
+ * such poll would 404 (and the browser logs each one). For that the
+ * controller answers a well-formed but unknown key with a terminal 'gone'
+ * stage instead of a 404, so the poller stops at the first one.
  */
 
 export const RESOLVE_ID_PATTERN = /^[A-Za-z0-9_-]{8,64}$/;

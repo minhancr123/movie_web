@@ -874,7 +874,10 @@ export const activeEgressKbps = () => {
  */
 export class RemuxBusyError extends Error {
   constructor(limit) {
-    super(`Máy chủ đang phục vụ tối đa ${limit} luồng cùng lúc, thử lại sau ít phút`);
+    // Human wording on purpose: the ceiling number travels in `limit` for
+    // machines and logs, and telling a viewer "3 luồng" says nothing they
+    // can act on.
+    super('Đang đông người xem cùng lúc, phim sẽ mở sau ít phút. Bạn cứ để trang này mở.');
     this.name = 'RemuxBusyError';
     this.code = 'REMUX_BUSY';
     this.status = 503;
@@ -889,10 +892,10 @@ export class RemuxBusyError extends Error {
  */
 export class RemuxNoSpaceError extends Error {
   constructor({ needBytes, freeBytes, reserveBytes } = {}) {
-    super(
-      `Máy chủ hết chỗ để dựng phim này (cần ~${Math.round((needBytes || 0) / GB)}GB, `
-      + `đang trống ${Math.round((freeBytes || 0) / GB)}GB) — thử lại sau ít phút`,
-    );
+    // Human wording on purpose: what the film needs and what is free travel in
+    // the fields and the server log, and "cần 33GB" tells a viewer nothing
+    // they can act on.
+    super('Phim chưa mở được lúc này. Thử lại sau ít phút, bạn cứ để trang này mở.');
     this.name = 'RemuxNoSpaceError';
     this.code = 'REMUX_NO_SPACE';
     this.status = 503;
