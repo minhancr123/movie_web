@@ -1964,8 +1964,18 @@ export default function VideoPlayer({ src, movie, episode, authToken, durationSe
                 togglePlay too) — the viewer waits instead of mashing inputs
                 that would spawn competing resolves. The Hủy button abandons
                 the seek: the in-flight resolve's late response is dropped by
-                epoch and the old picture simply continues. */}
-            {seekTarget !== null && !isLoading && (
+                epoch and the old picture simply continues.
+
+                Deliberately NOT gated on `!isLoading`. It used to be, so that
+                this overlay and the plain spinner would not both show — but
+                `isLoading` flips true exactly when the new pipeline starts
+                loading, which is the longest part of the wait. Gating on it hid
+                the one message that said WHAT was happening ("đang tải phim từ
+                29:58") and the only control that could abandon it, leaving a
+                bare spinner over a paused player: the viewer reported the video
+                as having "stopped". This overlay is z-30 over the z-20 spinner
+                and has its own spinner, so there is nothing to overlap. */}
+            {seekTarget !== null && (
                 <div className="absolute inset-0 z-30 flex items-start justify-center bg-black/55 pt-16 backdrop-blur-[2px]">
                     <div className="liquid-glass-strong flex items-center gap-3 rounded-2xl px-4 py-3">
                         <Loader2 className="w-6 h-6 shrink-0 text-amber-gold animate-spin" />
