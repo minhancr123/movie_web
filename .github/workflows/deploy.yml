@@ -2,7 +2,10 @@ name: Deploy to VPS
 
 on:
   push:
-    branches: [main, master]
+    # feat/torbox-playback-cinema IS the release line: everything in
+    # production deploys from it, main is stale. Wiring only main here is how
+    # every deploy ended up being done by hand over SSH.
+    branches: [main, master, feat/torbox-playback-cinema]
     paths:
       - 'backend-node/**'
       - 'frontend/**'
@@ -41,6 +44,12 @@ jobs:
         run: npm run build --prefix frontend
         env:
           RELEASE_ID: ${{ github.sha }}
+          # NEXT_PUBLIC_* is baked into the client bundle at build time.
+          # Without these the sitemap falls back to a dead hostname.
+          NEXT_PUBLIC_API_URL: ${{ vars.PUBLIC_SITE_URL }}/api
+          NEXT_PUBLIC_BACKEND_API_URL: ${{ vars.PUBLIC_SITE_URL }}/api
+          NEXT_PUBLIC_SOCKET_URL: ${{ vars.PUBLIC_SITE_URL }}
+          NEXT_PUBLIC_SITE_URL: ${{ vars.PUBLIC_SITE_URL }}
 
       - name: Manifest tests
         run: python -m unittest discover -s deploy/tests -v
@@ -97,6 +106,8 @@ jobs:
     steps:
       - name: Roll out
         uses: appleboy/ssh-action@55dabf81b49d4120609345970c91507e2d734799 # v1.0.0
+        env:
+          GHCR_TOKEN: ${{ secrets.GHCR_TOKEN }}
         with:
           host: ${{ secrets.VPS_HOST }}
           username: ${{ secrets.VPS_USERNAME }}
@@ -104,56 +115,103 @@ jobs:
           port: ${{ secrets.VPS_PORT }}
           timeout: 120s
           command_timeout: '20m'
+          envs: GHCR_TOKEN
           script: |
             set -euo pipefail
             cd /opt/cineon
 
+            SHA="${{ github.sha }}"
+            BACKEND_IMAGE=ghcr.io/${{ github.repository_owner }}/movie-web-backend@${{ needs.docker.outputs.backend_digest }}
+            FRONTEND_IMAGE=ghcr.io/${{ github.repository_owner }}/movie-web-frontend@${{ needs.docker.outputs.frontend_digest }}
+
             git fetch --quiet origin
-            git checkout --quiet ${{ github.sha }}
+            git checkout --quiet "$SHA"
+            GOT=$(git rev-parse HEAD)
+            [ "$GOT" = "$SHA" ] || { echo "checked out $GOT, expected $SHA"; exit 1; }
 
-            PREV_IMAGE=$(docker inspect -f '{{.Image}}' cineon-backend 2>/dev/null || true)
-            echo "Current image: ${PREV_IMAGE:-none}"
+            # Rollback targets are image IDs, not tags: tags move, IDs do not.
+            PREV_BACKEND=$(docker inspect -f '{{.Image}}' cineon-backend 2>/dev/null || true)
+            PREV_FRONTEND=$(docker inspect -f '{{.Image}}' cineon-frontend 2>/dev/null || true)
+            echo "Current images: backend=${PREV_BACKEND:-none} frontend=${PREV_FRONTEND:-none}"
 
-            export BACKEND_IMAGE=ghcr.io/${{ github.repository_owner }}/movie-web-backend@${{ needs.docker.outputs.backend_digest }}
-            export FRONTEND_IMAGE=ghcr.io/${{ github.repository_owner }}/movie-web-frontend@${{ needs.docker.outputs.frontend_digest }}
+            rollback() {
+              echo "ROLLING BACK"
+              [ -n "${PREV_BACKEND:-}" ] && [ -n "${PREV_FRONTEND:-}" ] || {
+                echo "::error::No previous images to fall back to - the site is down"
+                exit 1
+              }
+              BACKEND_IMAGE="$PREV_BACKEND" FRONTEND_IMAGE="$PREV_FRONTEND" \
+                docker compose -f docker-compose.prod.yml up -d --no-deps backend-node frontend
+              for i in $(seq 1 12); do
+                if curl -fsS http://localhost:5001/healthz >/dev/null; then
+                  echo "::error::Deploy failed; rolled back to the previous images"
+                  exit 1
+                fi
+                sleep 5
+              done
+              echo "::error::Deploy failed AND rollback did not come up"
+              exit 1
+            }
 
-            docker pull $BACKEND_IMAGE
-            docker pull $FRONTEND_IMAGE
+            # Private GHCR packages need a login; public ones do not. The
+            # secret may be absent entirely, in which case this is a no-op.
+            if [ -n "${GHCR_TOKEN:-}" ]; then
+              echo "$GHCR_TOKEN" | docker login ghcr.io -u ${{ github.repository_owner }} --password-stdin
+            fi
 
+            docker pull "$BACKEND_IMAGE"
+            docker pull "$FRONTEND_IMAGE"
+
+            export BACKEND_IMAGE FRONTEND_IMAGE RELEASE_ID="$SHA"
             docker compose -f docker-compose.prod.yml up -d --remove-orphans
 
             echo "Waiting for the API to report healthy..."
+            ok=1
             for i in $(seq 1 24); do
               if curl -fsS http://localhost:5001/healthz >/dev/null; then
                 echo "healthy after ${i} attempt(s)"
-                docker exec cineon-backend ffmpeg -version >/dev/null \
-                  || { echo "::error::ffmpeg missing"; exit 1; }
-                curl -fsS http://localhost:3000/api/health >/dev/null || { echo "::error::frontend is not responding"; exit 1; }
-                docker image prune -f >/dev/null 2>&1 || true
-                exit 0
+                break
               fi
               sleep 5
+              [ "$i" = 24 ] && ok=0
             done
+            [ "$ok" = 1 ] || {
+              echo "API never became healthy"
+              docker compose -f docker-compose.prod.yml logs --tail 200 backend-node || true
+              rollback
+            }
 
-            echo "API never became healthy"
-            docker compose -f docker-compose.prod.yml logs --tail 200 backend-node || true
+            docker exec cineon-backend ffmpeg -version >/dev/null \
+              || { echo "::error::ffmpeg missing"; rollback; }
+            curl -fsS http://localhost:3000/api/health >/dev/null \
+              || { echo "::error::frontend is not responding"; rollback; }
+            curl -fsS --max-time 15 https://cinevn.me/ >/dev/null \
+              || { echo "::error::public site is not responding"; rollback; }
 
-            if [ -z "${PREV_IMAGE:-}" ]; then
-              echo "::error::No previous image to fall back to - the site is down"
-              exit 1
-            fi
-
-            echo "Rolling back to ${PREV_IMAGE}"
-            export BACKEND_IMAGE=$PREV_IMAGE
-            docker compose -f docker-compose.prod.yml up -d --no-deps backend-node frontend
-
-            for i in $(seq 1 12); do
-              if curl -fsS http://localhost:5001/healthz >/dev/null; then
-                echo "::error::Deploy failed; rolled back to the previous image"
-                exit 1
+            # Health alone proves nothing about which image is live: the old
+            # container passes every one of those probes. Assert identity, then
+            # ask the app which commit it thinks it is.
+            for pair in "cineon-backend:$BACKEND_IMAGE" "cineon-frontend:$FRONTEND_IMAGE"; do
+              c=${pair%%:*}; want=${pair#*:}
+              got=$(docker inspect -f '{{.Config.Image}}' "$c" 2>/dev/null)
+              if [ "$got" = "$want" ]; then
+                echo "identity ok  $c -> $got"
+              else
+                echo "::error::MISMATCH $c runs $got, wanted $want"
+                rollback
               fi
-              sleep 5
             done
+            RELEASE_JSON=$(curl -fsS --max-time 15 https://cinevn.me/release) \
+              || { echo "::error::/release did not answer"; rollback; }
+            echo "$RELEASE_JSON" | grep -q "$SHA" \
+              || { echo "::error::release mismatch: $RELEASE_JSON"; rollback; }
+            echo "release ok  $RELEASE_JSON"
 
-            echo "::error::Deploy failed AND rollback did not come up"
-            exit 1
+            # Persist the release for every later restart, then reclaim the
+            # build layers: a dozen of them once filled this 30 GB disk.
+            sed -i "s|^RELEASE_ID=.*|RELEASE_ID=$SHA|" .env
+            docker builder prune -af >/dev/null 2>&1 || true
+            docker image prune -f >/dev/null 2>&1 || true
+            df -h / | tail -1
+
+            echo "DEPLOY_OK $SHA"

@@ -2,10 +2,12 @@
 #
 # Deploy CineVN directly on this host.
 #
-# Why it exists and why it is a real script rather than a paste: the repository's
-# CI workflow only triggers on a push to main, and this release line lives on a
-# feature branch, so every deploy was being done by hand. Hand-written versions
-# of that accumulated three distinct failures in one evening — a build whose
+# The manual fallback for when CI cannot be used (no runner, no secrets, or
+# the change must go out while Actions is down). The CI workflow in
+# .github/workflows/deploy.yml covers the same release line automatically;
+# this script stays because it builds on the host itself, needs no registry,
+# and is the documented way to roll a single SHA out or back by hand.
+# It accumulated three distinct failures in one evening — a build whose
 # error guard had been deleted (reported DEPLOY_OK having shipped nothing), a
 # frontend-only script run where a backend deploy was intended, and a mangled
 # command line that took the frontend build down with it. Each one printed a
