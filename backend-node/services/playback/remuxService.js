@@ -883,6 +883,96 @@ export class RemuxBusyError extends Error {
 }
 
 /**
+ * Refusal when starting this writer would take the filesystem below the floor
+ * the box needs for itself. 503 with the same "nothing is broken" reading as
+ * RemuxBusyError — the viewer is early, not locked out.
+ */
+export class RemuxNoSpaceError extends Error {
+  constructor({ needBytes, freeBytes, reserveBytes } = {}) {
+    super(
+      `Máy chủ hết chỗ để dựng phim này (cần ~${Math.round((needBytes || 0) / GB)}GB, `
+      + `đang trống ${Math.round((freeBytes || 0) / GB)}GB) — thử lại sau ít phút`,
+    );
+    this.name = 'RemuxNoSpaceError';
+    this.code = 'REMUX_NO_SPACE';
+    this.status = 503;
+    this.needBytes = needBytes;
+    this.freeBytes = freeBytes;
+    this.reserveBytes = reserveBytes;
+  }
+}
+
+/**
+ * Space the box keeps for itself: images, a deploy's build layers, Mongo and
+ * logs. Filling that is what takes the whole site down rather than one film —
+ * a deploy's `git fetch` starts failing on ENOSPC long before anything is
+ * ready to be evicted.
+ */
+const DISK_RESERVE_BYTES = positiveNumber(process.env.PLAYBACK_DISK_RESERVE_GB, 6) * GB;
+
+/**
+ * How much disk a writer needs, from the delivery plan's bitrate.
+ *
+ * A remux copies the source, so the plan's kbps IS the source bitrate and
+ * width × height is not needed. Transcodes are the exception: they re-encode
+ * to a rung whose ceiling is the ladder's top, so that is what they can cost.
+ *
+ * Multiplying the FULL duration is deliberate. A session started near its
+ * target only writes the remainder, but pricing it as if it ran the whole film
+ * is the difference between a 4K title being refused on a small box and that
+ * same title filling the disk — and the reader of a refusal is simply told to
+ * try again, so over-pricing costs one retry while under-pricing costs the box.
+ */
+export const estimateSessionBytes = (args) => {
+  const { kbps, durationSeconds, height } = args || {};
+  const bitrate = Number(kbps);
+  const seconds = Number(durationSeconds);
+  const h = Number(height);
+  if (Number.isFinite(bitrate) && bitrate > 0 && Number.isFinite(seconds) && seconds > 0) {
+    return Math.ceil((bitrate * 1000 * seconds) / 8);
+  }
+  // Unknown length: a 4K remux is the documented worst case (~17GB), and
+  // pricing the unknown as the known worst case is the only safe reading.
+  return Number.isFinite(h) && h > 0 && h <= 480 ? 2 * GB : 17 * GB;
+};
+
+/**
+ * Pure admission planner, exported so the retention rule stays testable.
+ *
+ * Refusing a session is a far better failure than starting it: a session is
+ * only removable once it is complete, and one in progress cannot be trimmed
+ * without cutting the playlist out from under a live ffmpeg. So the decision
+ * has to happen before the writer exists — see selectTranscodeEvictions, which
+ * by design only ever reclaims complete, inactive sessions.
+ */
+export const admitRemuxDisk = (args) => {
+  const { freeBytes, needBytes, reserveBytes = DISK_RESERVE_BYTES } = args || {};
+  // Read strictly, never through Number(): Number(null) and Number('') are 0, so
+  // a statfs that came back empty would read as a completely full disk and
+  // refuse every film on the box.
+  const strictNumber = (value) => (
+    typeof value === 'number' && Number.isFinite(value) ? value : null
+  );
+  const free = strictNumber(freeBytes);
+  const need = strictNumber(needBytes);
+  const reserve = strictNumber(reserveBytes) ?? DISK_RESERVE_BYTES;
+  // An unreadable filesystem must not read as a full one: refusing every film
+  // because statfs failed would take playback down entirely.
+  if (free === null || free < 0) return { admitted: true, reason: 'free-space-unknown' };
+  if (need === null || need <= 0) return { admitted: true, reason: 'size-unknown' };
+  if (free - reserve >= need) {
+    return { admitted: true, freeBytes: free, needBytes: need, reserveBytes: reserve };
+  }
+  return {
+    admitted: false,
+    freeBytes: free,
+    needBytes: need,
+    reserveBytes: reserve,
+    reason: 'below-floor',
+  };
+};
+
+/**
  * How many ffmpeg writers this box may run at once (REMUX_MAX_WRITERS).
  *
  * Three by default: enough that a household is never refused, low enough that
@@ -1218,7 +1308,7 @@ export const probeSeekOrigin = async (inputUrl, startAt) => {
   }
 };
 
-export const startRemuxSession = async ({ sessionId, inputUrl, audioCopy = false, audioStreamIndex = null, audioChannels = null, audioDelayMs = 0, video = null }) => {
+export const startRemuxSession = async ({ sessionId, inputUrl, audioCopy = false, audioStreamIndex = null, audioChannels = null, audioDelayMs = 0, video = null, durationSeconds = null }) => {
   const id = safeId(sessionId);
   if (!id) throw new Error('sessionId không hợp lệ');
   // A pending grace-period stop belongs to the previous writer: a fresh start
@@ -1248,6 +1338,42 @@ export const startRemuxSession = async ({ sessionId, inputUrl, audioCopy = false
   }
   if (!admitRemuxWriter({ active: activeWriterCount(), limit })) {
     throw new RemuxBusyError(limit);
+  }
+
+  // Last gate before ffmpeg exists, and the only one that still can refuse.
+  //
+  // A session directory is only reclaimable once it is complete, and one in
+  // progress cannot be trimmed without cutting segments out from under a live
+  // writer — so the janitor cannot rescue an over-budget start after the fact
+  // (see selectTranscodeEvictions, which by design only reclaims complete,
+  // inactive sessions). A 4K remux was measured filling a 30GB box on its own,
+  // and the outage that followed was not "this film failed": `git fetch` could
+  // no longer write, so deploys stopped and Docker could not build. A refusal
+  // the viewer can retry is a far better outcome than a full filesystem.
+  const needBytes = estimateSessionBytes({
+    kbps: video?.kbps,
+    durationSeconds,
+    height: video?.height,
+  });
+  const freeBytes = await freeDiskBytes();
+  const diskDecision = admitRemuxDisk({ freeBytes, needBytes });
+  if (!diskDecision.admitted) {
+    // Reclaim what is legitimately reclaimable and look once more: refusing a
+    // film because an hour-old rendition is sitting there would be wrong.
+    await cleanupTranscodeCache().catch(() => null);
+    const retryFree = await freeDiskBytes({ now: Date.now() + DISK_PROBE_TTL_MS + 1 });
+    const retry = admitRemuxDisk({ freeBytes: retryFree, needBytes });
+    if (!retry.admitted) {
+      console.warn(
+        `[remux] refused tmdb-session=${id}: need ~${Math.round(needBytes / GB)}GB, `
+        + `free ${Math.round((retryFree || 0) / GB)}GB, reserve ${Math.round(DISK_RESERVE_BYTES / GB)}GB`,
+      );
+      throw new RemuxNoSpaceError({
+        needBytes,
+        freeBytes: retryFree,
+        reserveBytes: DISK_RESERVE_BYTES,
+      });
+    }
   }
 
   const outputDir = path.join(TRANSCODE_ROOT, id);
@@ -1530,6 +1656,40 @@ const directorySize = async (dirPath) => {
     total += (await fs.stat(path.join(dirPath, item.name))).size;
   }
   return total;
+};
+
+/**
+ * Free bytes on the filesystem holding the session cache, or null when it
+ * cannot be read.
+ *
+ * Cached briefly: this gates every writer start, and statfs is a syscall whose
+ * answer cannot change faster than the disk it describes. The window is
+ * deliberately far shorter than the janitor's, so the two never disagree about
+ * the same disk for more than a second.
+ */
+let diskProbe = { at: 0, freeBytes: null };
+const DISK_PROBE_TTL_MS = positiveNumber(process.env.PLAYBACK_DISK_PROBE_TTL_SECONDS, 5) * 1000;
+
+export const freeDiskBytes = async ({ now = Date.now(), ttlMs = DISK_PROBE_TTL_MS } = {}) => {
+  if (diskProbe.freeBytes !== null && now - diskProbe.at < ttlMs) {
+    return diskProbe.freeBytes;
+  }
+  let freeBytes = null;
+  try {
+    // bavail, not bfree: the superuser's reserved blocks are not ours to spend.
+    const stat = await fs.statfs(TRANSCODE_ROOT);
+    freeBytes = Number(stat.bavail) * Number(stat.bsize);
+  } catch {
+    // The cache root may not exist yet on a cold start; its parent always does.
+    try {
+      const stat = await fs.statfs(path.dirname(TRANSCODE_ROOT));
+      freeBytes = Number(stat.bavail) * Number(stat.bsize);
+    } catch {
+      freeBytes = null;
+    }
+  }
+  diskProbe = { at: now, freeBytes };
+  return freeBytes;
 };
 
 const readCacheEntry = async (dirent) => {

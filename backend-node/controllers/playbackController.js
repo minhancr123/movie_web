@@ -39,6 +39,7 @@ import {
   presentationShiftMs,
   startRemuxSession,
   RemuxBusyError,
+  RemuxNoSpaceError,
   probeSeekOrigin,
   seekOriginProbeEnabled,
   seekStartEnabled,
@@ -1785,6 +1786,9 @@ export const resolvePlayback = async (req, res) => {
           audioChannels: decision.audioChannels ?? null,
           audioDelayMs,
           video: videoPlan,
+          // Priced before the writer starts: a 4K remux is tens of GB and a
+          // box that fills up fails deploys, not just this film.
+          durationSeconds: fullDurationSeconds,
         });
         // Where `-ss` really lands: a copied stream cannot be cut mid-GOP, so
         // the bytes begin at a keyframe at or before the request, and labelling
@@ -1879,6 +1883,17 @@ export const resolvePlayback = async (req, res) => {
         if (error instanceof RemuxBusyError || error?.code === 'REMUX_BUSY') {
           console.warn(`resolvePlayback busy tmdb=${tmdbId} limit=${error.limit ?? '?'}`);
           return fail(res, 503, error.message, { code: 'REMUX_BUSY', retryable: true });
+        }
+        // Same reasoning, different ceiling: not enough free disk to hold this
+        // film. No later candidate is smaller, so retrying the list would spend
+        // TorBox calls to reach the same refusal — and the whole site, not just
+        // this title, is what a full disk takes down.
+        if (error instanceof RemuxNoSpaceError || error?.code === 'REMUX_NO_SPACE') {
+          console.warn(
+            `resolvePlayback het cho tmdb=${tmdbId} can=${Math.round((error.needBytes || 0) / 1024 ** 3)}GB `
+            + `trong=${Math.round((error.freeBytes || 0) / 1024 ** 3)}GB`,
+          );
+          return fail(res, 503, error.message, { code: 'REMUX_NO_SPACE', retryable: true });
         }
         // Read the corpse before stopping it: stopRemuxSession drops the map
         // entry, and with it the only record of HOW ffmpeg died.
