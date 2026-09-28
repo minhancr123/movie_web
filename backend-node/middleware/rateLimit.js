@@ -6,6 +6,18 @@ export const rateLimit = ({ windowMs = 60_000, max = 120, keyPrefix = 'rl' } = {
   const windowSeconds = Math.ceil(windowMs / 1000);
 
   return async (req, res, next) => {
+    // Container-internal callers are not a crowd and must not spend a client
+    // budget. The frontend's server render reaches the API straight over the
+    // compose network: no user, and no X-Forwarded-For, so `req.ip` is the one
+    // address every render shares. Keying it like a client put a home page —
+    // which is itself several catalog calls (/home plus the people behind it) —
+    // one revalidation away from 429, and getHome() turns a 429 into an empty
+    // list, which the page renders as a dead homepage rather than a slow one.
+    // The API port is published on loopback and Caddy always stamps the
+    // client's address, so a request with no X-Forwarded-For cannot have come
+    // off the internet.
+    if (!req.headers['x-forwarded-for']) return next();
+
     const identity = req.user?.userId || req.ip || 'anonymous';
     const key = `${keyPrefix}:${identity}`;
     const now = Date.now();
