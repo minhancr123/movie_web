@@ -40,6 +40,9 @@ import {
   startRemuxSession,
   RemuxBusyError,
   RemuxNoSpaceError,
+  admitRemuxDisk,
+  estimateSessionBytes,
+  freeDiskBytes,
   probeSeekOrigin,
   seekOriginProbeEnabled,
   seekStartEnabled,
@@ -1618,6 +1621,37 @@ export const resolvePlayback = async (req, res) => {
             startAt,
           }
           : { ...ct, codec: ct.codec ?? delivery.codec ?? sourceCodec, startAt };
+      }
+
+      if (decision.mode === 'remux' && inputUrl && file) {
+        // A session this size may not fit on the box at all: a 4K remux was
+        // measured at 33GB against a floor of 12GB free, and video transcode is
+        // off, so there is no smaller rung to step down to. The film is still
+        // watchable — play it straight from the provider's CDN, which uses no
+        // disk at all.
+        //
+        // This is the same trade already made in reverse above: a direct source
+        // is given up to apply the egress cap, so treating it as the fallback
+        // when the cap cannot be met is symmetric rather than new machinery.
+        // Refusing here is what sent the viewer back to the start of the film:
+        // the seek-resolve failed, and recovery re-resolved from zero.
+        const diskFit = admitRemuxDisk({
+          freeBytes: await freeDiskBytes(),
+          needBytes: estimateSessionBytes({
+            kbps: videoPlan.kbps,
+            durationSeconds: fullDurationSeconds,
+            height: videoPlan.height,
+          }),
+        });
+        if (!diskFit.admitted) {
+          console.warn(
+            `resolvePlayback chuyen sang direct cho tmdb=${tmdbId}: `
+            + `remux can ~${Math.round(diskFit.needBytes / 1024 ** 3)}GB, `
+            + `trong ${Math.round((diskFit.freeBytes || 0) / 1024 ** 3)}GB`,
+          );
+          decision.mode = 'direct';
+          decision.reason = `Nguồn này quá lớn cho đĩa của máy chủ (cần ~${Math.round(diskFit.needBytes / 1024 ** 3)}GB) — phát trực tiếp từ nguồn`;
+        }
       }
 
       if (decision.mode === 'direct') {

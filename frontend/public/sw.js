@@ -38,6 +38,12 @@ const isUncacheable = (url) =>
 /** Content-hashed and served immutable, so a hit can never be wrong. */
 const isImmutableAsset = (url) => url.pathname.startsWith('/_next/static/');
 
+/**
+ * Last resort for a request the network could not answer and the Cache API has
+ * nothing for. respondWith only accepts a Response, so this has to be one.
+ */
+const offlineResponse = () => new Response('', { status: 504, statusText: 'Offline' });
+
 self.addEventListener('install', (event) => {
   event.waitUntil(
     caches.open(SHELL_CACHE)
@@ -96,7 +102,9 @@ self.addEventListener('fetch', (event) => {
   // failure that made "which build am I running?" unanswerable from the page.
   if (request.mode === 'navigate') {
     event.respondWith(
-      fetch(request).catch(() => caches.match('/offline.html')),
+      fetch(request).catch(() => caches.match('/offline.html').then(
+        (hit) => hit || offlineResponse(),
+      )),
     );
     return;
   }
@@ -105,12 +113,17 @@ self.addEventListener('fetch', (event) => {
   event.respondWith(
     caches.open(ASSET_CACHE).then(async (cache) => {
       const hit = await cache.match(request);
+      // A failed fetch must still resolve to a Response. `catch(() => hit)`
+      // resolves to undefined when nothing was cached, and respondWith(undefined)
+      // throws "Failed to convert value to 'Response'" — which surfaces as an
+      // unhandled rejection and leaves the request hanging rather than failing
+      // the way the network did.
       const network = fetch(request)
         .then((response) => {
           if (response.ok) cache.put(request, response.clone());
           return response;
         })
-        .catch(() => hit);
+        .catch(() => hit || offlineResponse());
       return hit || network;
     }),
   );
