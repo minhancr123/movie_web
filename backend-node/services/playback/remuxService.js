@@ -1050,10 +1050,15 @@ export const activeWriterCount = () => {
 };
 
 /**
- * Whether one more writer may start. Fails OPEN on unusable numbers: a
- * miscount is a bad reason to refuse every viewer, since this is a safety
- * valve rather than an authorisation check.
+ * What the writer actually does to the picture, for spawn logs and future
+ * monitor APIs. A bare `remux` label hid whether a hot box was muxing (cheap)
+ * or software-encoding (the 53.7s-CPU-per-60s case) — this is the field the
+ * next "ffmpeg eats a core" report reads first.
  */
+export const videoActionFor = (video, encoder) =>
+  video?.mode === 'transcode' ? (encoder?.encoder || 'transcode') : 'copy';
+
+export const audioActionFor = (audioCopy) => (audioCopy ? 'copy' : 'encode');
 /**
  * Which superseded writers to stop so one more may start.
  *
@@ -1146,6 +1151,11 @@ export const idleWriterIds = (sessions, { now = Date.now(), idleMs = IDLE_REAP_M
   return out.sort((a, b) => a.lastAccessAt - b.lastAccessAt).map((entry) => entry.id);
 };
 
+/**
+ * Whether one more writer may start. Fails OPEN on unusable numbers: a
+ * miscount is a bad reason to refuse every viewer, since this is a safety
+ * valve rather than an authorisation check.
+ */
 export const admitRemuxWriter = ({ active, limit } = {}) => {
   const a = Number(active);
   const l = Number(limit);
@@ -1373,15 +1383,7 @@ export const startRemuxSession = async ({ sessionId, inputUrl, audioCopy = false
     // one, then writers nobody has requested from in IDLE_REAP_MS. On a box
     // configured for one writer this is the difference between a viewer who
     // waits and a viewer who is told to come back later.
-    for (const doomed of reapPlan({
-      active: activeWriterCount(),
-      limit,
-      superseded: [...supersedeTimers.keys()],
-      idle: idleWriterIds(sessions),
-    })) {
-      cancelScheduledStop(doomed);
-      await stopRemuxSession(doomed).catch(() => false);
-    }
+    await reapExpendableWriters({ limit });
   }
   if (!admitRemuxWriter({ active: activeWriterCount(), limit })) {
     throw new RemuxBusyError(limit);
@@ -1433,6 +1435,8 @@ export const startRemuxSession = async ({ sessionId, inputUrl, audioCopy = false
   // process cwd, not the playlist dir, so init.mp4 would otherwise land in the
   // backend root and every segment request would 404 on a missing init map.
   const child = spawn(FFMPEG_BIN, args, { windowsHide: true, cwd: outputDir });
+  const videoAction = videoActionFor(video, encoder);
+  const audioAction = audioActionFor(audioCopy);
   const session = {
     id,
     outputDir,
@@ -1446,8 +1450,19 @@ export const startRemuxSession = async ({ sessionId, inputUrl, audioCopy = false
     // back to the database for sessions it already started.
     lan: Boolean(video?.lan),
     kbps: Number(video?.kbps) || 0,
+    // Copy vs encode, recorded at spawn: the next "ffmpeg eats a core" report
+    // answers itself instead of needing a codec capture mid-stream.
+    videoAction,
+    audioAction,
   };
   sessions.set(id, session);
+  // Structured spawn line (ids only — inputUrl is a short-lived TorBox link
+  // and must never reach logs). This is the line that tells a busy-box
+  // investigation whether the slot holder is muxing or software-encoding.
+  console.log(
+    `[remux] spawn id=${id} video=${videoAction} audio=${audioAction} ` +
+    `res=${video?.height ? `${video.height}p` : 'src'} kbps=${session.kbps || 'src'}`,
+  );
 
   child.stderr.on('data', (chunk) => {
     session.stderr = `${session.stderr}${chunk.toString()}`.slice(-4000);
@@ -1608,6 +1623,47 @@ export const cancelScheduledStop = (sessionId) => {
   clearTimeout(timer);
   supersedeTimers.delete(id);
   return true;
+};
+
+/** Ids currently serving their supersede grace window (reapable first). */
+export const supersededWriterIds = () => [...supersedeTimers.keys()];
+
+/**
+ * Read-only capacity snapshot for resolve pre-flight: is the box full, and is
+ * any of the load expendable (superseded grace or idle past the reap window)?
+ * Pure inputs are overridable so the policy stays unit-testable.
+ */
+export const writerSlotStatus = ({
+  limit = remuxWriterLimit(),
+  active = activeWriterCount(),
+  superseded = supersededWriterIds(),
+  idle = idleWriterIds(sessions),
+} = {}) => {
+  const full = !admitRemuxWriter({ active, limit });
+  const reapable = full
+    ? [...new Set([...(superseded || []), ...(idle || [])].filter(Boolean))]
+    : [];
+  return { limit, active, full, reapable };
+};
+
+/**
+ * Stop expendable writers to free a slot (superseded grace first, then idle).
+ * Shared with startRemuxSession so pre-flight reaping and admission-time
+ * reaping cannot drift apart. Returns the stopped ids.
+ */
+export const reapExpendableWriters = async ({
+  limit = remuxWriterLimit(),
+  active = activeWriterCount(),
+  superseded = supersededWriterIds(),
+  idle = idleWriterIds(sessions),
+} = {}) => {
+  const stopped = [];
+  for (const doomed of reapPlan({ active, limit, superseded, idle })) {
+    cancelScheduledStop(doomed);
+    if (await stopRemuxSession(doomed).catch(() => false)) stopped.push(doomed);
+    active = activeWriterCount();
+  }
+  return stopped;
 };
 
 /** Record real viewer activity without writing a marker for every segment. */
@@ -1867,10 +1923,15 @@ export default {
   stopRemuxSession,
   scheduleSupersededStop,
   cancelScheduledStop,
+  supersededWriterIds,
+  writerSlotStatus,
+  reapExpendableWriters,
   SUPERSEDE_GRACE_MS,
   computeWriteSpeed,
   SLOW_WRITER_MIN_OBSERVE_MS,
   SLOW_WRITER_MIN_SPEED,
+  videoActionFor,
+  audioActionFor,
   isLinkExpiryDeath,
   REMUX_SEGMENT_SECONDS,
   selectSupersededRemuxes,

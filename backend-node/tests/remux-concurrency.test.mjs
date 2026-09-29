@@ -23,6 +23,13 @@ import {
   reapPlan,
   idleWriterIds,
   spawnBeatsReuse,
+  videoActionFor,
+  audioActionFor,
+  supersededWriterIds,
+  writerSlotStatus,
+  reapExpendableWriters,
+  scheduleSupersededStop,
+  cancelScheduledStop,
 } from '../services/playback/remuxService.js';
 import { hasTechnicalTerm } from '../services/publicVocabulary.js';
 
@@ -138,13 +145,14 @@ console.log('ok - superseded writers are reaped before anyone is refused');
     `default idle-reap (${defaultIdleReapMs}ms) must outlast a buffer drain (${bufferDrainMs}ms)`,
   );
   // ...and it must not be so long that a genuinely abandoned writer outlasts the
-  // retry ladder it is meant to serve: three attempts, 8s apart, plus the attempt.
-  const retryLadderMs = 3 * 8 * 1000;
+  // retry ladder it is meant to serve. The ladder is jittered (~5-8s, ~10-15s,
+  // ~15-20s; worst case just under 45s — see frontend/src/lib/resolve-retry.ts):
+  const retryLadderWorstMs = 45 * 1000;
   assert.ok(
     defaultIdleReapMs <= 10 * 60 * 1000,
     'but it must stay well inside the retention window it is protecting',
   );
-  assert.ok(retryLadderMs < defaultIdleReapMs, 'the ladder is shorter than the reap window');
+  assert.ok(retryLadderWorstMs < defaultIdleReapMs, 'the ladder is shorter than the reap window');
   console.log('ok - the idle-reap window outlasts a buffer drain, not a pause');
 }
 
@@ -207,5 +215,46 @@ assert.equal(spawnBeatsReuse({ sessionStartAt: 0, freshStartAt: 0, playableSecon
 assert.equal(spawnBeatsReuse({ sessionStartAt: NaN, freshStartAt: 900 }), false);
 assert.equal(spawnBeatsReuse({}), false);
 console.log('ok - a replacement writer must start closer than the one it replaces');
+
+/* ------------------------------------------------------- spawn labels */
+
+assert.equal(videoActionFor({ mode: 'transcode' }, { encoder: 'h264_nvenc' }), 'h264_nvenc');
+assert.equal(videoActionFor({ mode: 'transcode' }, null), 'transcode');
+assert.equal(videoActionFor({ mode: 'copy' }, null), 'copy');
+assert.equal(videoActionFor(null, null), 'copy');
+assert.equal(audioActionFor(true), 'copy');
+assert.equal(audioActionFor(false), 'encode');
+assert.equal(audioActionFor(undefined), 'encode');
+console.log('ok - spawn labels distinguish muxing from encoding');
+
+/* ------------------------------------------------- slot status & reaping */
+
+assert.deepEqual(
+  writerSlotStatus({ limit: 1, active: 1, superseded: ['a'], idle: [] }),
+  { limit: 1, active: 1, full: true, reapable: ['a'] },
+  'full box with a superseded writer names what can go',
+);
+assert.deepEqual(
+  writerSlotStatus({ limit: 3, active: 1, superseded: ['a'], idle: ['b'] }),
+  { limit: 3, active: 1, full: false, reapable: [] },
+  'room to spare reports nothing reapable',
+);
+{
+  const id = `test-superseded-${Date.now()}`;
+  assert.equal(scheduleSupersededStop(id, 60_000), true, 'schedules a grace stop');
+  assert.ok(supersededWriterIds().includes(id), 'grace ids are listed');
+  assert.equal(cancelScheduledStop(id), true, 'cancels cleanly');
+  assert.ok(!supersededWriterIds().includes(id), 'cancelled ids leave the list');
+  console.log('ok - supersede grace ids are observable for pre-flight');
+}
+// Reaping unknown ids is a no-op, never a throw: the janitor and admission
+// share this path, and a row deleted under them must not crash a resolve.
+{
+  const stopped = await reapExpendableWriters({ limit: 1, active: 1, superseded: ['ghost'], idle: [] });
+  assert.deepEqual(stopped, [], 'nothing real to stop');
+  const idle = await reapExpendableWriters({ limit: 3, active: 1, superseded: [], idle: [] });
+  assert.deepEqual(idle, [], 'room to spare stops nothing');
+  console.log('ok - expendable reaping is safe on ghosts');
+}
 
 console.log('ok - remux concurrency policy');

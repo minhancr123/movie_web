@@ -20,7 +20,7 @@ import { getDB } from '../config/database.js';
 import { publicText, publicFileName } from '../services/publicVocabulary.js';
 import { ObjectId } from 'mongodb';
 import { cached, getCache, setCache, CACHE_TTL } from '../config/redis.js';
-import { isMediaType } from '../services/contentRef.js';
+import { isMediaType, buildContentRef } from '../services/contentRef.js';
 import * as tmdb from '../services/tmdb.js';
 import {
   getStreamCandidates,
@@ -53,6 +53,7 @@ import {
   stopRemuxSession,
   scheduleSupersededStop,
   cancelScheduledStop,
+  writerSlotStatus,
   computeWriteSpeed,
   SLOW_WRITER_MIN_OBSERVE_MS,
   SLOW_WRITER_MIN_SPEED,
@@ -1072,6 +1073,58 @@ export const resolvePlayback = async (req, res) => {
     const db = getDB();
 
     try {
+    // Writer pre-flight, before any expensive TorBox/probe work.
+    //
+    // One viewer watches one thing at a time: their OTHER live remux sessions
+    // (different title — same-title rows stay untouched here so seek/recovery
+    // on the current film keeps its writer for reuse) are replaced by this
+    // intent, so they enter the 90s supersede grace now instead of holding the
+    // only slot while the new film burns 6-9s of prepare/probe first.
+    // Flip-back inside the grace window re-adopts the still-running writer.
+    //
+    // Marking is grace-only: NOTHING is reaped here. Reaping happens solely at
+    // admission inside startRemuxSession, once the probe has proven this
+    // resolve actually needs a writer — killing the current film's writer
+    // before that point (a direct/published resolve, a failed upstream, or a
+    // same-film seek) would destroy playback for no reason.
+    let newTitleRef = null;
+    try {
+      newTitleRef = buildContentRef({ mediaType: type, tmdbId });
+    } catch {
+      newTitleRef = null;
+    }
+    try {
+      const others = await db.collection('playback_sessions')
+        .find({
+          userIdStr: String(req.user.userId),
+          mode: 'remux',
+          expiresAt: { $gt: new Date() },
+          ...(newTitleRef ? { contentRef: { $ne: newTitleRef } } : {}),
+        })
+        .project({ sessionId: 1, _id: 0 })
+        .toArray();
+      for (const staleId of selectSupersededRemuxes(
+        others.map((row) => row.sessionId), [], isRemuxSessionLive,
+      )) {
+        scheduleSupersededStop(staleId);
+      }
+    } catch {
+      // Best-effort: admission-time reaping still guards the slot below.
+    }
+    // If the box is already full, say so on the stage channel NOW (the UI
+    // polls it while the HTTP resolve is still working). A refusal can still
+    // only come from admission after the probe — a direct/published resolve
+    // needs no writer at all.
+    try {
+      const slot = writerSlotStatus();
+      if (slot.full) {
+        stage('waiting_writer', slot.reapable.length
+          ? 'Đang nhường lượt xử lý cho tập này'
+          : 'Máy chủ đang bận, tập này sẽ tự thử lại');
+      }
+    } catch {
+      // Best-effort: admission still guards the slot below.
+    }
     // 1. Catalog detail -> IMDb id + runtime (cached like the catalog routes).
     //
     // The :vN suffix is the shape of the normalized detail, and it has to be
@@ -1741,17 +1794,16 @@ export const resolvePlayback = async (req, res) => {
       // measured saturating ~36 MB/s of link and disk, which stalls playback
       // and prompts another retry, so the failure compounded on itself.
       //
-      // Scoped to the title, NOT the episode, even though a retry of one episode
-      // is the common case. selectSupersededRemuxes documents the signal as "same
-      // viewer, same title", and switching episodes is the same signal: someone
-      // watching episode 5 and asking for episode 3 is watching one thing at a
-      // time. Filtering by episode made the old writer invisible here, so it kept
-      // the only slot on a one-writer box and the new episode came back 503 four
-      // times in a row. The 90s grace still covers flipping back.
+      // Scoped to the viewer, NOT the title: pre-flight already marked the
+      // other-title sessions it could see, but a resolve that started a few
+      // seconds earlier may not have inserted its row yet (race) — so the
+      // per-candidate pass repeats the sweep without the contentRef filter.
+      // Marking is grace-only (reap happens at admission when a slot is truly
+      // needed, superseded-first), so this is safe to run on every candidate.
+      // The 90s grace still covers flipping back.
       const priorFilter = {
         userIdStr: String(req.user.userId),
         mode: 'remux',
-        contentRef: detail.contentRef,
         sessionId: { $ne: sessionId },
       };
       const prior = await db.collection('playback_sessions')

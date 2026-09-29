@@ -90,6 +90,7 @@ app.get('/health', (req, res) => {
 
 import { getReadiness } from './services/health/readiness.js';
 import { queueConnection, jobQueue } from './config/queue.js';
+import { cacheClient } from './config/redis.js';
 
 app.get('/healthz', async (req, res) => {
   const { ready } = await getReadiness({
@@ -99,6 +100,9 @@ app.get('/healthz', async (req, res) => {
     },
     redisPing: async () => {
       await queueConnection.ping();
+      // Cache is best-effort: a pressured/evicting cache instance must never
+      // flip readiness or trigger a deploy rollback.
+      await cacheClient.ping().catch(() => {});
     }
   });
   if (ready) {
@@ -308,7 +312,8 @@ const shutdown = createShutdown({
     }
   },
   closeStores: async () => {
-    await queueConnection.quit();
+    await queueConnection.quit().catch((err) => console.warn('[lifecycle] queue quit:', err?.message || err));
+    await cacheClient.quit().catch((err) => console.warn('[lifecycle] cache quit:', err?.message || err));
     await dbClient.close();
   }
 });

@@ -2,7 +2,16 @@ import IORedis from 'ioredis';
 
 // Dedicated cache client. BullMQ keeps its own connection in config/queue.js so a
 // slow cache command can never stall the job queue (and vice versa).
+//
+// Split-brain rule: cache and queue MUST be separate Redis instances in
+// production. Catalog cache (≈78k keys and growing, plus 7-day stale copies)
+// will always fill whatever cap it gets; under `noeviction` that starts
+// refusing BullMQ job writes (trackViewAsync et al.) with OOM. The cache
+// instance runs allkeys-lru so pressure evicts cold catalog rows instead.
+// REDIS_CACHE_URL wins; REDIS_URL remains as the single-instance fallback so
+// dev, tests and the test compose keep working with one container.
 const redisUrl =
+  process.env.REDIS_CACHE_URL ||
   process.env.REDIS_URL ||
   `redis://${process.env.REDIS_HOST || '127.0.0.1'}:${process.env.REDIS_PORT || 6379}`;
 

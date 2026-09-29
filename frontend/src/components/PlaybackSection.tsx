@@ -12,6 +12,7 @@ import CinemaLayer, { type CinemaMode } from '@/components/CinemaLayer';
 const STARTUP_BUFFER_HINT = 15;
 
 import { getResolveStageLabels, getFriendlyErrorMessage } from '@/lib/i18n';
+import { BUSY_RETRY_ATTEMPTS, busyRetryDelayMs } from '@/lib/resolve-retry';
 
 const isProd = process.env.NODE_ENV === 'production';
 
@@ -1227,7 +1228,7 @@ export default function PlaybackSection({
       // Server-side "come back in a moment" answers. Handled BEFORE the seek
       // rethrow below: a far seek that stalls on a busy server is the exact
       // case that must retry itself rather than toast over a frozen frame.
-      if (status === 503 && RETRYABLE_503_CODES.has(code) && (busyRetriesRef.current ?? 0) < 3) {
+      if (status === 503 && RETRYABLE_503_CODES.has(code) && (busyRetriesRef.current ?? 0) < BUSY_RETRY_ATTEMPTS) {
         // REMUX_BUSY: every ffmpeg slot is taken. On a single-slot box the slot
         // can be held for a whole remux, so a short ladder is a coin flip — say
         // what is happening instead of showing a spinner that means nothing.
@@ -1235,8 +1236,9 @@ export default function PlaybackSection({
         // release is untouched and ready in seconds once it does.
         const busy = code === 'REMUX_BUSY';
         const noSpace = code === 'REMUX_NO_SPACE';
-        const waitMs = busy ? 8000 : noSpace ? 20000 : 10000;
-        busyRetriesRef.current = (busyRetriesRef.current ?? 0) + 1;
+        const attempt = (busyRetriesRef.current ?? 0) + 1;
+        const waitMs = busy ? busyRetryDelayMs(attempt) : noSpace ? 20000 : 10000;
+        busyRetriesRef.current = attempt;
         setResolveStageLabel(
           isProd
             ? busy

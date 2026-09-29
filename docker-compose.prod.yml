@@ -8,16 +8,43 @@ x-logging: &logging
 
 services:
 
-  # Redis Cache — append-only, no eviction (queue data must survive)
+  # Redis Queue — append-only, no eviction (queue data must survive).
+  # BullMQ REQUIRES maxmemory-policy noeviction: evicted job keys corrupt its
+  # streams. Catalog cache lives on redis-cache below — NEVER point cache at
+  # this instance: ~78k catalog keys filled its 256MB cap and started refusing
+  # job writes with OOM.
   redis:
     image: redis:7-alpine
     container_name: cineon-redis
     restart: unless-stopped
-    mem_limit: 512m
+    mem_limit: 256m
     pids_limit: 64
-    command: redis-server --appendonly yes --maxmemory 256mb --maxmemory-policy noeviction
+    command: redis-server --appendonly yes --maxmemory 128mb --maxmemory-policy noeviction
     volumes:
       - ${REDIS_VOLUME:-cineon-redis}:/data
+    networks:
+      - cineon
+    logging: *logging
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 10s
+      timeout: 3s
+      retries: 3
+
+  # Redis Cache — catalog/probe payloads with LRU eviction. Memory pressure
+  # evicts cold catalog rows instead of refusing writes. Ephemeral by design:
+  # appendonly off, own volume (losing it only means a cold cache, never lost
+  # jobs). Must stay a separate service from `redis`: deploy/lib/provision.py
+  # counts volumes labeled com.docker.compose.service == 'redis'.
+  redis-cache:
+    image: redis:7-alpine
+    container_name: cineon-redis-cache
+    restart: unless-stopped
+    mem_limit: 896m
+    pids_limit: 64
+    command: redis-server --appendonly no --maxmemory 768mb --maxmemory-policy allkeys-lru
+    volumes:
+      - cineon-redis-cache:/data
     networks:
       - cineon
     logging: *logging
@@ -49,6 +76,8 @@ services:
       - CORS_ORIGIN=${CORS_ORIGIN}
       - FRONTEND_URL=${FRONTEND_URL}
       - REDIS_URL=redis://redis:6379
+      - REDIS_QUEUE_URL=redis://redis:6379
+      - REDIS_CACHE_URL=redis://redis-cache:6379
       - JOB_QUEUE_NAME=movieweb-jobs
       # --- Catalog ---
       - TMDB_API_KEY=${TMDB_API_KEY}
@@ -94,6 +123,8 @@ services:
       - cineon
     depends_on:
       redis:
+        condition: service_healthy
+      redis-cache:
         condition: service_healthy
     logging: *logging
     healthcheck:
@@ -157,6 +188,7 @@ services:
       - NEXTAUTH_SECRET=${NEXTAUTH_SECRET}
       - TOKEN_ENCRYPTION_KEYS=${TOKEN_ENCRYPTION_KEYS}
       - REDIS_URL=redis://redis:6379
+      - REDIS_QUEUE_URL=redis://redis:6379
       - JOB_QUEUE_NAME=movieweb-jobs
     depends_on:
       redis:
@@ -185,6 +217,7 @@ services:
       - NEXTAUTH_SECRET=${NEXTAUTH_SECRET}
       - TOKEN_ENCRYPTION_KEYS=${TOKEN_ENCRYPTION_KEYS}
       - REDIS_URL=redis://redis:6379
+      - REDIS_QUEUE_URL=redis://redis:6379
       - JOB_QUEUE_NAME=movieweb-jobs
     depends_on:
       redis:
@@ -197,6 +230,10 @@ services:
 
 volumes:
   cineon-redis:
+    driver: local
+  # Cache-only instance: safe to drop (cold cache rebuilds from TMDB), never
+  # stores queue data, so it must NOT share the cineon-redis volume.
+  cineon-redis-cache:
     driver: local
   # Renditions are large and worth keeping across restarts: a film already
   # remuxed plays instantly and seeks anywhere, instead of rebuilding.
