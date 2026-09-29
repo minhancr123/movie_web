@@ -410,6 +410,19 @@ export const getRecommendations = async (mediaType, tmdbId, page = 1) => {
 };
 
 /**
+ * Fallback when /recommendations is empty: TMDB only fills recommendations
+ * from community votes, while /similar (genre/tag overlap) almost always has
+ * rows. Same shape, same language, so callers can swap it in blindly.
+ */
+export const getSimilar = async (mediaType, tmdbId, page = 1) => {
+  const type = mediaType === 'tv' ? 'tv' : 'movie';
+  return request(`/${type}/${tmdbId}/similar`, {
+    language: LANGUAGE,
+    page,
+  });
+};
+
+/**
  * Person detail + acting filmography, most popular first.
  *
  * Same bilingual pattern as getDetail: Vietnamese bio wins, en-US fills the

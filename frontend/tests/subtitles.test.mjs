@@ -29,10 +29,18 @@ execFileSync(
   { cwd: root, stdio: 'pipe' },
 );
 
-const { isReadyTrack, isEmbeddedTrack, isViTrack } = await import(
+const { isReadyTrack, isEmbeddedTrack, isViTrack, pickBestViTrack } = await import(
   pathToFileURL(path.join(outDir, 'subtitles.js')).href,
 );
 process.on('exit', () => rmSync(outDir, { recursive: true, force: true }));
+test('pickBestViTrack prefers matched over first-seen Vietnamese', () => {
+  const generic = { id: 'vi-1', language: 'vi', label: 'Tiếng Việt 1', url: 'http://example/a.vtt', ready: true };
+  const matched = { id: 'vi-2', language: 'vi', label: 'Tiếng Việt 2', url: 'http://example/b.vtt', ready: true, matched: true };
+  assert.equal(pickBestViTrack([generic, matched])?.id, 'vi-2', 'matched sidecar wins even when listed second');
+  assert.equal(pickBestViTrack([generic])?.id, 'vi-1', 'falls back to first Vietnamese when nothing matched');
+  const embedded = { id: 'a'.repeat(40) + ':3', language: 'vi', label: 'Embedded', url: '', ready: false, source: 'embedded' };
+  assert.equal(pickBestViTrack([generic, matched, embedded])?.id, embedded.id, 'embedded still outranks matched');
+});
 
 // Embedded without URL must be considered ready (extraction pending, not absent).
 assert.equal(isReadyTrack({ id: 'a'.repeat(40) + ':3', language: 'vi', label: 'Tiếng Việt', ready: false, url: '' }), true, 'embedded track with no URL is still ready');

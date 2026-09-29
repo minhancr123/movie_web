@@ -41,16 +41,29 @@ export const getPersonalizedRecommendations = async (userId, currentType = null,
       const [type, id] = seed.split(':');
       try {
         const [res, detail] = await Promise.all([
-          tmdb.getRecommendations(type, id),
+          tmdb.getRecommendations(type, id).catch(() => null),
           tmdb.getDetail(type, id).catch(() => null)
         ]);
-        
+
         if (detail?.originalLanguage) {
           preferredLanguages.add(detail.originalLanguage);
         }
 
-        if (res?.results) {
-          allRecs.push(...res.results.map(r => ({ ...r, media_type: type })));
+        let results = Array.isArray(res?.results) ? res.results : [];
+        // recommendations depends on community votes and is often empty (or
+        // empty for the vi-VN locale): fall back to similar (genre/tag
+        // overlap) so the row still has something to show.
+        if (results.length === 0) {
+          try {
+            const similar = await tmdb.getSimilar(type, id).catch(() => null);
+            if (Array.isArray(similar?.results)) results = similar.results;
+          } catch {
+            // Keep the original empty list; scoring below just yields nothing.
+          }
+        }
+
+        if (results.length > 0) {
+          allRecs.push(...results.map(r => ({ ...r, media_type: type })));
         }
       } catch (e) {
         console.warn(`[recs] Failed to get recommendations for ${seed}: ${e.message}`);
@@ -86,8 +99,14 @@ export const getPersonalizedRecommendations = async (userId, currentType = null,
     });
 
     // 4. Trả về top 20 phim có điểm cao nhất
-    return Object.values(rankedRecs)
+    const finalRecs = Object.values(rankedRecs)
       .sort((a, b) => b.score - a.score)
       .slice(0, 20);
+    // Empty means the upstream flapped (or the seed has no neighbours): the
+    // cached() helper skips null/undefined, so returning null retries on the
+    // next request instead of pinning an empty row for a full hour.
+    // (Frontend treats non-array payloads as [] — the row just hides once.)
+    if (finalRecs.length === 0) return null;
+    return finalRecs;
   });
 };

@@ -13,6 +13,7 @@ import { detectCapabilities } from '@/lib/capabilities';
 import {
     fetchCues, activeCues,
     isEmbeddedTrack, trackSource, isViTrack, isEnTrack, isReadyTrack,
+    pickBestViTrack,
     type SubCue, type SubTrack,
 } from '@/lib/subtitles';
 import { computeResumeAt, pickDisplayDuration, decideSeekTarget, planResume, shouldAutoplayAfterRebuild, shouldDowngradeForDropped, subtitleLookupTime, classifyStartAt, toLocalSeekTarget } from '@/lib/playback-progress';
@@ -517,19 +518,29 @@ export default function VideoPlayer({ src, movie, episode, authToken, durationSe
     const subHasTracksRef = useRef(false);
     const subRequestInFlightRef = useRef(false);
     const subRequestFullAfterRef = useRef(false);
+    // Identity of the playing source for the subtitle inventory. Bumped on
+    // every source change so a late response from the previous source can
+    // never overwrite the new source's list (race guard in the loader below).
+    const subSourceEpochRef = useRef(0);
+    const subSourceKeyRef = useRef<string | null>(null);
 
-    // Best Vietnamese pick: a file-exact embedded track first, otherwise the
-    // addon's first Vietnamese sidecar (timed for some release of the title —
-    // right language, timing not guaranteed; see the match verdict in the menu).
-    const bestViTrack = (tracks: SubTrack[]) =>
-        tracks.find((t) => isReadyTrack(t) && isViTrack(t) && isEmbeddedTrack(t))
-        || tracks.find((t) => isReadyTrack(t) && isViTrack(t));
+    // Best Vietnamese pick, ranked by timing trust: embedded (exact) first,
+    // then a server-verified matched sidecar, otherwise the addon's first
+    // Vietnamese sidecar (right language, timing not guaranteed).
+    const bestViTrack = (tracks: SubTrack[]) => pickBestViTrack(tracks);
 
-    // Auto-select Vietnamese, upgrading to a file-matched track when one
+    // Auto-select Vietnamese, upgrading to a better-timed track when one
     // appears later. The background prefetch returns online-only lists, while
     // the session-backed inventory (or a finished extraction job) can add
-    // embedded tracks afterwards — without this the first generic
+    // matched/embedded tracks afterwards — without this the first generic
     // "Tiếng Việt 1" would stick forever even after the synced track lands.
+    // A manual choice always sticks (autoSubRef false).
+    const autoRank = (t: SubTrack | undefined): number => {
+        if (!t) return -1;
+        if (isEmbeddedTrack(t)) return 2;
+        if (t.matched === true) return 1;
+        return 0;
+    };
     const maybeAutoPickSub = useCallback((tracks: SubTrack[]) => {
         if (!autoSubRef.current) return;
         const currentId = selectedSubRef.current;
@@ -541,11 +552,16 @@ export default function VideoPlayer({ src, movie, episode, authToken, durationSe
             void ensureCues(best);
             return;
         }
-        if (autoSubSourceRef.current !== 'embedded' && isEmbeddedTrack(best) && best.id !== currentId) {
-            autoSubSourceRef.current = 'embedded';
+        const current = tracks.find((t) => t.id === currentId);
+        if (best.id !== currentId && autoRank(best) > autoRank(current)) {
+            autoSubSourceRef.current = trackSource(best);
             setSelectedSub(best.id);
             void ensureCues(best);
-            showSyncToast('Đã chuyển sang phụ đề nhúng khớp file đang xem');
+            showSyncToast(
+                isEmbeddedTrack(best)
+                    ? 'Đã chuyển sang phụ đề nhúng khớp file đang xem'
+                    : 'Đã chuyển sang phụ đề khớp bản phim đang xem',
+            );
         }
         // eslint-disable-next-line react-hooks/exhaustive-deps
     }, [showSyncToast]);
@@ -586,6 +602,7 @@ export default function VideoPlayer({ src, movie, episode, authToken, durationSe
             return;
         }
         subRequestInFlightRef.current = true;
+        const epoch = subSourceEpochRef.current;
         setSubStatus('loading');
         setSubError('');
         try {
@@ -599,6 +616,9 @@ export default function VideoPlayer({ src, movie, episode, authToken, durationSe
                 ...(subContext.playbackSessionId ? { playbackSessionId: subContext.playbackSessionId } : {}),
                 externalOnly: !allowEmbedded,
             });
+            // Source changed while this request was in flight: the departed
+            // source's list must never overwrite the new source's inventory.
+            if (epoch !== subSourceEpochRef.current) return;
             const data = res.data?.data || {};
             const tracks: SubTrack[] = Array.isArray(data.tracks) ? data.tracks : [];
             setSubAudio(Array.isArray(data.audio) ? data.audio : []);
@@ -628,6 +648,37 @@ export default function VideoPlayer({ src, movie, episode, authToken, durationSe
         }
         // eslint-disable-next-line react-hooks/exhaustive-deps
     }, [subContext?.type, subContext?.tmdbId, subContext?.season, subContext?.episode, subContext?.sourceToken, subContext?.playbackSessionId]);
+
+    // A new playing source owns a new subtitle inventory: drop the old list
+    // so the loader below cannot early-return on the previous source's
+    // 'full' mode and leave stale tracks on screen. The epoch bump discards
+    // any in-flight response from the departed source.
+    useEffect(() => {
+        const key = `${subContext?.sourceToken ?? ''}|${subContext?.playbackSessionId ?? ''}|${src}`;
+        if (subSourceKeyRef.current === null) {
+            subSourceKeyRef.current = key;
+            return;
+        }
+        if (subSourceKeyRef.current === key) return;
+        subSourceKeyRef.current = key;
+        subSourceEpochRef.current += 1;
+        subLoadModeRef.current = 'idle';
+        subHasTracksRef.current = false;
+        subRequestFullAfterRef.current = false;
+        autoSubRef.current = true;
+        autoSubSourceRef.current = null;
+        selectedSubRef.current = 'off';
+        setSubTracks([]);
+        setSubMatch({ checked: false, languages: {} });
+        setCueCache({});
+        setSubJobId(null);
+        setSelectedSub('off');
+        setBilingual(false);
+        setSecondarySub('');
+        setSubNote('');
+        setSubError('');
+        setSubStatus('idle');
+    }, [subContext?.sourceToken, subContext?.playbackSessionId, src]);
 
     // Warm the cheap external subtitle lookup in the background. It never
     // starts embedded ffmpeg extraction, so playback bandwidth stays untouched.
@@ -2030,11 +2081,11 @@ export default function VideoPlayer({ src, movie, episode, authToken, durationSe
                                 <kbd className="bg-white/10 px-3 py-1 rounded text-white">←</kbd>
                             </div>
                             <div className="flex justify-between items-center text-sm">
-                                <span className="text-cinema-muted">Chậm phụ đề 0.5s</span>
+                                <span className="text-cinema-muted">Chậm phụ đề 0.1s</span>
                                 <kbd className="bg-white/10 px-3 py-1 rounded text-white">G</kbd>
                             </div>
                             <div className="flex justify-between items-center text-sm">
-                                <span className="text-cinema-muted">Nhanh phụ đề 0.5s</span>
+                                <span className="text-cinema-muted">Nhanh phụ đề 0.1s</span>
                                 <kbd className="bg-white/10 px-3 py-1 rounded text-white">H</kbd>
                             </div>
                             <div className="flex justify-between items-center text-sm">
@@ -2956,7 +3007,7 @@ export default function VideoPlayer({ src, movie, episode, authToken, durationSe
                                                                     onClick={() => adjustSubDelay(-0.1)}
                                                                     className="px-2 py-1.5 rounded-md text-[10px] font-bold transition-all border bg-surface-container text-cinema-subtle border-white/10 hover:text-white"
                                                                 >
-                                                                    −0.5s (trễ)
+                                                                    −0.1s (trễ)
                                                                 </button>
                                                                 <button
                                                                     type="button"
@@ -2981,11 +3032,11 @@ export default function VideoPlayer({ src, movie, episode, authToken, durationSe
                                                                     onClick={() => adjustSubDelay(0.1)}
                                                                     className="px-2 py-1.5 rounded-md text-[10px] font-bold transition-all border bg-surface-container text-cinema-subtle border-white/10 hover:text-white"
                                                                 >
-                                                                    +0.5s (sớm)
+                                                                    +0.1s (sớm)
                                                                 </button>
                                                             </div>
                                                             <p className="text-[9px] text-cinema-subtle italic text-center">
-                                                                Phím tắt: G (trễ lại 0.5s) · H (sớm hơn 0.5s)
+                                                                 Phím tắt: G (trễ lại 0.1s) · H (sớm hơn 0.1s)
                                                             </p>
                                                         </div>
                                                     )}

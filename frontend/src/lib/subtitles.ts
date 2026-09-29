@@ -58,6 +58,22 @@ export const isEnTrack = (t: { language: string }): boolean =>
 export const isReadyTrack = (t: { ready?: boolean; url: string; source?: string; id: string }): boolean =>
   t.ready === false && !isEmbeddedTrack(t) ? false : !!t.url || isEmbeddedTrack(t);
 
+/** Server-verified file match: sidecar timed for the exact playing file. */
+export const isMatchedTrack = (t: { matched?: boolean }): boolean => t.matched === true;
+
+/**
+ * Best Vietnamese pick, ranked by timing trust:
+ * 1. embedded (extracted from the playing file — exact),
+ * 2. matched sidecar (server-verified release match),
+ * 3. first ready Vietnamese sidecar (right language, timing not guaranteed).
+ */
+export const pickBestViTrack = <T extends { language: string; url: string; source?: string; id: string; ready?: boolean; matched?: boolean }>(
+  tracks: T[],
+): T | undefined =>
+  tracks.find((t) => isReadyTrack(t) && isViTrack(t) && isEmbeddedTrack(t))
+  || tracks.find((t) => isReadyTrack(t) && isViTrack(t) && isMatchedTrack(t))
+  || tracks.find((t) => isReadyTrack(t) && isViTrack(t));
+
 const TS = '(\\d{2,}):(\\d{2}):(\\d{2})[.,](\\d{3})';
 const TS_SHORT = '(\\d{2}):(\\d{2})[.,](\\d{3})';
 
