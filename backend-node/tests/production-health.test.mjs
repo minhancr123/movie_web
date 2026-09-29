@@ -87,14 +87,23 @@ test('shutdown is idempotent — second call returns same promise', async () => 
 test('shutdown deadline triggers on hang', async () => {
   const savedExitCode = process.exitCode;
   const t = Date.now();
-  const shutdown = createShutdown({
-    stopAccepting: async () => {},
-    closeJobs: () => new Promise(r => { const h = setTimeout(r, 10000); h.unref(); }),
-    closeMedia: async () => {},
-    closeStores: async () => {},
-    deadlineMs: 50,
-  });
-  await shutdown('SIGTERM');
+  // The lifecycle deadline timer is unref'd by design (prod must not linger
+  // just for it), and a hung closeJobs holds no handle either — so a ref'd
+  // keepalive must hold the loop while awaiting the deadline. Without it Node
+  // sees an empty loop and cancels this test (and every sibling after it).
+  const keepalive = setInterval(() => {}, 25);
+  try {
+    const shutdown = createShutdown({
+      stopAccepting: async () => {},
+      closeJobs: () => new Promise(() => {}), // hangs forever; deadline must win
+      closeMedia: async () => {},
+      closeStores: async () => {},
+      deadlineMs: 50,
+    });
+    await shutdown('SIGTERM');
+  } finally {
+    clearInterval(keepalive);
+  }
   assert.ok(Date.now() - t < 500, 'deadline should fire quickly');
   // The lifecycle module sets process.exitCode=1 on deadline; reset for test runner
   process.exitCode = savedExitCode;

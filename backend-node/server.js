@@ -24,6 +24,7 @@ import providerRoutes from './routes/providers.js';
 import playbackRoutes from './routes/playback.js';
 import movieRequestRoutes from './routes/movieRequests.js';
 import { catalogRateLimit } from './middleware/rateLimit.js';
+import { redactMediaGrant } from './services/playback/mediaGrant.js';
 
 dotenv.config();
 
@@ -71,7 +72,9 @@ app.use(express.urlencoded({ extended: true }));
 const LOG_ALL_REQUESTS = process.env.NODE_ENV !== 'production';
 app.use((req, res, next) => {
   if (LOG_ALL_REQUESTS || !req.path.startsWith('/api/playback/hls/')) {
-    console.log(`${new Date().toISOString()} - ${req.method} ${req.path}`);
+    // req.path never carries a query string, but redact anyway: a future log
+    // line must not become the place a ?media_grant= leaks from.
+    console.log(redactMediaGrant(`${new Date().toISOString()} - ${req.method} ${req.path}`));
   }
   next();
 });
@@ -221,10 +224,11 @@ app.use((err, req, res, next) => {
   const isProd = process.env.NODE_ENV === 'production';
   
   if (isProd) {
-    // Log full error internally
+    // Log full error internally (media grants redacted: error text must never
+    // carry a ?media_grant= bearer into the log store).
     console.error('Error [PROD]:', {
-      message: err.message,
-      stack: err.stack,
+      message: redactMediaGrant(err.message),
+      stack: redactMediaGrant(err.stack),
       path: req.path,
       method: req.method
     });

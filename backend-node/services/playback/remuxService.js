@@ -889,7 +889,11 @@ export const buildFfmpegArgs = ({ inputUrl, outputDir, audioCopy = false, segmen
 export const redactSecrets = (text) =>
   String(text || '')
     .replace(/https?:\/\/\S+/gi, '[url-đã-ẩn]')
-    .replace(/(api[_-]?key|token|password)=\S+/gi, '$1=[đã-ẩn]');
+    .replace(/(api[_-]?key|token|password)=\S+/gi, '$1=[đã-ẩn]')
+    // Short-lived HLS bearers travel as query params (never full URLs), so the
+    // rules above miss a bare `media_grant=...`. failureDetail lands in Mongo,
+    // which must never store a live bearer.
+    .replace(/(media_grant|access_token)=[^&\s"']+/gi, '$1=[đã-ẩn]');
 
 /**
  * What remote viewers are currently costing the uplink, in kbps.
@@ -1692,6 +1696,12 @@ export const selectTranscodeEvictions = (
 };
 
 const directorySize = async (dirPath) => {
+  // Logical bytes per session dir (stat.size). When RENDITIONS_ROOT shares the
+  // TRANSCODE_ROOT volume, published renditions hard-link the same inodes, so
+  // transcode retainedBytes + rendition bytes double-counts shared physical
+  // bytes by design. Treat the two quotas as independent logical budgets and
+  // read REAL free space only from freeDiskBytes()/statfs (plus the disk
+  // reserve in admitRemuxDisk) — never from the sum of both stores.
   const items = await fs.readdir(dirPath, { withFileTypes: true });
   let total = 0;
   for (const item of items) {
@@ -1738,9 +1748,22 @@ export const freeDiskBytes = async ({ now = Date.now(), ttlMs = DISK_PROBE_TTL_M
 const readCacheEntry = async (dirent) => {
   // Playback session ids are 16 random bytes rendered as 32 hex characters.
   // Ignoring every other directory makes recursive removal narrowly scoped.
-  if (!dirent.isDirectory() || !/^[a-f0-9]{32}$/i.test(dirent.name)) return null;
+  // RENDITIONS_ROOT lives as a subdir of TRANSCODE_ROOT
+  // (/data/transcodes/renditions, same volume so publish stays a hard-link).
+  // Its name is never 32-hex, but skip it by name anyway so the shared
+  // finished store can never become janitor food, whatever it is called.
+  if (!dirent.isDirectory()) return null;
+  const renditionsName = path.basename(path.resolve(process.env.RENDITIONS_ROOT || 'renditions'));
+  if (dirent.name === renditionsName || dirent.name === 'renditions') return null;
   const dirPath = path.resolve(TRANSCODE_ROOT, dirent.name);
   if (path.dirname(dirPath) !== TRANSCODE_ROOT) return null;
+  // Belt and braces: whatever the shared store is named, its own directory is
+  // never a session. (Top-level scan can only meet the root itself, never its
+  // children, so an exact compare is the complete check here.)
+  if (dirPath === path.resolve(process.env.RENDITIONS_ROOT || path.join(TRANSCODE_ROOT, 'renditions'))) {
+    return null;
+  }
+  if (!/^[a-f0-9]{32}$/i.test(dirent.name)) return null;
   const playlistPath = path.join(dirPath, 'index.m3u8');
   const markerPath = path.join(dirPath, '.access');
   const [dirStat, playlistStat, markerStat, playlist] = await Promise.all([

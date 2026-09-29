@@ -84,6 +84,11 @@ import {
   RENDITION_MAX_BYTES,
 } from '../services/playback/renditions.js';
 import { setResolveStage, getResolveStage as readResolveStage, isResolveId } from '../services/playback/resolveProgress.js';
+import {
+  MEDIA_GRANT_QUERY,
+  mintMediaGrant,
+  rewriteManifestWithGrant,
+} from '../services/playback/mediaGrant.js';
 import { planAdmission } from '../services/playback/deliveryPlan.js';
 import { getDecryptedKey } from '../services/providers/connectionStore.js';
 import { computeOpenSubtitlesHash } from '../services/playback/opensubtitlesHash.js';
@@ -3292,6 +3297,50 @@ const isAllowedAsset = (asset) => {
   return /^seg_\d+\.m4s$/.test(name);
 };
 
+/**
+ * Manifests carry per-viewer grants after the in-memory rewrite below, so
+ * they must never be stored in a shared cache. Segments are immutable bytes;
+ * caches may ignore the media_grant query when keying them.
+ */
+const MANIFEST_CACHE_CONTROL = 'private, no-store';
+
+const sessionExpiryMs = (session) => {
+  const t = session?.expiresAt ? new Date(session.expiresAt).getTime() : NaN;
+  return Number.isFinite(t) ? t : null;
+};
+
+/**
+ * Resolve which grant token a manifest response should embed in its child
+ * URLs. User-JWT requests mint a fresh session/rendition-scoped grant (capped
+ * by the session expiry); grant-authenticated requests re-embed the presented
+ * grant so playback survives without ever seeing the login JWT. Returns null
+ * when no grant can be issued (caller then serves the file unrewritten — only
+ * possible on paths that predate grants, never for new manifests).
+ */
+const grantTokenForManifest = (req, { sessionId = null, renditionId = null, session = null } = {}) => {
+  try {
+    if (req?.mediaGrantToken && typeof req.mediaGrantToken === 'string') return req.mediaGrantToken;
+    if (!req?.user) return null;
+    if (sessionId) {
+      return mintMediaGrant({ sessionId, sessionExpiresAtMs: session ? sessionExpiryMs(session) : null }).token;
+    }
+    if (renditionId) {
+      return mintMediaGrant({ renditionId }).token;
+    }
+    return null;
+  } catch {
+    return null;
+  }
+};
+
+const serveRewrittenManifest = async (res, filePath, grantToken) => {
+  const raw = await fs.readFile(filePath, 'utf8');
+  const body = grantToken ? rewriteManifestWithGrant(raw, grantToken, { param: MEDIA_GRANT_QUERY }) : raw;
+  res.setHeader('Content-Type', ASSET_CONTENT_TYPES['.m3u8']);
+  res.setHeader('Cache-Control', MANIFEST_CACHE_CONTROL);
+  return res.send(body);
+};
+
 export const serveHlsAsset = async (req, res) => {
   try {
     const sessionId = String(req.params.sessionId || '');
@@ -3302,8 +3351,23 @@ export const serveHlsAsset = async (req, res) => {
     const db = getDB();
     const session = await db.collection('playback_sessions').findOne({ sessionId });
     if (!session) return fail(res, 404, 'Không tìm thấy phiên phát');
-    if (!isSessionOwner(session, req.user.userId)) {
+    // Grant path: the middleware already verified the grant is scoped to this
+    // exact sessionId. Still require the session row (revoked/deleted sessions
+    // 404 here, so a stolen-but-revoked grant buys nothing), but skip the
+    // per-user ownership check the native player cannot satisfy per-segment.
+    if (req.mediaGrant?.sessionId) {
+      if (req.mediaGrant.sessionId !== sessionId.toLowerCase()) {
+        return fail(res, 403, 'Không có quyền truy cập phiên phát này');
+      }
+    } else if (!req.user || !isSessionOwner(session, req.user.userId)) {
       return fail(res, 403, 'Không có quyền truy cập phiên phát này');
+    }
+    // Expiry is checked BEFORE the published-rendition shortcut below: an
+    // expired session 410s everywhere, and no fresh grant is minted past
+    // session.expiresAt (a revoked session buys nothing with an old grant
+    // because the row check above already 404s it).
+    if (session.expiresAt && new Date(session.expiresAt) < new Date()) {
+      return fail(res, 410, 'Phiên phát đã hết hạn');
     }
     await touchTranscodeSession(sessionId);
     if (session.mode !== 'remux') {
@@ -3324,16 +3388,19 @@ export const serveHlsAsset = async (req, res) => {
       } catch {
         return fail(res, 404, 'Tài nguyên chưa sẵn sàng');
       }
+      // Finished bytes are immutable, but the manifest response embeds a
+      // per-viewer grant for the native player, so it stays private.
+      if (asset === 'index.m3u8') {
+        const grant = grantTokenForManifest(req, { sessionId, session });
+        return serveRewrittenManifest(res, filePath, grant);
+      }
       const ext = asset.endsWith('.m3u8') ? '.m3u8' : asset.endsWith('.m4s') ? '.m4s' : '.mp4';
       res.setHeader('Content-Type', ASSET_CONTENT_TYPES[ext]);
       res.setHeader(
         'Cache-Control',
-        ext === '.m3u8' ? 'no-store' : 'public, max-age=86400, immutable',
+        ext === '.m3u8' ? MANIFEST_CACHE_CONTROL : 'public, max-age=86400, immutable',
       );
       return res.sendFile(filePath);
-    }
-    if (session.expiresAt && new Date(session.expiresAt) < new Date()) {
-      return fail(res, 410, 'Phiên phát đã hết hạn');
     }
     if (asset === 'index.m3u8') {
       const state = await readPlaylistState(sessionId);
@@ -3394,12 +3461,19 @@ export const serveHlsAsset = async (req, res) => {
       return fail(res, 404, 'Tài nguyên chưa sẵn sàng');
     }
 
+    // Growing EVENT playlist: rewrite child URLs with a session-scoped grant
+    // in memory. The bytes on disk stay token-free relative URIs.
+    if (asset === 'index.m3u8') {
+      const grant = grantTokenForManifest(req, { sessionId, session });
+      return serveRewrittenManifest(res, filePath, grant);
+    }
+
     const ext = asset.endsWith('.m3u8') ? '.m3u8' : asset.endsWith('.m4s') ? '.m4s' : '.mp4';
     res.setHeader('Content-Type', ASSET_CONTENT_TYPES[ext]);
     // Playlist must not be cached (live window); segments are immutable.
     res.setHeader(
       'Cache-Control',
-      ext === '.m3u8' ? 'no-store' : 'public, max-age=86400, immutable',
+      ext === '.m3u8' ? MANIFEST_CACHE_CONTROL : 'public, max-age=86400, immutable',
     );
     return res.sendFile(filePath);
   } catch (error) {
@@ -3416,10 +3490,14 @@ export const serveHlsAsset = async (req, res) => {
  * Session URLs embed a random sessionId, so every viewer is a cache MISS even
  * for identical bytes. These URLs depend only on content, so a CDN (or the
  * browser cache) shares one edge object across all viewers. Auth still runs
- * (media guard: Bearer header on MSE, ?access_token= on native), but the
+ * (media guard: Bearer header on MSE, ?access_token= once on native, then
+ * ?media_grant= scoped to this renditionId on every child asset), but the
  * bytes are identical for everyone holding a valid login, so sharing the
  * cached object is correct. Evicted renditions 404 and the player falls back
  * to a fresh remux through the normal recovery path.
+ *
+ * Manifests embed a rendition-scoped grant and stay `private, no-store`;
+ * segments are immutable and caches may ignore the media_grant query.
  */
 export const serveRenditionAsset = async (req, res) => {
   try {
@@ -3440,11 +3518,16 @@ export const serveRenditionAsset = async (req, res) => {
       return fail(res, 404, 'Tài nguyên chưa sẵn sàng');
     }
 
+    if (asset === 'index.m3u8') {
+      const grant = grantTokenForManifest(req, { renditionId });
+      return serveRewrittenManifest(res, filePath, grant);
+    }
+
     const ext = asset.endsWith('.m3u8') ? '.m3u8' : asset.endsWith('.m4s') ? '.m4s' : '.mp4';
     res.setHeader('Content-Type', ASSET_CONTENT_TYPES[ext]);
     res.setHeader(
       'Cache-Control',
-      ext === '.m3u8' ? 'no-store' : 'public, max-age=31536000, immutable',
+      ext === '.m3u8' ? MANIFEST_CACHE_CONTROL : 'public, max-age=31536000, immutable',
     );
     return res.sendFile(filePath);
   } catch (error) {

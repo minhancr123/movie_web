@@ -69,6 +69,15 @@ services:
       - OPENSUBTITLES_USER_AGENT=${OPENSUBTITLES_USER_AGENT:-MovieWeb/1.0}
       # --- Transcode pipeline ---
       - TRANSCODE_ROOT=/data/transcodes
+      # Renditions live as a subdir of the same volume (same filesystem, so
+      # publish stays a hard-link, never a copy). Do NOT point this at a
+      # separate volume or at TRANSCODE_ROOT itself: the session janitor only
+      # ever touches 32-hex session dirs and explicitly skips `renditions`.
+      - RENDITIONS_ROOT=/data/transcodes/renditions
+      # Dedicated signing key for short-lived ?media_grant= HLS bearers.
+      # Never reuse the login JWT secret here; generate with
+      # `openssl rand -hex 32` and keep it out of logs and the repo.
+      - MEDIA_GRANT_SECRET=${MEDIA_GRANT_SECRET:?MEDIA_GRANT_SECRET required}
       - TRANSCODE_CACHE_MAX_GB=${TRANSCODE_CACHE_MAX_GB:-3}
       - RENDITIONS_MAX_GB=${RENDITIONS_MAX_GB:-3}
       - VIDEO_TRANSCODE_FALLBACK=${VIDEO_TRANSCODE_FALLBACK:-never}

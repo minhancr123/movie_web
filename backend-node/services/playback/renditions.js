@@ -31,6 +31,11 @@ export const RENDITIONS_ROOT = path.resolve(
   process.env.RENDITIONS_ROOT
   || path.join(process.cwd(), 'tmp', 'renditions'),
 );
+// Production pins this to /data/transcodes/renditions (same volume as
+// TRANSCODE_ROOT) so publishRendition() stays a hard-link. Migration rule for
+// the old default (/app/tmp/renditions, no volume): COPY surviving complete
+// renditions across, verify bytes + meta.json, and only then remove the old
+// root — never move blindly and never serve from two roots at once.
 export const RENDITION_FORMAT_VERSION = 1;
 export const RENDITION_MAX_BYTES = positiveNumber(process.env.RENDITIONS_MAX_GB, 100) * GB;
 export const RENDITION_TTL_MS = positiveNumber(process.env.RENDITIONS_TTL_DAYS, 14) * 24 * 60 * 60 * 1000;
@@ -176,6 +181,10 @@ export const publishRendition = async ({ renditionId, sessionId }) => {
   }
 
   await fs.mkdir(outDir, { recursive: true });
+  // Logical bytes (sum of stat.size) for quota math. On the shared volume
+  // these inodes are the SAME as the session's files (hard-link), so do not
+  // add rendition bytes + transcode bytes and present the sum as physical
+  // usage — physical truth comes only from statfs/freeDiskBytes.
   let bytes = 0;
   try {
     for (const name of [...assets, 'index.m3u8']) {
