@@ -56,4 +56,9 @@ export const hlsAssetRateLimit = rateLimit({ windowMs: 60_000, max: 3000, keyPre
 // Session polling runs on a timer while a torrent caches; it touches TorBox but
 // never creates anything, so it gets a middle tier.
 export const playbackPollRateLimit = rateLimit({ windowMs: 60_000, max: 120, keyPrefix: 'rl:poll' });
+// Presence is the signal that keeps a writer alive: it must never starve
+// behind the chatty pollers sharing rl:poll (stage/session/subtitle-job
+// polls can exceed 100/min across two tabs). Own bucket, generous ceiling —
+// a heartbeat every 25s costs ~3/min per tab.
+export const playbackPresenceRateLimit = rateLimit({ windowMs: 60_000, max: 60, keyPrefix: 'rl:presence' });
 export const connectionsRateLimit = rateLimit({ windowMs: 60_000, max: 20, keyPrefix: 'rl:conn' });

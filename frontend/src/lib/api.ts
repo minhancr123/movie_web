@@ -207,6 +207,10 @@ export const playbackAPI = {
     capabilities: any;
   }) => authClient.post('/playback/sources', data),
   getSession: (sessionId: string) => authClient.get(`/playback/session/${sessionId}`),
+  heartbeat: (sessionId: string, viewerId: string) =>
+    authClient.post(`/playback/session/${encodeURIComponent(sessionId)}/heartbeat`, { viewerId }),
+  leave: (sessionId: string, viewerId: string) =>
+    authClient.post(`/playback/session/${encodeURIComponent(sessionId)}/leave`, { viewerId }),
   getResolveStage: (resolveId: string) =>
     authClient.get(`/playback/resolve/${encodeURIComponent(resolveId)}/stage`),
   preload: (data: {

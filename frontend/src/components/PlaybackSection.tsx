@@ -365,6 +365,43 @@ export default function PlaybackSection({
   const recoveryInFlightRef = useRef(false);
   /** 503 REMUX_BUSY auto-retry counter (reset each fresh resolve). */
   const busyRetriesRef = useRef(0);
+  // Stable viewer identity for the session lease (heartbeat/leave). One per
+  // mount: a reload is a new viewer, which is exactly when the old lease must
+  // be allowed to lapse.
+  const viewerIdRef = useRef<string>('');
+  const getViewerId = () => {
+    if (!viewerIdRef.current) {
+      try {
+        viewerIdRef.current = crypto.randomUUID();
+      } catch {
+        viewerIdRef.current = `v-${Date.now()}-${Math.random().toString(36).slice(2)}`;
+      }
+    }
+    return viewerIdRef.current;
+  };
+  // Latest session id + access token mirrors for unload-time leave beacons,
+  // which run outside React state (pagehide) and must not close over stale
+  // values from a []-deps effect.
+  const sessionIdRef = useRef<string>('');
+  const accessTokenRef = useRef<string>('');
+  // Waiting-room notices from the 503 retry ladder. Cleared the moment any
+  // resolve succeeds — otherwise "đang chuẩn bị tập khác" lingers over a
+  // film that is already playing.
+  const BUSY_WAIT_NOTICE_PREFIXES = [
+    'Đang chuẩn bị tập khác nên phải chờ lượt',
+    'Phim cần thêm chỗ trống để mở',
+    'Dịch vụ lưu trữ đang phản hồi chậm',
+  ];
+  const clearBusyWaitNotices = () => {
+    busyRetriesRef.current = 0;
+    setNotice((prev) =>
+      prev && BUSY_WAIT_NOTICE_PREFIXES.some((p) => prev.startsWith(p)) ? null : prev,
+    );
+  };
+  const clearBusyWait = () => {
+    clearBusyWaitNotices();
+    setResolveStageLabel('');
+  };
   // Latest-value mirrors so stable callbacks never close over stale state.
   // Live playhead in full-film seconds, fed by the player's timeupdate.
   const playheadRef = useRef<number>(0);
@@ -479,6 +516,9 @@ export default function PlaybackSection({
     if (hasSustainedProgress(positionSeconds, lastRecoveryPositionRef.current)) {
       recoveryAttemptsRef.current = 0;
       lastRecoveryPositionRef.current = null;
+      // Steady playback is proof the wait is over: drop the ladder's notice
+      // (stage label kept — a new seek-resolve may be narrating itself).
+      clearBusyWaitNotices();
     }
     // Where the viewer actually is, in full-film seconds. An audio switch
     // rebuilds the remux for the chosen track and has to start it here, not at
@@ -557,10 +597,42 @@ export default function PlaybackSection({
     setNotice(null);
   }, [type, tmdbId, season, currentEpisode]);
 
+  // Mirrors for unload-time paths (pagehide/unmount run outside React state).
+  sessionIdRef.current = playbackSessionId;
+  accessTokenRef.current = (session?.user as any)?.accessToken || '';
+
+  // Best-effort leave over the normal client (auth header attached).
+  const sendLeave = useCallback((sid: string) => {
+    if (!sid || !viewerIdRef.current) return;
+    void playbackAPI.leave(sid, viewerIdRef.current).catch(() => {});
+  }, []);
+
+  // Unload-safe leave: keepalive fetch with the last known token, because the
+  // auth interceptor's getSession() may not survive page teardown.
+  const sendLeaveBeacon = useCallback((sid: string) => {
+    if (!sid || !viewerIdRef.current || typeof window === 'undefined') return;
+    try {
+      const base = (process.env.NEXT_PUBLIC_API_URL || 'http://localhost:5001/api').replace(/\/+$/, '');
+      const token = accessTokenRef.current;
+      void fetch(`${base}/playback/session/${encodeURIComponent(sid)}/leave`, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          ...(token ? { Authorization: `Bearer ${token}` } : {}),
+        },
+        body: JSON.stringify({ viewerId: viewerIdRef.current }),
+        keepalive: true,
+      }).catch(() => {});
+    } catch {
+      // Unload path: never throw.
+    }
+  }, []);
+
   useEffect(() => {
     return () => {
       clearPoll();
       clearStagePoll();
+      if (sessionIdRef.current) sendLeave(sessionIdRef.current);
       resolveAbortRef.current?.abort();
       resolveAbortRef.current = null;
       resolveInFlightRef.current = null;
@@ -569,6 +641,57 @@ export default function PlaybackSection({
       seedConsumedForRef.current = null;
       initialStartAtRef.current = 0;
     };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
+
+  // Session lease: heartbeat while a session is current, leave when it stops
+  // being current (session switch, title change) via effect cleanup. The
+  // backend reaps lease-less writers first when a new film needs the slot —
+  // and a reload inside the grace window re-adopts the still-running writer.
+  //
+  // Keyed on a single active boolean, NOT the raw status: downloading→ready
+  // flips the status for the same session, and a status-keyed cleanup would
+  // fire leave+heartbeat side by side — a leave landing after the heartbeat
+  // parks the live session in the abandoned grace window for no reason.
+  const isSessionActive =
+    Boolean(playbackSessionId) && (playbackStatus === 'ready' || playbackStatus === 'downloading');
+  useEffect(() => {
+    if (!isSessionActive) return;
+    const sid = playbackSessionId;
+    const viewerId = getViewerId();
+    void playbackAPI.heartbeat(sid, viewerId).catch(() => {});
+    const timer = setInterval(() => {
+      void playbackAPI.heartbeat(sid, viewerId).catch(() => {});
+    }, 25000);
+    return () => {
+      clearInterval(timer);
+      sendLeave(sid);
+    };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [playbackSessionId, isSessionActive]);
+
+  // Tab closed, reloaded or navigated away: the heartbeat effect's cleanup
+  // does not run on a real unload, so beacon explicitly. Lease expiry covers
+  // the cases where even the beacon never lands (crash, network loss).
+  // A foreground return also heartbeats at once: background-throttled timers
+  // may have missed beats, and the lease must not lapse while re-arming.
+  useEffect(() => {
+    const onPageHide = () => {
+      if (sessionIdRef.current) sendLeaveBeacon(sessionIdRef.current);
+    };
+    const onVisibility = () => {
+      if (document.visibilityState !== 'visible') return;
+      const sid = sessionIdRef.current;
+      if (!sid || !viewerIdRef.current) return;
+      void playbackAPI.heartbeat(sid, viewerIdRef.current).catch(() => {});
+    };
+    window.addEventListener('pagehide', onPageHide);
+    document.addEventListener('visibilitychange', onVisibility);
+    return () => {
+      window.removeEventListener('pagehide', onPageHide);
+      document.removeEventListener('visibilitychange', onVisibility);
+    };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
   // Pro toolbar PiP: drives the <video> rendered by VideoPlayer below.
@@ -661,14 +784,26 @@ export default function PlaybackSection({
     // choice by the server, not a dropped seek, and the player says so.
     setSessionReused(data.reused === true);
     pendingSeekRef.current = null;
+    // Seek/audio-switch resolves land here instead of the inline path: they
+    // settle the waiting room the same way.
+    clearBusyWait();
     
-    const effectiveToken = activeTokenRef.current || (typeof data.sourceToken === 'string' ? data.sourceToken : '');
+    // Server truth wins on a silent source swap: the Vimo fallback answers
+    // with its own sourceToken, and keeping the requested torrent token would
+    // leave the UI/badge claiming the original source while direct Vimo bytes
+    // play (different cut/timing, mistimed sidecars).
+    const serverToken = typeof data.sourceToken === 'string' ? data.sourceToken : '';
+    const effectiveToken = data.fallbackSource
+      ? (serverToken || activeTokenRef.current)
+      : (activeTokenRef.current || serverToken);
     setActiveToken(effectiveToken);
     activeTokenRef.current = effectiveToken;
     // Pin the release across reloads and later intents: every resume,
     // recovery and retry re-sends it instead of re-picking a possibly
     // different cut (subs mistimed, different audio mix) of the same title.
-    if (effectiveToken) {
+    // Skipped for fallback swaps (see the inline path): the standby token
+    // must never overwrite the viewer's pinned original.
+    if (!data.fallbackSource && effectiveToken) {
       try {
         if (typeof window !== 'undefined') localStorage.setItem(selectedSourceKey, effectiveToken);
       } catch {
@@ -1071,6 +1206,10 @@ export default function PlaybackSection({
       } else {
         setNotice((prev) => (prev && prev.startsWith('Đang phát bản dự phòng') ? null : prev));
       }
+      // Any success settles the waiting room: the 503 ladder's notice must
+      // never outlive the film it was waiting for (keeps the banner above:
+      // only the ladder's own notices are cleared).
+      clearBusyWait();
       // Same materiality rule as the player's toast: a start position rounded
       // down to the bucket is the request being honoured, not dropped.
       if (
@@ -1087,11 +1226,19 @@ export default function PlaybackSection({
           `sessionId=${typeof data.sessionId === 'string' ? data.sessionId : '?'} mode=${data.mode || '?'}`,
         );
       }
-      const effectiveToken = resolvedSourceToken || (typeof data.sourceToken === 'string' ? data.sourceToken : '');
+      // Same rule as handleResolveResponse above: a fallback swap means the
+      // bytes on screen belong to the server's token, not the requested one.
+      const serverToken = typeof data.sourceToken === 'string' ? data.sourceToken : '';
+      const effectiveToken = data.fallbackSource
+        ? (serverToken || resolvedSourceToken)
+        : (resolvedSourceToken || serverToken);
       setActiveToken(effectiveToken);
       activeTokenRef.current = effectiveToken;
-      if (sourceToken && typeof window !== 'undefined') {
-        localStorage.setItem(selectedSourceKey, sourceToken);
+      // A fallback swap is temporary (slow writer / busy debrid): the pinned
+      // source stays the viewer's own pick so a reload retries the original
+      // instead of permanently pinning the standby Vimo encode.
+      if (!data.fallbackSource && effectiveToken && typeof window !== 'undefined') {
+        localStorage.setItem(selectedSourceKey, effectiveToken);
       }
       if (typeof data.audioIndex === 'number') {
         setActiveAudioIndex(data.audioIndex);
@@ -1137,6 +1284,7 @@ export default function PlaybackSection({
           let warmFails = 0;
           const finishWarm = () => {
             clearPoll();
+            clearBusyWait();
             applyPlayUrl(warmUrl);
             setPlaybackStatus('ready');
           };
@@ -1144,6 +1292,10 @@ export default function PlaybackSection({
             warmPolls += 1;
             try {
               const pollRes = await playbackAPI.getSession(warmId);
+              // A seek fired while this poll was in flight: the response
+              // belongs to the abandoned intent — applying it would overwrite
+              // the new seek's URL and clear its stage label.
+              if (resolveController.signal.aborted || seekEpochRef.current !== requestEpoch) return;
               const sessionData = pollRes.data?.data;
               warmFails = 0;
               if (!sessionData) return;
@@ -1206,6 +1358,8 @@ export default function PlaybackSection({
           pollTimerRef.current = setInterval(async () => {
             try {
               const pollRes = await playbackAPI.getSession(pollId);
+              // Same staleness guard as the warm-up poll above.
+              if (resolveController.signal.aborted || seekEpochRef.current !== requestEpoch) return;
               const sessionData = pollRes.data?.data;
               failures = 0;
               if (sessionData) {
@@ -1257,6 +1411,11 @@ export default function PlaybackSection({
       // Abandoned by design (unmount, superseded intent): never surface as an
       // error and never disturb the newer resolve already in flight.
       if (err?.code === 'ERR_CANCELED' || err?.name === 'CanceledError') {
+        return;
+      }
+      // The server aborted this resolve because the viewer moved to another
+      // title/episode: the newer intent owns the UI, so drop this silently.
+      if (err?.response?.data?.code === 'RESOLVE_SUPERSEDED') {
         return;
       }
       const status = err.response?.status;

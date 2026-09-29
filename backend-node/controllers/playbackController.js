@@ -62,6 +62,9 @@ import {
   activeEgressKbps,
   selectSupersededRemuxes,
   isRemuxSessionLive,
+  registerSessionViewer,
+  touchSessionViewer,
+  removeSessionViewer,
   touchTranscodeSession,
   shouldReuseRemuxSession,
   sessionPath,
@@ -219,6 +222,18 @@ export const buildSessionId = () => crypto.randomBytes(16).toString('hex');
 // ref. Without a backend gate both requests pass the "reusable session" lookup
 // before either has saved its session, then each starts an ffmpeg process.
 const playbackResolveTails = new Map();
+
+// One live resolve per viewer: opening another title/episode aborts the
+// previous one's remaining work (prepare/probe/buffer waits) instead of
+// letting a departed film burn the writer slot it no longer needs. Same-title
+// retries and seeks share the ref, so they never abort each other.
+const activeResolveByUser = new Map();
+
+const resolveSupersededError = () =>
+  Object.assign(new Error('Resolve đã bị thay thế bởi nội dung mới'), {
+    status: 499,
+    code: 'RESOLVE_SUPERSEDED',
+  });
 
 export const withPlaybackResolveLock = async (key, task) => {
   const lockKey = String(key || '');
@@ -424,9 +439,10 @@ const playlistHasEnoughBuffer = async (sessionId, seconds = 120) => {
   return state.exists && state.duration >= seconds;
 };
 
-const waitForInitialBuffer = async (sessionId, seconds = 120, timeoutMs = 15000) => {
+const waitForInitialBuffer = async (sessionId, seconds = 120, timeoutMs = 15000, signal = null) => {
   const start = Date.now();
   while (Date.now() - start < timeoutMs) {
+    if (signal?.aborted) throw resolveSupersededError();
     if (await playlistHasEnoughBuffer(sessionId, seconds)) return true;
     await new Promise((resolve) => setTimeout(resolve, 1000));
   }
@@ -1038,6 +1054,30 @@ export const resolvePlayback = async (req, res) => {
     typeof req.body?.resolveId === 'string' ? req.body.resolveId : null;
   const stage = (name, detail) => setResolveStage(resolveId, name, detail);
 
+  // Stale-prepare cancellation: a resolve for another title/episode from the
+  // same viewer aborts this one's remaining work at the next checkpoint (loop
+  // top, buffer waits, pre-spawn). The aborted request answers
+  // RESOLVE_SUPERSEDED, which the client drops silently — the newer intent
+  // owns the UI. Client disconnects abort the same way via req close.
+  const viewerKey = String(req.user?.userId || '');
+  const switchRef = [type, tmdbId, type === 'tv' ? `${season ?? ''}:${episode ?? ''}` : 'full'].join(':');
+  const switchController = new AbortController();
+  const switchSignal = switchController.signal;
+  const throwIfSuperseded = () => {
+    if (switchSignal.aborted) throw resolveSupersededError();
+  };
+  if (viewerKey) {
+    const prev = activeResolveByUser.get(viewerKey);
+    if (prev && prev.ref !== switchRef) {
+      prev.controller.abort();
+      if (prev.resolveId) setResolveStage(prev.resolveId, 'cancelled', 'switched content');
+    }
+    activeResolveByUser.set(viewerKey, { ref: switchRef, controller: switchController, resolveId });
+  }
+  req.on('close', () => {
+    if (!res.writableEnded) switchController.abort();
+  });
+
   // One account can still deliberately change source/audio after the current
   // resolve finishes. Only concurrent work for the same title is queued; this
   // is the invariant needed to prevent duplicate remux writers.
@@ -1355,6 +1395,11 @@ export const resolvePlayback = async (req, res) => {
         startAt: requestedStartAt,
       });
       if (reusable) {
+        // Back in use: drop any leave-drained/lease-lapsed mark from a
+        // previous viewer, or admission could reap a session that was just
+        // handed out again before the new viewer's first heartbeat lands.
+        const liveReuse = getRemuxSession(reusable.sessionId);
+        if (liveReuse) liveReuse.abandonedAt = undefined;
         // Sessions stored before this field existed would otherwise report no
         // correction at all, leaving their subtitles early for the session's
         // whole life. Fall back to the cached probe facts for the same file.
@@ -1438,6 +1483,9 @@ export const resolvePlayback = async (req, res) => {
     let transientPrepareFailure = false;
     let attemptNo = 0;
     for (const candidate of attempts) {
+      // Checkpoint: a switched-away resolve dies here instead of preparing a
+      // source nobody will watch.
+      throwIfSuperseded();
       attemptNo += 1;
       const attemptTag = attempts.length > 1 ? `${attemptNo}/${attempts.length}` : '';
       stage('prepare', attemptTag);
@@ -1921,6 +1969,9 @@ export const resolvePlayback = async (req, res) => {
       let warmingUp = false;
       try {
         stage('remux', attemptTag);
+        // Last gate before a writer exists: a superseded resolve must not
+        // spend the slot it no longer needs.
+        throwIfSuperseded();
         const session = await startRemuxSession({
           sessionId,
           inputUrl,
@@ -1933,6 +1984,12 @@ export const resolvePlayback = async (req, res) => {
           // box that fills up fails deploys, not just this film.
           durationSeconds: fullDurationSeconds,
         });
+        // Lost the race while spawning: hand the slot straight back instead
+        // of leaving an orphan writer for a departed film.
+        if (switchSignal.aborted) {
+          await stopRemuxSession(sessionId).catch(() => false);
+          throw resolveSupersededError();
+        }
         // Where `-ss` really lands: a copied stream cannot be cut mid-GOP, so
         // the bytes begin at a keyframe at or before the request, and labelling
         // the session with the requested position puts every subtitle early by
@@ -1974,10 +2031,10 @@ export const resolvePlayback = async (req, res) => {
         const playlistMinSeconds = playlistMinForStartAt(startAt);
         
         // Use a faster check first for production speed
-        const servable = await waitForInitialBuffer(sessionId, 2, 8000); 
+        const servable = await waitForInitialBuffer(sessionId, 2, 8000, switchSignal);
         if (!servable) {
             // Fallback to longer wait if 2s not ready
-            const finalServable = await waitForInitialBuffer(sessionId, playlistMinSeconds, 12000);
+            const finalServable = await waitForInitialBuffer(sessionId, playlistMinSeconds, 12000, switchSignal);
             if (!finalServable) {
                 throw new Error(`Nguồn remux quá chậm, không tạo nổi buffer trong 20 giây`);
             }
@@ -1994,6 +2051,7 @@ export const resolvePlayback = async (req, res) => {
           sessionId,
           startupBufferSeconds,
           startAt > 0 ? 1000 : RESOLVE_BUFFER_WAIT_MS,
+          switchSignal,
         ));
         if (warmingUp) {
           // Slow-writer failover: handing over a producer below realtime
@@ -2020,6 +2078,10 @@ export const resolvePlayback = async (req, res) => {
           }
         }
       } catch (error) {
+        // A superseded resolve must die here: falling through would prepare
+        // a Vimo fallback for a departed film, or answer 502 instead of the
+        // code the client drops silently.
+        if (error?.code === 'RESOLVE_SUPERSEDED') throw error;
         // A full box is not this candidate's fault: every other source would
         // hit the same ceiling, so walking the rest of the list just burns
         // TorBox calls to arrive at the same answer. Say so and stop.
@@ -2168,6 +2230,9 @@ export const resolvePlayback = async (req, res) => {
         { code: 'SOURCE_PREPARE_TIMEOUT', retryable: true },
       );
     }
+    // Belt and braces with the rethrow above: no fallback work for a
+    // resolve whose viewer already moved on.
+    throwIfSuperseded();
     stage('vimo-fallback');
       const vimoFallback = await serveVimoDirect({ db, req, detail, type, tmdbId, season, episode, requestedStartAt });
       if (vimoFallback?.data) {
@@ -2195,12 +2260,24 @@ export const resolvePlayback = async (req, res) => {
       { exhausted: true },
     );
     } catch (error) {
+      // A superseded resolve is routine (user moved on), not a failure: answer
+      // quietly with a code the client drops, without the error log line.
+      if (error?.code === 'RESOLVE_SUPERSEDED') {
+        if (resolveId) setResolveStage(resolveId, 'cancelled', 'superseded');
+        return fail(res, error.status || 499, error.message, { code: error.code });
+      }
       // Scrub: error text may echo upstream bodies but never our secrets (we never
       // interpolate keys or URLs into thrown messages).
       console.error(`resolvePlayback error tmdb=${tmdbId}:`, error.message);
       return fail(res, error.status || 500, error.message || 'Lỗi server');
     }
   });
+  // This intent is settled: a newer resolve may now own the viewer slot. Only
+  // the owner clears, so a slow earlier resolve cannot evict the newer one.
+  if (viewerKey) {
+    const cur = activeResolveByUser.get(viewerKey);
+    if (cur?.controller === switchController) activeResolveByUser.delete(viewerKey);
+  }
   // One line per resolve with the full phase timeline: when a viewer reports
   // "it loads forever", this (plus their stage pill) names the slow leg
   // instead of another round of guessing.
@@ -3355,6 +3432,63 @@ export const getPlaybackSession = async (req, res) => {
   }
 };
 
+/**
+ * Viewer heartbeat: refresh one viewer's lease on a remux session.
+ *
+ * Segment fetches cannot distinguish "tab closed" from "buffering ahead", so
+ * the player heartbeats every 25s with a stable viewerId. Unknown viewerIds
+ * self-register (no separate register call). Missing/unknown sessions answer
+ * 200 with ok:false — a heartbeat must never break playback.
+ */
+export const heartbeatPlaybackSession = async (req, res) => {
+  res.set('Cache-Control', 'no-store');
+  try {
+    const sessionId = String(req.params.sessionId || '');
+    const viewerId = typeof req.body?.viewerId === 'string' ? req.body.viewerId.slice(0, 64) : '';
+    if (!sessionId || !viewerId) return fail(res, 400, 'Thiếu sessionId hoặc viewerId');
+    const db = getDB();
+    const session = await db.collection('playback_sessions').findOne({ sessionId });
+    if (!session) return res.json({ success: true, data: { ok: false } });
+    if (!isSessionOwner(session, req.user.userId)) {
+      return fail(res, 403, 'Không có quyền truy cập phiên phát này');
+    }
+    registerSessionViewer(sessionId, viewerId);
+    await touchTranscodeSession(sessionId).catch(() => false);
+    return res.json({ success: true, data: { ok: true } });
+  } catch (error) {
+    console.error('heartbeatPlaybackSession error:', error.message);
+    return fail(res, 500, 'Lỗi server');
+  }
+};
+
+/**
+ * Viewer leave: drop one viewer's lease (tab closed, title changed, pagehide).
+ *
+ * Never stops the writer directly: the last leave only marks the session
+ * abandoned (grace-covered), and admission reaping actually stops it — so a
+ * reload inside the grace window re-adopts the still-running writer, and a
+ * second tab/viewer holding a fresh lease is never disturbed.
+ */
+export const leavePlaybackSession = async (req, res) => {
+  res.set('Cache-Control', 'no-store');
+  try {
+    const sessionId = String(req.params.sessionId || '');
+    const viewerId = typeof req.body?.viewerId === 'string' ? req.body.viewerId.slice(0, 64) : '';
+    if (!sessionId || !viewerId) return fail(res, 400, 'Thiếu sessionId hoặc viewerId');
+    const db = getDB();
+    const session = await db.collection('playback_sessions').findOne({ sessionId });
+    if (!session) return res.json({ success: true, data: { ok: false } });
+    if (!isSessionOwner(session, req.user.userId)) {
+      return fail(res, 403, 'Không có quyền truy cập phiên phát này');
+    }
+    const remaining = removeSessionViewer(sessionId, viewerId);
+    return res.json({ success: true, data: { ok: true, remaining } });
+  } catch (error) {
+    console.error('leavePlaybackSession error:', error.message);
+    return fail(res, 500, 'Lỗi server');
+  }
+};
+
 /* ------------------------------------------------------------ HLS serving */
 
 const ASSET_CONTENT_TYPES = {
@@ -3667,6 +3801,8 @@ export default {
   listPlaybackSources,
   getResolveStage,
   getPlaybackSession,
+  heartbeatPlaybackSession,
+  leavePlaybackSession,
   serveHlsAsset,
   serveRenditionAsset,
   pickBestFile,

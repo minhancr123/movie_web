@@ -6,6 +6,8 @@ import {
   listPlaybackSources,
   getResolveStage,
   getPlaybackSession,
+  heartbeatPlaybackSession,
+  leavePlaybackSession,
   serveHlsAsset,
   serveRenditionAsset,
   getPlaybackSubtitles,
@@ -16,6 +18,7 @@ import { authMiddleware, mediaAuthMiddleware } from '../middleware/auth.js';
 import {
   playbackRateLimit,
   playbackPollRateLimit,
+  playbackPresenceRateLimit,
   hlsAssetRateLimit,
 } from '../middleware/rateLimit.js';
 
@@ -49,6 +52,10 @@ router.post('/sources', playbackRateLimit, listPlaybackSources);
 router.post('/subtitles', playbackRateLimit, getPlaybackSubtitles);
 router.get('/subtitles/job/:jobId', playbackPollRateLimit, getSubtitleJob);
 router.get('/session/:sessionId', playbackPollRateLimit, getPlaybackSession);
+// Explicit viewer presence: heartbeat refreshes the lease (25s cadence),
+// leave drops it (unmount/title-change/pagehide via keepalive fetch).
+router.post('/session/:sessionId/heartbeat', playbackPresenceRateLimit, heartbeatPlaybackSession);
+router.post('/session/:sessionId/leave', playbackPresenceRateLimit, leavePlaybackSession);
 router.get('/resolve/:resolveId/stage', playbackPollRateLimit, getResolveStage);
 
 export default router;

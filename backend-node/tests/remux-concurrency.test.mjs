@@ -30,6 +30,12 @@ import {
   reapExpendableWriters,
   scheduleSupersededStop,
   cancelScheduledStop,
+  abandonedWriterIds,
+  registerSessionViewer,
+  touchSessionViewer,
+  removeSessionViewer,
+  VIEWER_LEASE_MS,
+  LEAVE_GRACE_MS,
 } from '../services/playback/remuxService.js';
 import { hasTechnicalTerm } from '../services/publicVocabulary.js';
 
@@ -256,5 +262,41 @@ assert.deepEqual(
   assert.deepEqual(idle, [], 'room to spare stops nothing');
   console.log('ok - expendable reaping is safe on ghosts');
 }
+
+// Viewer leases: an abandoned writer (every viewer left or lapsed) is
+// reaped before superseded/idle ones, and untracked sessions are invisible.
+assert.deepEqual(
+  reapPlan({ active: 2, limit: 1, abandoned: ['a'], superseded: ['s'], idle: ['i'] }),
+  ['a', 's'],
+  'abandoned writers go first',
+);
+assert.deepEqual(
+  writerSlotStatus({ limit: 1, active: 1, abandoned: ['a'], superseded: [], idle: [] }),
+  { limit: 1, active: 1, full: true, reapable: ['a'] },
+  'slot status surfaces abandoned writers',
+);
+{
+  const live = (over = {}) => ({ process: { killed: false }, exitCode: undefined, ...over });
+  const now = 1_000_000;
+  const sessions = new Map([
+    ['stale', live({ viewers: new Map([['v1', now - VIEWER_LEASE_MS - 1]]) })],
+    ['fresh', live({ viewers: new Map([['v1', now - 1_000]]) })],
+    ['drained-old', live({ viewers: new Map(), abandonedAt: now - LEAVE_GRACE_MS - 1 })],
+    ['drained-new', live({ viewers: new Map(), abandonedAt: now - 1_000 })],
+    ['untracked', live({})],
+    ['dead', live({ process: { killed: true }, viewers: new Map([['v1', 0]]) })],
+  ]);
+  assert.deepEqual(
+    abandonedWriterIds(sessions, { now }),
+    ['stale', 'drained-old'],
+    'lapsed leases and grace-expired leaves reap oldest-first; fresh, recent and untracked do not',
+  );
+  console.log('ok - abandoned writers reap first, untracked sessions untouched');
+}
+// Viewer helpers fail closed on unknown sessions (never throw on junk ids).
+assert.equal(registerSessionViewer('no-such-session', 'v1'), false, 'register on unknown session refuses');
+assert.equal(touchSessionViewer('no-such-session', 'v1'), false, 'heartbeat on unknown session refuses');
+assert.equal(removeSessionViewer('no-such-session', 'v1'), -1, 'leave on unknown session reports -1');
+console.log('ok - viewer lease helpers fail closed on unknown sessions');
 
 console.log('ok - remux concurrency policy');

@@ -1106,21 +1106,119 @@ export const spawnBeatsReuse = ({
   return fresh > live;
 };
 
-export const reapPlan = ({ active, limit, superseded = [], idle = [] } = {}) => {
+export const reapPlan = ({ active, limit, abandoned = [], superseded = [], idle = [] } = {}) => {
   const a = Number(active);
   const l = Number(limit);
   if (!Number.isFinite(a) || !Number.isFinite(l)) return [];
   if (a < l) return [];
   const need = a - l + 1;
-  // Superseded writers go first: nobody is watching those by definition. Idle
-  // ones are the fallback — a viewer is waiting, and one that has not been
-  // touched for IDLE_REAP_MS is not the viewer waiting. Oldest idle first.
+  // Abandoned writers go first: every viewer sent leave (or their heartbeat
+  // lease lapsed), so stopping one disturbs nobody. Superseded writers are
+  // next: nobody is watching those by definition. Idle ones are the fallback —
+  // a viewer is waiting, and one that has not been touched for IDLE_REAP_MS
+  // is not the viewer waiting. Oldest idle first.
   const chosen = [
+    ...(Array.isArray(abandoned) ? abandoned : []),
     ...(Array.isArray(superseded) ? superseded : []),
     ...(Array.isArray(idle) ? idle : []),
   ].filter((id, index, all) => id && all.indexOf(id) === index);
   if (chosen.length === 0) return [];
   return chosen.slice(0, need);
+};
+
+/**
+ * Explicit viewer leases on a remux session.
+ *
+ * Segment fetches cannot tell "viewer left" from "player is buffering ahead",
+ * so closing the tab used to hold the only writer slot until IDLE_REAP_MS
+ * (180s) while the next film 503'd through its whole retry ladder. The player
+ * now heartbeats every 25s with a stable viewerId and sends leave on
+ * unmount/title-change/pagehide; the backend reaps a session with no live
+ * viewers first when a new film needs the slot.
+ *
+ * Safety rules:
+ * - Tracking is opt-in evidence: sessions that never registered a viewer are
+ *   invisible to this logic (old clients keep the idle-timeout behaviour).
+ * - leave only marks; the writer is reaped via the normal admission path, so
+ *   a reload inside LEAVE_GRACE_MS re-adopts the still-running writer.
+ * - A heartbeat from any viewer revives the session (clears abandonedAt).
+ */
+// 90s, not 60s: Chromium throttles background-tab timers to ~1/min after 5
+// minutes, and the player heartbeats every 25s — a lease barely longer than
+// two missed beats would mistake a backgrounded viewer for a departed one.
+export const VIEWER_LEASE_MS = 90 * 1000;
+export const LEAVE_GRACE_MS = 30 * 1000;
+
+const viewersOf = (session) => {
+  if (!session || typeof session !== 'object') return null;
+  if (!(session.viewers instanceof Map)) session.viewers = new Map();
+  return session.viewers;
+};
+
+/** Register (or refresh) a viewer's lease. Creates the map on first use. */
+export const registerSessionViewer = (sessionId, viewerId, now = Date.now()) => {
+  const session = sessions.get(safeId(sessionId));
+  if (!session || !viewerId) return false;
+  viewersOf(session).set(String(viewerId), Number(now) || Date.now());
+  session.abandonedAt = undefined;
+  return true;
+};
+
+/** Heartbeat: refresh the lease, registering an unknown viewer. */
+export const touchSessionViewer = (sessionId, viewerId, now = Date.now()) =>
+  registerSessionViewer(sessionId, viewerId, now);
+
+/**
+ * Remove a viewer's lease. When the last viewer leaves, the session is marked
+ * abandoned (grace-covered, see abandonedWriterIds) instead of stopped: the
+ * viewer may be reloading, and only admission reaping actually stops writers.
+ * Returns the remaining viewer count, or -1 when the session is unknown.
+ */
+export const removeSessionViewer = (sessionId, viewerId, now = Date.now()) => {
+  const session = sessions.get(safeId(sessionId));
+  if (!session) return -1;
+  const viewers = viewersOf(session);
+  if (viewerId) viewers.delete(String(viewerId));
+  const remaining = viewers.size;
+  if (remaining === 0 && session.process && !session.process.killed && session.exitCode === undefined) {
+    session.abandonedAt = Number(now) || Date.now();
+  }
+  return remaining;
+};
+
+/**
+ * Live writers with no live viewers, oldest first.
+ *
+ * A session qualifies only when it opted into tracking (viewers map
+ * non-empty at some point) and either every lease lapsed past VIEWER_LEASE_MS
+ * (tab killed, network lost, no leave arrived) or leave drained the map and
+ * LEAVE_GRACE_MS passed (reload window over). Never disturbs a session with a
+ * fresh heartbeat, and never touches untracked sessions.
+ */
+export const abandonedWriterIds = (sessionMap = sessions, { now = Date.now(), leaseMs = VIEWER_LEASE_MS, leaveGraceMs = LEAVE_GRACE_MS } = {}) => {
+  if (!(sessionMap instanceof Map)) return [];
+  const t = Number(now) || Date.now();
+  const out = [];
+  for (const [id, session] of sessionMap) {
+    if (!session?.process || session.process.killed) continue;
+    if (session.exitCode !== undefined) continue;
+    const viewers = session.viewers;
+    if (!(viewers instanceof Map) || viewers.size === 0) {
+      // Leave-drained only: a session that never tracked viewers keeps the
+      // legacy idle-timeout behaviour.
+      if (typeof session.abandonedAt === 'number' && t - session.abandonedAt >= leaveGraceMs) {
+        out.push({ id, at: session.abandonedAt });
+      }
+      continue;
+    }
+    let freshest = 0;
+    for (const seen of viewers.values()) {
+      const n = Number(seen) || 0;
+      if (n > freshest) freshest = n;
+    }
+    if (t - freshest >= leaseMs) out.push({ id, at: freshest });
+  }
+  return out.sort((a, b) => a.at - b.at).map((entry) => entry.id);
 };
 
 /**
@@ -1454,6 +1552,10 @@ export const startRemuxSession = async ({ sessionId, inputUrl, audioCopy = false
     // answers itself instead of needing a codec capture mid-stream.
     videoAction,
     audioAction,
+    // Explicit viewer leases (heartbeat/leave). Starts untracked: sessions
+    // whose player never heartbeats keep the legacy idle-timeout behaviour.
+    viewers: new Map(),
+    abandonedAt: undefined,
   };
   sessions.set(id, session);
   // Structured spawn line (ids only — inputUrl is a short-lived TorBox link
@@ -1636,12 +1738,13 @@ export const supersededWriterIds = () => [...supersedeTimers.keys()];
 export const writerSlotStatus = ({
   limit = remuxWriterLimit(),
   active = activeWriterCount(),
+  abandoned = abandonedWriterIds(sessions),
   superseded = supersededWriterIds(),
   idle = idleWriterIds(sessions),
 } = {}) => {
   const full = !admitRemuxWriter({ active, limit });
   const reapable = full
-    ? [...new Set([...(superseded || []), ...(idle || [])].filter(Boolean))]
+    ? [...new Set([...(abandoned || []), ...(superseded || []), ...(idle || [])].filter(Boolean))]
     : [];
   return { limit, active, full, reapable };
 };
@@ -1654,11 +1757,12 @@ export const writerSlotStatus = ({
 export const reapExpendableWriters = async ({
   limit = remuxWriterLimit(),
   active = activeWriterCount(),
+  abandoned = abandonedWriterIds(sessions),
   superseded = supersededWriterIds(),
   idle = idleWriterIds(sessions),
 } = {}) => {
   const stopped = [];
-  for (const doomed of reapPlan({ active, limit, superseded, idle })) {
+  for (const doomed of reapPlan({ active, limit, abandoned, superseded, idle })) {
     cancelScheduledStop(doomed);
     if (await stopRemuxSession(doomed).catch(() => false)) stopped.push(doomed);
     active = activeWriterCount();
@@ -1936,6 +2040,12 @@ export default {
   REMUX_SEGMENT_SECONDS,
   selectSupersededRemuxes,
   isRemuxSessionLive,
+  registerSessionViewer,
+  touchSessionViewer,
+  removeSessionViewer,
+  abandonedWriterIds,
+  VIEWER_LEASE_MS,
+  LEAVE_GRACE_MS,
   touchTranscodeSession,
   selectTranscodeEvictions,
   cleanupTranscodeCache,
