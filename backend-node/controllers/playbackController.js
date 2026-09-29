@@ -85,9 +85,12 @@ import {
 } from '../services/playback/renditions.js';
 import { setResolveStage, getResolveStage as readResolveStage, isResolveId } from '../services/playback/resolveProgress.js';
 import {
-  MEDIA_GRANT_QUERY,
   mintMediaGrant,
-  rewriteManifestWithGrant,
+  selectAuthorizingSession,
+  getStableGrant,
+  putStableGrant,
+  serveManifestResponse,
+  MANIFEST_CACHE_CONTROL,
 } from '../services/playback/mediaGrant.js';
 import { planAdmission } from '../services/playback/deliveryPlan.js';
 import { getDecryptedKey } from '../services/providers/connectionStore.js';
@@ -1079,7 +1082,7 @@ export const resolvePlayback = async (req, res) => {
     // exactly the bug that field was added to fix.
     stage('detail');
     const detail = await cached(`catalog:detail:${type}:${tmdbId}:v3`, CACHE_TTL.DETAIL, () =>
-      tmdb.getDetail(type, tmdbId),
+      tmdb.getDetail(type, tmdbId), tmdb.STALE_OPTS
     );
     if (!detail) return fail(res, 404, 'Không tìm thấy nội dung');
     if (type === 'tv' && (season === null || episode === null)) {
@@ -2187,7 +2190,7 @@ export const prewarmPlayback = async (req, res) => {
   try {
     const db = getDB();
     const detail = await cached(`catalog:detail:${type}:${tmdbId}:v3`, CACHE_TTL.DETAIL, () =>
-      tmdb.getDetail(type, tmdbId),
+      tmdb.getDetail(type, tmdbId), tmdb.STALE_OPTS
     );
     if (!detail?.imdbId) return fail(res, 404, 'Không tìm thấy nội dung');
 
@@ -2352,7 +2355,7 @@ export const listPlaybackSources = async (req, res) => {
 
   try {
     const detail = await cached(`catalog:detail:${type}:${tmdbId}:v3`, CACHE_TTL.DETAIL, () =>
-      tmdb.getDetail(type, tmdbId),
+      tmdb.getDetail(type, tmdbId), tmdb.STALE_OPTS
     );
     if (!detail) return fail(res, 404, 'Không tìm thấy nội dung');
     if (type === 'tv' && (season === null || episode === null)) {
@@ -2621,7 +2624,7 @@ export const getPlaybackSubtitles = async (req, res) => {
 
   try {
     const detail = await cached(`catalog:detail:${type}:${tmdbId}:v3`, CACHE_TTL.DETAIL, () =>
-      tmdb.getDetail(type, tmdbId),
+      tmdb.getDetail(type, tmdbId), tmdb.STALE_OPTS
     );
     if (!detail) return fail(res, 404, 'Không tìm thấy nội dung');
     if (!detail.imdbId) {
@@ -3298,47 +3301,41 @@ const isAllowedAsset = (asset) => {
 };
 
 /**
- * Manifests carry per-viewer grants after the in-memory rewrite below, so
- * they must never be stored in a shared cache. Segments are immutable bytes;
- * caches may ignore the media_grant query when keying them.
+ * Manifests carry per-viewer grants after the in-memory rewrite, so they must
+ * never be stored in a shared cache. Segments are immutable bytes; caches may
+ * ignore the media_grant query when keying them. Served via
+ * serveManifestResponse (mediaGrant.js), which answers 404 when the file
+ * vanishes between stat and read instead of hanging the request.
  */
-const MANIFEST_CACHE_CONTROL = 'private, no-store';
-
 const sessionExpiryMs = (session) => {
   const t = session?.expiresAt ? new Date(session.expiresAt).getTime() : NaN;
   return Number.isFinite(t) ? t : null;
 };
 
+const rowRenditionId = (row) =>
+  String(row?.publishedRenditionId || row?.renditionKey || '').toLowerCase();
+
 /**
- * Resolve which grant token a manifest response should embed in its child
- * URLs. User-JWT requests mint a fresh session/rendition-scoped grant (capped
- * by the session expiry); grant-authenticated requests re-embed the presented
- * grant so playback survives without ever seeing the login JWT. Returns null
- * when no grant can be issued (caller then serves the file unrewritten — only
- * possible on paths that predate grants, never for new manifests).
+ * Stable session grant for manifest responses (P2-url-stability).
+ *
+ * The manifest src URL (with ?access_token=) never changes, so the refresh
+ * path is simply refetching it: the current stable grant comes back, rotated
+ * only when < 5min remains. Grant-authed requests echo the presented token.
+ * Returns null when no grant can be issued (session nearly dead) — the raw
+ * manifest goes out and the next refetch 410s; a ~1s window, not a hang.
  */
-const grantTokenForManifest = (req, { sessionId = null, renditionId = null, session = null } = {}) => {
+const sessionGrantToken = (req, session, sessionId) => {
   try {
     if (req?.mediaGrantToken && typeof req.mediaGrantToken === 'string') return req.mediaGrantToken;
     if (!req?.user) return null;
-    if (sessionId) {
-      return mintMediaGrant({ sessionId, sessionExpiresAtMs: session ? sessionExpiryMs(session) : null }).token;
-    }
-    if (renditionId) {
-      return mintMediaGrant({ renditionId }).token;
-    }
-    return null;
+    const key = `s:${String(sessionId).toLowerCase()}`;
+    const cached = getStableGrant(key);
+    if (cached) return cached;
+    const minted = mintMediaGrant({ sessionId, sessionExpiresAtMs: sessionExpiryMs(session) });
+    return putStableGrant(key, minted.token, minted.expiresAtMs);
   } catch {
     return null;
   }
-};
-
-const serveRewrittenManifest = async (res, filePath, grantToken) => {
-  const raw = await fs.readFile(filePath, 'utf8');
-  const body = grantToken ? rewriteManifestWithGrant(raw, grantToken, { param: MEDIA_GRANT_QUERY }) : raw;
-  res.setHeader('Content-Type', ASSET_CONTENT_TYPES['.m3u8']);
-  res.setHeader('Cache-Control', MANIFEST_CACHE_CONTROL);
-  return res.send(body);
 };
 
 export const serveHlsAsset = async (req, res) => {
@@ -3391,8 +3388,7 @@ export const serveHlsAsset = async (req, res) => {
       // Finished bytes are immutable, but the manifest response embeds a
       // per-viewer grant for the native player, so it stays private.
       if (asset === 'index.m3u8') {
-        const grant = grantTokenForManifest(req, { sessionId, session });
-        return serveRewrittenManifest(res, filePath, grant);
+        return await serveManifestResponse(res, filePath, sessionGrantToken(req, session, sessionId));
       }
       const ext = asset.endsWith('.m3u8') ? '.m3u8' : asset.endsWith('.m4s') ? '.m4s' : '.mp4';
       res.setHeader('Content-Type', ASSET_CONTENT_TYPES[ext]);
@@ -3464,8 +3460,7 @@ export const serveHlsAsset = async (req, res) => {
     // Growing EVENT playlist: rewrite child URLs with a session-scoped grant
     // in memory. The bytes on disk stay token-free relative URIs.
     if (asset === 'index.m3u8') {
-      const grant = grantTokenForManifest(req, { sessionId, session });
-      return serveRewrittenManifest(res, filePath, grant);
+      return await serveManifestResponse(res, filePath, sessionGrantToken(req, session, sessionId));
     }
 
     const ext = asset.endsWith('.m3u8') ? '.m3u8' : asset.endsWith('.m4s') ? '.m4s' : '.mp4';
@@ -3501,14 +3496,56 @@ export const serveHlsAsset = async (req, res) => {
  */
 export const serveRenditionAsset = async (req, res) => {
   try {
-    const renditionId = String(req.params.renditionId || '');
+    const renditionId = String(req.params.renditionId || '').toLowerCase();
     const asset = String(req.params.asset || '');
 
     if (!isAllowedAsset(asset)) return fail(res, 404, 'Không tìm thấy tài nguyên');
+
+    // P1: rendition access is bound to the session that authorized it — a
+    // bare rid bearer with no live session behind it opens nothing. Pre-fix
+    // rid-only grants (no sid) are refused with a refresh code so the player
+    // refetches the manifest and gets a session-bound grant.
+    const db = getDB();
+    let authSession = null;
+    if (req.mediaGrant?.renditionId) {
+      const sid = req.mediaGrant.sessionId || '';
+      if (!sid) {
+        return fail(res, 403, 'Grant đã cũ, trình phát sẽ tự tạo lại', { code: 'GRANT_REFRESH_REQUIRED' });
+      }
+      authSession = await db.collection('playback_sessions').findOne({ sessionId: sid });
+      if (!authSession) return fail(res, 404, 'Không tìm thấy phiên phát');
+      if (authSession.expiresAt && new Date(authSession.expiresAt) < new Date()) {
+        return fail(res, 410, 'Phiên phát đã hết hạn');
+      }
+      if (rowRenditionId(authSession) !== renditionId) {
+        return fail(res, 403, 'Không có quyền truy cập tài nguyên này');
+      }
+    } else if (req.user) {
+      const candidates = await db.collection('playback_sessions')
+        .find({ $or: [{ publishedRenditionId: renditionId }, { renditionKey: renditionId }] })
+        .sort({ expiresAt: -1 })
+        .limit(50)
+        .toArray()
+        .catch(() => []);
+      authSession = selectAuthorizingSession(
+        candidates,
+        { userId: req.user.userId, renditionId },
+      );
+      if (!authSession) {
+        // No live session vouches for this rendition (all expired/revoked):
+        // the player re-resolves, which creates one and mints a fresh grant.
+        return fail(res, 403, 'Phiên xem đã hết hạn, trình phát sẽ tự tạo lại', {
+          code: 'NO_AUTHORIZING_SESSION',
+        });
+      }
+    } else {
+      return fail(res, 401, 'Không có token xác thực');
+    }
+
     const state = await readRenditionState(renditionId);
     if (!state.exists || !state.ended) return fail(res, 404, 'Bản hoàn chỉnh không còn');
     if (asset === 'index.m3u8') {
-      await touchPublishedRendition(getDB(), renditionId);
+      await touchPublishedRendition(db, renditionId);
     }
 
     const filePath = path.resolve(renditionPath(renditionId, asset));
@@ -3519,8 +3556,27 @@ export const serveRenditionAsset = async (req, res) => {
     }
 
     if (asset === 'index.m3u8') {
-      const grant = grantTokenForManifest(req, { renditionId });
-      return serveRewrittenManifest(res, filePath, grant);
+      // Echo the presented grant, else the stable session-bound grant for
+      // this (rendition, session) generation — same stability contract as the
+      // session route: refetch with the user credential to refresh.
+      let token = (typeof req.mediaGrantToken === 'string' && req.mediaGrantToken) || null;
+      if (!token) {
+        const key = `r:${renditionId}:${String(authSession.sessionId).toLowerCase()}`;
+        token = getStableGrant(key);
+        if (!token) {
+          try {
+            const minted = mintMediaGrant({
+              sessionId: authSession.sessionId,
+              renditionId,
+              sessionExpiresAtMs: sessionExpiryMs(authSession),
+            });
+            token = putStableGrant(key, minted.token, minted.expiresAtMs);
+          } catch {
+            token = null;
+          }
+        }
+      }
+      return await serveManifestResponse(res, filePath, token);
     }
 
     const ext = asset.endsWith('.m3u8') ? '.m3u8' : asset.endsWith('.m4s') ? '.m4s' : '.mp4';

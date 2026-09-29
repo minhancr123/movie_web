@@ -53,46 +53,54 @@ export const mediaAuthMiddleware = (req, res, next) => {
     const grant = typeof req.query?.[MEDIA_GRANT_QUERY] === 'string'
       ? req.query[MEDIA_GRANT_QUERY]
       : null;
+    let grantError = null;
     if (grant) {
       if (req.method !== 'GET' && req.method !== 'HEAD') {
-        return res.status(401).json({ success: false, message: 'Token không hợp lệ hoặc đã hết hạn' });
+        // Grants are read-only bearers; fall through to the user credential
+        // below instead of deciding here.
+        grantError = 'invalid';
+      } else {
+        const expectSessionId = req.params?.sessionId ? String(req.params.sessionId) : null;
+        const expectRenditionId = req.params?.renditionId ? String(req.params.renditionId) : null;
+        const checked = verifyMediaGrant(grant, { expectSessionId, expectRenditionId });
+        if (checked.ok) {
+          req.mediaGrant = checked;
+          req.mediaGrantToken = grant;
+          return next();
+        }
+        grantError = checked.reason;
       }
-      const expectSessionId = req.params?.sessionId ? String(req.params.sessionId) : null;
-      const expectRenditionId = req.params?.renditionId ? String(req.params.renditionId) : null;
-      const checked = verifyMediaGrant(grant, { expectSessionId, expectRenditionId });
-      if (!checked.ok) {
-        const status = checked.reason === 'scope-mismatch' ? 403 : 401;
-        return res.status(status).json({
-          success: false,
-          message: checked.reason === 'scope-mismatch'
-            ? 'Không có quyền truy cập tài nguyên này'
-            : 'Token không hợp lệ hoặc đã hết hạn',
-        });
-      }
-      req.mediaGrant = checked;
-      req.mediaGrantToken = grant;
-      return next();
     }
 
+    // P2-fallback: an expired/invalid grant must not lock out a valid login.
+    // Long pause on a finished film refetches the manifest with a stale grant
+    // in the URL; the Bearer below re-authorizes (ownership still enforced in
+    // the controller) and the response carries a fresh grant. Only when BOTH
+    // fail do we answer: 403 keeps the scope-mismatch signal, else 401.
     const token =
       req.headers.authorization?.split(' ')[1] ||
       (typeof req.query.access_token === 'string' ? req.query.access_token : null);
 
-    if (!token) {
-      return res.status(401).json({ success: false, message: 'Không có token xác thực' });
+    if (token) {
+      const decoded = jwt.verify(token, process.env.JWT_SECRET);
+      // A media grant replayed as ?access_token= must fall through to the grant
+      // path above (with its scope check), never pass as user identity.
+      if (decoded?.pur !== 'media') {
+        req.user = decoded;
+        return next();
+      }
     }
 
-    const decoded = jwt.verify(token, process.env.JWT_SECRET);
-    // A media grant replayed as ?access_token= must fall through to the grant
-    // path above (with its scope check), never pass as user identity.
-    if (decoded?.pur === 'media') {
-      return res.status(401).json({
-        success: false,
-        message: 'Token không hợp lệ hoặc đã hết hạn',
-      });
+    if (!grant && !token) {
+      return res.status(401).json({ success: false, message: 'Không có token xác thực' });
     }
-    req.user = decoded;
-    return next();
+    if (grantError === 'scope-mismatch') {
+      return res.status(403).json({ success: false, message: 'Không có quyền truy cập tài nguyên này' });
+    }
+    return res.status(401).json({
+      success: false,
+      message: 'Token không hợp lệ hoặc đã hết hạn',
+    });
   } catch {
     return res.status(401).json({
       success: false,

@@ -11,12 +11,38 @@ const IMAGE_BASE = 'https://image.tmdb.org/t/p';
 const LANGUAGE = process.env.TMDB_LANGUAGE || 'vi-VN';
 const FALLBACK_LANGUAGE = 'en-US';
 const REGION = process.env.TMDB_REGION || 'VN';
-const REQUEST_TIMEOUT_MS = 8000;
+// Worst case per request: 3.5s x 3 attempts + 1.2s backoff ~= 11.7s, inside
+// the frontend's 15s SSR budget. A longer per-attempt timeout would push the
+// blackhole case past it: the page aborts at 15s no matter what the backend
+// eventually fetches.
+const REQUEST_TIMEOUT_MS = 3500;
+// SNI resets fail fast (handshake dies in ~1s), so two quick retries cure the
+// documented flap without blowing the frontend's 15s SSR budget. Retry only
+// what a retry can fix: network/timeout errors, 429 and 5xx — never 4xx
+// (bad key) and never 404 (handled as null by callers).
+const MAX_ATTEMPTS = 3;
+const RETRY_DELAYS_MS = [300, 900];
+
+const sleep = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
+
+const isRetryableStatus = (status) => status === 429 || (status >= 500 && status <= 599);
 
 const readToken = process.env.TMDB_READ_TOKEN || '';
 const apiKey = process.env.TMDB_API_KEY || '';
 // Shared secret for the optional TMDB proxy (scripts/tmdb-proxy-worker.js).
 const proxyToken = process.env.TMDB_PROXY_TOKEN || '';
+
+/**
+ * Stale fallback for every cached TMDB read: when a live fetch throws (SNI
+ * reset, timeout after retries), serve the last good payload (kept 7 days)
+ * instead of failing the page. Stale is ONLY served on loader failure — a
+ * successful fetch always refreshes both copies.
+ */
+export const STALE_OPTS = Object.freeze({ staleOnError: true, staleTtlSeconds: 7 * 24 * 60 * 60 });
+// Search/discover keys have huge cardinality and are rarely reused: a short
+// stale horizons them instead of pinning a week of junk in a 256MB noeviction
+// Redis. Home/detail/person/season/genres keep the full 7 days.
+export const STALE_OPTS_SHORT = Object.freeze({ staleOnError: true, staleTtlSeconds: 60 * 60 });
 
 export const isTmdbConfigured = () => Boolean(readToken || apiKey);
 
@@ -36,27 +62,55 @@ const request = async (path, params = {}) => {
     throw new Error('TMDB chưa được cấu hình: thiếu TMDB_READ_TOKEN hoặc TMDB_API_KEY');
   }
 
-  const controller = new AbortController();
-  const timer = setTimeout(() => controller.abort(), REQUEST_TIMEOUT_MS);
+  let lastError = null;
+  for (let attempt = 1; attempt <= MAX_ATTEMPTS; attempt += 1) {
+    const controller = new AbortController();
+    const timer = setTimeout(() => controller.abort(), REQUEST_TIMEOUT_MS);
 
-  try {
-    const response = await fetch(buildUrl(path, params), {
-      signal: controller.signal,
-      headers: {
-        accept: 'application/json',
-        ...(readToken ? { authorization: `Bearer ${readToken}` } : {}),
-        ...(proxyToken ? { 'x-proxy-token': proxyToken } : {}),
-      },
-    });
+    try {
+      // NOTE: never log buildUrl — it carries api_key in the query string.
+      const response = await fetch(buildUrl(path, params), {
+        signal: controller.signal,
+        headers: {
+          accept: 'application/json',
+          ...(readToken ? { authorization: `Bearer ${readToken}` } : {}),
+          ...(proxyToken ? { 'x-proxy-token': proxyToken } : {}),
+        },
+      });
 
-    if (response.status === 404) return null;
-    if (!response.ok) {
-      throw new Error(`TMDB ${path} trả về ${response.status}`);
+      if (response.status === 404) return null;
+      if (!response.ok) {
+        if (!isRetryableStatus(response.status)) {
+          const fatal = new Error(`TMDB ${path} trả về ${response.status}`);
+          fatal.retryable = false;
+          throw fatal;
+        }
+        // Free the socket before sleeping: an error body left unread pins a
+        // pooled connection for the whole backoff.
+        try { await response.body?.cancel(); } catch { /* best-effort */ }
+        lastError = new Error(`TMDB ${path} trả về ${response.status} (lần ${attempt}/${MAX_ATTEMPTS})`);
+        console.warn(`[tmdb] ${path} trả về ${response.status}, thử lại ${attempt}/${MAX_ATTEMPTS}`);
+      } else {
+        return await response.json();
+      }
+    } catch (error) {
+      if (error?.retryable === false) throw error;
+      const reason = error?.name === 'AbortError'
+        ? `quá ${REQUEST_TIMEOUT_MS / 1000}s không phản hồi`
+        : (error?.message || error);
+      lastError = error?.name === 'AbortError'
+        ? new Error(`TMDB ${path} ${reason} (lần ${attempt}/${MAX_ATTEMPTS})`)
+        : error;
+      console.warn(`[tmdb] ${path} lỗi (${reason}), thử lại ${attempt}/${MAX_ATTEMPTS}`);
+    } finally {
+      clearTimeout(timer);
     }
-    return await response.json();
-  } finally {
-    clearTimeout(timer);
+
+    if (attempt < MAX_ATTEMPTS) {
+      await sleep(RETRY_DELAYS_MS[attempt - 1] ?? 1000);
+    }
   }
+  throw lastError;
 };
 
 const imageUrl = (path, size) => (path ? `${IMAGE_BASE}/${size}${path}` : '');
@@ -138,7 +192,7 @@ export const getGenreMap = async (mediaType) =>
       map[genre.id] = genre.name;
     });
     return map;
-  });
+  }, STALE_OPTS);
 
 /* ------------------------------------------------------------- normalizers */
 

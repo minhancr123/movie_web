@@ -7,7 +7,7 @@ import HeroSection from '@/components/HeroSection';
 import RecommendationsRow from '@/components/RecommendationsRow';
 import SpatialShader from '@/components/SpatialShader';
 
-export const revalidate = 1800;
+export const revalidate = 300;
 
 /**
  * HeroSection still speaks the legacy Movie shape. Rather than rewrite its

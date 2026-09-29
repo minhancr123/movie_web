@@ -126,9 +126,11 @@ const EMPTY_LIST: CatalogList = {
   pagination: { currentPage: 1, totalPages: 0, totalItems: 0 },
 };
 
-/** Revalidate windows mirror the Redis TTLs on the backend. */
+/** Revalidate windows mirror the Redis TTLs on the backend. Home stays short
+ * on purpose: a transient TMDB blip must clear within minutes, not freeze an
+ * error page for half an hour. Backend cache makes the refetch cheap. */
 const REVALIDATE = {
-  home: 1800,
+  home: 300,
   search: 900,
   discover: 900,
   detail: 86400,

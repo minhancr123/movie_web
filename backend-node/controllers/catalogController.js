@@ -43,7 +43,7 @@ const toPage = (value) => {
 
 export const getHome = async (req, res) => {
   try {
-    const data = await cached('catalog:home', CACHE_TTL.HOME, () => tmdb.getHome());
+    const data = await cached('catalog:home', CACHE_TTL.HOME, () => tmdb.getHome(), tmdb.STALE_OPTS);
     return res.json({ success: true, data });
   } catch (error) {
     return handleError(res, 'getHome', error);
@@ -63,7 +63,7 @@ export const searchCatalog = async (req, res) => {
     }
 
     const key = `catalog:search:${query.toLowerCase()}:${page}`;
-    const data = await cached(key, CACHE_TTL.SEARCH, () => tmdb.search(query, page));
+    const data = await cached(key, CACHE_TTL.SEARCH, () => tmdb.search(query, page), tmdb.STALE_OPTS_SHORT);
     return res.json({ success: true, data });
   } catch (error) {
     return handleError(res, 'searchCatalog', error);
@@ -80,7 +80,7 @@ export const discoverCatalog = async (req, res) => {
 
     const key = `catalog:discover:${type}:${genre}:${region}:${year}:${page}`;
     const data = await cached(key, CACHE_TTL.DISCOVER, () =>
-      tmdb.discover({ type, genre, region, year, page })
+      tmdb.discover({ type, genre, region, year, page }), tmdb.STALE_OPTS_SHORT
     );
     return res.json({ success: true, data });
   } catch (error) {
@@ -112,7 +112,7 @@ export const getDetail = async (req, res) => {
     // shape for a day and the new field reads as undefined (see the same key
     // in playbackController, where that cost a show its own audio language).
     const data = await cached(`catalog:detail:${type}:${tmdbId}:v3`, CACHE_TTL.DETAIL, () =>
-      tmdb.getDetail(type, tmdbId)
+      tmdb.getDetail(type, tmdbId), tmdb.STALE_OPTS
     );
 
     if (!data) return fail(res, 404, 'Không tìm thấy nội dung');
@@ -129,7 +129,7 @@ export const getPerson = async (req, res) => {
     if (!Number.isInteger(personId) || personId <= 0) return fail(res, 400, 'personId không hợp lệ');
 
     const data = await cached(`catalog:person:${personId}:v2`, CACHE_TTL.DETAIL, () =>
-      tmdb.getPerson(personId)
+      tmdb.getPerson(personId), tmdb.STALE_OPTS
     );
 
     if (!data) return fail(res, 404, 'Không tìm thấy diễn viên');
@@ -148,7 +148,7 @@ export const getSeason = async (req, res) => {
     if (!Number.isInteger(season) || season < 0) return fail(res, 400, 'season không hợp lệ');
 
     const data = await cached(`catalog:season:${tmdbId}:${season}`, CACHE_TTL.SEASON, () =>
-      tmdb.getSeason(tmdbId, season)
+      tmdb.getSeason(tmdbId, season), tmdb.STALE_OPTS
     );
 
     if (!data) return fail(res, 404, 'Không tìm thấy mùa phim');

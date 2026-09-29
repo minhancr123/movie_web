@@ -25,6 +25,7 @@
  */
 
 import crypto from 'crypto';
+import fs from 'node:fs/promises';
 import jwt from 'jsonwebtoken';
 
 export const MEDIA_GRANT_QUERY = 'media_grant';
@@ -53,7 +54,12 @@ export const getMediaGrantSecret = () =>
 export const isMediaGrantSecretFallback = () => !process.env.MEDIA_GRANT_SECRET;
 
 /**
- * Mint a grant for exactly one scope.
+ * Mint a grant for a playback scope.
+ *
+ * Single scope ({ sessionId } OR { renditionId }) or dual scope
+ * ({ sessionId, renditionId }) for rendition manifests bound to the session
+ * that authorized them (P1: a bare rid bearer outlives every viewing session
+ * and is served with zero access checks). At least one scope is required.
  *
  * @param {object} args
  * @param {string} [args.sessionId] - 32-hex playback session (route /hls/:sessionId/*)
@@ -73,7 +79,7 @@ export const mintMediaGrant = ({
   if (!secret) throw new Error('media-grant-secret-missing');
   const sid = sessionId ? normId(sessionId) : '';
   const rid = renditionId ? normId(renditionId) : '';
-  if ((sid && rid) || (!sid && !rid)) throw new Error('media-grant-scope-invalid');
+  if (!sid && !rid) throw new Error('media-grant-scope-invalid');
   const now = Number(nowMs) || Date.now();
   const requestedTtl = Math.min(Number(ttlMs) > 0 ? Number(ttlMs) : MEDIA_GRANT_MAX_TTL_MS, MEDIA_GRANT_MAX_TTL_MS);
   let expMs = now + requestedTtl;
@@ -89,7 +95,8 @@ export const mintMediaGrant = ({
   const payload = {
     pur: MEDIA_GRANT_PURPOSE,
     aud: MEDIA_GRANT_AUDIENCE,
-    ...(sid ? { sid } : { rid }),
+    ...(sid ? { sid } : {}),
+    ...(rid ? { rid } : {}),
     exp: expSec,
   };
   const token = jwt.sign(payload, secret);
@@ -116,19 +123,21 @@ export const verifyMediaGrant = (token, { expectSessionId = null, expectRenditio
   }
   const sid = decoded.sid ? normId(decoded.sid) : '';
   const rid = decoded.rid ? normId(decoded.rid) : '';
-  if ((sid && rid) || (!sid && !rid)) return { ok: false, reason: 'invalid' };
+  if (!sid && !rid) return { ok: false, reason: 'invalid' };
   if (expectSessionId && sid !== normId(expectSessionId)) return { ok: false, reason: 'scope-mismatch' };
   if (expectRenditionId && rid !== normId(expectRenditionId)) return { ok: false, reason: 'scope-mismatch' };
-  // A session grant must never open a rendition URL and vice versa: without an
-  // expectation the caller must still pick the right field, so require the
-  // peer expectation to be absent rather than silently accepting either.
+  // The middleware pins the URL-relevant scope (sessionId on /hls/:sessionId/*,
+  // renditionId on /hls/r/*); the controller enforces the rest against the
+  // session row (dual sid+rid tokens). With no expectation at all there is
+  // nothing to pin to, so refuse rather than accept either scope.
   if (!expectSessionId && !expectRenditionId) {
     return { ok: false, reason: 'invalid' };
   }
   const expMs = Number(decoded.exp) * 1000;
   return {
     ok: true,
-    ...(sid ? { sessionId: sid } : { renditionId: rid }),
+    ...(sid ? { sessionId: sid } : {}),
+    ...(rid ? { renditionId: rid } : {}),
     ...(Number.isFinite(expMs) ? { expiresAtMs: expMs } : {}),
   };
 };
@@ -188,3 +197,109 @@ export const sameScopeId = (a, b) => {
 
 export const mediaGrantFingerprint = (token) =>
   crypto.createHash('sha256').update(String(token || '')).digest('hex').slice(0, 12);
+
+/**
+ * Pick the playback session that authorizes a rendition-manifest request.
+ *
+ * Pure (rows in, row out) so the policy stays unit-testable without Mongo.
+ * ONLY the requester's own live rows qualify: borrowing another viewer's live
+ * session via a bare Bearer would let any logged-in user watch bytes they
+ * never resolved (resolve also records ownership/history/subtitles, and the
+ * published short-circuit that hands out r-URLs is instant, so re-resolving
+ * costs nothing). Reuse across tabs works because resolve reuses the same
+ * user's own sessions (findReusableRemuxSession is userIdStr-scoped).
+ * Rows without a valid future expiresAt fail closed.
+ */
+export const selectAuthorizingSession = (rows, { userId, renditionId, nowMs = Date.now() } = {}) => {
+  const rid = String(renditionId || '').toLowerCase();
+  const now = Number(nowMs) || Date.now();
+  if (!rid) return null;
+  const live = (rows || []).filter((row) => {
+    const rowRid = String(row?.publishedRenditionId || row?.renditionKey || '').toLowerCase();
+    if (!rowRid || rowRid !== rid) return false;
+    const exp = row?.expiresAt ? new Date(row.expiresAt).getTime() : NaN;
+    return Number.isFinite(exp) && exp > now;
+  });
+  if (!live.length) return null;
+  const mine = live.filter(
+    (row) => String(row?.userIdStr ?? row?.userId ?? '') === String(userId ?? ''),
+  );
+  if (!mine.length) return null;
+  return (
+    mine.sort((a, b) => new Date(b.expiresAt).getTime() - new Date(a.expiresAt).getTime())[0] || null
+  );
+};
+
+/**
+ * Stable grants per session generation (P2-url-stability).
+ *
+ * Minting a fresh JWT on every manifest fetch rewrites every child URL and
+ * breaks EVENT-playlist entry stability plus URL-keyed caches. The manifest
+ * src URL itself (with ?access_token=) never changes, so the refresh path is:
+ * refetch the manifest with the user credential and the current stable grant
+ * comes back; rotation happens at most ~once per session lifetime, at expiry.
+ * A cached token is served while it has more than SERVE_SKEW of life left —
+ * rotating early (minutes before expiry) would mint on every manifest poll
+ * during the session tail and rewrite every child URL, the exact instability
+ * this cache exists to prevent.
+ *
+ * Single backend container: in-memory is exact. Horizontal scale would need a
+ * shared store or sticky routing — then rotation just happens more often,
+ * which is safe (never wrong, only less stable).
+ */
+export const STABLE_GRANT_SERVE_SKEW_MS = 10_000;
+const STABLE_GRANT_CACHE_MAX = 2000;
+const stableGrants = new Map();
+
+export const getStableGrant = (key, nowMs = Date.now()) => {
+  const entry = stableGrants.get(String(key));
+  if (!entry) return null;
+  const now = Number(nowMs) || Date.now();
+  if (!(entry.expiresAtMs - now > STABLE_GRANT_SERVE_SKEW_MS)) {
+    stableGrants.delete(String(key));
+    return null;
+  }
+  return entry.token;
+};
+
+export const putStableGrant = (key, token, expiresAtMs) => {
+  const k = String(key);
+  if (stableGrants.has(k)) stableGrants.delete(k);
+  stableGrants.set(k, { token, expiresAtMs: Number(expiresAtMs) });
+  while (stableGrants.size > STABLE_GRANT_CACHE_MAX) {
+    stableGrants.delete(stableGrants.keys().next().value);
+  }
+  return token;
+};
+
+export const clearStableGrants = () => stableGrants.clear();
+
+export const MANIFEST_CONTENT_TYPE = 'application/vnd.apple.mpegurl';
+export const MANIFEST_CACHE_CONTROL = 'private, no-store';
+
+/**
+ * Serve a manifest file with child URLs rewritten to the grant, awaited by
+ * the controller inside its try/catch (P2-hang: an un-awaited rejection
+ * escapes Express 4 error handling and leaves the request hanging).
+ * ENOENT between stat and read (janitor won the race) answers 404 so the
+ * player falls back to recovery instead of hanging.
+ */
+export const serveManifestResponse = async (res, filePath, grantToken, { param = MEDIA_GRANT_QUERY } = {}) => {
+  let raw;
+  try {
+    raw = await fs.readFile(filePath, 'utf8');
+  } catch (error) {
+    // ENOENT (janitor won the stat→read race) and ENOTDIR (a parent dir went
+    // away mid-read) both mean "no longer servable": 404 so the player falls
+    // back to recovery instead of hanging. Anything else (EACCES, EIO) is a
+    // real server problem and stays a thrown 500 with the error logged.
+    if (error?.code === 'ENOENT' || error?.code === 'ENOTDIR') {
+      return res.status(404).json({ success: false, message: 'Tài nguyên chưa sẵn sàng' });
+    }
+    throw error;
+  }
+  const body = grantToken ? rewriteManifestWithGrant(raw, grantToken, { param }) : raw;
+  res.setHeader('Content-Type', MANIFEST_CONTENT_TYPE);
+  res.setHeader('Cache-Control', MANIFEST_CACHE_CONTROL);
+  return res.send(body);
+};
