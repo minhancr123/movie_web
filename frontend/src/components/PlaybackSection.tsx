@@ -45,7 +45,7 @@ import { groupPlaybackSources } from '@/lib/source-groups';
 import type { PlayerEpisode } from '@/lib/catalog';
 import { episodeScrollTarget } from '@/lib/episode-list';
 import { useWatchHistory } from '../hooks/useLocalStorage';
-import { computeResumeAt, audioSwitchStartAt } from '@/lib/playback-progress';
+import { computeResumeAt, audioSwitchStartAt, pickRecoveryTarget, hasSustainedProgress } from '@/lib/playback-progress';
 
 interface PlaybackSectionProps {
   type: 'movie' | 'tv';
@@ -144,6 +144,10 @@ export default function PlaybackSection({
   // Far seeks resolve a session beginning at the target; the player maps its
   // truncated 0-based playlist back onto the full film with this.
   const [startOffset, setStartOffset] = useState<number>(0);
+  // Absolute position the viewer asked for (pre-bucket target), alongside the
+  // session origin above. The player restores to the target, not the origin:
+  // target=780/origin=600 seeks local=180 once covered, never plays from 0.
+  const [targetPosition, setTargetPosition] = useState<number>(0);
   // Reported by the server: how far the remux clock leads source time, so the
   // player can take it back out of subtitle lookups.
   const [presentationShiftMs, setPresentationShiftMs] = useState<number>(0);
@@ -364,6 +368,16 @@ export default function PlaybackSection({
   // Latest-value mirrors so stable callbacks never close over stale state.
   // Live playhead in full-film seconds, fed by the player's timeupdate.
   const playheadRef = useRef<number>(0);
+  const historyRef = useRef(history);
+  historyRef.current = history;
+  // Absolute position of the last recovery resolve (null = none yet). Pairs
+  // with hasSustainedProgress so a stuttering stream cannot reset its own
+  // retry counter on every 0.25s tick.
+  const lastRecoveryPositionRef = useRef<number | null>(null);
+  // startAt sent with the latest resolve request (pre-bucket). The response
+  // carries requestedPositionSeconds when the server is new; this ref covers
+  // old servers and the early-adopt bridge that bypasses the response path.
+  const lastRequestedStartAtRef = useRef<number>(0);
   const activeTokenRef = useRef<string>('');
   const startPlaybackResolutionRef = useRef<
     (
@@ -418,18 +432,23 @@ export default function PlaybackSection({
     }
     recoveryInFlightRef.current = true;
     setErrorMessage(`Luồng bị gián đoạn, đang tự khôi phục (${recoveryAttemptsRef.current}/2)…`);
-    // Recovery rebuilds the CURRENT timeline: adopt a pending seek target if
-    // the stall struck mid-seek (rebuilding from the old position would
-    // strand the viewer where they tried to leave), else keep the applied
-    // session offset. Takes its own epoch so an older in-flight resolve
-    // cannot clobber it — and vice versa.
-    const recoverAt =
-      pendingSeekRef.current ??
-      (startOffsetRef.current > 0
-        ? startOffsetRef.current
-        : initialStartAtRef.current > 0
-          ? initialStartAtRef.current
-          : 0);
+    // Recovery rebuilds the CURRENT timeline from the freshest intent, not
+    // from session bookkeeping: a mid-seek target first, then the newest live
+    // playhead (backed off, never rewound to the origin bucket), then saved
+    // history. Takes its own epoch so an older in-flight resolve cannot
+    // clobber it — and vice versa. activeAudioIndexRef already carries an
+    // in-flight audio pick (set synchronously in pickAudio), so the new
+    // track survives the recovery resolve.
+    const saved = historyRef.current.find((h) => h.slug === contentRef);
+    const recoverAt = pickRecoveryTarget({
+      pendingSeek: pendingSeekRef.current,
+      playhead: playheadRef.current,
+      historyProgress:
+        saved && saved.currentEpisode === episodeSlug && Number.isFinite(saved.progress)
+          ? saved.progress
+          : null,
+    });
+    lastRecoveryPositionRef.current = recoverAt;
     const epoch = ++seekEpochRef.current;
     void startPlaybackResolutionRef
       .current(
@@ -453,9 +472,14 @@ export default function PlaybackSection({
       });
   }, [selectedSourceKey]);
 
-  // Isolated stalls must not accumulate: steady progress clears the counter.
+  // Isolated stalls must not accumulate: only steady forward progress clears
+  // the counter. Resetting on every 0.25s tick turns a stuttering stream into
+  // an infinite retry loop that never surfaces an error.
   const handlePlaybackProgress = useCallback((positionSeconds: number) => {
-    if (recoveryAttemptsRef.current !== 0) recoveryAttemptsRef.current = 0;
+    if (hasSustainedProgress(positionSeconds, lastRecoveryPositionRef.current)) {
+      recoveryAttemptsRef.current = 0;
+      lastRecoveryPositionRef.current = null;
+    }
     // Where the viewer actually is, in full-film seconds. An audio switch
     // rebuilds the remux for the chosen track and has to start it here, not at
     // the session's origin — see audioSwitchStartAt.
@@ -599,6 +623,18 @@ export default function PlaybackSection({
   // switches re-resolve the CURRENT timeline, not from zero.
   const startOffsetRef = useRef<number>(0);
 
+  // Absolute target from a resolve payload, shared by the main inline path,
+  // the early-adopt bridge and handleResolveResponse so they cannot drift
+  // apart: a response that sets origin without target replays the bucket bug
+  // (target=780/origin=600 restoring to minute 10).
+  const applyTargetFromData = (data: any) => {
+    const returnedTarget =
+      typeof data?.requestedPositionSeconds === 'number' && data.requestedPositionSeconds >= 0
+        ? Math.floor(data.requestedPositionSeconds)
+        : lastRequestedStartAtRef.current;
+    setTargetPosition(returnedTarget);
+  };
+
   const handleResolveResponse = useCallback((data: any, requestEpoch: number) => {
     if (seekEpochRef.current !== requestEpoch) return;
     // Any applied resolve settles a pending audio switch: the new bytes are
@@ -618,6 +654,9 @@ export default function PlaybackSection({
     const returnedOffset = typeof data.startOffset === 'number' && data.startOffset > 0 ? data.startOffset : 0;
     setStartOffset(returnedOffset);
     startOffsetRef.current = returnedOffset;
+    // Absolute target travels separately from the bucketed origin (shared
+    // helper — the main inline path below must use the same one).
+    applyTargetFromData(data);
     // See the seek-resolve path: a reused whole-film session is a deliberate
     // choice by the server, not a dropped seek, and the player says so.
     setSessionReused(data.reused === true);
@@ -726,6 +765,10 @@ export default function PlaybackSection({
       audioIndex !== undefined ? audioIndex : activeAudioIndexRef.current;
     const resolvedStartAt =
       options?.startAt && options.startAt > 0 ? Math.floor(options.startAt) : 0;
+    // Pre-bucket request target, mirrored for handleResolveResponse: the
+    // server answers origin (bucket) + requestedPositionSeconds (target), and
+    // old servers answer origin only — this ref is the fallback target.
+    lastRequestedStartAtRef.current = resolvedStartAt;
     // Every resolve takes the current generation number (seek/recovery/audio
     // passes its own so the intent survives the 4xx retry below). Only the
     // latest generation may replace the picture: a slow earlier resolve
@@ -837,6 +880,13 @@ export default function PlaybackSection({
             setPlaybackStatus('downloading');
             setDownloadProgress(0);
             setPlaybackSessionId(st.sessionId);
+            // Early-adopt bypasses handleResolveResponse: record both the
+            // origin and target here too, otherwise element-local time maps to
+            // the wrong full-film coordinate for bucketed seek sessions.
+            const returnedOffset = typeof st.startOffset === 'number' && st.startOffset > 0 ? st.startOffset : 0;
+            setStartOffset(returnedOffset);
+            startOffsetRef.current = returnedOffset;
+            applyTargetFromData(st);
             setFileName(st.fileName || '');
             setPlayMode('remux');
             setDurationSeconds(typeof st.durationSeconds === 'number' ? st.durationSeconds : null);
@@ -1003,6 +1053,9 @@ export default function PlaybackSection({
       const returnedOffset = typeof data.startOffset === 'number' && data.startOffset > 0 ? data.startOffset : 0;
       setStartOffset(returnedOffset);
       startOffsetRef.current = returnedOffset;
+      // Same shared helper as handleResolveResponse: origin without target
+      // replays the bucket bug.
+      applyTargetFromData(data);
       // This resolve's intent is fulfilled: a pending seek it supersedes (or
       // embodies) must not linger into a later recovery.
       pendingSeekRef.current = null;
@@ -1738,6 +1791,7 @@ export default function PlaybackSection({
             activeAudioIndex={activeAudioIndex}
             pendingAudioIndex={pendingAudioIndex}
             startAt={startOffset}
+            targetAt={targetPosition}
             presentationShiftMs={presentationShiftMs}
             seekStartSupported={seekStartSupported}
             sessionReused={sessionReused}

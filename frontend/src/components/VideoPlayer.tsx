@@ -15,7 +15,7 @@ import {
     isEmbeddedTrack, trackSource, isViTrack, isEnTrack, isReadyTrack,
     type SubCue, type SubTrack,
 } from '@/lib/subtitles';
-import { computeResumeAt, pickDisplayDuration, decideSeekTarget, planResume, shouldAutoplayAfterRebuild, shouldDowngradeForDropped, subtitleLookupTime, classifyStartAt } from '@/lib/playback-progress';
+import { computeResumeAt, pickDisplayDuration, decideSeekTarget, planResume, shouldAutoplayAfterRebuild, shouldDowngradeForDropped, subtitleLookupTime, classifyStartAt, toLocalSeekTarget } from '@/lib/playback-progress';
 import {
     useAudioEnhancer, DEFAULT_AUDIO_ENHANCER,
     type AudioEnhancerSettings,
@@ -90,6 +90,13 @@ interface VideoPlayerProps {
      */
     startAt?: number | null;
     /**
+     * Absolute (full-film) position the viewer asked for, travelling
+     * separately from the bucketed origin above. The player restores to the
+     * target — local = target - origin once covered — never to the origin.
+     * Null = no ask (from-start or old parent): history seed applies.
+     */
+    targetAt?: number | null;
+    /**
      * Ask the parent resolver for a session beginning at a display position
      * (far seeks past the written playlist head). Absent for sources that
      * cannot re-resolve (direct files), where seeks clamp instead. May be
@@ -141,7 +148,7 @@ interface VideoPlayerProps {
     fullscreenTargetRef?: React.RefObject<HTMLDivElement | null>;
 }
 
-export default function VideoPlayer({ src, movie, episode, authToken, durationSeconds, onNextEpisode, subContext, onPickAudio, activeAudioIndex, pendingAudioIndex = null, onPlaybackFailure, reloadKey = 0, onPlaybackProgress, presentationShiftMs = 0, seekStartSupported = true, sessionReused = false, onDecodeOverload, onCinemaChange, onVideoReady, fullscreenTargetRef, startAt = 0, onSeekToPosition, onCancelSeek, seekProgress = null }: VideoPlayerProps) {
+export default function VideoPlayer({ src, movie, episode, authToken, durationSeconds, onNextEpisode, subContext, onPickAudio, activeAudioIndex, pendingAudioIndex = null, onPlaybackFailure, reloadKey = 0, onPlaybackProgress, presentationShiftMs = 0, seekStartSupported = true, sessionReused = false, onDecodeOverload, onCinemaChange, onVideoReady, fullscreenTargetRef, startAt = 0, targetAt = null, onSeekToPosition, onCancelSeek, seekProgress = null }: VideoPlayerProps) {
     const videoRef = useRef<HTMLVideoElement>(null);
     const containerRef = useRef<HTMLDivElement>(null);
 
@@ -363,6 +370,15 @@ export default function VideoPlayer({ src, movie, episode, authToken, durationSe
     const saveProgressRef = useRef<((force?: boolean) => void) | null>(null);
     // Deferred resume listener (removed in the pipeline effect cleanup).
     const resumeListenerRef = useRef<(() => void) | null>(null);
+    // True while a fresh pipeline still owes its positional restore. Gates
+    // the first progress reports: a rebuilt element ticks timeupdate at 0
+    // before the restore seek lands, and that 0 must never overwrite the
+    // parent's last-good playhead. Set per pipeline, cleared on settle.
+    const restorePendingRef = useRef(false);
+    // Native-branch teardown (named listeners + safety timer), stored so the
+    // effect cleanup removes exactly what the branch attached — anonymous
+    // listeners used to accumulate one copy per rebuild on Safari.
+    const nativeCleanupRef = useRef<(() => void) | null>(null);
     // In-flight far-seek target (display seconds). Declared up here because
     // togglePlay (below) reads it; the debounced fire effect lives further
     // down next to handleSeek.
@@ -843,6 +859,26 @@ export default function VideoPlayer({ src, movie, episode, authToken, durationSe
         // Fresh pipeline, no picture yet: poster covers the black gap below
         // until the first frame lands (set in the RAF loop).
         setHasPicture(false);
+        // Positional restore target for THIS pipeline, in both coordinate
+        // systems. targetAt (parent) wins; otherwise the saved-history seed
+        // applies. Local = target - origin, because video.currentTime always
+        // starts at 0 even when the session began at minute 10: assigning the
+        // absolute 780 would play minute 23. restorePendingRef gates the first
+        // progress reports until the restore lands — a rebuilt element ticks
+        // timeupdate at 0 first, and that 0 must never overwrite the parent's
+        // last-good playhead.
+        const savedForTarget = history.find(h => h.slug === movie.slug);
+        const historyResume = (savedForTarget && savedForTarget.currentEpisode === episode.slug)
+            ? computeResumeAt(
+                savedForTarget.progress,
+                durationSeconds || (Number.isFinite(video.duration) ? video.duration : 0),
+            )
+            : null;
+        const targetAbsolute = (typeof targetAt === 'number' && Number.isFinite(targetAt) && targetAt >= 0)
+            ? targetAt
+            : historyResume;
+        const restoreTargetLocal = targetAbsolute === null ? 0 : toLocalSeekTarget(targetAbsolute, sessionStartAt);
+        restorePendingRef.current = restoreTargetLocal > 0;
         // A new pipeline means the seek (if any) landed: drop its indicator.
         // Failures clear it via the fire-promise catch above instead. If this
         // line clears a seek but the session does NOT begin at the requested
@@ -941,19 +977,20 @@ export default function VideoPlayer({ src, movie, episode, authToken, durationSe
         };
 
         const restoreProgress = () => {
-            const saved = history.find(h => h.slug === movie.slug);
+            // Direct files carry whole-file timelines (origin is always 0),
+            // so the absolute target applies as-is. It already folds the
+            // history seed in when the parent sent none.
+            const at = targetAbsolute !== null && targetAbsolute > 0 ? targetAbsolute : 0;
+            if (at <= 0) return;
             const duration = durationSeconds || (Number.isFinite(video.duration) ? video.duration : 0);
-            if (saved && saved.currentEpisode === episode.slug && saved.progress) {
-                // Back off 2s so a reload never lands on the exact broken fragment.
-                const resumeAt = Math.max(0, saved.progress - 2);
-                video.currentTime = duration > 0 ? Math.min(resumeAt, Math.max(duration - 5, 0)) : resumeAt;
-            }
+            video.currentTime = duration > 0 ? Math.min(at, Math.max(duration - 5, 0)) : at;
         };
 
         if (!isHlsSrc) {
             video.src = src;
             const onLoaded = () => {
                 restoreProgress();
+                restorePendingRef.current = false;
                 startPlayback();
                 setIsLoading(false);
             };
@@ -1015,18 +1052,13 @@ export default function VideoPlayer({ src, movie, episode, authToken, durationSe
                 // always stays on Auto here.
                 hls.currentLevel = -1;
 
-                // Restore history (back off 2s to skip the exact stalled fragment).
-                // Seek-started sessions skip this: their truncated timeline
-                // begins at the target, so position 0 already IS the resume
-                // point and history would yank playback backwards.
-                const saved = history.find(h => h.slug === movie.slug);
-                const resumeAt = (sessionStartAt > 0 || !(saved && saved.currentEpisode === episode.slug))
-                    ? null
-                    : computeResumeAt(
-                        saved.progress,
-                        durationSeconds || (Number.isFinite(video.duration) ? video.duration : 0),
-                    );
+                // Positional restore in element-local time (see the hoisted
+                // target above). Origin>0 sessions restore too: local 0 IS the
+                // origin, not the resume point — skipping restore here used to
+                // replay the bucket's first ten minutes on every recovery.
+                const resumeAt: number | null = restoreTargetLocal > 0 ? restoreTargetLocal : null;
                 if (resumeAt === null) {
+                    restorePendingRef.current = false;
                     startPlayback();
                     setIsLoading(false);
                     return;
@@ -1052,6 +1084,7 @@ export default function VideoPlayer({ src, movie, episode, authToken, durationSe
                 const settleResumeAt = (target: number) => {
                     pendingResume = null;
                     clearResumeTimer();
+                    restorePendingRef.current = false;
                     const applyResume = () => {
                         try {
                             video.currentTime = target;
@@ -1082,6 +1115,7 @@ export default function VideoPlayer({ src, movie, episode, authToken, durationSe
                     if (plan.kind === 'none') {
                         pendingResume = null;
                         clearResumeTimer();
+                        restorePendingRef.current = false;
                         startPlayback();
                         setIsLoading(false);
                     } else if (plan.kind === 'seek-resolve') {
@@ -1090,16 +1124,22 @@ export default function VideoPlayer({ src, movie, episode, authToken, durationSe
                         // Hand off to the debounced seek-resolve flow
                         // (indicator + epoch guards). The spinner stays until
                         // the new pipeline arrives and rebuilds.
-                        const resumeKey = `${movie.slug}|${episode.slug}|${plan.at}`;
+                        // plan.at is ELEMENT-LOCAL (target - origin): the
+                        // parent resolves in full-film coordinates, so map it
+                        // back before handing off — forwarding local time
+                        // would yank playback to the wrong minutes.
+                        const displayAt = Math.floor(sessionStartAt + plan.at);
+                        const resumeKey = `${movie.slug}|${episode.slug}|${displayAt}`;
                         if (resumeFiredKeyRef.current === resumeKey) {
                             // Already tried this exact resume this mount (the
                             // server answered from-start): play what's buffered
                             // instead of looping resolves forever.
+                            restorePendingRef.current = false;
                             startPlayback();
                             setIsLoading(false);
                         } else {
                             resumeFiredKeyRef.current = resumeKey;
-                            beginSeekLock(plan.at);
+                            beginSeekLock(displayAt);
                         }
                     } else {
                         settleResumeAt(plan.at);
@@ -1175,14 +1215,87 @@ export default function VideoPlayer({ src, movie, episode, authToken, durationSe
                 authToken && src.includes('/api/playback/hls/')
                     ? `${src}${src.includes('?') ? '&' : '?'}access_token=${encodeURIComponent(authToken)}`
                     : src;
-            video.addEventListener('loadedmetadata', () => {
-                const saved = history.find(h => h.slug === movie.slug);
-                if (saved && saved.currentEpisode === episode.slug && saved.progress) {
-                    video.currentTime = Math.max(0, saved.progress - 2);
+            // Same restore policy as the hls.js branch, expressed with the
+            // element's own ranges: seeking past the written head snaps back
+            // to 0 on Safari, so hold the spinner until seekable/buffered
+            // covers the local target. Handlers are NAMED and removed on
+            // teardown — anonymous ones accumulated a copy per rebuild.
+            const nativeHead = (): number => {
+                try {
+                    const s = video.seekable;
+                    if (s.length > 0) return s.end(s.length - 1);
+                    const b = video.buffered;
+                    if (b.length > 0) return b.end(b.length - 1);
+                } catch {
+                    // Ranges can throw mid-teardown on some WebKit builds.
+                }
+                return NaN;
+            };
+            const nativeCovered = (target: number): boolean => {
+                if (!(target > 0)) return true;
+                const head = nativeHead();
+                return Number.isFinite(head) && head >= target - 2;
+            };
+            let nativeSettled = false;
+            let nativeTimer: ReturnType<typeof setTimeout> | undefined;
+            const cleanupNative = () => {
+                video.removeEventListener('loadedmetadata', onNativeLoaded);
+                video.removeEventListener('progress', onNativeProgress);
+                video.removeEventListener('canplay', onNativeCanPlay);
+                video.removeEventListener('error', onNativeError);
+                if (nativeTimer !== undefined) {
+                    clearTimeout(nativeTimer);
+                    nativeTimer = undefined;
+                }
+            };
+            const settleNative = (clampToCoverage: boolean) => {
+                if (nativeSettled) return;
+                nativeSettled = true;
+                cleanupNative();
+                restorePendingRef.current = false;
+                if (restoreTargetLocal > 0) {
+                    let at = restoreTargetLocal;
+                    if (clampToCoverage) {
+                        const head = nativeHead();
+                        at = Number.isFinite(head) && head > 4 ? Math.min(at, Math.max(0, head - 2)) : 0;
+                    }
+                    try {
+                        video.currentTime = at;
+                    } catch {
+                        // Element not seekable yet; the watchdog/recovery path
+                        // owns what happens next, not a spinner forever.
+                    }
                 }
                 startPlayback();
                 setIsLoading(false);
-            });
+            };
+            const onNativeLoaded = () => {
+                // Metadata is in but bytes may not be: settle at once only
+                // when the target is already covered.
+                if (nativeCovered(restoreTargetLocal)) settleNative(false);
+            };
+            const onNativeProgress = () => {
+                if (nativeCovered(restoreTargetLocal)) settleNative(false);
+            };
+            const onNativeCanPlay = () => {
+                if (nativeCovered(restoreTargetLocal)) settleNative(false);
+            };
+            const onNativeError = () => {
+                cleanupNative();
+                restorePendingRef.current = false;
+                setIsLoading(false);
+                const reason = 'Liên kết phát trực tiếp bị gián đoạn.';
+                if (onPlaybackFailure) onPlaybackFailure(reason);
+                else setError(`${reason} Bấm Thử lại để nối lại.`);
+            };
+            video.addEventListener('loadedmetadata', onNativeLoaded);
+            video.addEventListener('progress', onNativeProgress);
+            video.addEventListener('canplay', onNativeCanPlay);
+            video.addEventListener('error', onNativeError);
+            nativeCleanupRef.current = cleanupNative;
+            // Coverage never arrives (writer died mid-fill): clamp to what is
+            // watchable instead of spinning forever.
+            nativeTimer = setTimeout(() => settleNative(true), 15000);
         } else {
             setError("Trình duyệt không hỗ trợ HLS.");
         }
@@ -1200,12 +1313,20 @@ export default function VideoPlayer({ src, movie, episode, authToken, durationSe
                 video.removeEventListener('loadedmetadata', resumeListenerRef.current);
                 resumeListenerRef.current = null;
             }
+            if (nativeCleanupRef.current) {
+                nativeCleanupRef.current();
+                nativeCleanupRef.current = null;
+            }
             if (hlsRef.current) {
                 hlsRef.current.destroy();
                 hlsRef.current = null;
             }
+            // A stall timer armed by the old pipeline must not fire on the new
+            // one: lastProgressRef belongs to departed element-time and would
+            // read as a stall. It re-arms on the next play/waiting event.
+            clearStallTimer();
         };
-    }, [src, movie.slug, episode.slug, authToken, retryKey, reloadKey, onPlaybackFailure, seekStartSupported]);
+    }, [src, movie.slug, episode.slug, authToken, retryKey, reloadKey, onPlaybackFailure, seekStartSupported, targetAt]);
 
     // History Saver
     useEffect(() => {
@@ -1302,6 +1423,10 @@ export default function VideoPlayer({ src, movie, episode, authToken, durationSe
         if (!video) return;
 
         const handleTimeUpdate = () => {
+            // A rebuilt pipeline ticks 0 before its restore seek lands: that
+            // pre-restore tick must never overwrite the parent's last-good
+            // playhead (the "recovery replays from 0/bucket" class of bugs).
+            if (restorePendingRef.current) return;
             if (video.paused) setCurrentTime(video.currentTime);
             if (video.currentTime > lastProgressRef.current + 0.25) {
                 localStallRecoveryRef.current = false;
@@ -1592,11 +1717,25 @@ export default function VideoPlayer({ src, movie, episode, authToken, durationSe
     // (level not loaded yet, or a native progressive file).
     const playlistHeadEnd = (): number => {
         const hls = hlsRef.current;
-        if (!hls || !Array.isArray(hls.levels) || hls.levels.length === 0) return NaN;
-        const active = hls.levels[hls.autoLevelEnabled ? hls.loadLevel : hls.currentLevel]
-            ?? hls.levels[hls.currentLevel];
-        const total = active?.details?.totalduration;
-        return typeof total === 'number' ? total : NaN;
+        if (hls && Array.isArray(hls.levels) && hls.levels.length > 0) {
+            const active = hls.levels[hls.autoLevelEnabled ? hls.loadLevel : hls.currentLevel]
+                ?? hls.levels[hls.currentLevel];
+            const total = active?.details?.totalduration;
+            if (typeof total === 'number') return total;
+        }
+        // Native branch (no hls.js internals): the element's own ranges in
+        // session-local seconds. NaN stays NaN — callers treat it as "no
+        // information", never as "everything is seekable".
+        const video = videoRef.current;
+        if (video) {
+            try {
+                if (video.seekable.length > 0) return video.seekable.end(video.seekable.length - 1);
+                if (video.buffered.length > 0) return video.buffered.end(video.buffered.length - 1);
+            } catch {
+                // Ranges can throw mid-teardown on some WebKit builds.
+            }
+        }
+        return NaN;
     };
 
     const handleSeek = (e: React.ChangeEvent<HTMLInputElement>) => {

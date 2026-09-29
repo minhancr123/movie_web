@@ -918,7 +918,7 @@ const isYoungWriter = (live) => {
  * Returns `{ data }` on success, `{ empty: true }` when Vimo simply has no
  * such title, or `{ error }` when the token/stream is unusable.
  */
-const serveVimoDirect = async ({ db, req, detail, type, tmdbId, season, episode, vimoToken = null }) => {
+const serveVimoDirect = async ({ db, req, detail, type, tmdbId, season, episode, vimoToken = null, requestedStartAt = 0 }) => {
   let streamType = type === 'tv' ? 'series' : 'movie';
   let vimoId = null;
   let vimoName = '';
@@ -1000,6 +1000,8 @@ const serveVimoDirect = async ({ db, req, detail, type, tmdbId, season, episode,
       fileName: pick.title || vimoName || '',
       audioIndex: 0,
       candidate,
+      // Whole-file URL; the player seeks client-side. Additive.
+      requestedPositionSeconds: requestedStartAt,
       sourceToken: `vimo|${streamType}|${streamType === 'series' ? `${vimoId}:${epSeason}:${epEpisode}` : vimoId}`,
       vimo: { id: vimoId, name: vimoName || pick.title || '' },
     },
@@ -1170,7 +1172,8 @@ export const resolvePlayback = async (req, res) => {
                     reason: 'YaStream Vietsub (Phim Việt)',
                     sourceToken: first.sourceToken, 
                     streams: vietsubData.yastream.streams,
-                    skipProbe: true
+                    skipProbe: true,
+                    requestedPositionSeconds: requestedStartAt,
                 }
             });
         }
@@ -1213,6 +1216,7 @@ export const resolvePlayback = async (req, res) => {
               sourceToken: pick.sourceToken,
               streams: yaSource.streams,
               skipProbe: true,
+              requestedPositionSeconds: requestedStartAt,
             },
           });
         }
@@ -1225,7 +1229,7 @@ export const resolvePlayback = async (req, res) => {
     // 1c. Manual Vimo pick: direct HLS, no debrid key / torrent / probe needed.
     if (vimoToken) {
       stage('vimo');
-      const served = await serveVimoDirect({ db, req, detail, type, tmdbId, season, episode, vimoToken });
+      const served = await serveVimoDirect({ db, req, detail, type, tmdbId, season, episode, vimoToken, requestedStartAt });
       if (served.error) return fail(res, 404, served.error);
       if (served.data) return res.json({ success: true, data: served.data });
       return fail(res, 404, 'Vimo hiện không có link cho nội dung này');
@@ -1393,6 +1397,10 @@ export const resolvePlayback = async (req, res) => {
             candidate: sanitizeCandidateForResponse(candidate),
             sourceToken: resolveSourceToken(candidate),
             startOffset: reusable.startAt ?? 0,
+            // Absolute position the viewer asked for, BEFORE the 300s bucket
+            // rounded it to the session origin above. Additive: old clients
+            // ignore unknown fields and keep reading startOffset alone.
+            requestedPositionSeconds: requestedStartAt,
             // This response reuses a session somebody else is already filling,
             // which findReusableRemuxSession chose over spawning one closer to
             // the target. A reused whole-film session therefore answers a
@@ -1780,6 +1788,10 @@ export const resolvePlayback = async (req, res) => {
             sessionId,
             url: inputUrl,
             expiresIn: 900,
+            // Whole-file URL: the player seeks client-side, so the request
+            // target travels with the response for the same target/origin
+            // bookkeeping the remux paths use. Additive.
+            requestedPositionSeconds: requestedStartAt,
             fileName: publicFileName(file.name || ''),
             audioIndex: decision.audioIndex ?? 0,
             candidate: sanitizeCandidateForResponse(candidate),
@@ -1894,6 +1906,8 @@ export const resolvePlayback = async (req, res) => {
             reason: publicText('Dùng lại bản remux hoàn chỉnh đã có', 'Đang phát'),
             fileName: publicFileName(file.name || ''),
             audioIndex: decision.audioIndex ?? 0,
+            startOffset: 0,
+            requestedPositionSeconds: requestedStartAt,
             presentationShiftMs: shiftMs,
             seekStartSupported: seekStartEnabled(),
             published: true,
@@ -2116,6 +2130,9 @@ export const resolvePlayback = async (req, res) => {
           // Truncated-timeline origin: the playlist covers [startOffset, end],
           // presented 0-based. 0 for ordinary from-the-start sessions.
           startOffset: seekOrigin,
+          // Absolute position the viewer asked for, BEFORE bucketing rounded
+          // it to the origin above. Additive: old clients keep startOffset.
+          requestedPositionSeconds: requestedStartAt,
           seekStartSupported: seekStartEnabled(),
           // See the reuse path above: the remux clock leads source time by the
           // B-frame reorder delay, and subtitle cues are in source time.
@@ -2152,7 +2169,7 @@ export const resolvePlayback = async (req, res) => {
       );
     }
     stage('vimo-fallback');
-      const vimoFallback = await serveVimoDirect({ db, req, detail, type, tmdbId, season, episode });
+      const vimoFallback = await serveVimoDirect({ db, req, detail, type, tmdbId, season, episode, requestedStartAt });
       if (vimoFallback?.data) {
         // Silent wrong-source swap is worse than an error screen: Vimo carries
         // its own encode (different cut/timing, often hardcoded subs), so every

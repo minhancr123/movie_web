@@ -17,7 +17,7 @@ execFileSync(
     { cwd: root, stdio: 'pipe' },
 );
 
-const { computeResumeAt, clampSeekToHead, pickDisplayDuration, decideSeekTarget, planResume, shouldAutoplayAfterRebuild, shouldDowngradeForDropped, audioSwitchStartAt, subtitleLookupTime, classifyStartAt } = await import(
+const { computeResumeAt, clampSeekToHead, pickDisplayDuration, decideSeekTarget, planResume, shouldAutoplayAfterRebuild, shouldDowngradeForDropped, audioSwitchStartAt, subtitleLookupTime, classifyStartAt, toLocalSeekTarget, pickRecoveryTarget, hasSustainedProgress, RECOVERY_BACKOFF } = await import(
     pathToFileURL(path.join(outDir, 'playback-progress.js')).href
 );
 process.on('exit', () => rmSync(outDir, { recursive: true, force: true }));
@@ -263,4 +263,39 @@ test('classifyStartAt stays quiet about honoured seeks, buckets and no request',
         classifyStartAt({ requestedStartAt: 1798, sessionStartAt: NaN, seekStartSupported: true, reused: true }),
         'building-from-start',
     );
+});
+
+test('toLocalSeekTarget converts absolute targets to element time', () => {
+    assert.equal(toLocalSeekTarget(780, 600), 180, 'target=780 origin=600 seeks local=180');
+    assert.equal(toLocalSeekTarget(600, 600), 0);
+    assert.equal(toLocalSeekTarget(0, 0), 0);
+    assert.equal(toLocalSeekTarget(120, 0), 120, 'from-start sessions pass through');
+    assert.equal(toLocalSeekTarget(100, 600), 0, 'targets before the origin clamp, never negative');
+    assert.equal(toLocalSeekTarget(NaN, 600), 0);
+});
+
+test('pickRecoveryTarget prefers the freshest intent and never rewinds to the bucket', () => {
+    assert.equal(RECOVERY_BACKOFF, 2);
+    // The headline repro: origin=600, playhead=780 recovers at 778, not 600.
+    assert.equal(pickRecoveryTarget({ playhead: 780, historyProgress: 600 }), 778);
+    assert.equal(
+        pickRecoveryTarget({ pendingSeek: 900, playhead: 780, historyProgress: 600 }),
+        900,
+        'a mid-seek target outranks the playhead',
+    );
+    assert.equal(
+        pickRecoveryTarget({ playhead: null, historyProgress: 300 }),
+        298,
+        'history is the fallback when no live playhead exists',
+    );
+    assert.equal(pickRecoveryTarget({}), 0, 'nothing known starts at 0');
+    assert.equal(pickRecoveryTarget({ playhead: 1 }), 0, 'near-zero clamps, never negative');
+});
+
+test('hasSustainedProgress only resets recovery after real forward movement', () => {
+    assert.equal(hasSustainedProgress(780.25, 778), false, 'a 0.25s tick is not progress');
+    assert.equal(hasSustainedProgress(783, 778), true, '5s of steady play resets');
+    assert.equal(hasSustainedProgress(700, 778), false, 'seeking backwards is not progress');
+    assert.equal(hasSustainedProgress(NaN, 778), false);
+    assert.equal(hasSustainedProgress(783, null), false);
 });

@@ -10,6 +10,81 @@
  *    unseekable ("can't skip to the middle").
  */
 
+/**
+ * Absolute (full-film) target -> session-local element time.
+ *
+ * `video.currentTime` always starts at 0 even when the remux session began at
+ * minute 10 (origin=600): assigning the absolute 780 would play minute 23
+ * (600 + 780). Every restore/seek path must go through here.
+ */
+export const toLocalSeekTarget = (
+  targetAbsolute: number,
+  sessionStartAt: number,
+): number => {
+  const target = Number(targetAbsolute);
+  if (!Number.isFinite(target)) return 0;
+  const origin = Number(sessionStartAt);
+  const base = Number.isFinite(origin) && origin > 0 ? origin : 0;
+  return Math.max(0, target - base);
+};
+
+/** How far a same-file recovery may step back: never rewatch the bucket. */
+export const RECOVERY_BACKOFF = 2;
+
+const sanePosition = (value: number | null | undefined): number | null => {
+  const n = Number(value);
+  return Number.isFinite(n) && n > 0 ? n : null;
+};
+
+/**
+ * Where a same-file recovery resolve should ask to start.
+ *
+ * Priority is intent freshness, not session bookkeeping:
+ * 1. pendingSeek — the viewer is mid-seek; keep their target as-is.
+ * 2. playhead — the newest known position, backed off so a reload never
+ *    lands on the exact broken fragment (and never back to the origin bucket:
+ *    playhead=780 recovers at 778, not 600).
+ * 3. historyProgress — saved position when no live playhead exists yet.
+ * 4. 0 — nothing known; start at the beginning rather than a garbage offset.
+ */
+export const pickRecoveryTarget = (args: {
+  pendingSeek?: number | null;
+  playhead?: number | null;
+  historyProgress?: number | null;
+}): number => {
+  const pending = sanePosition(args.pendingSeek);
+  if (pending !== null) return pending;
+  const head = sanePosition(args.playhead);
+  if (head !== null) return Math.max(0, head - RECOVERY_BACKOFF);
+  const history = sanePosition(args.historyProgress);
+  if (history !== null) return Math.max(0, history - RECOVERY_BACKOFF);
+  return 0;
+};
+
+/**
+ * Whether playback has sustainably advanced past the last recovery point.
+ *
+ * timeupdate ticks every ~0.25s: resetting the recovery-attempt counter on
+ * every tick turns a stuttering stream into an infinite retry loop that never
+ * surfaces an error. Only steady forward progress (>= minDelta, default 5s)
+ * resets it; seeks backwards and stalls never do.
+ */
+export const hasSustainedProgress = (
+  positionSeconds: number,
+  lastRecoveryPosition: number | null | undefined,
+  minDelta = 5,
+): boolean => {
+  const at = Number(positionSeconds);
+  // No recovery on record means no baseline to measure against: never reset.
+  // (Number(null) is 0, so the null check must come before the conversion.)
+  if (lastRecoveryPosition === null || lastRecoveryPosition === undefined) return false;
+  const from = Number(lastRecoveryPosition);
+  if (!Number.isFinite(at) || !Number.isFinite(from)) return false;
+  const delta = Number(minDelta);
+  if (!Number.isFinite(delta) || delta <= 0) return false;
+  return at - from >= delta;
+};
+
 /** Resume position from saved history, or null when playback starts at 0. */
 export const computeResumeAt = (
   savedProgress: unknown,
