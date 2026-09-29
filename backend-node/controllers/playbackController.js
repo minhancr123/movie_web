@@ -65,6 +65,7 @@ import {
   registerSessionViewer,
   touchSessionViewer,
   removeSessionViewer,
+  VIEWER_LEASE_MS,
   touchTranscodeSession,
   shouldReuseRemuxSession,
   sessionPath,
@@ -223,10 +224,11 @@ export const buildSessionId = () => crypto.randomBytes(16).toString('hex');
 // before either has saved its session, then each starts an ffmpeg process.
 const playbackResolveTails = new Map();
 
-// One live resolve per viewer: opening another title/episode aborts the
-// previous one's remaining work (prepare/probe/buffer waits) instead of
+// Live resolves per viewer: opening another title/episode aborts the
+// previous ones' remaining work (prepare/probe/buffer waits) instead of
 // letting a departed film burn the writer slot it no longer needs. Same-title
-// retries and seeks share the ref, so they never abort each other.
+// retries and seeks share the ref, so they never abort each other — and a Set
+// (not a single slot) so an A1→A2→B chain aborts both A1 and A2.
 const activeResolveByUser = new Map();
 
 const resolveSupersededError = () =>
@@ -1058,25 +1060,41 @@ export const resolvePlayback = async (req, res) => {
   // same viewer aborts this one's remaining work at the next checkpoint (loop
   // top, buffer waits, pre-spawn). The aborted request answers
   // RESOLVE_SUPERSEDED, which the client drops silently — the newer intent
-  // owns the UI. Client disconnects abort the same way via req close.
+  // owns the UI. Client disconnects abort the same way via res close.
+  //
+  // Every in-flight resolve is tracked (a Set, not a single slot): same-title
+  // retries/seeks share the ref and must not evict each other from the map,
+  // or an A1→A2→B chain would lose A1 and leave it running after the switch.
   const viewerKey = String(req.user?.userId || '');
   const switchRef = [type, tmdbId, type === 'tv' ? `${season ?? ''}:${episode ?? ''}` : 'full'].join(':');
   const switchController = new AbortController();
   const switchSignal = switchController.signal;
+  const switchRecord = { ref: switchRef, controller: switchController, resolveId };
   const throwIfSuperseded = () => {
     if (switchSignal.aborted) throw resolveSupersededError();
   };
   if (viewerKey) {
-    const prev = activeResolveByUser.get(viewerKey);
-    if (prev && prev.ref !== switchRef) {
-      prev.controller.abort();
-      if (prev.resolveId) setResolveStage(prev.resolveId, 'cancelled', 'switched content');
+    let actives = activeResolveByUser.get(viewerKey);
+    if (!(actives instanceof Set)) {
+      actives = new Set();
+      activeResolveByUser.set(viewerKey, actives);
     }
-    activeResolveByUser.set(viewerKey, { ref: switchRef, controller: switchController, resolveId });
+    for (const prev of actives) {
+      if (prev.ref !== switchRef) {
+        prev.controller.abort();
+        if (prev.resolveId) setResolveStage(prev.resolveId, 'cancelled', 'switched content');
+        actives.delete(prev);
+      }
+    }
+    actives.add(switchRecord);
   }
-  req.on('close', () => {
+  // res close, never req close: the request stream ends as soon as the POST
+  // body is fully read (normal for every resolve), while res closes early
+  // only when the connection actually drops before the response completes.
+  const onResClose = () => {
     if (!res.writableEnded) switchController.abort();
-  });
+  };
+  res.on('close', onResClose);
 
   // One account can still deliberately change source/audio after the current
   // resolve finishes. Only concurrent work for the same title is queued; this
@@ -1111,7 +1129,12 @@ export const resolvePlayback = async (req, res) => {
   let lastShiftMs = null;
   // Where a seek-started session's bytes really begin, once measured.
   let lastSeekOrigin = null;
-  const outcome = await withPlaybackResolveLock(lockKey, async () => {
+  // try/finally on purpose: an unhandled throw (dead socket, a DB outage
+  // escaping the middleware) must still release the close listener and our
+  // per-viewer record below.
+  let outcome;
+  try {
+    outcome = await withPlaybackResolveLock(lockKey, async () => {
     const db = getDB();
 
     try {
@@ -1395,11 +1418,20 @@ export const resolvePlayback = async (req, res) => {
         startAt: requestedStartAt,
       });
       if (reusable) {
-        // Back in use: drop any leave-drained/lease-lapsed mark from a
-        // previous viewer, or admission could reap a session that was just
-        // handed out again before the new viewer's first heartbeat lands.
+        // Back in use: drop any leave-drained mark AND prune lapsed leases
+        // from previous viewers, or admission could reap a session that was
+        // just handed out again before the new viewer's first heartbeat
+        // lands. Fresh leases are kept — a second tab may still hold them.
         const liveReuse = getRemuxSession(reusable.sessionId);
-        if (liveReuse) liveReuse.abandonedAt = undefined;
+        if (liveReuse) {
+          liveReuse.abandonedAt = undefined;
+          if (liveReuse.viewers instanceof Map) {
+            const now = Date.now();
+            for (const [vid, seen] of liveReuse.viewers) {
+              if (now - (Number(seen) || 0) >= VIEWER_LEASE_MS) liveReuse.viewers.delete(vid);
+            }
+          }
+        }
         // Sessions stored before this field existed would otherwise report no
         // correction at all, leaving their subtitles early for the session's
         // whole life. Fall back to the cached probe facts for the same file.
@@ -2080,8 +2112,15 @@ export const resolvePlayback = async (req, res) => {
       } catch (error) {
         // A superseded resolve must die here: falling through would prepare
         // a Vimo fallback for a departed film, or answer 502 instead of the
-        // code the client drops silently.
-        if (error?.code === 'RESOLVE_SUPERSEDED') throw error;
+        // code the client drops silently. And if ffmpeg already spawned for
+        // this candidate, its writer goes with it — otherwise the orphan
+        // keeps the only slot while having no DB session for reuse to find,
+        // and the next film 503s through its whole retry ladder.
+        if (error?.code === 'RESOLVE_SUPERSEDED') {
+          await stopRemuxSession(sessionId).catch(() => false);
+          await fs.rm(sessionPath(sessionId), { recursive: true, force: true }).catch(() => {});
+          throw error;
+        }
         // A full box is not this candidate's fault: every other source would
         // hit the same ceiling, so walking the rest of the list just burns
         // TorBox calls to arrive at the same answer. Say so and stop.
@@ -2271,12 +2310,19 @@ export const resolvePlayback = async (req, res) => {
       console.error(`resolvePlayback error tmdb=${tmdbId}:`, error.message);
       return fail(res, error.status || 500, error.message || 'Lỗi server');
     }
-  });
-  // This intent is settled: a newer resolve may now own the viewer slot. Only
-  // the owner clears, so a slow earlier resolve cannot evict the newer one.
-  if (viewerKey) {
-    const cur = activeResolveByUser.get(viewerKey);
-    if (cur?.controller === switchController) activeResolveByUser.delete(viewerKey);
+    });
+  } finally {
+    // This intent is settled: drop exactly our own record. Deleting by record
+    // (not by key) so a slow earlier resolve cannot evict a newer one, and an
+    // emptied per-viewer set is removed so the map cannot grow without bound.
+    res.off('close', onResClose);
+    if (viewerKey) {
+      const actives = activeResolveByUser.get(viewerKey);
+      if (actives instanceof Set) {
+        actives.delete(switchRecord);
+        if (actives.size === 0) activeResolveByUser.delete(viewerKey);
+      }
+    }
   }
   // One line per resolve with the full phase timeline: when a viewer reports
   // "it loads forever", this (plus their stage pill) names the slow leg

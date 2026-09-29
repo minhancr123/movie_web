@@ -516,7 +516,10 @@ export default function VideoPlayer({ src, movie, episode, authToken, durationSe
     const [subJobId, setSubJobId] = useState<string | null>(null);
     const subLoadModeRef = useRef<'idle' | 'external' | 'full'>('idle');
     const subHasTracksRef = useRef(false);
-    const subRequestInFlightRef = useRef(false);
+    // Epoch of the in-flight inventory request (null = none). Scoped per
+    // source generation: a request from a departed source must neither block
+    // nor chain work for the current one (see the loader below).
+    const subRequestInFlightEpochRef = useRef<number | null>(null);
     const subRequestFullAfterRef = useRef(false);
     // Identity of the playing source for the subtitle inventory. Bumped on
     // every source change so a late response from the previous source can
@@ -597,12 +600,17 @@ export default function VideoPlayer({ src, movie, episode, authToken, durationSe
         if (!subContext) return;
         if (subLoadModeRef.current === 'full') return;
         if (subLoadModeRef.current === 'external' && (subHasTracksRef.current || !allowEmbedded)) return;
-        if (subRequestInFlightRef.current) {
+        const epoch = subSourceEpochRef.current;
+        const inFlight = subRequestInFlightEpochRef.current;
+        // A request from a departed generation never blocks the current one:
+        // the source-change effect clears the slot, so any non-null flight
+        // here belongs to this generation — queue the full follow-up behind
+        // it and return.
+        if (inFlight !== null) {
             if (allowEmbedded) subRequestFullAfterRef.current = true;
             return;
         }
-        subRequestInFlightRef.current = true;
-        const epoch = subSourceEpochRef.current;
+        subRequestInFlightEpochRef.current = epoch;
         setSubStatus('loading');
         setSubError('');
         try {
@@ -640,45 +648,80 @@ export default function VideoPlayer({ src, movie, episode, authToken, durationSe
             setSubStatus('error');
             subLoadModeRef.current = 'idle';
         } finally {
-            subRequestInFlightRef.current = false;
-            if (subRequestFullAfterRef.current) {
-                subRequestFullAfterRef.current = false;
-                void loadSubtitleInventory(true);
+            // Only the owning generation releases the slot and chains the
+            // queued full load: a stale generation's finally must not clear a
+            // newer generation's flight, nor re-fire the old closure (which
+            // would fetch the departed source's inventory again).
+            if (subRequestInFlightEpochRef.current === epoch) {
+                subRequestInFlightEpochRef.current = null;
+                if (subRequestFullAfterRef.current && epoch === subSourceEpochRef.current) {
+                    subRequestFullAfterRef.current = false;
+                    void loadSubtitleInventory(true);
+                }
             }
         }
         // eslint-disable-next-line react-hooks/exhaustive-deps
     }, [subContext?.type, subContext?.tmdbId, subContext?.season, subContext?.episode, subContext?.sourceToken, subContext?.playbackSessionId]);
 
-    // A new playing source owns a new subtitle inventory: drop the old list
-    // so the loader below cannot early-return on the previous source's
-    // 'full' mode and leave stale tracks on screen. The epoch bump discards
-    // any in-flight response from the departed source.
+    // A new playing FILE owns a new subtitle inventory: drop the old list so
+    // the loader below cannot early-return on the previous source's 'full'
+    // mode and leave stale tracks on screen. The epoch bump discards any
+    // in-flight response from the departed source.
+    //
+    // A rebuilt SESSION of the same file (seek/recovery resolve hands back a
+    // new sessionId and URL) is NOT a new file: tracks, the viewer's pick
+    // (even a manual English/off choice), bilingual pairing and cue cache all
+    // survive. Only the loader arms re-fire so the new session's inventory
+    // (notably its fresh extraction job) is fetched.
+    const subSessionKeyRef = useRef<string | null>(null);
     useEffect(() => {
-        const key = `${subContext?.sourceToken ?? ''}|${subContext?.playbackSessionId ?? ''}|${src}`;
+        const contentKey = [
+            subContext?.type ?? '', subContext?.tmdbId ?? '',
+            subContext?.season ?? '', subContext?.episode ?? '',
+            subContext?.sourceToken ?? '',
+        ].join(':');
+        const sessionKey = `${subContext?.playbackSessionId ?? ''}|${src}`;
         if (subSourceKeyRef.current === null) {
-            subSourceKeyRef.current = key;
+            subSourceKeyRef.current = contentKey;
+            subSessionKeyRef.current = sessionKey;
             return;
         }
-        if (subSourceKeyRef.current === key) return;
-        subSourceKeyRef.current = key;
+        if (subSourceKeyRef.current !== contentKey) {
+            subSourceKeyRef.current = contentKey;
+            subSessionKeyRef.current = sessionKey;
+            subSourceEpochRef.current += 1;
+            subLoadModeRef.current = 'idle';
+            subHasTracksRef.current = false;
+            subRequestInFlightEpochRef.current = null;
+            subRequestFullAfterRef.current = false;
+            autoSubRef.current = true;
+            autoSubSourceRef.current = null;
+            selectedSubRef.current = 'off';
+            setSubTracks([]);
+            setSubMatch({ checked: false, languages: {} });
+            setCueCache({});
+            setSubJobId(null);
+            setSelectedSub('off');
+            setBilingual(false);
+            setSecondarySub('');
+            setSubNote('');
+            setSubError('');
+            setSubStatus('idle');
+            return;
+        }
+        if (subSessionKeyRef.current === sessionKey) return;
+        subSessionKeyRef.current = sessionKey;
+        // Same file, new session: re-arm the loader for the new inventory,
+        // retire the old session's in-flight callbacks, keep viewer state.
+        // The dead session's extraction job is dropped too: the new session
+        // mints its own, and the poller below must not chase the old one.
         subSourceEpochRef.current += 1;
         subLoadModeRef.current = 'idle';
         subHasTracksRef.current = false;
+        subRequestInFlightEpochRef.current = null;
         subRequestFullAfterRef.current = false;
-        autoSubRef.current = true;
-        autoSubSourceRef.current = null;
-        selectedSubRef.current = 'off';
-        setSubTracks([]);
-        setSubMatch({ checked: false, languages: {} });
-        setCueCache({});
         setSubJobId(null);
-        setSelectedSub('off');
-        setBilingual(false);
-        setSecondarySub('');
-        setSubNote('');
-        setSubError('');
-        setSubStatus('idle');
-    }, [subContext?.sourceToken, subContext?.playbackSessionId, src]);
+    }, [subContext?.type, subContext?.tmdbId, subContext?.season, subContext?.episode, subContext?.sourceToken, subContext?.playbackSessionId, src]);
 
     // Warm the cheap external subtitle lookup in the background. It never
     // starts embedded ffmpeg extraction, so playback bandwidth stays untouched.
