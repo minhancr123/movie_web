@@ -84,10 +84,11 @@ console.log('ok - codec-transcode plan sizes height/bandwidth/tonemap correctly'
 
 /* ------------------------------------------------------- decidePlaybackMode */
 
-// Old behaviour is the default: no opts, no fallback.
+// Old behaviour is the default: no opts, no fallback. (The hevcProbe
+// fixture is Main 10, so the reason names Main 10 specifically.)
 const legacy = decidePlaybackMode(hevcProbe(), NO_HEVC_CAPS);
 assert.equal(legacy.mode, 'reject');
-assert.match(legacy.reason, /không giải mã được HEVC/);
+assert.match(legacy.reason, /Main 10/);
 
 // Explicitly disabled also rejects.
 const disabled = decidePlaybackMode(hevcProbe(), NO_HEVC_CAPS, null, { videoTranscode: OFF });

@@ -12,9 +12,15 @@
  *   - No HDR support                  -> avoid Dolby Vision / HDR10+ (washed-out
  *                                        colours are worse than 1080p SDR)
  *
+ * (Single-source-of-truth import below: the Main 10 probe check lives in
+ * remuxService and is shared with the resolve-time decision. No cycle —
+ * remuxService never imports this module.)
+ *
  * Bitrate targets 15-30 Mbps: below that 4K looks soft, above it REMUX sources
  * waste bandwidth for no visible gain on a consumer display.
  */
+
+import { isHevcMain10 } from './remuxService.js';
 
 /* ---------------------------------------------------------- label parsing */
 
@@ -248,6 +254,12 @@ export const parseCandidate = (candidate, { expectedTitles = [], expectedYear = 
  */
 export const normalizeCapabilities = (caps = {}) => ({
   hevc: Boolean(caps.hevc),
+  // Old clients predate the Main 10 probe and send no hevcMain10: inherit
+  // `hevc` so their behaviour is exactly what shipped before (a capable
+  // device keeps playing Main 10 copies; an incapable one fails the same
+  // way it always did until it upgrades). New clients send an explicit
+  // boolean and get exact Main 10 routing.
+  hevcMain10: Boolean(caps.hevcMain10 ?? caps.hevc),
   av1: Boolean(caps.av1),
   hdr: Boolean(caps.hdr),
   maxHeight: Number(caps.maxHeight) > 0 ? Number(caps.maxHeight) : 1080,
@@ -371,11 +383,26 @@ export const scoreCandidate = (candidate, caps, { runtimeMinutes = null, videoTr
   // HEVC stream to a Chrome user means a black screen, but a server-side
   // AVC transcode of the same release plays fine — worse than native, so it
   // ranks below directly-playable sources, but far better than unwatchable.
+  //
+  // HEVC Main 10 routes on its own capability: probed profile/pixfmt (from
+  // a previous ffprobe of this exact file) outranks the release name, which
+  // almost never states bit depth. Unknown depth falls back to the plain
+  // hevc flag, and decidePlaybackMode enforces with the live probe later.
+  const candidateMain10 = candidate.codec === 'hevc'
+    && (candidate.probedProfile !== undefined || candidate.probedPixFmt !== undefined)
+    && isHevcMain10({
+      codec: 'hevc',
+      profile: candidate.probedProfile,
+      pixFmt: candidate.probedPixFmt,
+    });
+  const hevcCapable = candidateMain10 ? Boolean(caps.hevcMain10) : Boolean(caps.hevc);
+  const hevcLabel = candidateMain10 ? 'HEVC Main 10' : 'HEVC';
   for (const { codec, label } of [
-    { codec: 'hevc', label: 'HEVC' },
+    { codec: 'hevc', label: hevcLabel },
     { codec: 'av1', label: 'AV1' },
   ]) {
-    if (candidate.codec === codec && !caps[codec]) {
+    const capable = codec === 'hevc' ? hevcCapable : caps[codec];
+    if (candidate.codec === codec && !capable) {
       const vt = videoTranscode || { allowed: false, hardware: false };
       const srcH = Number(candidate.resolution) || 0;
       const capH = Number(caps.maxHeight) > 0 ? Number(caps.maxHeight) : 1080;

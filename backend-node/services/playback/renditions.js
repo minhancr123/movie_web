@@ -18,7 +18,7 @@
 import crypto from 'crypto';
 import fs from 'fs/promises';
 import path from 'path';
-import { sessionPath } from './remuxService.js';
+import { sessionPath, VIEWER_LEASE_MS } from './remuxService.js';
 
 const GB = 1024 ** 3;
 
@@ -212,16 +212,95 @@ export const publishRendition = async ({ renditionId, sessionId }) => {
 };
 
 /**
+ * Viewer pins on finished renditions: a rendition with a live viewer lease
+ * is inviolable, even when expired or LRU-oldest. Pins are fed by the
+ * session heartbeat/leave endpoints (a published session carries its
+ * rendition id) and lapse on their own after a missed-lease window, so a
+ * crashed tab cannot pin forever. In-memory like the writer leases: the
+ * backend is a single process, and a restart orphans writers anyway.
+ */
+const renditionPins = new Map();
+
+/** Add/refresh one viewer's pin. Unknown ids are ignored, never throw. */
+export const pinRenditionViewer = (renditionId, viewerId, now = Date.now()) => {
+  const id = safeRenditionId(renditionId);
+  if (!id || !viewerId) return false;
+  let viewers = renditionPins.get(id);
+  if (!(viewers instanceof Map)) {
+    viewers = new Map();
+    renditionPins.set(id, viewers);
+  }
+  viewers.set(String(viewerId), Number(now) || Date.now());
+  return true;
+};
+
+/** Drop one viewer's pin; prunes the id entirely when no viewers remain. */
+export const unpinRenditionViewer = (renditionId, viewerId) => {
+  const id = safeRenditionId(renditionId);
+  const viewers = id ? renditionPins.get(id) : null;
+  if (!(viewers instanceof Map)) return 0;
+  if (viewerId) viewers.delete(String(viewerId));
+  if (viewers.size === 0) renditionPins.delete(id);
+  return viewers.size;
+};
+
+/** True when one rendition holds any unexpired viewer lease (sweeping only
+ * its own stale viewers). Used as a last-moment re-check before unlink: a
+ * heartbeat that lands after the budget snapshot must still save the file.
+ */
+export const isRenditionPinned = (renditionId, { now = Date.now(), leaseMs = VIEWER_LEASE_MS } = {}) => {
+  const id = safeRenditionId(renditionId);
+  const viewers = id ? renditionPins.get(id) : null;
+  if (!(viewers instanceof Map)) return false;
+  const t = Number(now) || Date.now();
+  for (const [viewerId, seen] of viewers) {
+    if (t - (Number(seen) || 0) >= leaseMs) viewers.delete(viewerId);
+  }
+  if (viewers.size === 0) {
+    renditionPins.delete(id);
+    return false;
+  }
+  return true;
+};
+
+/** Live pins after sweeping lapsed leases. Exported for budget enforcement. */
+export const getPinnedRenditionIds = ({ now = Date.now(), leaseMs = VIEWER_LEASE_MS } = {}) => {
+  const t = Number(now) || Date.now();
+  const pinned = new Set();
+  for (const [id, viewers] of renditionPins) {
+    if (!(viewers instanceof Map)) {
+      renditionPins.delete(id);
+      continue;
+    }
+    for (const [viewerId, seen] of viewers) {
+      if (t - (Number(seen) || 0) >= leaseMs) viewers.delete(viewerId);
+    }
+    if (viewers.size === 0) renditionPins.delete(id);
+    else pinned.add(id);
+  }
+  return pinned;
+};
+
+/**
  * Eviction planner (pure): expired rows first (oldest access first), then
- * least-recently-used until under budget. Mirrors the transcode janitor's
- * semantics so operators get one mental model for both stores.
+ * least-recently-used until under budget — SKIPPING anything pinned by a
+ * live viewer lease. Mirrors the transcode janitor's semantics so operators
+ * get one mental model for both stores. When everything is pinned, the
+ * answer is an empty evict list (log, do not delete what is being watched).
  */
 export const selectRenditionEvictions = (
   entries,
-  { now = Date.now(), maxBytes = RENDITION_MAX_BYTES, ttlMs = RENDITION_TTL_MS } = {},
+  { now = Date.now(), maxBytes = RENDITION_MAX_BYTES, ttlMs = RENDITION_TTL_MS, pinnedIds = null } = {},
 ) => {
+  const pinned = pinnedIds instanceof Set ? pinnedIds : new Set();
+  const isPinned = (id) => pinned.has(String(id || '').toLowerCase());
+  // Pinned bytes still occupy the disk: they count toward the cap (forcing
+  // unpinned victims out) but can never be victims themselves.
+  const pinnedBytes = (entries || [])
+    .filter((e) => e?.renditionId && isPinned(e.renditionId))
+    .reduce((sum, e) => sum + (Number(e.bytes) || 0), 0);
   const rows = (entries || [])
-    .filter((e) => e && e.renditionId)
+    .filter((e) => e && e.renditionId && !isPinned(e.renditionId))
     .map((e) => ({
       renditionId: e.renditionId,
       bytes: Number(e.bytes) || 0,
@@ -235,7 +314,7 @@ export const selectRenditionEvictions = (
     .filter((e) => expired.includes(e.renditionId))
     .reduce((sum, e) => sum + e.bytes, 0);
   let live = rows.filter((e) => !expired.includes(e.renditionId));
-  let total = live.reduce((sum, e) => sum + e.bytes, 0);
+  let total = pinnedBytes + live.reduce((sum, e) => sum + e.bytes, 0);
   const overCap = [];
   live = [...live].sort((a, b) => a.lastAccessAtMs - b.lastAccessAtMs);
   while (total > maxBytes && live.length > 0) {

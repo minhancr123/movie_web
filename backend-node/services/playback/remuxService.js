@@ -2,6 +2,7 @@ import fs from 'fs/promises';
 import path from 'path';
 import os from 'os';
 import { spawn } from 'child_process';
+import { planAdmission } from './deliveryPlan.js';
 
 // Must stay absolute: res.sendFile() rejects relative paths, and ffmpeg's
 // -hls_fmp4_init_filename is resolved against the playlist's directory.
@@ -308,6 +309,23 @@ const isBrowserAudioCodec = (codec, profile = null, channels = null, caps = {}) 
 const isMp4Container = (format) => String(format || '').split(',').includes('mov') || String(format || '').includes('mp4');
 
 /**
+ * HEVC beyond 8-bit (Main 10, Main 12, …)? Either ffprobe's profile tag
+ * ("Main 10") or a deep pixel format says so — some files carry one
+ * without the other. An 8-bit-only HEVC decoder plays Main profile fine
+ * and fails deep bytes with a codec error, so the two must route
+ * separately. (Named Main 10 for the capability flag; 12-bit rarities
+ * route the same way. isTenBitVideo stays 10-bit-only: it drives the
+ * encoder downshift plan, a different question.)
+ */
+export const isHevcMain10 = (video) => {
+  if (!video || String(video.codec || '').toLowerCase() !== 'hevc') return false;
+  const tags = `${video.profile || ''} ${video.pixFmt || ''}`;
+  if (/main\s*1[026]/i.test(tags)) return true;
+  if (/p01[026]|1[026]\s*[- ]?bit|1[026]le/i.test(tags)) return true;
+  return isTenBitVideo(video);
+};
+
+/**
  * TMDB original_language is ISO 639-1 ("zh"); ffprobe tags are usually
  * ISO 639-2 ("chi"/"zho") and sometimes bare names. Match a track tag
  * against a preferred 2-letter code through aliases, so a Chinese film
@@ -397,19 +415,33 @@ export const decidePlaybackMode = (probe, caps = {}, preferredAudioIdx = null, o
   const containerOk = isMp4Container(probe.format);
 
   // Codec the client cannot decode directly (HEVC/AV1 on most desktop
-  // browsers): re-encode to AVC on the server instead of rejecting, when the
-  // operator allows it (see VIDEO_TRANSCODE_FALLBACK). Without an allowed
-  // fallback the old hard rejection stands — offering the source would mean
-  // a black screen.
+  // browsers, HEVC Main 10 on 8-bit-only decoders): re-encode to AVC on the
+  // server instead of rejecting, when the operator allows it (see
+  // VIDEO_TRANSCODE_FALLBACK). Without an allowed fallback the old hard
+  // rejection stands — offering the source would mean a black screen (or a
+  // MEDIA_ERROR on Main 10 bytes, the Devil May Cry class of failure).
+  const sourceIsMain10 = isHevcMain10(probe.video);
+  // hevcMain10 missing (old clients, unit fixtures, non-normalized callers)
+  // inherits hevc: the exact behaviour that shipped before the Main 10
+  // split. Only an explicit false enforces Main 10 routing.
+  const main10Cap = caps.hevcMain10 === undefined ? caps.hevc : caps.hevcMain10;
+  const hevcPlayable = sourceIsMain10 ? Boolean(main10Cap) : Boolean(caps.hevc);
   const needsCodecTranscode =
-    (codec === 'hevc' && !caps.hevc) || (codec === 'av1' && !caps.av1);
+    (codec === 'hevc' && !hevcPlayable) || (codec === 'av1' && !caps.av1);
   if (needsCodecTranscode) {
     const capability = opts.videoTranscode || { allowed: false, hardware: false };
     const plan = capability.allowed ? planCodecTranscode(probe, caps, capability) : null;
     if (!plan) {
+      const main10Label = sourceIsMain10 ? 'HEVC Main 10 (10-bit)' : null;
       return {
         mode: 'reject',
-        reason: codec === 'hevc' ? 'Client không giải mã được HEVC' : 'Client không giải mã được AV1',
+        reason: main10Label
+          ? `${main10Label} không tương thích với thiết bị này`
+          : (codec === 'hevc' ? 'Client không giải mã được HEVC' : 'Client không giải mã được AV1'),
+        // True only when the policy (not the file) is the reason: the
+        // controller turns this into a typed 422 instead of a generic one,
+        // while oversized-for-software rejections stay unflagged.
+        policyBlocked: !capability.allowed,
       };
     }
     return {
@@ -459,6 +491,63 @@ export const decidePlaybackMode = (probe, caps = {}, preferredAudioIdx = null, o
     // Drives the dialogue-forward fold; null when ffprobe did not report one.
     audioChannels: audio ? audio.channels : null,
   };
+};
+
+/**
+ * One candidate's playback decision + uplink admission, in the order that
+ * matters: decide WHAT the bytes are before asking whether the box affords
+ * them. Direct URLs cost the VPS nothing (no ffmpeg, no egress, no disk),
+ * so they skip the egress budget entirely; a policy-caused reject keeps its
+ * typed error so the exhausted answer carries status + code.
+ *
+ * Extracted from resolvePlayback so the coordination itself is unit-testable
+ * (testing the two halves separately missed a direct file refused by the
+ * budget and a policy reject flattened to a plain Error). Never throws:
+ * returns { decision, delivery } or { rejected }.
+ */
+export const planCandidateDelivery = ({
+  probe,
+  caps = {},
+  audioIdx = null,
+  videoTranscode = { allowed: false, hardware: false },
+  contentLanguage = null,
+  lan = false,
+  activeKbps = 0,
+  budgetKbps,
+} = {}) => {
+  const decision = decidePlaybackMode(probe, caps, audioIdx, { videoTranscode, contentLanguage });
+  if (decision.mode === 'reject') {
+    return {
+      rejected: decision.policyBlocked
+        ? new VideoTranscodeForbiddenError(decision.reason)
+        : new Error(decision.reason),
+    };
+  }
+  if (decision.mode === 'direct') {
+    return {
+      decision,
+      delivery: {
+        admitted: true,
+        mode: 'direct',
+        reason: 'Direct từ upstream — không qua VPS',
+        height: probe?.video?.height ?? null,
+        kbps: probe?.bitrate ? probe.bitrate / 1000 : null,
+        lan,
+      },
+    };
+  }
+  const delivery = planAdmission({
+    activeKbps,
+    lan,
+    sourceHeight: probe?.video?.height ?? null,
+    sourceKbps: probe?.bitrate ? probe.bitrate / 1000 : null,
+    ...(budgetKbps === undefined ? {} : { budgetKbps }),
+    canTranscode: videoTranscode.allowed,
+  });
+  if (!delivery.admitted) {
+    return { rejected: new Error(delivery.reason) };
+  }
+  return { decision, delivery };
 };
 
 /**
@@ -913,6 +1002,21 @@ export const activeEgressKbps = () => {
 };
 
 /**
+ * Refusal when the operator policy forbids video encoding and a caller asks
+ * for it anyway. 422, not 503: retrying cannot change the policy — the
+ * candidate simply cannot play under it, so the resolve loop must try the
+ * next source instead of the same one again.
+ */
+export class VideoTranscodeForbiddenError extends Error {
+  constructor(detail = 'Máy chủ không cho phép chuyển mã video') {
+    super(detail);
+    this.name = 'VideoTranscodeForbiddenError';
+    this.code = 'VIDEO_TRANSCODE_FORBIDDEN';
+    this.status = 422;
+  }
+}
+
+/**
  * Refusal when the box is already running as many ffmpeg writers as it may.
  * 503 rather than 500: nothing is broken, there is simply no room right now.
  */
@@ -993,7 +1097,7 @@ export const estimateSessionBytes = (args) => {
  * by design only ever reclaims complete, inactive sessions.
  */
 export const admitRemuxDisk = (args) => {
-  const { freeBytes, needBytes, reserveBytes = DISK_RESERVE_BYTES } = args || {};
+  const { freeBytes, needBytes, reserveBytes = DISK_RESERVE_BYTES, reservedBytes = 0 } = args || {};
   // Read strictly, never through Number(): Number(null) and Number('') are 0, so
   // a statfs that came back empty would read as a completely full disk and
   // refuse every film on the box.
@@ -1003,18 +1107,23 @@ export const admitRemuxDisk = (args) => {
   const free = strictNumber(freeBytes);
   const need = strictNumber(needBytes);
   const reserve = strictNumber(reserveBytes) ?? DISK_RESERVE_BYTES;
+  const reserved = strictNumber(reservedBytes) ?? 0;
   // An unreadable filesystem must not read as a full one: refusing every film
   // because statfs failed would take playback down entirely.
   if (free === null || free < 0) return { admitted: true, reason: 'free-space-unknown' };
   if (need === null || need <= 0) return { admitted: true, reason: 'size-unknown' };
-  if (free - reserve >= need) {
-    return { admitted: true, freeBytes: free, needBytes: need, reserveBytes: reserve };
+  // Bytes already promised to admitted-but-unwritten jobs count as spent:
+  // without this, two back-to-back admits both see a full disk and together
+  // oversubscribe the floor.
+  if (free - reserve - reserved >= need) {
+    return { admitted: true, freeBytes: free, needBytes: need, reserveBytes: reserve, reservedBytes: reserved };
   }
   return {
     admitted: false,
     freeBytes: free,
     needBytes: need,
     reserveBytes: reserve,
+    reservedBytes: reserved,
     reason: 'below-floor',
   };
 };
@@ -1463,9 +1572,29 @@ export const probeSeekOrigin = async (inputUrl, startAt) => {
   }
 };
 
+/**
+ * Policy gate for any video-encode request. Split out of startRemuxSession
+ * so tests can prove the rule without spawning ffmpeg: copy-video and audio
+ * work resolve here, transcode work throws under a disabled policy.
+ */
+export const assertVideoTranscodeAllowed = async (video) => {
+  if (video?.mode === 'transcode') {
+    const capability = await resolveVideoTranscodeCapability();
+    if (!capability.allowed) {
+      throw new VideoTranscodeForbiddenError();
+    }
+  }
+};
+
 export const startRemuxSession = async ({ sessionId, inputUrl, audioCopy = false, audioStreamIndex = null, audioChannels = null, audioDelayMs = 0, video = null, durationSeconds = null }) => {
   const id = safeId(sessionId);
   if (!id) throw new Error('sessionId không hợp lệ');
+  // Policy guard FIRST, before writer-limit/disk checks, directories, and any
+  // spawn: when video encoding is off, no caller (resolve, seek, recovery,
+  // audio switch, or a future direct call) may open a video encoder. Audio
+  // encode is deliberately untouched — AAC downmix costs ~1% CPU and is what
+  // makes DTS/AC3 sources playable in a browser at all.
+  await assertVideoTranscodeAllowed(video);
   // A pending grace-period stop belongs to the previous writer: a fresh start
   // on the same id must not be killed by it.
   cancelScheduledStop(id);
@@ -1475,17 +1604,26 @@ export const startRemuxSession = async ({ sessionId, inputUrl, audioCopy = false
 
   // Only a genuinely new writer is gated: the reuse above already returned,
   // and finished renditions are served off disk without coming through here.
-  const limit = remuxWriterLimit();
-  if (!admitRemuxWriter({ active: activeWriterCount(), limit })) {
-    // Free the expendable slots first — writers already replaced by a newer
-    // one, then writers nobody has requested from in IDLE_REAP_MS. On a box
-    // configured for one writer this is the difference between a viewer who
-    // waits and a viewer who is told to come back later.
-    await reapExpendableWriters({ limit });
-  }
-  if (!admitRemuxWriter({ active: activeWriterCount(), limit })) {
-    throw new RemuxBusyError(limit);
-  }
+  //
+  // Atomic admission: the reservation below is taken synchronously (no await
+  // between the check and the hold), so two resolves for different titles
+  // cannot both see a free slot across an await and spawn past the ceiling.
+  // It reaps expendable writers first when full, self-releases after
+  // RESERVATION_TTL_MS, and is released in the finally below on every path
+  // that does not end in a live writer.
+  const needBytesEarly = estimateSessionBytes({
+    kbps: video?.kbps,
+    durationSeconds,
+    height: video?.height,
+  });
+  const acquired = await acquireWriterReservation({ sessionId: id, needBytes: needBytesEarly });
+  if (!acquired.admitted) throw acquired.error;
+  // Tracks the CURRENT token through consume: a TTL-expired token re-takes
+  // under a fresh id, and every release below must target that id — never
+  // the dead one, or the fresh token wedges the slot for its whole TTL.
+  let activeReservationId = acquired.reservationId;
+  let reservationConsumed = false;
+  try {
 
   // Last gate before ffmpeg exists, and the only one that still can refuse.
   //
@@ -1502,18 +1640,23 @@ export const startRemuxSession = async ({ sessionId, inputUrl, audioCopy = false
     durationSeconds,
     height: video?.height,
   });
+  // Bytes promised to other admitted-but-unwritten jobs count as spent
+  // (own reservation excluded: it IS this need). Without this, two
+  // back-to-back admits both see a full disk and oversubscribe the floor.
+  const otherReservedBytes = () => pendingReservationBytes(activeReservationId);
   const freeBytes = await freeDiskBytes();
-  const diskDecision = admitRemuxDisk({ freeBytes, needBytes });
+  const diskDecision = admitRemuxDisk({ freeBytes, needBytes, reservedBytes: otherReservedBytes() });
   if (!diskDecision.admitted) {
     // Reclaim what is legitimately reclaimable and look once more: refusing a
     // film because an hour-old rendition is sitting there would be wrong.
     await cleanupTranscodeCache().catch(() => null);
     const retryFree = await freeDiskBytes({ now: Date.now() + DISK_PROBE_TTL_MS + 1 });
-    const retry = admitRemuxDisk({ freeBytes: retryFree, needBytes });
+    const retry = admitRemuxDisk({ freeBytes: retryFree, needBytes, reservedBytes: otherReservedBytes() });
     if (!retry.admitted) {
       console.warn(
         `[remux] refused tmdb-session=${id}: need ~${Math.round(needBytes / GB)}GB, `
-        + `free ${Math.round((retryFree || 0) / GB)}GB, reserve ${Math.round(DISK_RESERVE_BYTES / GB)}GB`,
+        + `free ${Math.round((retryFree || 0) / GB)}GB, reserve ${Math.round(DISK_RESERVE_BYTES / GB)}GB, `
+        + `reserved ${Math.round(otherReservedBytes() / GB)}GB`,
       );
       throw new RemuxNoSpaceError({
         needBytes,
@@ -1529,6 +1672,16 @@ export const startRemuxSession = async ({ sessionId, inputUrl, audioCopy = false
 
   const encoder = video?.mode === 'transcode' ? await detectVideoEncoder() : null;
   const args = buildFfmpegArgs({ inputUrl, outputDir, audioCopy, audioStreamIndex, audioChannels, audioDelayMs, video, encoder });
+  // Consume the reservation NOW, synchronously, immediately before the spawn:
+  // disk checks, cache cleanup, mkdir and encoder detection all awaited
+  // above, and the 45s TTL may have released the token meanwhile. Spawning
+  // on it blind would exceed the ceiling; consume re-validates (live token
+  // converts, dead token re-takes a free slot or refuses with 503).
+  const consumedId = consumeWriterReservation(activeReservationId, { limit: remuxWriterLimit() });
+  if (!consumedId) {
+    throw new RemuxBusyError(remuxWriterLimit());
+  }
+  activeReservationId = consumedId;
   // cwd must be outputDir: ffmpeg resolves -hls_fmp4_init_filename against the
   // process cwd, not the playlist dir, so init.mp4 would otherwise land in the
   // backend root and every segment request would 404 on a missing init map.
@@ -1558,6 +1711,10 @@ export const startRemuxSession = async ({ sessionId, inputUrl, audioCopy = false
     abandonedAt: undefined,
   };
   sessions.set(id, session);
+  // Consumed: the live writer now holds the slot via activeWriterCount, so
+  // the reservation token goes back (idempotent with the finally below).
+  reservationConsumed = true;
+  releaseWriterReservation(activeReservationId);
   // Structured spawn line (ids only — inputUrl is a short-lived TorBox link
   // and must never reach logs). This is the line that tells a busy-box
   // investigation whether the slot holder is muxing or software-encoding.
@@ -1583,6 +1740,12 @@ export const startRemuxSession = async ({ sessionId, inputUrl, audioCopy = false
       );
     }
   });
+
+  } finally {
+    // Every non-spawn exit (busy/disk/policy refusal, mkdir failure, abort)
+    // hands the held slot back at once; the TTL is only the crash backstop.
+    if (!reservationConsumed) releaseWriterReservation(activeReservationId);
+  }
 
   return session;
 };
@@ -1737,7 +1900,10 @@ export const supersededWriterIds = () => [...supersedeTimers.keys()];
  */
 export const writerSlotStatus = ({
   limit = remuxWriterLimit(),
-  active = activeWriterCount(),
+  // Reservations count: a slot promised to a starting writer is not free,
+  // so the stage feed reports "full" honestly instead of inviting a queue
+  // that can only 503.
+  active = activeWriterCount() + reservedWriterCount(),
   abandoned = abandonedWriterIds(sessions),
   superseded = supersededWriterIds(),
   idle = idleWriterIds(sessions),
@@ -1768,6 +1934,107 @@ export const reapExpendableWriters = async ({
     active = activeWriterCount();
   }
   return stopped;
+};
+
+/**
+ * Atomic writer admission: a reservation holds a slot from the decision
+ * until the writer exists (or the attempt dies), closing the TOCTOU window
+ * where two resolves for different titles both saw a free slot across an
+ * `await` and spawned past REMUX_MAX_WRITERS.
+ *
+ * Single process, single event loop: the take/release below are synchronous,
+ * so no two callers can hold the same slot — no Redis lock needed (the queue
+ * worker and scheduler never touch playback, and the backend runs one
+ * process). Every reservation self-releases after RESERVATION_TTL_MS, so a
+ * crashed resolve cannot wedge the box; callers also release in `finally`.
+ * Direct plays and finished renditions never take one: they spawn nothing.
+ */
+export const RESERVATION_TTL_MS = 45 * 1000;
+const writerReservations = new Map();
+
+const takeReservationSlot = ({ sessionId, needBytes = 0, limit, timeoutMs = RESERVATION_TTL_MS }) => {
+  if (activeWriterCount() + writerReservations.size >= limit) return null;
+  const reservationId = `rsv_${Date.now().toString(36)}_${Math.floor(Math.random() * 1e9).toString(36)}`;
+  const timer = setTimeout(() => releaseWriterReservation(reservationId), timeoutMs);
+  if (typeof timer.unref === 'function') timer.unref();
+  writerReservations.set(reservationId, {
+    sessionId: sessionId || null,
+    needBytes: Number(needBytes) > 0 ? Number(needBytes) : 0,
+    createdAt: Date.now(),
+    timer,
+  });
+  return reservationId;
+};
+
+/** Idempotent: releasing twice (consume + finally) is a no-op. */
+export const releaseWriterReservation = (reservationId) => {
+  const entry = reservationId ? writerReservations.get(reservationId) : null;
+  if (!entry) return false;
+  if (entry.timer) clearTimeout(entry.timer);
+  writerReservations.delete(reservationId);
+  return true;
+};
+
+/**
+ * Consume a reservation into a live spawn, atomically, immediately before
+ * `spawn()` — the other half of the TOCTOU fix. The TTL may have released
+ * the token while disk checks, cache cleanup, mkdir or encoder detection
+ * awaited; spawning blind on that stale token is exactly how the ceiling
+ * gets exceeded. Consuming re-validates synchronously: a live token
+ * converts to the active writer, a dead one re-takes a free slot or
+ * refuses — never a blind spawn past the limit. Returns the held
+ * reservation id, or false when no slot could be held.
+ */
+export const consumeWriterReservation = (reservationId, { limit = remuxWriterLimit() } = {}) => {
+  const l = Number(limit);
+  if (!Number.isFinite(l) || l <= 0) return false;
+  if (reservationId && writerReservations.has(reservationId)) {
+    releaseWriterReservation(reservationId);
+    return reservationId;
+  }
+  return takeReservationSlot({ sessionId: null, needBytes: 0, limit: l }) || false;
+};
+
+/**
+ * Hold a slot, reaping expendable writers first when full. The take itself
+ * is synchronous (no await between the recheck and the set), so concurrent
+ * callers serialize on the event loop instead of oversubscribing.
+ */
+export const acquireWriterReservation = async ({
+  sessionId = null,
+  needBytes = 0,
+  limit = remuxWriterLimit(),
+  timeoutMs = RESERVATION_TTL_MS,
+} = {}) => {
+  const l = Number(limit);
+  if (!Number.isFinite(l) || l <= 0) return { admitted: false, error: new RemuxBusyError(limit) };
+  let reservationId = takeReservationSlot({ sessionId, needBytes, limit: l, timeoutMs });
+  if (reservationId) return { admitted: true, reservationId };
+  // Reap against the true load (live writers + promised slots): with limit >
+  // 1, live-only load can read "room" while the combined load is full, and
+  // the reaper would refuse to free an abandoned writer we could have used.
+  await reapExpendableWriters({ limit: l, active: activeWriterCount() + reservedWriterCount() });
+  reservationId = takeReservationSlot({ sessionId, needBytes, limit: l, timeoutMs });
+  if (reservationId) return { admitted: true, reservationId };
+  return { admitted: false, error: new RemuxBusyError(l) };
+};
+
+/** Live reservations (tests/observability). */
+export const reservedWriterCount = () => writerReservations.size;
+
+/**
+ * Bytes already promised to admitted-but-unwritten jobs. Disk admission
+ * subtracts these: a 5 GB job that just reserved (0 bytes on disk yet) must
+ * still count against the next job's check, or two back-to-back admits
+ * oversubscribe the floor.
+ */
+export const pendingReservationBytes = (excludeReservationId = null) => {
+  let total = 0;
+  for (const [id, entry] of writerReservations) {
+    if (id === excludeReservationId) continue;
+    total += Number(entry?.needBytes) || 0;
+  }
+  return total;
 };
 
 /** Record real viewer activity without writing a marker for every segment. */
@@ -2019,9 +2286,13 @@ export default {
   resolveVideoTranscodeCapability,
   isHdrVideo,
   isTenBitVideo,
+  isHevcMain10,
   transcodeKbpsForHeight,
   planCodecTranscode,
   startRemuxSession,
+  VideoTranscodeForbiddenError,
+  assertVideoTranscodeAllowed,
+  planCandidateDelivery,
   waitForPlaylist,
   getRemuxSession,
   stopRemuxSession,
@@ -2046,6 +2317,12 @@ export default {
   abandonedWriterIds,
   VIEWER_LEASE_MS,
   LEAVE_GRACE_MS,
+  acquireWriterReservation,
+  releaseWriterReservation,
+  consumeWriterReservation,
+  reservedWriterCount,
+  pendingReservationBytes,
+  RESERVATION_TTL_MS,
   touchTranscodeSession,
   selectTranscodeEvictions,
   cleanupTranscodeCache,

@@ -38,6 +38,7 @@ import {
   preferredAudioIndex,
   presentationShiftMs,
   startRemuxSession,
+  VideoTranscodeForbiddenError,
   RemuxBusyError,
   RemuxNoSpaceError,
   admitRemuxDisk,
@@ -65,6 +66,7 @@ import {
   registerSessionViewer,
   touchSessionViewer,
   removeSessionViewer,
+  pendingReservationBytes,
   VIEWER_LEASE_MS,
   touchTranscodeSession,
   shouldReuseRemuxSession,
@@ -86,6 +88,10 @@ import {
   publishRendition,
   renditionPath,
   selectRenditionEvictions,
+  pinRenditionViewer,
+  unpinRenditionViewer,
+  getPinnedRenditionIds,
+  isRenditionPinned,
   RENDITION_MAX_BYTES,
 } from '../services/playback/renditions.js';
 import { setResolveStage, getResolveStage as readResolveStage, isResolveId } from '../services/playback/resolveProgress.js';
@@ -334,6 +340,8 @@ const applyProbeFacts = async (candidates) => {
     // fallback since ffprobe only sees the one file we happened to pick.
     codec: fact.codec || candidate.codec,
     probedCodec: fact.codec || null,
+    probedProfile: fact.profile || null,
+    probedPixFmt: fact.pixFmt || null,
     probedHeight: fact.height || null,
     probedFrameRate: fact.frameRate || null,
     // Probed audio/subtitle languages feed the player's track menu.
@@ -350,6 +358,11 @@ const rememberProbeFacts = (infoHash, probe) =>
       codec: probe?.video?.codec || null,
       height: probe?.video?.height || null,
       frameRate: probe?.video?.frameRate || null,
+      // Carried so the ranker can tell HEVC Main 10 from Main profile on
+      // repeat views without paying for another ffprobe (cache hit reads
+      // these; a miss still ranks by label and decide enforces later).
+      profile: probe?.video?.profile || null,
+      pixFmt: probe?.video?.pixFmt || null,
       hasBFrames: probe?.video?.hasBFrames ?? null,
       audio: (probe?.audio || []).map((a) => ({
         streamIndex: a.streamIndex,
@@ -853,23 +866,41 @@ const findPublishedRendition = async (db, renditionKey) => {
 
 const enforceRenditionBudget = async (db) => {
   const rows = await db.collection('published_renditions').find({}).toArray();
+  // Pinned renditions (live viewer leases) are inviolable: when everything
+  // is pinned the planner returns nothing and we log instead of deleting
+  // bytes somebody is watching.
+  const pinnedIds = getPinnedRenditionIds();
   const { evict } = selectRenditionEvictions(
     rows.map((row) => ({
       renditionId: row.renditionId,
       bytes: row.bytes,
       lastAccessAtMs: row.lastAccessAt ? new Date(row.lastAccessAt).getTime() : 0,
     })),
-    { now: Date.now(), maxBytes: RENDITION_MAX_BYTES },
+    { now: Date.now(), maxBytes: RENDITION_MAX_BYTES, pinnedIds },
   );
+  // Warn only under real pressure: evicting nothing while pinned is routine
+  // when the store is far under budget.
+  const totalBytes = rows.reduce((sum, r) => sum + (Number(r.bytes) || 0), 0);
+  if (totalBytes > RENDITION_MAX_BYTES && evict.length === 0 && pinnedIds.size > 0) {
+    console.warn(
+      `[renditions] budget pressure with ${pinnedIds.size} pinned rendition(s): evicting nothing`,
+    );
+  }
+  let evicted = 0;
   for (const victim of evict) {
     try {
+      // Re-check under the same lease: a heartbeat that landed after the
+      // snapshot above pins this file, and deleting it mid-watch is worse
+      // than carrying it to the next budget pass.
+      if (isRenditionPinned(victim)) continue;
       await fs.rm(renditionPath(victim, '.'), { recursive: true, force: true });
       await db.collection('published_renditions').deleteOne({ renditionId: victim });
+      evicted += 1;
     } catch {
       // Best effort: a half-evicted row is reaped on the next pass.
     }
   }
-  return evict.length;
+  return evicted;
 };
 
 const touchPublishedRendition = async (db, renditionKey) => {
@@ -1457,10 +1488,19 @@ export const resolvePlayback = async (req, res) => {
             reusePlaylistUrl = `/api/playback/hls/r/${reuseRenditionId}/index.m3u8`;
           }
         }
+        // Same action vocabulary as fresh resolves: prefer the stored row,
+        // fall back to the live writer's recipe (any encoder label means
+        // transcode), then the copy/encode defaults for legacy rows.
+        const reuseLive = getRemuxSession(reusable.sessionId);
+        const reuseVideoAction = reusable.videoAction
+          || (reuseLive?.videoAction && reuseLive.videoAction !== 'copy' ? 'transcode' : 'copy');
+        const reuseAudioAction = reusable.audioAction || reuseLive?.audioAction || 'encode';
         return res.json({
           success: true,
           data: {
             mode: 'remux',
+            videoAction: reuseVideoAction,
+            audioAction: reuseAudioAction,
             sessionId: reusable.sessionId,
             playlistUrl: reusePlaylistUrl,
             publishedRenditionId: reuseRenditionId,
@@ -1694,44 +1734,36 @@ export const resolvePlayback = async (req, res) => {
         }
       }
 
-      // How the stream should be delivered, before deciding how to build it:
-      // a LAN viewer gets the source untouched, a remote one gets whatever the
-      // uplink can still afford, narrowed rather than refused where possible.
+      // Decided before admitted, via the shared helper: direct URLs cost the
+      // VPS nothing (no ffmpeg, no egress, no disk), so the uplink budget
+      // sized for remux writers must never refuse them — and a policy-caused
+      // reject keeps its type (422 + code) instead of flattening to a plain
+      // error. One coordination point for resolve/seek/recovery/audio-switch
+      // (they all loop here) and for the unit test below.
       const lan = isLanClient(req);
-      const delivery = planAdmission({
-        activeKbps: activeEgressKbps(),
-        lan,
-        sourceHeight: probe.video?.height ?? null,
-        sourceKbps: probe.bitrate ? probe.bitrate / 1000 : null,
-      });
-      if (!delivery.admitted) {
-        lastError = new Error(delivery.reason);
-        continue;
-      }
-
-      const decision = decidePlaybackMode(probe, caps, audioIdx, {
+      const { decision, delivery, rejected } = planCandidateDelivery({
+        probe,
+        caps,
+        audioIdx,
         videoTranscode,
         // The film's own language for the default track (explicit picks win).
         contentLanguage: detail?.originalLanguage ?? null,
+        lan,
+        activeKbps: activeEgressKbps(),
       });
-      if (decision.mode === 'reject') {
-        lastError = new Error(decision.reason);
+      if (rejected) {
+        lastError = rejected;
         continue;
       }
 
       const sessionId = buildSessionId();
 
       // Direct play hands the client the upstream URL and never touches ffmpeg,
-      // which means it also never touches the ladder or the egress budget. A
-      // remote viewer the planner sized for transcoding must go through the
-      // pipeline instead, or the whole accounting is a suggestion.
-      const mustTranscode = delivery.mode === 'transcode';
-      if (mustTranscode && decision.mode === 'direct') {
-        decision.mode = 'remux';
-        decision.videoCopy = false;
-        decision.audioCopy = false;
-        decision.reason = `${delivery.reason} (bỏ direct play để áp hạn mức)`;
-      }
+      // which means it also never touches the ladder or the egress budget: a
+      // direct upstream URL costs the VPS no egress at all, so sizing it for
+      // transcoding was accounting fiction — and with encoding off, forcing it
+      // into a remux with videoCopy=false built a transcode the policy bans.
+      // A compatible direct decision always stands as direct.
 
       // The ffmpeg-side video plan: normally the delivery ladder, overridden
       // by a codec-transcode decision (codec change + HDR tonemap). When both
@@ -1772,6 +1804,30 @@ export const resolvePlayback = async (req, res) => {
           : { ...ct, codec: ct.codec ?? delivery.codec ?? sourceCodec, startAt };
       }
 
+      // Defense in depth behind planAdmission(canTranscode): if any path above
+      // still assembled a video transcode while the policy forbids it, the
+      // candidate is unplayable under this policy — try the next source
+      // instead of letting the spawn guard be the one to say so. The spawn
+      // guard stays as the backstop for every other caller.
+      if (videoPlan.mode === 'transcode' && !videoTranscode.allowed) {
+        lastError = new VideoTranscodeForbiddenError(
+          'Nguồn này cần chuyển mã video nhưng máy chủ đang tắt tính năng đó',
+        );
+        continue;
+      }
+
+      // What the bytes actually are, in the spawn log's vocabulary
+      // (videoActionFor/audioActionFor) rather than the delivery mode's:
+      // surfaced on responses + session rows so API/UI/telemetry agree.
+      // Additive: old clients ignore unknown fields. `let`, not `const`:
+      // the disk guard below can still flip this candidate to direct.
+      let videoAction = decision.mode === 'direct'
+        ? 'direct'
+        : (videoPlan.mode === 'transcode' ? 'transcode' : 'copy');
+      let audioAction = decision.mode === 'direct'
+        ? 'direct'
+        : (decision.audioCopy === false ? 'encode' : 'copy');
+
       if (decision.mode === 'remux' && inputUrl && file) {
         // A session this size may not fit on the box at all: a 4K remux was
         // measured at 33GB against a floor of 12GB free, and video transcode
@@ -1798,10 +1854,14 @@ export const resolvePlayback = async (req, res) => {
         // episode that first showed it). The probe is already in hand here and
         // knows the real file length, so it backs the TMDB value up rather
         // than pricing the film as unknown.
+        // Probe first, TMDB fallback — the same order startRemuxSession
+        // uses for fullDurationSeconds below, so pre-flight and spawn price
+        // the same bytes. (Kept inline: fullDurationSeconds is declared
+        // further down and reading it here throws a TDZ ReferenceError.)
         const probedDurationSec = Number(probe?.duration);
-        const pricedDurationSec = runtimeMinutes
-          ? Math.round(runtimeMinutes * 60)
-          : (Number.isFinite(probedDurationSec) && probedDurationSec > 0 ? probedDurationSec : null);
+        const pricedDurationSec = Number.isFinite(probedDurationSec) && probedDurationSec > 0
+          ? Math.round(probedDurationSec)
+          : (runtimeMinutes ? Math.round(runtimeMinutes * 60) : null);
         const diskFit = admitRemuxDisk({
           freeBytes: await freeDiskBytes(),
           needBytes: estimateSessionBytes({
@@ -1809,6 +1869,9 @@ export const resolvePlayback = async (req, res) => {
             durationSeconds: pricedDurationSec,
             height: videoPlan.height,
           }),
+          // Bytes promised to other starting writers count as spent, so a
+          // second resolve behind the first sees the honest floor.
+          reservedBytes: pendingReservationBytes(),
         });
         if (!diskFit.admitted) {
           console.warn(
@@ -1827,6 +1890,10 @@ export const resolvePlayback = async (req, res) => {
           if (decision.audioBrowserSafe) {
             decision.mode = 'direct';
             decision.reason = 'Đang phát trực tiếp bản gốc.';
+            // The actions were computed for a remux above: a direct answer
+            // must read direct, or mode and actions disagree downstream.
+            videoAction = 'direct';
+            audioAction = 'direct';
           } else {
             console.warn(
               `resolvePlayback bo qua nguon cho tmdb=${tmdbId}: `
@@ -1857,6 +1924,8 @@ export const resolvePlayback = async (req, res) => {
           videoHash: fileHash?.videoHash ?? null,
           videoSize: fileHash?.videoSize ?? null,
           mode: 'direct',
+          videoAction,
+          audioAction,
           audioIndex: decision.audioIndex ?? 0,
           progress: 100,
           candidate: sanitizeCandidateForResponse(candidate),
@@ -1865,6 +1934,8 @@ export const resolvePlayback = async (req, res) => {
           success: true,
           data: {
             mode: 'direct',
+            videoAction,
+            audioAction,
             sessionId,
             url: inputUrl,
             expiresIn: 900,
@@ -2121,6 +2192,15 @@ export const resolvePlayback = async (req, res) => {
           await fs.rm(sessionPath(sessionId), { recursive: true, force: true }).catch(() => {});
           throw error;
         }
+        // Policy refusal is per-candidate, not per-box: this source needs a
+        // video encode the operator disabled, so try the next source. The
+        // loop-top clamp normally catches this earlier; the spawn guard is
+        // the backstop, and this branch keeps its throw retryable-shaped
+        // (next candidate) instead of a 500.
+        if (error instanceof VideoTranscodeForbiddenError || error?.code === 'VIDEO_TRANSCODE_FORBIDDEN') {
+          lastError = error;
+          continue;
+        }
         // A full box is not this candidate's fault: every other source would
         // hit the same ceiling, so walking the rest of the list just burns
         // TorBox calls to arrive at the same answer. Say so and stop.
@@ -2205,6 +2285,8 @@ export const resolvePlayback = async (req, res) => {
           videoHeight: probe.video?.height || null,
           videoFrameRate: probe.video?.frameRate || null,
           mode: 'remux',
+          videoAction,
+          audioAction,
           renditionKey,
           remuxBuild: REMUX_BUILD,
           // Seek-start of this session's bytes (0 = from the beginning).
@@ -2222,6 +2304,8 @@ export const resolvePlayback = async (req, res) => {
         success: true,
         data: {
           mode: 'remux',
+          videoAction,
+          audioAction,
           sessionId,
           playlistUrl: `/api/playback/hls/${sessionId}/index.m3u8`,
           durationSeconds: fullDurationSeconds,
@@ -2291,12 +2375,17 @@ export const resolvePlayback = async (req, res) => {
     // user to retry, but retrying cannot change a codec. 422 says the content is
     // unusable as-is, and the probed facts we just cached make the next attempt
     // skip these sources entirely.
-    const unplayableClient = /không giải mã được|không có bản SDR|fps vượt ngưỡng/i.test(lastError?.message || '');
+    // A typed refusal already knows its own status: policy forbids (422, do
+    // not retry the same source) rather than gateway failure (502, retry).
+    // Its code travels too, so the client can tell "policy" apart from
+    // "infra" instead of retrying a refusal through the whole ladder.
+    const unplayableClient = lastError?.code === 'VIDEO_TRANSCODE_FORBIDDEN'
+      || /không giải mã được|không tương thích|không có bản SDR|fps vượt ngưỡng/i.test(lastError?.message || '');
     return fail(
       res,
-      unplayableClient ? 422 : 502,
+      Number(lastError?.status) || (unplayableClient ? 422 : 502),
       lastError?.message || 'Không chuẩn bị được nguồn phát, vui lòng thử lại',
-      { exhausted: true },
+      { exhausted: true, ...(lastError?.code ? { code: lastError.code } : {}) },
     );
     } catch (error) {
       // A superseded resolve is routine (user moved on), not a failure: answer
@@ -3499,6 +3588,13 @@ export const heartbeatPlaybackSession = async (req, res) => {
       return fail(res, 403, 'Không có quyền truy cập phiên phát này');
     }
     registerSessionViewer(sessionId, viewerId);
+    // A published session serves shared immutable bytes: pin its rendition
+    // with the same lease so budget eviction cannot delete what is playing.
+    // Live remux rows carry renditionKey (not publishedRenditionId), so fall
+    // back to it — otherwise a finished live remux plays unpinned and the
+    // budget pass can delete it mid-watch.
+    const heartbeatRenditionId = session.publishedRenditionId || session.renditionKey;
+    if (heartbeatRenditionId) pinRenditionViewer(heartbeatRenditionId, viewerId);
     await touchTranscodeSession(sessionId).catch(() => false);
     return res.json({ success: true, data: { ok: true } });
   } catch (error) {
@@ -3528,6 +3624,8 @@ export const leavePlaybackSession = async (req, res) => {
       return fail(res, 403, 'Không có quyền truy cập phiên phát này');
     }
     const remaining = removeSessionViewer(sessionId, viewerId);
+    const leaveRenditionId = session.publishedRenditionId || session.renditionKey;
+    if (leaveRenditionId) unpinRenditionViewer(leaveRenditionId, viewerId);
     return res.json({ success: true, data: { ok: true, remaining } });
   } catch (error) {
     console.error('leavePlaybackSession error:', error.message);

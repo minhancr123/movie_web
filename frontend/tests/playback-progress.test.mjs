@@ -17,7 +17,7 @@ execFileSync(
     { cwd: root, stdio: 'pipe' },
 );
 
-const { computeResumeAt, clampSeekToHead, pickDisplayDuration, decideSeekTarget, planResume, shouldAutoplayAfterRebuild, shouldDowngradeForDropped, audioSwitchStartAt, subtitleLookupTime, classifyStartAt, toLocalSeekTarget, pickRecoveryTarget, hasSustainedProgress, RECOVERY_BACKOFF } = await import(
+const { computeResumeAt, clampSeekToHead, pickDisplayDuration, decideSeekTarget, planResume, shouldAutoplayAfterRebuild, shouldDowngradeForDropped, audioSwitchStartAt, subtitleLookupTime, classifyStartAt, toLocalSeekTarget, pickRecoveryTarget, hasSustainedProgress, pickFailoverStartAt, RECOVERY_BACKOFF } = await import(
     pathToFileURL(path.join(outDir, 'playback-progress.js')).href
 );
 process.on('exit', () => rmSync(outDir, { recursive: true, force: true }));
@@ -298,4 +298,14 @@ test('hasSustainedProgress only resets recovery after real forward movement', ()
     assert.equal(hasSustainedProgress(700, 778), false, 'seeking backwards is not progress');
     assert.equal(hasSustainedProgress(NaN, 778), false);
     assert.equal(hasSustainedProgress(783, null), false);
+});
+
+test('pickFailoverStartAt resumes a mid-film codec failover where the viewer was', () => {
+    assert.equal(pickFailoverStartAt({ pendingSeek: 2400, playhead: 1200 }), 2400, 'mid-seek target wins');
+    assert.equal(pickFailoverStartAt({ playhead: 1200.7 }), 1200, 'mid-film playhead resumes floored');
+    assert.equal(pickFailoverStartAt({ playhead: 0 }), 0, 'startup failure starts clean at 0');
+    assert.equal(pickFailoverStartAt({}), 0, 'nothing known starts at 0');
+    assert.equal(pickFailoverStartAt({ playhead: NaN }), 0, 'NaN never leaks into a resolve');
+    assert.equal(pickFailoverStartAt({ playhead: -5 }), 0, 'negatives clamp, never negative');
+    assert.equal(pickFailoverStartAt({ pendingSeek: 0, playhead: 2700 }), 0, 'explicit seek-to-zero beats the old playhead');
 });

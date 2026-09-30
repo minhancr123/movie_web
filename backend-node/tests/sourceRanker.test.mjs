@@ -89,4 +89,46 @@ assert.equal(highFpsVerdict.playable, false);
 assert.match(highFpsVerdict.reasons[0], /143\.98 fps/);
 console.log('  OK  ffprobe 143.98 fps bị loại khỏi nguồn phát');
 
+// A previous ffprobe proved this exact file is HEVC Main 10: an 8-bit-only
+// client must not rank it as plain playable HEVC.
+const MAIN10_ONLY_CAPS = normalizeCapabilities({ hevc: true, hevcMain10: false, maxHeight: 2160 });
+const main10File = build('Moana.2026.1080p.WEB-DL.H.265.10bit.mkv', {
+  codec: 'hevc',
+  probedCodec: 'hevc',
+  probedProfile: 'Main 10',
+  probedPixFmt: 'yuv420p10le',
+});
+const main10Verdict = scoreCandidate(main10File, MAIN10_ONLY_CAPS, { runtimeMinutes: RUNTIME });
+assert.equal(main10Verdict.playable, false, 'Main 10 file unplayable for 8-bit-only client');
+assert.match(main10Verdict.reasons.join(' '), /Main 10/, 'reason names Main 10');
+console.log('  OK  probed Main 10 bị loại với client 8-bit');
+
+// Same file, transcode allowed: playable via server AVC, ranked below native.
+const main10Transcoded = scoreCandidate(main10File, MAIN10_ONLY_CAPS, {
+  runtimeMinutes: RUNTIME,
+  videoTranscode: { allowed: true, hardware: false },
+});
+assert.equal(main10Transcoded.playable, true, 'Main 10 servable via transcode when allowed');
+assert.match(main10Transcoded.reasons.join(' '), /Main 10.*AVC/, 'transcode reason names Main 10');
+console.log('  OK  Main 10 transcode xếp dưới khi policy cho phép');
+
+// Name-only HEVC (no probe yet): depth unknown, falls back to the hevc flag;
+// decidePlaybackMode enforces with the live probe later.
+const nameOnlyHevc = build('Moana.2026.1080p.WEB-DL.H.265.mkv', { codec: 'hevc' });
+assert.equal(
+  scoreCandidate(nameOnlyHevc, MAIN10_ONLY_CAPS, { runtimeMinutes: RUNTIME }).playable,
+  true,
+  'unknown depth keeps the old hevc-flag behaviour until probed',
+);
+console.log('  OK  HEVC chưa probe giữ hành vi cũ');
+
+// Full Main 10 client keeps the HEVC efficiency bonus.
+const main10Caps = normalizeCapabilities({ hevc: true, hevcMain10: true, maxHeight: 2160 });
+assert.equal(
+  scoreCandidate(main10File, main10Caps, { runtimeMinutes: RUNTIME }).playable,
+  true,
+  'Main 10 capable client plays the probed Main 10 file',
+);
+console.log('  OK  client đủ Main 10 vẫn ưu tiên HEVC');
+
 console.log('\nTất cả assertion đều pass.');

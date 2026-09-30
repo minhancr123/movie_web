@@ -79,6 +79,14 @@ interface VideoPlayerProps {
     pendingAudioIndex?: number | null;
     /** Ask the parent resolver for a fresh URL/session after local recovery is exhausted. */
     onPlaybackFailure?: (reason: string) => void;
+    /**
+     * The bytes themselves are undecodeable here (codec rejected by the
+     * SourceBuffer, fatal demux failure, native SRC_NOT_SUPPORTED): retrying
+     * the same session is futile, so the parent fails over to a different
+     * source once instead of recovering on identical bytes. Absent → falls
+     * back to onPlaybackFailure.
+     */
+    onUnplayableSource?: () => void;
     /** Bumped by the parent when a recovery resolves the identical URL.
         React bails out on an unchanged src, so this forces the pipeline below
         to tear down and rebuild (fresh hls.js + resume from history). */
@@ -149,7 +157,7 @@ interface VideoPlayerProps {
     fullscreenTargetRef?: React.RefObject<HTMLDivElement | null>;
 }
 
-export default function VideoPlayer({ src, movie, episode, authToken, durationSeconds, onNextEpisode, subContext, onPickAudio, activeAudioIndex, pendingAudioIndex = null, onPlaybackFailure, reloadKey = 0, onPlaybackProgress, presentationShiftMs = 0, seekStartSupported = true, sessionReused = false, onDecodeOverload, onCinemaChange, onVideoReady, fullscreenTargetRef, startAt = 0, targetAt = null, onSeekToPosition, onCancelSeek, seekProgress = null }: VideoPlayerProps) {
+export default function VideoPlayer({ src, movie, episode, authToken, durationSeconds, onNextEpisode, subContext, onPickAudio, activeAudioIndex, pendingAudioIndex = null, onPlaybackFailure, onUnplayableSource, reloadKey = 0, onPlaybackProgress, presentationShiftMs = 0, seekStartSupported = true, sessionReused = false, onDecodeOverload, onCinemaChange, onVideoReady, fullscreenTargetRef, startAt = 0, targetAt = null, onSeekToPosition, onCancelSeek, seekProgress = null }: VideoPlayerProps) {
     const videoRef = useRef<HTMLVideoElement>(null);
     const containerRef = useRef<HTMLDivElement>(null);
 
@@ -312,6 +320,11 @@ export default function VideoPlayer({ src, movie, episode, authToken, durationSe
     const subDelayRef = useRef(subDelay);
     useEffect(() => { subDelayRef.current = subDelay; }, [subDelay]);
     const selectedSubRef = useRef<string>('off');
+    // Stable mirror so the pipeline effect never tears down just because the
+    // parent re-created this callback (e.g. opening the source list): a
+    // mid-watch rebuild would replay the film from zero.
+    const onUnplayableSourceRef = useRef(onUnplayableSource);
+    onUnplayableSourceRef.current = onUnplayableSource;
     // True until the viewer manually picks a subtitle track: only auto-picks
     // may be replaced when a better (file-matched) list arrives. A manual
     // choice always sticks, even if an embedded track shows up later.
@@ -1090,6 +1103,19 @@ export default function VideoPlayer({ src, movie, episode, authToken, durationSe
             };
             const onSrcError = () => {
                 setIsLoading(false);
+                // Same unplayable-file path as HLS/native below: a direct
+                // MP4 the decoder rejects (code 4) must fail over, not retry.
+                try {
+                    if (video.error && video.error.code === 4 /* MEDIA_ERR_SRC_NOT_SUPPORTED */) {
+                        const unplayable = onUnplayableSourceRef.current;
+                        if (unplayable) unplayable();
+                        else if (onPlaybackFailure) onPlaybackFailure('Trình duyệt không giải mã được bản phát này.');
+                        else setError('Trình duyệt không giải mã được bản phát này. Bấm Thử lại để nối lại.');
+                        return;
+                    }
+                } catch {
+                    // Reading .error can throw mid-teardown on some builds.
+                }
                 const reason = 'Liên kết phát trực tiếp bị gián đoạn.';
                 if (onPlaybackFailure) onPlaybackFailure(reason);
                 else setError(`${reason} Bấm Thử lại để nối lại.`);
@@ -1247,6 +1273,13 @@ export default function VideoPlayer({ src, movie, episode, authToken, durationSe
                 }, 8000);
             });
 
+            // True once any fragment demuxed cleanly: a later parse failure
+            // is a transient glitch (flushed partial segment, dropped
+            // sample), never proof the codec is undecodeable.
+            let fragBufferedOk = false;
+            hls.on(Hls.Events.FRAG_BUFFERED, () => {
+                fragBufferedOk = true;
+            });
             hls.on(Hls.Events.FRAG_LOADED, () => {
                 fatalNetworkRecoveries = 0;
                 stuckFragSn = null;
@@ -1269,6 +1302,25 @@ export default function VideoPlayer({ src, movie, episode, authToken, durationSe
                     }
                 }
                 if (data.fatal) {
+                    // Undecodeable bytes: the SourceBuffer rejecting the
+                    // codec, or a demux failure before anything ever parsed
+                    // (a later parse failure is transient, see above).
+                    // recoverMediaError on the same session is futile — the
+                    // Devil May Cry class burned two recoveries on identical
+                    // HEVC Main 10 bytes. Hand to the parent for a failover
+                    // to another source instead.
+                    const detail = String((data as { details?: unknown })?.details || '');
+                    if (
+                        detail === Hls.ErrorDetails.BUFFER_ADD_CODEC_ERROR ||
+                        (detail === Hls.ErrorDetails.FRAG_PARSING_ERROR && !fragBufferedOk)
+                    ) {
+                        const unplayable = onUnplayableSourceRef.current;
+                        if (unplayable) unplayable();
+                        else if (onPlaybackFailure) onPlaybackFailure('Trình duyệt không giải mã được bản phát này.');
+                        else setError('Trình duyệt không giải mã được bản phát này. Bấm Thử lại để nối lại.');
+                        hls.destroy();
+                        return;
+                    }
                     switch (data.type) {
                         case Hls.ErrorTypes.NETWORK_ERROR:
                             fatalNetworkRecoveries += 1;
@@ -1378,6 +1430,21 @@ export default function VideoPlayer({ src, movie, episode, authToken, durationSe
                 cleanupNative();
                 restorePendingRef.current = false;
                 setIsLoading(false);
+                // MEDIA_ERR_SRC_NOT_SUPPORTED: the bytes are not playable
+                // here at all (e.g. Main 10 on an 8-bit decoder) — same
+                // failover path as the hls.js codec fatals above.
+                try {
+                    const mediaError = (video as HTMLVideoElement).error;
+                    if (mediaError && mediaError.code === 4 /* MEDIA_ERR_SRC_NOT_SUPPORTED */) {
+                        const unplayable = onUnplayableSourceRef.current;
+                        if (unplayable) unplayable();
+                        else if (onPlaybackFailure) onPlaybackFailure('Trình duyệt không giải mã được bản phát này.');
+                        else setError('Trình duyệt không giải mã được bản phát này. Bấm Thử lại để nối lại.');
+                        return;
+                    }
+                } catch {
+                    // Reading .error can throw mid-teardown on some builds.
+                }
                 const reason = 'Liên kết phát trực tiếp bị gián đoạn.';
                 if (onPlaybackFailure) onPlaybackFailure(reason);
                 else setError(`${reason} Bấm Thử lại để nối lại.`);

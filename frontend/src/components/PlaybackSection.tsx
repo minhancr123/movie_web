@@ -45,7 +45,7 @@ import { groupPlaybackSources } from '@/lib/source-groups';
 import type { PlayerEpisode } from '@/lib/catalog';
 import { episodeScrollTarget } from '@/lib/episode-list';
 import { useWatchHistory } from '../hooks/useLocalStorage';
-import { computeResumeAt, audioSwitchStartAt, pickRecoveryTarget, hasSustainedProgress } from '@/lib/playback-progress';
+import { computeResumeAt, audioSwitchStartAt, pickRecoveryTarget, hasSustainedProgress, pickFailoverStartAt } from '@/lib/playback-progress';
 
 interface PlaybackSectionProps {
   type: 'movie' | 'tv';
@@ -591,9 +591,110 @@ export default function PlaybackSection({
     }
   };
 
+  // Sources the decoder already proved unplayable this title: failed over
+  // once each, never retried on identical bytes. Keyed on BOTH the token
+  // asked for and the token actually playing: a silent server fallback
+  // (torrent asked, Vimo served) must poison the request too, or the next
+  // failover re-asks the same torrent and loops torrent→Vimo forever.
+  const decodeFailedTokensRef = useRef<Set<string>>(new Set());
+  // Backstop against any loop the set misses: bounded failovers per title,
+  // then a straight error screen.
+  const decodeFailoverCountRef = useRef(0);
+  const MAX_DECODE_FAILOVERS = 3;
+  // Token sent with the latest resolve (pre-fallback): mirrored for the
+  // failover above, which otherwise only sees the served token.
+  const requestedTokenRef = useRef<string>('');
+
+  // Stable source list mirror: reading `sources` state directly would rebind
+  // this callback on every list load and tear down the player's pipeline
+  // (re-created prop → effect re-run → replay from zero) just from opening
+  // the source menu mid-watch.
+  const sourcesRef = useRef(sources);
+  sourcesRef.current = sources;
+
+  // Codec-fatal failover: the bytes cannot decode here, so rebuilding the
+  // same session (normal recovery) is futile. Switch to the next playable,
+  // not-yet-failed source instead; with nothing left, show the error screen
+  // at once instead of recovering on the same unplayable bytes twice.
+  // Auto-start never loads the menu list, so an empty list is fetched first.
+  const handleUnplayableSource = useCallback(() => {
+    void (async () => {
+      const failed = decodeFailedTokensRef.current;
+      if (activeTokenRef.current) failed.add(activeTokenRef.current);
+      if (requestedTokenRef.current) failed.add(requestedTokenRef.current);
+      let list = sourcesRef.current;
+      if (list.length === 0) {
+        try {
+          list = await listSourcesOnceRef.current();
+        } catch {
+          list = [];
+        }
+      }
+      const next = list.find(
+        (s) => s.playable !== false && s.sourceToken && !failed.has(s.sourceToken),
+      );
+      decodeFailoverCountRef.current += 1;
+      if (!next?.sourceToken || decodeFailoverCountRef.current > MAX_DECODE_FAILOVERS) {
+        setPlaybackStatus('error');
+        setErrorMessage('Trình duyệt không giải mã được các bản phát đã thử. Hãy chọn bản khác trong danh sách nguồn.');
+        try {
+          await listSourcesOnceRef.current();
+        } catch {
+          // Menu shows whatever loaded; the error above already explains.
+        }
+        setShowSources(true);
+        return;
+      }
+      setNotice('Bản này trình duyệt không giải mã được — đang chuyển sang bản khác tương thích hơn…');
+      // Resume where the viewer was, not at zero: a mid-film codec failure
+      // must not replay the opening. 0 (startup failure) starts clean.
+      const failoverAt = pickFailoverStartAt({
+        pendingSeek: pendingSeekRef.current,
+        playhead: playheadRef.current,
+      });
+      const epoch = ++seekEpochRef.current;
+      void startPlaybackResolutionRef
+        .current(next.sourceToken, activeAudioIndexRef.current ?? undefined, {
+          ...(failoverAt > 0 ? { startAt: failoverAt } : {}),
+          seekEpoch: epoch,
+        })
+        .catch(() => {
+          // Error UI is owned by the resolve path itself; a failed failover
+          // just leaves the viewer where the notice already explains.
+        });
+    })();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
+
+  // Lists the catalog of playable sources AND returns it, so callers that
+  // need the fresh list (failover on an unloaded list) do not read stale
+  // state. The visible menu behaviour is unchanged.
+  const listSourcesOnce = useCallback(async () => {
+    try {
+      const res = await playbackAPI.listSources({
+        type,
+        tmdbId,
+        season: season ?? undefined,
+        episode: currentEpisode ?? undefined,
+        capabilities: detectCapabilities(),
+      });
+      const items = res.data?.data?.sources || [];
+      setSources(items);
+      return items;
+    } catch {
+      return sourcesRef.current;
+    }
+  }, [type, tmdbId, season, currentEpisode]);
+
+  const listSourcesOnceRef = useRef<() => Promise<SourceCandidate[]>>(async () => []);
+  listSourcesOnceRef.current = listSourcesOnce;
+
   // New title, new decode budget: allow one step-down again, drop the banner.
   useEffect(() => {
     decodeDowngradeDoneRef.current = false;
+    decodeFailedTokensRef.current.clear();
+    decodeFailoverCountRef.current = 0;
+    requestedTokenRef.current = '';
     setNotice(null);
   }, [type, tmdbId, season, currentEpisode]);
 
@@ -896,6 +997,10 @@ export default function PlaybackSection({
       rememberedToken = '';
     }
     const resolvedSourceToken = sourceToken || rememberedToken || '';
+    // Mirrored for the codec-fatal failover: after a silent server fallback
+    // the playing token differs from the asked one, and only poisoning both
+    // stops a re-ask loop (torrent asked → Vimo served → fail → ask torrent).
+    requestedTokenRef.current = resolvedSourceToken;
     const resolvedAudioIndex =
       audioIndex !== undefined ? audioIndex : activeAudioIndexRef.current;
     const resolvedStartAt =
@@ -1539,21 +1644,15 @@ export default function PlaybackSection({
   const loadSources = useCallback(async () => {
     setIsLoadingSources(true);
     try {
-      const res = await playbackAPI.listSources({
-        type,
-        tmdbId,
-        season: season ?? undefined,
-        episode: currentEpisode ?? undefined,
-        capabilities: detectCapabilities(),
-      });
-      setSources(res.data?.data?.sources || []);
+      await listSourcesOnce();
       setShowSources(true);
     } catch (err: any) {
       setErrorMessage(err.response?.data?.message || 'Không tải được danh sách nguồn');
     } finally {
       setIsLoadingSources(false);
     }
-  }, [type, tmdbId, season, currentEpisode]);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [listSourcesOnce]);
 
   loadSourcesRef.current = loadSources;
 
@@ -1932,6 +2031,7 @@ export default function PlaybackSection({
             src={playUrl}
             reloadKey={reloadKey}
             onPlaybackFailure={recoverPlayback}
+            onUnplayableSource={handleUnplayableSource}
             onPlaybackProgress={handlePlaybackProgress}
             onDecodeOverload={handleDecodeOverload}
             movie={movieData}

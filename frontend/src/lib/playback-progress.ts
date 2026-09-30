@@ -341,6 +341,28 @@ const AUDIO_SWITCH_MIN = 10;
  * first moments after a seek), and a seek-started session must never be
  * rebuilt from zero.
  */
+/**
+ * Where a codec-fatal source switch should resume: the pending seek target
+ * when the failure struck mid-seek, else the live playhead. A missing or
+ * pre-roll position resolves to 0 (start), never negative, never NaN — the
+ * caller omits startAt entirely at 0 so the new source starts clean.
+ */
+export const pickFailoverStartAt = (args: {
+  pendingSeek?: number | null;
+  playhead?: number | null;
+}): number => {
+  const sanePlayhead = (v: number | null | undefined): number | null => {
+    const n = Number(v);
+    return Number.isFinite(n) && n > 0 ? Math.floor(n) : null;
+  };
+  // A pending seek is a deliberate act: even an explicit seek-to-zero must
+  // survive (pendingSeekRef is null when no seek is in flight, so 0 here
+  // unambiguously means "the viewer asked for the start").
+  const n = Number(args.pendingSeek);
+  if (Number.isFinite(n) && n >= 0) return Math.floor(n);
+  return sanePlayhead(args.playhead) ?? 0;
+};
+
 export const audioSwitchStartAt = (args: {
   /** Live playhead in full-film seconds (display time, not element time). */
   playhead: number;

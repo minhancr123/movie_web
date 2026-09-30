@@ -50,6 +50,10 @@ export const planDelivery = ({
   sourceKbps = null,
   ladder = LADDER,
   maxRung = null,
+  // False when the operator policy forbids video encoding: the ladder must
+  // never promise a transcode it is not allowed to run. Defaults true so
+  // existing callers keep the old behaviour until they pass the capability.
+  canTranscode = true,
 } = {}) => {
   if (lan) {
     return {
@@ -58,6 +62,19 @@ export const planDelivery = ({
       height: sourceHeight,
       kbps: sourceKbps || REMUX_NOMINAL_KBPS,
       lan: true,
+    };
+  }
+
+  if (!canTranscode) {
+    // No narrower rung exists without an encoder: serve the source as-is
+    // (remux shape) and let admission decide honestly whether the uplink
+    // affords it, instead of dangling a transcode that can never run.
+    return {
+      mode: 'remux',
+      reason: 'Chính sách tắt chuyển mã video — giữ nguyên chất lượng nguồn',
+      height: sourceHeight,
+      kbps: sourceKbps || REMUX_NOMINAL_KBPS,
+      lan: false,
     };
   }
 
@@ -106,12 +123,39 @@ export const planAdmission = ({
   sourceKbps = null,
   budgetKbps = EGRESS_BUDGET_KBPS,
   ladder = LADDER,
+  canTranscode = true,
 } = {}) => {
   if (lan) {
     const plan = planDelivery({ lan: true, sourceHeight, sourceKbps, ladder });
     // LAN traffic never crosses the uplink, so it is admitted regardless of
     // what remote viewers are already using.
     return { admitted: true, ...plan };
+  }
+
+  if (!canTranscode) {
+    // One honest check at the source's own rate: no rung to squeeze into
+    // without an encoder, so over budget means refused, not transcoded.
+    const spent = Math.max(0, Number(activeKbps) || 0);
+    const need = Number(sourceKbps) > 0 ? Number(sourceKbps) : REMUX_NOMINAL_KBPS;
+    if (spent + need <= budgetKbps) {
+      return {
+        admitted: true,
+        mode: 'remux',
+        reason: `Nguồn ${sourceHeight || '?'}p ~${Math.round(need)}kbps vừa uplink (không chuyển mã)`,
+        height: sourceHeight,
+        kbps: need,
+        lan: false,
+      };
+    }
+    const narrowest = ladder[ladder.length - 1];
+    return {
+      admitted: false,
+      mode: 'reject',
+      reason: `Uplink đã dùng ${spent}/${budgetKbps}kbps, không đủ cho nguồn ~${Math.round(need)}kbps và chính sách tắt chuyển mã (bậc thấp nhất ${narrowest.kbps}kbps cũng cần encode)`,
+      height: null,
+      kbps: 0,
+      lan: false,
+    };
   }
 
   const spent = Math.max(0, Number(activeKbps) || 0);

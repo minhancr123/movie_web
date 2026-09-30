@@ -1,5 +1,12 @@
 export interface ClientCapabilities {
   hevc: boolean;
+  /**
+   * HEVC Main 10 (10-bit) specifically. Many browsers decode 8-bit HEVC but
+   * not Main 10 (notably Chrome/Edge MSE); serving a Main 10 copy to them is
+   * a guaranteed MEDIA_ERROR. Probed separately from `hevc` so the server
+   * can reject/route Main 10 sources per client instead of guessing.
+   */
+  hevcMain10: boolean;
   av1: boolean;
   hdr: boolean;
   maxHeight: number;
@@ -13,6 +20,7 @@ export function detectCapabilities(): ClientCapabilities {
   if (typeof window === 'undefined') {
     return {
       hevc: false,
+      hevcMain10: false,
       av1: false,
       hdr: false,
       maxHeight: 1080,
@@ -30,6 +38,14 @@ export function detectCapabilities(): ClientCapabilities {
       MediaSource.isTypeSupported('video/mp4; codecs="hvc1.1.6.L93.B0"')) ||
     video.canPlayType('video/mp4; codecs="hvc1.1.6.L93.B0"') === 'probably' ||
     video.canPlayType('video/mp4; codecs="hev1.1.6.L93.B0"') === 'probably';
+
+  // Check HEVC Main 10 (10-bit) support separately: profile_idc=2.
+  // An 8-bit-only decoder reports hevc above but fails Main 10 bytes.
+  const hevcMain10 =
+    (typeof MediaSource !== 'undefined' &&
+      MediaSource.isTypeSupported('video/mp4; codecs="hvc1.2.4.L123.B0"')) ||
+    video.canPlayType('video/mp4; codecs="hvc1.2.4.L123.B0"') === 'probably' ||
+    video.canPlayType('video/mp4; codecs="hev1.2.4.L123.B0"') === 'probably';
 
   // Check AV1 codec support
   const av1 =
@@ -66,6 +82,7 @@ export function detectCapabilities(): ClientCapabilities {
 
   return {
     hevc,
+    hevcMain10,
     av1,
     hdr,
     maxHeight,
