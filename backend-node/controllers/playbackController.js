@@ -2564,8 +2564,17 @@ export const prewarmPlayback = async (req, res) => {
       data: { warmed: true, cached: Boolean(target.cached), probeHit },
     });
   } catch (error) {
-    console.error(`prewarmPlayback error tmdb=${tmdbId}:`, error.message);
-    return fail(res, error.status || 500, error.message || 'Lỗi server');
+    // Prewarm is best-effort by contract: the client fires it on hover and on
+    // resume and ignores whatever comes back. A 500 here told nobody anything
+    // and showed up in the console as a resource failure next to the real
+    // playback request, sending the reader after the wrong culprit. A metadata
+    // outage (TMDB rate-limiting) is not this endpoint's fault, so it is
+    // reported as "could not warm" and the viewer simply does not get the
+    // head start.
+    console.warn(`prewarm khong thanh cong tmdb=${tmdbId}: ${error.message}`);
+    return fail(res, error.status || 503, error.message || 'Chưa chuẩn bị được phim', {
+      warmed: false,
+    });
   }
 };
 

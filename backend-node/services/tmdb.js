@@ -5,8 +5,56 @@ import { buildContentRef, toSlug } from './contentRef.js';
 // TCP both succeed, then the handshake is reset. Point TMDB_BASE_URL at a proxy
 // you control (see scripts/tmdb-proxy-worker.js) when the host network blocks it.
 // image.tmdb.org is not blocked, so posters are always fetched directly.
-const BASE_URL = (process.env.TMDB_BASE_URL || 'https://api.themoviedb.org/3').replace(/\/+$/, '');
+//
+// Direct base first: the configured one defaults to it, so it has to exist
+// before the default is read.
+const DIRECT_BASE_URL = (
+  process.env.TMDB_DIRECT_BASE_URL || 'https://api.themoviedb.org/3'
+).replace(/\/+$/, '');
+const CONFIGURED_BASE_URL = (
+  process.env.TMDB_BASE_URL || DIRECT_BASE_URL
+).replace(/\/+$/, '');
 const IMAGE_BASE = 'https://image.tmdb.org/t/p';
+
+// The proxy is a convenience for blocked networks, not a dependency — and it
+// fails in ways a retry cannot fix. A Cloudflare-fronted worker started
+// answering 429 for every request, so every catalog read failed and with it
+// every playback resolve: the site looked alive (cached rows still served)
+// but nothing was watchable.
+//
+// So: when the configured base is not the real TMDB and it fails in a way only
+// the network could cause, stop using it for a while and talk to TMDB directly.
+// A cooldown rather than a permanent switch, because the ISP block this exists
+// for is not permanent either and the proxy may come back.
+const DIRECT_BASE_COOLDOWN_MS = 10 * 60 * 1000;
+let directBaseUntil = 0;
+let baseUrl = CONFIGURED_BASE_URL;
+
+const usingConfiguredBase = () => baseUrl === CONFIGURED_BASE_URL;
+
+const fallBackToDirectBase = () => {
+  if (!usingConfiguredBase()) return;
+  baseUrl = DIRECT_BASE_URL;
+  directBaseUntil = Date.now() + DIRECT_BASE_COOLDOWN_MS;
+  console.warn(
+    `[tmdb] ${CONFIGURED_BASE_URL} khong phai loi — chuyen sang ${DIRECT_BASE_URL} `
+    + `trong ${DIRECT_BASE_COOLDOWN_MS / 60000} phut`,
+  );
+};
+
+// Re-probe the configured base after the cooldown, on a timer rather than
+// inside a request: a fallback path that has to fail once more before it can
+// succeed would put that cost on the first viewer after every cooldown.
+let restoreTimer = null;
+const scheduleConfiguredBaseRetry = () => {
+  if (restoreTimer || usingConfiguredBase()) return;
+  const wait = Math.max(1000, directBaseUntil - Date.now());
+  restoreTimer = setTimeout(() => {
+    restoreTimer = null;
+    if (!usingConfiguredBase()) baseUrl = CONFIGURED_BASE_URL;
+  }, wait);
+  restoreTimer.unref?.();
+};
 
 const LANGUAGE = process.env.TMDB_LANGUAGE || 'vi-VN';
 const FALLBACK_LANGUAGE = 'en-US';
@@ -46,8 +94,8 @@ export const STALE_OPTS_SHORT = Object.freeze({ staleOnError: true, staleTtlSeco
 
 export const isTmdbConfigured = () => Boolean(readToken || apiKey);
 
-const buildUrl = (path, params = {}) => {
-  const url = new URL(`${BASE_URL}${path}`);
+const buildUrl = (path, params = {}, root = baseUrl) => {
+  const url = new URL(`${root}${path}`);
   Object.entries(params).forEach(([key, value]) => {
     if (value === undefined || value === null || value === '') return;
     url.searchParams.set(key, String(value));
@@ -61,54 +109,71 @@ const request = async (path, params = {}) => {
   if (!isTmdbConfigured()) {
     throw new Error('TMDB chưa được cấu hình: thiếu TMDB_READ_TOKEN hoặc TMDB_API_KEY');
   }
+  scheduleConfiguredBaseRetry();
 
+  // One pass per base, deduplicated: with no proxy configured both entries are
+  // the same host, and repeating the attempt set would double every request
+  // for a failure that was already exhaustible.
+  const bases = [...new Set(
+    usingConfiguredBase() ? [CONFIGURED_BASE_URL, DIRECT_BASE_URL] : [DIRECT_BASE_URL],
+  )];
   let lastError = null;
-  for (let attempt = 1; attempt <= MAX_ATTEMPTS; attempt += 1) {
-    const controller = new AbortController();
-    const timer = setTimeout(() => controller.abort(), REQUEST_TIMEOUT_MS);
 
-    try {
-      // NOTE: never log buildUrl — it carries api_key in the query string.
-      const response = await fetch(buildUrl(path, params), {
-        signal: controller.signal,
-        headers: {
-          accept: 'application/json',
-          ...(readToken ? { authorization: `Bearer ${readToken}` } : {}),
-          ...(proxyToken ? { 'x-proxy-token': proxyToken } : {}),
-        },
-      });
+  for (const root of bases) {
+    for (let attempt = 1; attempt <= MAX_ATTEMPTS; attempt += 1) {
+      const controller = new AbortController();
+      const timer = setTimeout(() => controller.abort(), REQUEST_TIMEOUT_MS);
 
-      if (response.status === 404) return null;
-      if (!response.ok) {
-        if (!isRetryableStatus(response.status)) {
-          const fatal = new Error(`TMDB ${path} trả về ${response.status}`);
-          fatal.retryable = false;
-          throw fatal;
+      try {
+        // NOTE: never log buildUrl — it carries api_key in the query string.
+        const response = await fetch(buildUrl(path, params, root), {
+          signal: controller.signal,
+          headers: {
+            accept: 'application/json',
+            ...(readToken ? { authorization: `Bearer ${readToken}` } : {}),
+            ...(proxyToken ? { 'x-proxy-token': proxyToken } : {}),
+          },
+        });
+
+        if (response.status === 404) return null;
+        if (!response.ok) {
+          if (!isRetryableStatus(response.status)) {
+            const fatal = new Error(`TMDB ${path} trả về ${response.status}`);
+            fatal.retryable = false;
+            throw fatal;
+          }
+          // Free the socket before sleeping: an error body left unread pins a
+          // pooled connection for the whole backoff.
+          try { await response.body?.cancel(); } catch { /* best-effort */ }
+          lastError = new Error(`TMDB ${path} trả về ${response.status} (lần ${attempt}/${MAX_ATTEMPTS})`);
+          console.warn(`[tmdb] ${path} trả về ${response.status}, thử lại ${attempt}/${MAX_ATTEMPTS}`);
+        } else {
+          // A working call on the configured base needs no action: the cooldown
+          // timer already put us back here.
+          return await response.json();
         }
-        // Free the socket before sleeping: an error body left unread pins a
-        // pooled connection for the whole backoff.
-        try { await response.body?.cancel(); } catch { /* best-effort */ }
-        lastError = new Error(`TMDB ${path} trả về ${response.status} (lần ${attempt}/${MAX_ATTEMPTS})`);
-        console.warn(`[tmdb] ${path} trả về ${response.status}, thử lại ${attempt}/${MAX_ATTEMPTS}`);
-      } else {
-        return await response.json();
+      } catch (error) {
+        if (error?.retryable === false) throw error;
+        const reason = error?.name === 'AbortError'
+          ? `quá ${REQUEST_TIMEOUT_MS / 1000}s không phản hồi`
+          : (error?.message || error);
+        lastError = error?.name === 'AbortError'
+          ? new Error(`TMDB ${path} ${reason} (lần ${attempt}/${MAX_ATTEMPTS})`)
+          : error;
+        console.warn(`[tmdb] ${path} lỗi (${reason}), thử lại ${attempt}/${MAX_ATTEMPTS}`);
+      } finally {
+        clearTimeout(timer);
       }
-    } catch (error) {
-      if (error?.retryable === false) throw error;
-      const reason = error?.name === 'AbortError'
-        ? `quá ${REQUEST_TIMEOUT_MS / 1000}s không phản hồi`
-        : (error?.message || error);
-      lastError = error?.name === 'AbortError'
-        ? new Error(`TMDB ${path} ${reason} (lần ${attempt}/${MAX_ATTEMPTS})`)
-        : error;
-      console.warn(`[tmdb] ${path} lỗi (${reason}), thử lại ${attempt}/${MAX_ATTEMPTS}`);
-    } finally {
-      clearTimeout(timer);
+
+      if (attempt < MAX_ATTEMPTS) {
+        await sleep(RETRY_DELAYS_MS[attempt - 1] ?? 1000);
+      }
     }
 
-    if (attempt < MAX_ATTEMPTS) {
-      await sleep(RETRY_DELAYS_MS[attempt - 1] ?? 1000);
-    }
+    // Out of attempts on the configured base: retire it for the cooldown. This
+    // is the difference between one broken proxy taking the site down and one
+    // request paying for it.
+    if (root === CONFIGURED_BASE_URL) fallBackToDirectBase();
   }
   throw lastError;
 };
