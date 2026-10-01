@@ -108,7 +108,7 @@ import { planAdmission } from '../services/playback/deliveryPlan.js';
 import { getDecryptedKey } from '../services/providers/connectionStore.js';
 import { computeOpenSubtitlesHash } from '../services/playback/opensubtitlesHash.js';
 import * as opensubtitles from '../services/playback/opensubtitles.js';
-import { resolveVimoSource, getVimoStreams } from '../services/playback/vimoClient.js';
+import { resolveVimoSource, getVimoStreams, verifyVimoStream } from '../services/playback/vimoClient.js';
 import { resolveYaStreamSource } from '../services/playback/yastreamClient.js';
 
 const PROVIDER = 'torbox';
@@ -998,8 +998,25 @@ const serveVimoDirect = async ({ db, req, detail, type, tmdbId, season, episode,
     season: epSeason,
     episode: epEpisode,
   }).catch(() => []);
-  const pick = streams[0];
-  if (!pick?.url) {
+  // First LIVE stream wins, not first listed: the addon lists URLs whose files
+  // are already gone (rotated hosts, purged date directories, expired
+  // signatures), and handing one to the player costs minutes of spinner plus
+  // a retry storm for a film that was never going to play. A dead pick is
+  // skipped here, where it costs one ranged request, instead of in the
+  // browser, where it costs the evening.
+  let pick = null;
+  for (const candidate of streams) {
+    if (!candidate?.url) continue;
+    // eslint-disable-next-line no-await-in-loop
+    if (await verifyVimoStream(candidate.url)) {
+      pick = candidate;
+      break;
+    }
+    console.warn(
+      `vimo bo qua link chet ${streamType}:${vimoId} [${candidate.resolution || '?'}] ${String(candidate.url).slice(0, 80)}`,
+    );
+  }
+  if (!pick) {
     return vimoToken
       ? { error: 'Vimo hiện không có link cho tập này' }
       : { empty: true };
