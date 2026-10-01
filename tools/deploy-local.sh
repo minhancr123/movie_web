@@ -59,6 +59,18 @@ say "files in $SHA"
 git diff --name-only HEAD~1..HEAD | sed 's/^/    /'
 
 # --- build ------------------------------------------------------------------
+# A local build needs gigabytes of headroom for layers, more than a
+# pull does. Same preflight as the CI path: prune first if warm, refuse if
+# still too full — a build that dies mid-layer wastes the time it took to
+# get there and leaves the disk worse than before.
+USEP=$(df --output=pcent / | tail -1 | tr -d ' %')
+if [ "$USEP" -ge 85 ]; then
+  say "disk at ${USEP}% — pruning before build"
+  docker builder prune -af >/dev/null 2>&1 || true
+  docker image prune -af >/dev/null 2>&1 || true
+  USEP=$(df --output=pcent / | tail -1 | tr -d ' %')
+fi
+[ "$USEP" -lt 92 ] || die "disk still at ${USEP}% after prune — refusing to build"
 docker build -q -t "minhancr123/movie-web:node-$SHA" -f backend-node/Dockerfile ./backend-node \
   || die 'backend build'
 docker build -q --build-arg NEXT_PUBLIC_API_URL="$API_URL" \

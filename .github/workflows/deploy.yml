@@ -136,6 +136,19 @@ jobs:
             GOT=$(git rev-parse HEAD)
             [ "$GOT" = "$SHA" ] || { echo "checked out $GOT, expected $SHA"; exit 1; }
 
+            # Pulling two images needs gigabytes of headroom, and a pull
+            # that runs out mid-layer leaves the daemon in a worse state than
+            # refusing early. Prune first if the box is already warm; refuse if
+            # it is still too full afterwards.
+            USEP=$(df --output=pcent / | tail -1 | tr -d ' %')
+            if [ "$USEP" -ge 85 ]; then
+              echo "disk at ${USEP}% — pruning before pull"
+              docker builder prune -af >/dev/null 2>&1 || true
+              docker image prune -af >/dev/null 2>&1 || true
+              USEP=$(df --output=pcent / | tail -1 | tr -d ' %')
+            fi
+            [ "$USEP" -lt 92 ] || { echo "::error::disk still at ${USEP}% after prune — refusing to pull"; exit 1; }
+
             # Rollback targets are image IDs, not tags: tags move, IDs do not.
             PREV_BACKEND=$(docker inspect -f '{{.Image}}' cineon-backend 2>/dev/null || true)
             PREV_FRONTEND=$(docker inspect -f '{{.Image}}' cineon-frontend 2>/dev/null || true)
