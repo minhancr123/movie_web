@@ -1575,6 +1575,11 @@ export const resolvePlayback = async (req, res) => {
         if (error instanceof DebridError && error.code === 'invalid_token') {
           return fail(res, 401, 'TorBox từ chối API key, vui lòng kết nối lại', { code: error.code });
         }
+        // Logged, not silent: like the probe below, a bare `continue` makes
+        // the failure unfindable. infoHash prefix only — nothing sensitive.
+        console.warn(
+          `resolvePlayback prepare failed tmdb=${tmdbId} infoHash=${String(candidate.infoHash).slice(0, 12)}: ${error?.message}`,
+        );
         lastError = error;
         const transient = torbox.isTransientDebridError(error);
         if (transient && hadCachedCandidate) transientPrepareFailure = true;
@@ -1664,13 +1669,19 @@ export const resolvePlayback = async (req, res) => {
       // once instead (the fresh doc then serves everyone).
       if (probe && probe.video && !('startTime' in probe.video)) probe = null;
       if (!probe) {
-        try {
-          probe = await ffprobe(inputUrl);
-        } catch (error) {
-          console.error(`resolvePlayback probe failed tmdb=${tmdbId} mode=retry`);
-          lastError = error;
-          continue;
-        }
+      try {
+        probe = await ffprobe(inputUrl);
+      } catch (error) {
+        // The message is the whole diagnosis (HTTP status from the CDN,
+        // "Invalid data", timeout): without it every probe failure looks
+        // identical in the logs and the cause is unfindable. This exact
+        // silence once cost an evening of guessing.
+        console.error(
+          `resolvePlayback probe failed tmdb=${tmdbId} infoHash=${String(candidate.infoHash).slice(0, 12)}: ${error?.message}`,
+        );
+        lastError = error;
+        continue;
+      }
         await setCache(probeCacheKey, probe, PROBE_RESULT_TTL);
       }
       // Record before acting on it: a rejection here is exactly the fact the
