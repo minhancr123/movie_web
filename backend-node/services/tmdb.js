@@ -71,6 +71,31 @@ const REQUEST_TIMEOUT_MS = 3500;
 const MAX_ATTEMPTS = 3;
 const RETRY_DELAYS_MS = [300, 900];
 
+// Longest we will ever wait because someone asked us to: beyond this the
+// frontend's 15s SSR budget is gone anyway, and an unbounded sleep turns one
+// slow dependency into a hung request.
+const MAX_RETRY_AFTER_MS = 5000;
+
+/**
+ * How long the server asked us to wait, in ms, or null when it did not say.
+ * Accepts delay-seconds and HTTP-date forms; anything unparseable or absurd
+ * reads as "no instruction", never as an error and never as a long sleep.
+ */
+export const retryAfterMs = (response) => {
+  if (!response?.headers?.get) return null;
+  const raw = response.headers.get('retry-after');
+  if (!raw) return null;
+  const seconds = Number(raw);
+  if (Number.isFinite(seconds) && seconds >= 0) {
+    return Math.min(Math.ceil(seconds * 1000), MAX_RETRY_AFTER_MS);
+  }
+  const at = Date.parse(raw);
+  if (Number.isFinite(at)) {
+    return Math.min(Math.max(at - Date.now(), 0), MAX_RETRY_AFTER_MS);
+  }
+  return null;
+};
+
 const sleep = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
 
 const isRetryableStatus = (status) => status === 429 || (status >= 500 && status <= 599);
@@ -146,7 +171,21 @@ const request = async (path, params = {}) => {
           // pooled connection for the whole backoff.
           try { await response.body?.cancel(); } catch { /* best-effort */ }
           lastError = new Error(`TMDB ${path} trả về ${response.status} (lần ${attempt}/${MAX_ATTEMPTS})`);
-          console.warn(`[tmdb] ${path} trả về ${response.status}, thử lại ${attempt}/${MAX_ATTEMPTS}`);
+          // A 429 without a Retry-After is a guess; a 429 WITH one is an
+          // instruction. Hammering through it is how a rate limit becomes a
+          // block: every blind retry is more of exactly the traffic that got
+          // flagged. So the server's number wins over the fixed ladder, and a
+          // missing one keeps the ladder instead of inventing a wait.
+          const instructed = retryAfterMs(response);
+          const waitMs = instructed ?? RETRY_DELAYS_MS[attempt - 1] ?? 1000;
+          console.warn(
+            `[tmdb] ${path} trả về ${response.status}, thử lại ${attempt}/${MAX_ATTEMPTS} sau ${waitMs}ms`,
+          );
+          if (attempt < MAX_ATTEMPTS) {
+            clearTimeout(timer);
+            await sleep(waitMs);
+            continue;
+          }
         } else {
           // A working call on the configured base needs no action: the cooldown
           // timer already put us back here.

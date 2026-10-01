@@ -94,3 +94,27 @@ assert.match(
   'the fallback announces itself in the log, so the swap is visible',
 );
 console.log('ok - a dead TMDB proxy is retired and the read still succeeds');
+
+/* ------------------------------------------------- Retry-After parsing */
+
+const { retryAfterMs } = await import(
+  pathToFileURL(path.resolve(import.meta.dirname, '..', 'services', 'tmdb.js')).href
+);
+const fakeRes = (v) => ({ headers: new Map(v === null ? [] : [['retry-after', v]]) });
+
+assert.equal(retryAfterMs(fakeRes('2')), 2000, 'delay-seconds are honoured');
+assert.equal(retryAfterMs(fakeRes('0')), 0, 'zero means retry now, not default');
+assert.equal(retryAfterMs(fakeRes(null)), null, 'absent header keeps the ladder');
+assert.equal(
+  retryAfterMs(fakeRes('99999')),
+  5000,
+  'an absurd wait is capped instead of hanging the request',
+);
+assert.equal(retryAfterMs(fakeRes('garbage')), null, 'garbage is not a wait');
+assert.equal(
+  retryAfterMs(fakeRes(new Date(Date.now() + 3000).toUTCString())) !== null,
+  true,
+  'HTTP-date form parses',
+);
+assert.equal(retryAfterMs(null), null, 'no response is not a wait');
+console.log('ok - Retry-After is honoured, capped, and never invented');
