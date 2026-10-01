@@ -488,6 +488,42 @@ check('manifest-response-missing-file-answers-404', async () => {
   assert.equal(res.jsonBody.success, false);
 });
 
+// --- mid-playback expiry: a grant that dies while the viewer watches must
+// read as expired (never scope-mismatch/invalid), miss the stable cache,
+// and rotate to a fresh grant for the same session — the exact signal chain
+// the client's 401/403 rebuild relies on. Crafted deterministically: no
+// sleeping on a 6h TTL.
+check('grant-expired-mid-playback-rotates', async () => {
+  const secret = process.env.MEDIA_GRANT_SECRET;
+  const dead = jwt.sign(
+    {
+      pur: grant.MEDIA_GRANT_PURPOSE,
+      aud: grant.MEDIA_GRANT_AUDIENCE,
+      sid: SID_A,
+      exp: Math.floor(Date.now() / 1000) - 30,
+    },
+    secret,
+  );
+  const checked = grant.verifyMediaGrant(dead, { expectSessionId: SID_A });
+  assert.equal(checked.ok, false);
+  assert.equal(checked.reason, 'expired');
+
+  // Stable cache holds no live grant for this session anymore...
+  grant.clearStableGrants();
+  assert.equal(grant.getStableGrant(`s:${SID_A}`, Date.now()), null);
+
+  // ...so the next manifest serve mints fresh: same session, new token,
+  // immediately valid. (Mirrors the P2-fallback: Bearer re-authorizes,
+  // response carries the rotated grant.)
+  const fresh = grant.mintMediaGrant({ sessionId: SID_A });
+  assert.notEqual(fresh.token, dead);
+  const rechecked = grant.verifyMediaGrant(fresh.token, { expectSessionId: SID_A });
+  assert.equal(rechecked.ok, true);
+  assert.equal(rechecked.sessionId, SID_A);
+  grant.putStableGrant(`s:${SID_A}`, fresh.token, fresh.expiresAtMs);
+  assert.equal(grant.getStableGrant(`s:${SID_A}`, Date.now()), fresh.token);
+});
+
 await Promise.all(pending);
 await manifestTmp.fs.rm(manifestTmp.dir, { recursive: true, force: true });
 

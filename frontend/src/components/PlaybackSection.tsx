@@ -771,6 +771,47 @@ export default function PlaybackSection({
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [playbackSessionId, isSessionActive]);
 
+  // Foreground after a long hide: the media grant inside the manifest URL
+  // may have expired while the tab slept (native HLS never refetches it on
+  // its own). Re-applying the same URL bumps reloadKey and rebuilds the
+  // pipeline with the Bearer, so the backend mints a fresh grant. Gated on
+  // ready + long hide so normal tab-switching never flickers. (React 19
+  // auto-batches the two setStates below into one render → one rebuild.)
+  //
+  // The rebuild target is refreshed from the live playhead first: targetAt
+  // is resolve-time and may be far behind (or 0), which would replay from
+  // the wrong minutes. hiddenAt lives in a ref (not effect-local) so a
+  // playUrl/status change remounting this effect mid-hide does not reset
+  // the clock — and seeds from the actual visibility so a hide that began
+  // while resolving (listener not yet mounted) is still counted.
+  const grantHiddenAtRef = useRef<number | null>(
+    typeof document !== 'undefined' && document.hidden ? Date.now() : null,
+  );
+  useEffect(() => {
+    if (playbackStatus !== 'ready' || !playUrl) return;
+    const onVisibility = () => {
+      if (document.hidden) {
+        grantHiddenAtRef.current = Date.now();
+      } else if (
+        grantHiddenAtRef.current !== null
+        && Date.now() - grantHiddenAtRef.current > 5 * 60_000
+      ) {
+        grantHiddenAtRef.current = null;
+        if (typeof window !== 'undefined') {
+          console.info('[grant-refresh] foreground after long hide, rebuilding pipeline');
+        }
+        if (Number.isFinite(playheadRef.current) && playheadRef.current > 0) {
+          setTargetPosition(Math.floor(playheadRef.current));
+        }
+        applyPlayUrl(playUrlRef.current || playUrl);
+      } else {
+        grantHiddenAtRef.current = null;
+      }
+    };
+    document.addEventListener('visibilitychange', onVisibility);
+    return () => document.removeEventListener('visibilitychange', onVisibility);
+  }, [playbackStatus, playUrl, applyPlayUrl]);
+
   // Tab closed, reloaded or navigated away: the heartbeat effect's cleanup
   // does not run on a real unload, so beacon explicitly. Lease expiry covers
   // the cases where even the beacon never lands (crash, network loss).

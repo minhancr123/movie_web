@@ -325,6 +325,14 @@ export default function VideoPlayer({ src, movie, episode, authToken, durationSe
     // mid-watch rebuild would replay the film from zero.
     const onUnplayableSourceRef = useRef(onUnplayableSource);
     onUnplayableSourceRef.current = onUnplayableSource;
+    // Last grant-expiry rebuild, across pipeline rebuilds: a 6h grant cannot
+    // legitimately die twice within 5h on the same src, so a second fast 401
+    // means the Bearer itself is dead and must not rebuild again.
+    const grantRebuildRef = useRef<{ src: string; at: number } | null>(null);
+    // Live display position stashed at grant-401 teardown; the next pipeline
+    // restores from it instead of the stale resolve-time target. Set-and-
+    // consume per rebuild, never reused across seeks.
+    const grantRestoreRef = useRef<number | null>(null);
     // True until the viewer manually picks a subtitle track: only auto-picks
     // may be replaced when a better (file-matched) list arrives. A manual
     // choice always sticks, even if an embedded track shows up later.
@@ -981,9 +989,19 @@ export default function VideoPlayer({ src, movie, episode, authToken, durationSe
                 durationSeconds || (Number.isFinite(video.duration) ? video.duration : 0),
             )
             : null;
-        const targetAbsolute = (typeof targetAt === 'number' && Number.isFinite(targetAt) && targetAt >= 0)
-            ? targetAt
-            : historyResume;
+        // A grant-expiry rebuild stashed the live position just before
+        // tearing down (see the 401 handler): it outranks the resolve-time
+        // target, which may be minutes stale (or 0) by now. Consumed once —
+        // later seeks must never inherit it.
+        let grantRestore: number | null = null;
+        if (typeof grantRestoreRef.current === 'number' && Number.isFinite(grantRestoreRef.current)) {
+            grantRestore = grantRestoreRef.current;
+        }
+        grantRestoreRef.current = null;
+        const targetAbsolute = grantRestore
+            ?? ((typeof targetAt === 'number' && Number.isFinite(targetAt) && targetAt >= 0)
+                ? targetAt
+                : historyResume);
         const restoreTargetLocal = targetAbsolute === null ? 0 : toLocalSeekTarget(targetAbsolute, sessionStartAt);
         restorePendingRef.current = restoreTargetLocal > 0;
         // A new pipeline means the seek (if any) landed: drop its indicator.
@@ -1286,8 +1304,63 @@ export default function VideoPlayer({ src, movie, episode, authToken, durationSe
                 stuckFragCount = 0;
             });
 
+            // Grant-expiry rebuilds are paced, not one-shot: a stale
+            // ?media_grant= answers 401/403 while the login Bearer is still
+            // valid, and the P2-fallback mints a fresh grant — but a dead
+            // Bearer would 401 forever, so the same src rebuilds at most
+            // once per 5h (a 6h grant cannot legitimately die twice faster).
             hls.on(Hls.Events.ERROR, (event, data) => {
                 const sn = typeof data?.frag?.sn === 'number' ? data.frag.sn : null;
+                const respCode = Number(
+                    (data as { response?: { code?: unknown } })?.response?.code,
+                );
+                const loadDetail = String((data as { details?: unknown })?.details || '');
+                const isManifestLoad = loadDetail === Hls.ErrorDetails.MANIFEST_LOAD_ERROR
+                    || loadDetail === Hls.ErrorDetails.MANIFEST_LOAD_TIMEOUT
+                    || loadDetail === Hls.ErrorDetails.LEVEL_LOAD_ERROR
+                    || loadDetail === Hls.ErrorDetails.LEVEL_LOAD_TIMEOUT
+                    || loadDetail === Hls.ErrorDetails.FRAG_LOAD_ERROR
+                    || loadDetail === Hls.ErrorDetails.FRAG_LOAD_TIMEOUT;
+                if (data.fatal && isManifestLoad && (respCode === 401 || respCode === 403)) {
+                    // Media grant expired mid-watch: retrying the same URL
+                    // replays the same stale grant, so rebuild the pipeline
+                    // instead — xhrSetup re-attaches the Bearer and the
+                    // backend answers with a freshly minted grant. Position
+                    // is preserved: the new pipeline restores from targetAt.
+                    // Paced per src (5h): a dead Bearer 401ing right after a
+                    // rebuild must fall through to normal fatal handling,
+                    // never loop rebuilds here.
+                    const nowMs = Date.now();
+                    const lastGrantRebuild = grantRebuildRef.current;
+                    const grantRebuildDue = !lastGrantRebuild
+                        || lastGrantRebuild.src !== src
+                        || nowMs - lastGrantRebuild.at > 5 * 60 * 60_000;
+                    if (grantRebuildDue) {
+                        grantRebuildRef.current = { src, at: nowMs };
+                        // Snapshot the live full-film position BEFORE the
+                        // teardown: the parent's targetAt is resolve-time and
+                        // may be far behind (or 0), which would replay from
+                        // the wrong minutes after the rebuild.
+                        try {
+                            const liveAt = sessionStartAt + video.currentTime;
+                            if (Number.isFinite(liveAt) && liveAt > 0) {
+                                grantRestoreRef.current = Math.floor(liveAt);
+                            }
+                        } catch {
+                            // Element unreadable mid-teardown: fall back to targetAt.
+                        }
+                        if (typeof window !== 'undefined') {
+                            console.warn(`[grant-expired] playlist/segment ${respCode}, rebuilding pipeline with Bearer`);
+                        }
+                        try {
+                            hls.destroy();
+                        } catch {
+                            // Destroy is best-effort here; the rebuild replaces it.
+                        }
+                        setRetryKey((k) => k + 1);
+                        return;
+                    }
+                }
                 if (!data.fatal && sn !== null && data.type === Hls.ErrorTypes.NETWORK_ERROR) {
                     if (stuckFragSn === sn) stuckFragCount += 1;
                     else { stuckFragSn = sn; stuckFragCount = 1; }
