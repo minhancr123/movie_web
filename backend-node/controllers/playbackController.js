@@ -48,6 +48,7 @@ import {
   seekOriginProbeEnabled,
   seekStartEnabled,
   spawnBeatsReuse,
+  planCandidateDelivery,
   cachedSeekOrigin,
   waitForPlaylist,
   getRemuxSession,
