@@ -56,7 +56,17 @@ rollback() {
 
 # --- source -----------------------------------------------------------------
 git fetch --quiet origin || die 'git fetch'
-git checkout --quiet "$SHA" || die 'git checkout'
+# A file copied onto the host by hand (a script installed before it was
+# committed) blocks the checkout and the deploy dies with "untracked working
+# tree files would be overwritten". On a deploy host the tree carries no local
+# edits by design, so the retry is safe: -f overwrites exactly the paths in the
+# target commit. .env is gitignored, so it is never in that set. Report what got
+# overwritten first — it should never be invisible.
+if ! ERR=$(git checkout --quiet "$SHA" 2>&1); then
+  say 'checkout had to overwrite local files:'
+  printf '%s\n' "$ERR" | sed 's/^/    /'
+  git checkout --quiet -f "$SHA" || die 'git checkout -f'
+fi
 GOT=$(git rev-parse --short HEAD)
 [ "$GOT" = "$SHA" ] || die "checked out $GOT, expected $SHA"
 say "files in $SHA"
