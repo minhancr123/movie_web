@@ -232,9 +232,14 @@ jobs:
 
             # Persist the release for every later restart, then reclaim the
             # build layers: a dozen of them once filled this 30 GB disk.
+            # prune -a, not just -f: every deploy pulls a new digest image and
+            # the old ones keep their layers but lose all consumers, which
+            # plain prune (dangling only) never reclaims. Measured at 15GB of
+            # dead images after a week of CI deploys. Runs only on the success
+            # path, after rollback targets are no longer needed.
             sed -i "s|^RELEASE_ID=.*|RELEASE_ID=$SHA|" .env
             docker builder prune -af >/dev/null 2>&1 || true
-            docker image prune -f >/dev/null 2>&1 || true
+            docker image prune -af >/dev/null 2>&1 || true
             df -h / | tail -1
 
             echo "DEPLOY_OK $SHA"

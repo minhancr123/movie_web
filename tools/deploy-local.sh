@@ -116,10 +116,13 @@ echo "    $(curl -fsS --max-time 15 "$API_ORIGIN/release")"
 
 # Every build on this host leaves its layers behind. Thirteen of them filled the
 # disk to 87%. Regenerable, so it goes; the only cost is that the next build
-# starts cold.
+# starts cold. prune -a, not just -f: superseded images keep their layers
+# without consumers (15GB measured), which plain prune never reclaims. This
+# runs only after a successful deploy, when rollback images are no longer
+# needed — a later manual rollback rebuilds or pulls instead.
 say 'pruning build cache'
 docker builder prune -af >/dev/null 2>&1
-docker image prune -f >/dev/null 2>&1
+docker image prune -af >/dev/null 2>&1
 df -h / | tail -1
 
 say "DEPLOY_OK $SHA"
