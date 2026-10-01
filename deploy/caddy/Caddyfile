@@ -2,6 +2,26 @@ www.cinevn.me {
 	redir https://cinevn.me{uri} permanent
 }
 
+# Deploy cutovers recreate containers, and for seconds at a time there is no
+# upstream behind a route. Without retries every one of those requests is a
+# 502 the viewer sees — session polls, heartbeats, auth refreshes — and the
+# player treats them as real failures and rebuilds its pipeline. So every
+# upstream retries inside a window that covers a recreate.
+#
+# Safe for POST /resolve too: a retried resolve that already spawned only
+# creates a second session, and the server supersedes and reaps those by
+# design (RESOLVE_SUPERSEDED, supersede timers, janitor). Caddy never retries
+# once response bytes have started flowing, so streams cannot be duplicated
+# mid-body.
+#
+# Snippets live at the top level: defined inside a site block, `import` reads
+# the name as a filename instead.
+(retry_upstream) {
+	lb_retries 3
+	lb_try_duration 25s
+	lb_try_interval 2s
+}
+
 cinevn.me {
 	encode zstd gzip
 	header -Server
@@ -12,25 +32,36 @@ cinevn.me {
 
 		# These five routes belong to Express backend, not to NextAuth.
 		@backendAuth path_regexp auth ^/api/auth/(register|login|google-login|me|profile)/?$
-		reverse_proxy @backendAuth 127.0.0.1:5001
+		reverse_proxy @backendAuth 127.0.0.1:5001 {
+			import retry_upstream
+		}
 
 		# Keep NextAuth providers, csrf, session, callbacks and signout in Next.js.
 		@nextAuth path /api/auth /api/auth/*
-		reverse_proxy @nextAuth 127.0.0.1:3000
+		reverse_proxy @nextAuth 127.0.0.1:3000 {
+			import retry_upstream
+		}
 
 		@health path /healthz /health /metrics
-		reverse_proxy @health 127.0.0.1:5001
+		reverse_proxy @health 127.0.0.1:5001 {
+			import retry_upstream
+		}
 
 		@playback path /api/playback/*
 		reverse_proxy @playback 127.0.0.1:5001 {
 			flush_interval -1
+			import retry_upstream
 		}
 
 		@api path /api/* /socket.io /socket.io/*
-		reverse_proxy @api 127.0.0.1:5001
+		reverse_proxy @api 127.0.0.1:5001 {
+			import retry_upstream
+		}
 
 		# Frontend Next.js default fallback
-		reverse_proxy 127.0.0.1:3000
+		reverse_proxy 127.0.0.1:3000 {
+			import retry_upstream
+		}
 	}
 }
 
