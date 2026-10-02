@@ -129,6 +129,9 @@ jobs:
       packages: read
     # Advisory only: base-image CVEs (node:slim) fail often and there is no
     # security team to triage, so a finding must never block a deploy.
+    # Trivy runs as a pinned container image, not via aquasecurity/trivy-action:
+    # the action's pinned setup-trivy@v0.2.2 tag does not exist upstream, which
+    # fails every run at action-download time with no workaround.
     continue-on-error: true
     steps:
       - uses: docker/login-action@c94ce9fb468520275223c153574b00df6fe4bcc9 # v3
@@ -138,20 +141,22 @@ jobs:
           password: ${{ secrets.GITHUB_TOKEN }}
 
       - name: Scan backend image
-        uses: aquasecurity/trivy-action@6c175e9c4083a92bbca2f9724c8a5e33bc2d97a5 # v0.30.0
-        with:
-          image-ref: ghcr.io/${{ github.repository_owner }}/movie-web-backend@${{ needs.docker.outputs.backend_digest }}
-          format: table
-          severity: CRITICAL,HIGH
-          exit-code: '1'
+        run: |
+          docker run --rm \
+            -v "$HOME/.docker/config.json:/root/.docker/config.json:ro" \
+            -v /tmp/trivy-cache:/root/.cache \
+            aquasec/trivy:0.75.0 image --no-progress \
+              --scanners vuln --severity CRITICAL,HIGH --exit-code 1 \
+              "ghcr.io/${{ github.repository_owner }}/movie-web-backend@${{ needs.docker.outputs.backend_digest }}"
 
       - name: Scan frontend image
-        uses: aquasecurity/trivy-action@6c175e9c4083a92bbca2f9724c8a5e33bc2d97a5 # v0.30.0
-        with:
-          image-ref: ghcr.io/${{ github.repository_owner }}/movie-web-frontend@${{ needs.docker.outputs.frontend_digest }}
-          format: table
-          severity: CRITICAL,HIGH
-          exit-code: '1'
+        run: |
+          docker run --rm \
+            -v "$HOME/.docker/config.json:/root/.docker/config.json:ro" \
+            -v /tmp/trivy-cache:/root/.cache \
+            aquasec/trivy:0.75.0 image --no-progress \
+              --scanners vuln --severity CRITICAL,HIGH --exit-code 1 \
+              "ghcr.io/${{ github.repository_owner }}/movie-web-frontend@${{ needs.docker.outputs.frontend_digest }}"
 
   deploy:
     name: Deploy
@@ -350,17 +355,21 @@ jobs:
         # images, so a failure here just turns the run red for a human to act.
         run: |
           set -euo pipefail
-          SITE="${{ vars.PUBLIC_SITE_URL }}"
-          HOST=$(echo "$SITE" | sed 's#^https\?://##; s#/$##')
+          # PUBLIC_SITE_URL carries a trailing slash: strip it once here, or
+          # every "$SITE/..." URL doubles the slash and the server answers 308
+          # (curl -f passes 3xx, so the grep below would fail on a dozen
+          # redirect bytes — a red run on a healthy deploy).
+          SITE=$(echo "${{ vars.PUBLIC_SITE_URL }}" | sed 's#/*$##')
+          HOST=$(echo "$SITE" | sed 's#^https\?://##')
           # grep -q quits on first match and closes the pipe: with pipefail a
           # big-enough sitemap makes curl die of SIGPIPE and the step reds for
           # no reason. Download first, then grep the file.
-          curl -fsS --max-time 30 -o /tmp/smoke-sitemap.xml "$SITE/sitemap.xml" \
+          curl -fsSL --max-time 30 -o /tmp/smoke-sitemap.xml "$SITE/sitemap.xml" \
             || { echo "::error::sitemap did not answer"; exit 1; }
           grep -q "$HOST" /tmp/smoke-sitemap.xml \
             || { echo "::error::sitemap does not contain the public domain ($HOST)"; exit 1; }
           echo "sitemap ok"
-          curl -fsS --max-time 30 "$SITE/api/catalog/genres/movie" \
+          curl -fsSL --max-time 30 "$SITE/api/catalog/genres/movie" \
             | jq -e '.success == true and (.data.genres | length > 0)' >/dev/null \
             || { echo "::error::catalog API did not return genres"; exit 1; }
           echo "catalog ok"
