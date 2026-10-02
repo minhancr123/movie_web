@@ -1178,6 +1178,28 @@ export const resolvePlayback = async (req, res) => {
   let lastShiftMs = null;
   // Where a seek-started session's bytes really begin, once measured.
   let lastSeekOrigin = null;
+  // Mode accounting for the summary line below. Every success outcome answers
+  // res.json({ success: true, data: { mode: 'direct'|'remux', reused? } }),
+  // but from a dozen different return points (fresh, session reuse, published
+  // rendition, manual picks) — and direct never touches startRemuxSession, so
+  // counting [remux] spawn/done alone cannot say what share is direct.
+  // Sniffing the one funnel every outcome passes through keeps the count
+  // future-proof; best-effort only, logging must never break the response.
+  // Scope: only res.json calls inside this try block are captured. A response
+  // written by the global error middleware bypasses the wrapper — the summary
+  // line then falls back to mode=error, which is correct for that case.
+  let lastResolveMode = null;
+  let lastResolveReused = false;
+  const resJson = res.json.bind(res);
+  res.json = (body) => {
+    try {
+      if (body?.data?.mode) lastResolveMode = body.data.mode;
+      if (body?.data?.reused === true) lastResolveReused = true;
+    } catch {
+      // ignore: telemetry must not touch the response path.
+    }
+    return resJson(body);
+  };
   // try/finally on purpose: an unhandled throw (dead socket, a DB outage
   // escaping the middleware) must still release the close listener and our
   // per-viewer record below.
@@ -2456,7 +2478,7 @@ export const resolvePlayback = async (req, res) => {
       .join(' ');
     console.info(
       `resolvePlayback ${type}:${tmdbId} total=${((Date.now() - tResolveStart) / 1000).toFixed(1)}s ` +
-      `status=${res.statusCode} reqStart=${requestedStartAt}s bucket=${startAt}s ` +
+      `status=${res.statusCode} mode=${lastResolveMode ?? (res.statusCode >= 400 ? 'error' : '?')}${lastResolveReused ? ' reused=1' : ''} reqStart=${requestedStartAt}s bucket=${startAt}s ` +
       // Which episode, not just how far in. "Which episode was slow" is
       // unanswerable from the rest of this line: two viewers on the same title
       // at the same offset are different problems.
