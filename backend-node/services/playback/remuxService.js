@@ -1780,13 +1780,18 @@ export const startRemuxSession = async ({ sessionId, inputUrl, audioCopy = false
     }
   });
 
+  // Inside the try on purpose: `session` is declared in this block, and a
+  // const declared inside try is invisible past the finally — returning it
+  // from function scope throws ReferenceError on every single spawn. That is
+  // exactly how one evening's worth of remux resolves all died at the last
+  // line after doing all the work (ffmpeg up, session registered, then throw).
+  return session;
+
   } finally {
     // Every non-spawn exit (busy/disk/policy refusal, mkdir failure, abort)
     // hands the held slot back at once; the TTL is only the crash backstop.
     if (!reservationConsumed) releaseWriterReservation(activeReservationId);
   }
-
-  return session;
 };
 
 export const waitForPlaylist = async (session, timeoutMs = PLAYLIST_TIMEOUT_MS) => {
