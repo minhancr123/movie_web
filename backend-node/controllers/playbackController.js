@@ -2422,6 +2422,16 @@ export const resolvePlayback = async (req, res) => {
       }
 
     console.error(`resolvePlayback exhausted tmdb=${tmdbId} attempts=${attempts.length}`);
+    // The message alone once cost an evening of guessing ("session is not
+    // defined" with no location). Log stack frames too — skipping line 0,
+    // which repeats the message (it may echo URLs): frames are file:line
+    // only, never variable values, so they are safe to log.
+    if (lastError?.stack) {
+      const frames = String(lastError.stack).split('\n').slice(1, 7);
+      if (frames.length > 0) {
+        console.error(`resolvePlayback exhausted cause:\n${frames.join('\n')}`);
+      }
+    }
     // "Your browser cannot decode this" is not a gateway failure: 502 tells the
     // user to retry, but retrying cannot change a codec. 422 says the content is
     // unusable as-is, and the probed facts we just cached make the next attempt
