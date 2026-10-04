@@ -114,6 +114,13 @@ import { resolveYaStreamSource } from '../services/playback/yastreamClient.js';
 const PROVIDER = 'torbox';
 const SESSION_TTL_MS = 6 * 60 * 60 * 1000;
 const MAX_ATTEMPTS = 5;
+/**
+ * How long a provider CDN URL stays usable, in seconds. The refresh endpoint
+ * and both direct answers must agree on this number: the client schedules
+ * its refresh from it, so a silent mismatch means refreshing too late (dead
+ * air) or too early (wasted provider calls).
+ */
+const DIRECT_URL_TTL_SECONDS = 900;
 // A torrent's real codec never changes, so remember what ffprobe found. Without
 // this, a release whose label omits the codec gets probed again on every single
 // resolve, and sources already proven undecodable keep burning retry slots.
@@ -1967,7 +1974,7 @@ export const resolvePlayback = async (req, res) => {
             audioAction,
             sessionId,
             url: inputUrl,
-            expiresIn: 900,
+            expiresIn: DIRECT_URL_TTL_SECONDS,
             // Whole-file URL: the player seeks client-side, so the request
             // target travels with the response for the same target/origin
             // bookkeeping the remux paths use. Additive.
@@ -3668,6 +3675,68 @@ export const leavePlaybackSession = async (req, res) => {
   } catch (error) {
     console.error('leavePlaybackSession error:', error.message);
     return fail(res, 500, 'Lỗi server');
+  }
+};
+
+/**
+ * POST /api/playback/session/:sessionId/refresh — re-mint an expiring direct URL.
+ *
+ * Direct sessions hand the browser a provider CDN URL that lives ~15 minutes
+ * (expiresIn on the resolve response). Without a refresh path the film simply
+ * dies mid-watch and the only recovery is a full re-resolve — new TorBox
+ * calls, new candidate walk, new wait. This re-mints the same file for the
+ * same session instead: one provider call, same position, no interruption.
+ *
+ * Direct-only by design. Remux/HLS sessions serve our own bytes under grants
+ * that do not expire this way, so asking for a refresh there is a client bug,
+ * answered 400 rather than silently succeeding.
+ */
+export const refreshPlaybackUrl = async (req, res) => {
+  res.set('Cache-Control', 'no-store');
+  try {
+    const sessionId = String(req.params.sessionId || '');
+    if (!sessionId) return fail(res, 400, 'Thiếu sessionId');
+    const db = getDB();
+    const session = await db.collection('playback_sessions').findOne({ sessionId });
+    if (!session) return fail(res, 404, 'Không tìm thấy phiên phát này');
+    if (!isSessionOwner(session, req.user.userId)) {
+      return fail(res, 403, 'Không có quyền truy cập phiên phát này');
+    }
+    if (session.mode !== 'direct') {
+      return fail(res, 400, 'Phiên này không dùng đường phát trực tiếp');
+    }
+    if (!session.torrentId || session.fileId === undefined || session.fileId === null) {
+      // Vimo fallback rows carry no torrent identity: nothing to re-mint.
+      // The client falls back to a full re-resolve, same as before.
+      return fail(res, 410, 'Phiên này không cấp lại được đường phát', { code: 'REFRESH_UNAVAILABLE' });
+    }
+    let debridKey;
+    try {
+      ({ key: debridKey } = await getDecryptedKey(db, req.user.userId, session.provider || PROVIDER));
+    } catch (error) {
+      return fail(res, error.status || 500, error.message, error.code ? { code: error.code } : {});
+    }
+    let url;
+    try {
+      url = await torbox.getDownloadUrl(debridKey, {
+        torrentId: session.torrentId,
+        fileId: session.fileId,
+        userId: String(req.user.userId),
+      });
+    } catch (error) {
+      if (error instanceof DebridError && error.code === 'invalid_token') {
+        return fail(res, 401, 'TorBox từ chối API key, vui lòng kết nối lại', { code: error.code });
+      }
+      return fail(res, 502, error.message || 'Không cấp lại được đường phát');
+    }
+    await db.collection('playback_sessions').updateOne(
+      { sessionId },
+      { $set: { urlRefreshedAt: new Date() } },
+    ).catch(() => null);
+    return res.json({ success: true, data: { url, expiresIn: DIRECT_URL_TTL_SECONDS } });
+  } catch (error) {
+    console.error('refreshPlaybackUrl error:', error.message);
+    return fail(res, error.status || 500, error.message || 'Lỗi server');
   }
 };
 

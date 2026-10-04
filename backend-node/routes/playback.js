@@ -8,6 +8,7 @@ import {
   getPlaybackSession,
   heartbeatPlaybackSession,
   leavePlaybackSession,
+  refreshPlaybackUrl,
   serveHlsAsset,
   serveRenditionAsset,
   getPlaybackSubtitles,
@@ -56,6 +57,10 @@ router.get('/session/:sessionId', playbackPollRateLimit, getPlaybackSession);
 // leave drops it (unmount/title-change/pagehide via keepalive fetch).
 router.post('/session/:sessionId/heartbeat', playbackPresenceRateLimit, heartbeatPlaybackSession);
 router.post('/session/:sessionId/leave', playbackPresenceRateLimit, leavePlaybackSession);
+// Re-mint an expiring direct-playback URL without a full re-resolve. Mounted
+// beside heartbeat/leave: same presence-rate-limit class, same ownership
+// check, same session lease it keeps alive.
+router.post('/session/:sessionId/refresh', playbackPresenceRateLimit, refreshPlaybackUrl);
 router.get('/resolve/:resolveId/stage', playbackPollRateLimit, getResolveStage);
 
 export default router;

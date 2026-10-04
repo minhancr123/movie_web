@@ -211,6 +211,11 @@ export const playbackAPI = {
     authClient.post(`/playback/session/${encodeURIComponent(sessionId)}/heartbeat`, { viewerId }),
   leave: (sessionId: string, viewerId: string) =>
     authClient.post(`/playback/session/${encodeURIComponent(sessionId)}/leave`, { viewerId }),
+  // Re-mint an expiring direct-playback URL without a full re-resolve. The
+  // response carries a fresh url + expiresIn; the caller swaps the source and
+  // keeps the position. Rejects (410) for sessions with nothing to re-mint.
+  refreshSessionUrl: (sessionId: string) =>
+    authClient.post(`/playback/session/${encodeURIComponent(sessionId)}/refresh`),
   getResolveStage: (resolveId: string) =>
     authClient.get(`/playback/resolve/${encodeURIComponent(resolveId)}/stage`),
   preload: (data: {

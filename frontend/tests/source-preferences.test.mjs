@@ -30,6 +30,23 @@ test('a desktop is not forced into the phone preference and SSR stays usable', (
   assert.equal(load('capabilities', device(1920, 1080, false)).detectCapabilities().preferredMaxHeight, 0);
   assert.equal(load('capabilities').detectCapabilities().preferredMaxHeight, 0);
 });
+test('webm is reported exactly when the browser answers probably', () => {
+  // Chrome: canPlayType answers probably for WebM/VP9+Opus.
+  const chrome = load('capabilities', device(1920, 1080, false)).detectCapabilities();
+  assert.equal(chrome.webm, true, 'a WebM-capable browser must say so — the server trusts it');
+  // Safari: '' (or 'maybe') for the same query. The probe cannot tell them
+  // apart ("matroska,webm" either way), so a wrong true here would serve
+  // Safari an unplayable direct file.
+  const safariVideo = { canPlayType: (mime) => (String(mime).includes('webm') ? '' : 'probably') };
+  const safari = load('capabilities', {
+    window: { screen: { width: 1920, height: 1080 }, devicePixelRatio: 2, matchMedia: () => ({ matches: false }) },
+    document: { createElement: () => safariVideo }, navigator: {},
+  }).detectCapabilities();
+  assert.equal(safari.webm, false, 'Safari must not claim WebM');
+  assert.equal(safari.hevc, true, '...while still reporting the codecs it does play');
+  // SSR: no window at all defaults to false, never direct-by-accident.
+  assert.equal(load('capabilities').detectCapabilities().webm, false);
+});
 test('source groups expose direct Vietsub and every available resolution, excluding rejected entries', () => {
   const api = load('source-groups');
   assert.equal(typeof api?.groupPlaybackSources, 'function', 'grouped picker must exist');

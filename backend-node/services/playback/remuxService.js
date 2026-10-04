@@ -307,6 +307,13 @@ const isBrowserAudioCodec = (codec, profile = null, channels = null, caps = {}) 
   return false;
 };
 const isMp4Container = (format) => String(format || '').split(',').includes('mov') || String(format || '').includes('mp4');
+/**
+ * WebM container: ffprobe reports it as "matroska,webm", plain MKV as bare
+ * "matroska". The distinction matters because browsers play the former
+ * (Chrome/Firefox) and never the latter progressively — and Safari plays
+ * neither, which is why callers must also check caps.webm.
+ */
+const isWebmContainer = (format) => String(format || '').split(',').includes('webm');
 
 /**
  * HEVC beyond 8-bit (Main 10, Main 12, …)? Either ffprobe's profile tag
@@ -412,7 +419,6 @@ export const decidePlaybackMode = (probe, caps = {}, preferredAudioIdx = null, o
   // not a cheaper one. Carried on the decision so the caller does not have to
   // re-probe the same stream to find out.
   const audioBrowserSafe = Boolean(audioCopy);
-  const containerOk = isMp4Container(probe.format);
 
   // Codec the client cannot decode directly (HEVC/AV1 on most desktop
   // browsers, HEVC Main 10 on 8-bit-only decoders): re-encode to AVC on the
@@ -463,8 +469,12 @@ export const decidePlaybackMode = (probe, caps = {}, preferredAudioIdx = null, o
   // still needs the remux to map the right stream. A file carrying a single
   // audio track has no such ambiguity whatever the index reads, and those are
   // common enough (older and lower-bitrate releases) to be worth skipping a
-  // full remux for.
-  if (containerOk && audioCopy && (targetAudioIdx === 0 || audios.length === 1)) {
+  // full remux for. WebM joins MP4 behind its own capability flag: the probe
+  // cannot tell Chrome's WebM from Safari's no-WebM, so the client reports it
+  // the same way it reports every other codec it can or cannot decode.
+  const containerDirectOk =
+    isMp4Container(probe.format) || (isWebmContainer(probe.format) && Boolean(caps.webm));
+  if (containerDirectOk && audioCopy && (targetAudioIdx === 0 || audios.length === 1)) {
     return {
       mode: 'direct',
       reason: 'Container và codec đã phù hợp browser',

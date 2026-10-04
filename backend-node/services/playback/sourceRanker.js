@@ -269,6 +269,10 @@ export const normalizeCapabilities = (caps = {}) => ({
   // Mbps the client says it can sustain; 0 means "unknown, do not filter".
   maxBitrateMbps: Number(caps.maxBitrateMbps) > 0 ? Number(caps.maxBitrateMbps) : 0,
   eac3: Boolean(caps.eac3),
+  // WebM container support (Chrome/Firefox yes, Safari no). The probe cannot
+  // tell them apart, so the client reports it like any other capability and
+  // the direct-play rule trusts it.
+  webm: Boolean(caps.webm),
 });
 
 /**

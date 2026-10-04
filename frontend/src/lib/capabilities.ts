@@ -14,6 +14,13 @@ export interface ClientCapabilities {
   preferredMaxHeight?: number;
   maxBitrateMbps: number;
   eac3: boolean;
+  /**
+   * WebM container support (VP9/Opus inside WebM). Chrome and Firefox play it,
+   * Safari does not — and the server's probe cannot tell them apart (both
+   * report "matroska,webm"), so the client reports it like any other codec.
+   * Gates the direct-play rule for WebM sources.
+   */
+  webm: boolean;
 }
 
 export function detectCapabilities(): ClientCapabilities {
@@ -27,6 +34,7 @@ export function detectCapabilities(): ClientCapabilities {
       preferredMaxHeight: 0,
       maxBitrateMbps: 0,
       eac3: false,
+      webm: false,
     };
   }
 
@@ -80,6 +88,15 @@ export function detectCapabilities(): ClientCapabilities {
     video.canPlayType('audio/mp4; codecs="ec-3"') === 'probably' ||
     video.canPlayType('audio/mp4; codecs="mp4a.a6"') === 'probably';
 
+  // Check WebM container support: VP9 video with Opus audio inside WebM.
+  // Chrome and Firefox answer 'probably'; Safari answers '' or 'maybe', which
+  // is exactly the split the server needs — its probe sees "matroska,webm"
+  // for both and cannot distinguish them.
+  const webm =
+    video.canPlayType('video/webm; codecs="vp9, opus"') === 'probably' ||
+    (typeof MediaSource !== 'undefined' &&
+      MediaSource.isTypeSupported('video/webm; codecs="vp9, opus"'));
+
   return {
     hevc,
     hevcMain10,
@@ -89,5 +106,6 @@ export function detectCapabilities(): ClientCapabilities {
     preferredMaxHeight,
     maxBitrateMbps,
     eac3,
+    webm,
   };
 }

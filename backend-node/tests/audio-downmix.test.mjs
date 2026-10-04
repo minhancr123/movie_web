@@ -117,6 +117,37 @@ const normalFrameRateDecision = decidePlaybackMode(
 assert.equal(normalFrameRateDecision.mode, 'remux');
 console.log('ok - 143.98 fps HEVC rejected while 59.94 fps remains playable');
 
+/* ------------------------------------------------- WebM direct play */
+
+// WebM + VP9 + Opus stereo on a client that reports webm: the whole point of
+// the capability flag is this file skipping its remux. Same bytes on a client
+// that does not report it (Safari) must still remux — the probe cannot tell
+// them apart ("matroska,webm" either way), so the flag is the only signal.
+const webmProbe = {
+  format: 'matroska,webm',
+  video: { codec: 'vp9' },
+  audio: [{ index: 0, streamIndex: 1, codec: 'opus', channels: 2, language: 'eng' }],
+};
+const webmDirect = decidePlaybackMode(webmProbe, { hevc: false, av1: false, webm: true });
+assert.equal(webmDirect.mode, 'direct', 'WebM + webm caps must skip the remux');
+
+const webmSafari = decidePlaybackMode(webmProbe, { hevc: false, av1: false, webm: false });
+assert.equal(webmSafari.mode, 'remux', 'WebM without webm caps must still remux');
+
+const webmMissing = decidePlaybackMode(webmProbe, { hevc: false, av1: false });
+assert.equal(webmMissing.mode, 'remux', 'a missing webm flag defaults to remux, never direct');
+
+// Bare MKV is never direct-playable progressively, whatever the client claims:
+// "matroska" without ",webm" is the whole distinction.
+const mkvProbe = {
+  format: 'matroska',
+  video: { codec: 'h264' },
+  audio: [{ index: 0, streamIndex: 1, codec: 'aac', profile: 'LC', channels: 2, language: 'eng' }],
+};
+const mkvDirect = decidePlaybackMode(mkvProbe, { hevc: false, av1: false, webm: true });
+assert.equal(mkvDirect.mode, 'remux', 'bare MKV must never go direct, even with webm caps');
+console.log('ok - WebM goes direct behind its flag; MKV never does');
+
 /* ------------------------------------------- superseded remux selection */
 
 /**

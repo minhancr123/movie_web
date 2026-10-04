@@ -137,6 +137,63 @@ export default function PlaybackSection({
     playUrlRef.current = url;
     setPlayUrl(url);
   }, []);
+  /**
+   * Shared direct-response applier: both resolve paths (initial resolve and
+   * seek/poll re-resolve) funnel here so neither can forget session tracking
+   * or expiry arming. Direct mode sets the session id too — that starts the
+   * heartbeat lease, which direct previously skipped entirely.
+   */
+  const applyDirectResponse = useCallback((data: any) => {
+    if (Array.isArray(data.streams)) setSources(data.streams);
+    applyPlayUrl(data.url);
+    setFileName(data.fileName || '');
+    setPlayMode('direct');
+    setDurationSeconds(null);
+    setPlaybackStatus('ready');
+    setPlaybackSessionId(typeof data.sessionId === 'string' ? data.sessionId : '');
+    // Arm the refresh timer — except for Vimo fallback rows, whose URLs this
+    // server cannot re-mint (refresh answers 410 for them). Arming anyway
+    // would spend one doomed call per session and teach nobody anything.
+    if (!data.fallbackSource) {
+      const ttl = Number(data.expiresIn);
+      setDirectExpiresAt(Date.now() + (Number.isFinite(ttl) && ttl > 0 ? ttl : 900) * 1000);
+    } else {
+      setDirectExpiresAt(null);
+    }
+  }, [applyPlayUrl]);
+  /**
+   * Swap in a freshly minted direct URL at the current position, without a
+   * re-resolve. Returns false when there is nothing to refresh (wrong mode,
+   * no session, refresh already running, superseded mid-flight) so the
+   * caller falls through to the full recovery path instead of hanging.
+   */
+  const refreshDirectUrl = useCallback(async (reason: string): Promise<boolean> => {
+    const sid = sessionIdRef.current;
+    if (!sid || playModeRef.current !== 'direct' || directRefreshInFlightRef.current) return false;
+    directRefreshInFlightRef.current = true;
+    try {
+      const r = await playbackAPI.refreshSessionUrl(sid);
+      const url = r.data?.data?.url;
+      const expiresIn = Number(r.data?.data?.expiresIn);
+      if (typeof url !== 'string' || !url) return false;
+      // A newer intent (seek, recovery resolve) may have replaced this
+      // session while the refresh was in flight: never clobber it with the
+      // old session's URL.
+      if (sessionIdRef.current !== sid || playModeRef.current !== 'direct') return false;
+      // Same position, new bytes: the player restores from targetAt on the
+      // pipeline rebuild, exactly like every re-resolve.
+      const at = Math.floor(playheadRef.current || 0);
+      if (at > 0) setTargetPosition(at);
+      applyPlayUrl(url);
+      setDirectExpiresAt(Date.now() + (Number.isFinite(expiresIn) && expiresIn > 0 ? expiresIn : 900) * 1000);
+      console.debug(`[direct] refreshed playback URL (${reason})`);
+      return true;
+    } catch {
+      return false;
+    } finally {
+      directRefreshInFlightRef.current = false;
+    }
+  }, [applyPlayUrl]);
   const [fileName, setFileName] = useState<string>('');
   const [playMode, setPlayMode] = useState<string>('');
   const [durationSeconds, setDurationSeconds] = useState<number | null>(null);
@@ -185,6 +242,11 @@ export default function PlaybackSection({
   const [isLoadingSources, setIsLoadingSources] = useState<boolean>(false);
   const [activeToken, setActiveToken] = useState<string>('');
   const [playbackSessionId, setPlaybackSessionId] = useState<string>('');
+  // When the current direct-playback URL dies (absolute ms). Provider CDN
+  // URLs live ~15 min (expiresIn on the resolve response): without a refresh
+  // the film stops mid-watch and the only recovery is a full re-resolve.
+  const [directExpiresAt, setDirectExpiresAt] = useState<number | null>(null);
+  const directRefreshInFlightRef = useRef<boolean>(false);
   // Preferred embedded audio track (ffprobe order). Survives re-resolves via ref.
   const [activeAudioIndex, setActiveAudioIndex] = useState<number | null>(null);
   const activeAudioIndexRef = useRef<number | null>(null);
@@ -384,6 +446,9 @@ export default function PlaybackSection({
   // values from a []-deps effect.
   const sessionIdRef = useRef<string>('');
   const accessTokenRef = useRef<string>('');
+  // playMode mirror for the same reason: refresh and recovery read it from
+  // timers and promise continuations, never from a stale render.
+  const playModeRef = useRef<string>('');
   // Waiting-room notices from the 503 retry ladder. Cleared the moment any
   // resolve succeeds — otherwise "đang chuẩn bị tập khác" lingers over a
   // film that is already playing.
@@ -456,6 +521,24 @@ export default function PlaybackSection({
     // A fatal HLS event and the no-progress watchdog can fire together. Only
     // one of them may create a replacement remux session.
     if (recoveryInFlightRef.current) return;
+    // Direct-playback URLs expire (~15 min): a media error on one is usually
+    // the URL dying, not the film. One cheap refresh-first — same position,
+    // same session, no TorBox walk — before the full re-resolve below.
+    // Bounded by the attempts counter: a failed refresh consumes one attempt,
+    // so a dead refresh endpoint degrades to exactly one extra call, and the
+    // recursive call below (attempts now 1) skips this branch straight into
+    // the normal path instead of looping.
+    if (playModeRef.current === 'direct' && sessionIdRef.current && recoveryAttemptsRef.current === 0) {
+      recoveryInFlightRef.current = true;
+      recoveryAttemptsRef.current = 1;
+      void refreshDirectUrl('error').then((ok) => {
+        recoveryInFlightRef.current = false;
+        if (!ok) recoverPlayback(reason);
+        // On success there is nothing else to do: the player resumes at the
+        // preserved position under the new URL, with no banner and no wait.
+      });
+      return;
+    }
     recoveryAttemptsRef.current += 1;
     if (recoveryAttemptsRef.current > 2) {
       setPlaybackStatus('error');
@@ -507,7 +590,7 @@ export default function PlaybackSection({
       .finally(() => {
         recoveryInFlightRef.current = false;
       });
-  }, [selectedSourceKey]);
+  }, [selectedSourceKey, refreshDirectUrl]);
 
   // Isolated stalls must not accumulate: only steady forward progress clears
   // the counter. Resetting on every 0.25s tick turns a stuttering stream into
@@ -701,6 +784,7 @@ export default function PlaybackSection({
   // Mirrors for unload-time paths (pagehide/unmount run outside React state).
   sessionIdRef.current = playbackSessionId;
   accessTokenRef.current = (session?.user as any)?.accessToken || '';
+  playModeRef.current = playMode;
 
   // Best-effort leave over the normal client (auth header attached).
   const sendLeave = useCallback((sid: string) => {
@@ -770,6 +854,26 @@ export default function PlaybackSection({
     };
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [playbackSessionId, isSessionActive]);
+
+  // Direct-playback URLs die after expiresIn (~15 min): refresh ahead of
+  // expiry instead of letting the film stop mid-watch and fall back to a
+  // full re-resolve. Keyed on the session id captured below, not just the
+  // state above: if a seek or recovery swaps sessions while the timer waits,
+  // the stale timer must not touch the new session's URL.
+  useEffect(() => {
+    if (playMode !== 'direct' || !playbackSessionId || !directExpiresAt) return;
+    const sid = playbackSessionId;
+    const wait = directExpiresAt - Date.now() - 90_000;
+    if (wait <= 0) {
+      if (sessionIdRef.current === sid) void refreshDirectUrl('expiry');
+      return;
+    }
+    const timer = setTimeout(() => {
+      if (sessionIdRef.current === sid) void refreshDirectUrl('expiry');
+    }, wait);
+    return () => clearTimeout(timer);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [playMode, playbackSessionId, directExpiresAt]);
 
   // Foreground after a long hide: the media grant inside the manifest URL
   // may have expired while the tab slept (native HLS never refetches it on
@@ -961,12 +1065,7 @@ export default function PlaybackSection({
     const playlistUrl = data.playlistUrl || data.playUrl;
 
     if (data.mode === 'direct' && data.url) {
-      if (Array.isArray(data.streams)) setSources(data.streams);
-      applyPlayUrl(data.url);
-      setFileName(data.fileName || '');
-      setPlayMode('direct');
-      setDurationSeconds(null);
-      setPlaybackStatus('ready');
+      applyDirectResponse(data);
     } else if (data.mode === 'remux' && playlistUrl) {
       if (Array.isArray(data.streams)) setSources(data.streams);
       const backendBase = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:5001/api';
@@ -1392,14 +1491,7 @@ export default function PlaybackSection({
       }
 
       if (data.mode === 'direct' && data.url) {
-        if (Array.isArray(data.streams)) {
-          setSources(data.streams);
-        }
-        applyPlayUrl(data.url);
-        setFileName(data.fileName || '');
-        setPlayMode('direct');
-        setDurationSeconds(null);
-        setPlaybackStatus('ready');
+        applyDirectResponse(data);
       } else if (data.mode === 'remux' && data.playlistUrl) {
         if (Array.isArray(data.streams)) {
           setSources(data.streams);
