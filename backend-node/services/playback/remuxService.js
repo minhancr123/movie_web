@@ -1730,7 +1730,7 @@ export const startRemuxSession = async ({ sessionId, inputUrl, audioCopy = false
   // investigation whether the slot holder is muxing or software-encoding.
   console.log(
     `[remux] spawn id=${id} video=${videoAction} audio=${audioAction} ` +
-    `res=${video?.height ? `${video.height}p` : 'src'} kbps=${session.kbps || 'src'}`,
+    `codec=${video?.codec || 'src'} res=${video?.height ? `${video.height}p` : 'src'} kbps=${session.kbps || 'src'}`,
   );
 
   child.stderr.on('data', (chunk) => {
@@ -1748,6 +1748,35 @@ export const startRemuxSession = async ({ sessionId, inputUrl, audioCopy = false
       console.error(
         `ffmpeg remux ${id} thoát với mã ${code}: ${redactSecrets(session.stderr).slice(-800)}`,
       );
+    } else {
+      // Baseline cost line for the "what burns the VPS" question: wall time
+      // (spawn to ffmpeg exit — NOT cpu time) + bytes written per finished
+      // session. Async and best-effort — the ffmpeg
+      // process already exited, so this never blocks playback or admission.
+      fs.readdir(outputDir, { withFileTypes: true }).then(
+        async (entries) => {
+          try {
+            let bytes = 0;
+            for (const e of entries) {
+              if (!e.isFile()) continue;
+              try {
+                bytes += (await fs.stat(path.join(outputDir, e.name))).size;
+              } catch {
+                // Segment rotated away mid-sum; skip it.
+              }
+            }
+            const durS = (session.closedAt && session.startedAt)
+              ? ((session.closedAt - session.startedAt) / 1000).toFixed(0)
+              : '?';
+            console.log(
+              `[remux] done id=${id} video=${videoAction} audio=${audioAction} ` +
+              `dur=${durS}s written=${(bytes / 1048576).toFixed(1)}MB`,
+            );
+          } catch {
+            // Metric-only path: never let telemetry throw.
+          }
+        },
+      ).catch(() => {});
     }
   });
 

@@ -12,6 +12,9 @@ on:
       - 'docker-compose.prod.yml'
       - '.github/workflows/deploy.yml'
       - '.github/workflows/ci.yml'
+      # Docs-only changes (e.g. backend-node/README.md) must not burn a
+      # build+deploy: '!' exclusions are honored inside paths filters.
+      - '!**.md'
   workflow_dispatch:
 
 concurrency:
@@ -22,6 +25,7 @@ jobs:
   test:
     name: Build and Test
     runs-on: ubuntu-latest
+    timeout-minutes: 20
     permissions:
       contents: read
     steps:
@@ -30,6 +34,10 @@ jobs:
       - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4
         with:
           node-version: '24'
+          cache: 'npm'
+          cache-dependency-path: |
+            backend-node/package-lock.json
+            frontend/package-lock.json
 
       - name: Backend tests
         run: |
@@ -60,11 +68,14 @@ jobs:
     name: Build and Push Docker Images
     needs: test
     runs-on: ubuntu-latest
+    timeout-minutes: 30
     permissions:
       contents: read
       # Without this the GHCR push fails with
       # "denied: installation not allowed to Create organization package".
       packages: write
+      # type=gha layer cache reads/writes via the Actions cache service.
+      actions: write
     outputs:
       backend_digest: ${{ steps.build_backend.outputs.digest }}
       frontend_digest: ${{ steps.build_frontend.outputs.digest }}
@@ -87,6 +98,9 @@ jobs:
           file: ./backend-node/Dockerfile
           push: true
           tags: ghcr.io/${{ github.repository_owner }}/movie-web-backend:${{ github.sha }}
+          # Scopes keep the two images from overwriting each other's cache.
+          cache-from: type=gha,scope=backend
+          cache-to: type=gha,mode=max,scope=backend
 
       - name: Build and push frontend
         id: build_frontend
@@ -102,10 +116,55 @@ jobs:
             NEXT_PUBLIC_SITE_URL=${{ vars.PUBLIC_SITE_URL }}
             RELEASE_ID=${{ github.sha }}
           tags: ghcr.io/${{ github.repository_owner }}/movie-web-frontend:${{ github.sha }}
+          cache-from: type=gha,scope=frontend
+          cache-to: type=gha,mode=max,scope=frontend
+
+  security:
+    name: Security Scan
+    needs: docker
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    permissions:
+      contents: read
+      packages: read
+    # Advisory only: base-image CVEs (node:slim) fail often and there is no
+    # security team to triage, so a finding must never block a deploy.
+    # Trivy runs as a pinned container image, not via aquasecurity/trivy-action:
+    # the action's pinned setup-trivy@v0.2.2 tag does not exist upstream, which
+    # fails every run at action-download time with no workaround.
+    continue-on-error: true
+    steps:
+      - uses: docker/login-action@c94ce9fb468520275223c153574b00df6fe4bcc9 # v3
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Scan backend image
+        run: |
+          docker run --rm \
+            -v "$HOME/.docker/config.json:/root/.docker/config.json:ro" \
+            -v /tmp/trivy-cache:/root/.cache \
+            aquasec/trivy:0.75.0 image --no-progress \
+              --scanners vuln --severity CRITICAL,HIGH --exit-code 1 \
+              "ghcr.io/${{ github.repository_owner }}/movie-web-backend@${{ needs.docker.outputs.backend_digest }}"
+
+      - name: Scan frontend image
+        run: |
+          docker run --rm \
+            -v "$HOME/.docker/config.json:/root/.docker/config.json:ro" \
+            -v /tmp/trivy-cache:/root/.cache \
+            aquasec/trivy:0.75.0 image --no-progress \
+              --scanners vuln --severity CRITICAL,HIGH --exit-code 1 \
+              "ghcr.io/${{ github.repository_owner }}/movie-web-frontend@${{ needs.docker.outputs.frontend_digest }}"
 
   deploy:
     name: Deploy
-    needs: docker
+    needs: [docker, security]
+    # security is advisory (continue-on-error: findings resolve to success, so
+    # only docker gates the deploy). !cancelled(): a run cancelled during the
+    # scan window must never roll forward — always() would let it deploy.
+    if: ${{ !cancelled() && needs.docker.result == 'success' }}
     runs-on: ubuntu-latest
     timeout-minutes: 45
     environment: 'Production Environments'
@@ -286,3 +345,32 @@ jobs:
             df -h / | tail -1
 
             echo "DEPLOY_OK $SHA"
+
+      - name: Smoke tests
+        # Runs from the runner against the public origin, after the SSH script
+        # already asserted identity + /release. Covers the two runtime layers
+        # health probes miss: a sitemap baked with the wrong site URL, and a
+        # dead catalog path. Deliberately light: no resolve/playback calls, and
+        # no auto-rollback here — the script above already pruned the previous
+        # images, so a failure here just turns the run red for a human to act.
+        run: |
+          set -euo pipefail
+          # PUBLIC_SITE_URL carries a trailing slash: strip it once here, or
+          # every "$SITE/..." URL doubles the slash and the server answers 308
+          # (curl -f passes 3xx, so the grep below would fail on a dozen
+          # redirect bytes — a red run on a healthy deploy).
+          SITE=$(echo "${{ vars.PUBLIC_SITE_URL }}" | sed 's#/*$##')
+          HOST=$(echo "$SITE" | sed 's#^https\?://##')
+          # grep -q quits on first match and closes the pipe: with pipefail a
+          # big-enough sitemap makes curl die of SIGPIPE and the step reds for
+          # no reason. Download first, then grep the file.
+          curl -fsSL --max-time 30 -o /tmp/smoke-sitemap.xml "$SITE/sitemap.xml" \
+            || { echo "::error::sitemap did not answer"; exit 1; }
+          grep -q "$HOST" /tmp/smoke-sitemap.xml \
+            || { echo "::error::sitemap does not contain the public domain ($HOST)"; exit 1; }
+          echo "sitemap ok"
+          curl -fsSL --max-time 30 "$SITE/api/catalog/genres/movie" \
+            | jq -e '.success == true and (.data.genres | length > 0)' >/dev/null \
+            || { echo "::error::catalog API did not return genres"; exit 1; }
+          echo "catalog ok"
+          echo "SMOKE_OK"
