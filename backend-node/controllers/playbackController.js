@@ -2430,9 +2430,15 @@ export const resolvePlayback = async (req, res) => {
 
     console.error(`resolvePlayback exhausted tmdb=${tmdbId} attempts=${attempts.length}`);
     // The message alone once cost an evening of guessing ("session is not
-    // defined" with no location). Log stack frames too — skipping line 0,
-    // which repeats the message (it may echo URLs): frames are file:line
-    // only, never variable values, so they are safe to log.
+    // defined" with no location). Log what the value IS: a real Error carries
+    // a stack (frames below), while a stackless plain object points at an
+    // external payload assigned as the error instead. Keys only, never
+    // values; the message itself already travels in the client response.
+    console.error(
+      `resolvePlayback exhausted err typeof=${typeof lastError} ` +
+      `ctor=${lastError?.constructor?.name || '?'} ` +
+      `keys=${lastError && typeof lastError === 'object' ? Object.keys(lastError).slice(0, 10).join(',') : '-'}`,
+    );
     if (lastError?.stack) {
       const frames = String(lastError.stack).split('\n').slice(1, 7);
       if (frames.length > 0) {
