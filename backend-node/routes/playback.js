@@ -14,6 +14,7 @@ import {
   getPlaybackSubtitles,
   getSubtitleJob,
   serveSubtitleVtt,
+  uploadSubtitle,
 } from '../controllers/playbackController.js';
 import { authMiddleware, mediaAuthMiddleware } from '../middleware/auth.js';
 import {
@@ -52,6 +53,14 @@ router.post('/preload', playbackRateLimit, preloadPlayback);
 router.post('/sources', playbackRateLimit, listPlaybackSources);
 router.post('/subtitles', playbackRateLimit, getPlaybackSubtitles);
 router.get('/subtitles/job/:jobId', playbackPollRateLimit, getSubtitleJob);
+// Viewer-uploaded .srt: JSON body (no multipart dependency), so this route
+// carries its own 3MB limit instead of raising the global 100kb one.
+router.post(
+  '/subtitles/upload',
+  express.json({ limit: '3mb' }),
+  playbackRateLimit,
+  uploadSubtitle,
+);
 router.get('/session/:sessionId', playbackPollRateLimit, getPlaybackSession);
 // Explicit viewer presence: heartbeat refreshes the lease (25s cadence),
 // leave drops it (unmount/title-change/pagehide via keepalive fetch).

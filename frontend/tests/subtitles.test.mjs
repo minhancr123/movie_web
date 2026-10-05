@@ -41,6 +41,15 @@ test('pickBestViTrack prefers matched over first-seen Vietnamese', () => {
   const embedded = { id: 'a'.repeat(40) + ':3', language: 'vi', label: 'Embedded', url: '', ready: false, source: 'embedded' };
   assert.equal(pickBestViTrack([generic, matched, embedded])?.id, embedded.id, 'embedded still outranks matched');
 });
+test('pickBestViTrack ranks a suggested track above popularity, below proof', () => {
+  const generic = { id: 'vi-1', language: 'vi', label: 'Tiếng Việt 1', url: 'http://example/a.vtt', ready: true };
+  const suggested = { id: 'vi-9', language: 'vi', label: 'Tiếng Việt 9', url: 'http://example/c.vtt', ready: true, suggested: true };
+  const matched = { id: 'vi-2', language: 'vi', label: 'Tiếng Việt 2', url: 'http://example/b.vtt', ready: true, matched: true };
+  const embedded = { id: 'a'.repeat(40) + ':3', language: 'vi', label: 'Embedded', url: '', ready: false, source: 'embedded' };
+  assert.equal(pickBestViTrack([generic, suggested])?.id, 'vi-9', 'suggested beats the popularity pick');
+  assert.equal(pickBestViTrack([suggested, matched])?.id, 'vi-2', 'proof still beats suggestion');
+  assert.equal(pickBestViTrack([suggested, embedded])?.id, embedded.id, 'embedded still wins overall');
+});
 
 // Embedded without URL must be considered ready (extraction pending, not absent).
 assert.equal(isReadyTrack({ id: 'a'.repeat(40) + ':3', language: 'vi', label: 'Tiếng Việt', ready: false, url: '' }), true, 'embedded track with no URL is still ready');

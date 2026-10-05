@@ -27,7 +27,9 @@ import {
   getSubtitleCandidates,
   subtitleVariantLabel,
   releaseNamesMatch,
+  releaseSimilarity,
 } from '../services/addonClient.js';
+import { toVttDocument, UPLOAD_MAX_PER_TITLE } from '../services/playback/userSubtitles.js';
 import * as torbox from '../services/debrid/torbox.js';
 import { DebridError } from '../services/debrid/torbox.js';
 import { rankCandidates, normalizeCapabilities } from '../services/playback/sourceRanker.js';
@@ -186,7 +188,7 @@ const fail = (res, status, message, extra = {}) =>
  * Best-effort throughout: no API key, no hash, or an API outage all degrade to
  * `checked: false` and never block the subtitle list.
  */
-const buildSubtitleMatchReport = async ({ imdbId, season, episode, moviehash }) => {
+const buildSubtitleMatchReport = async ({ imdbId, season, episode, moviehash, fileName = '' }) => {
   if (!opensubtitles.isConfigured() || !moviehash || !imdbId) {
     return { checked: false, languages: {} };
   }
@@ -210,6 +212,14 @@ const buildSubtitleMatchReport = async ({ imdbId, season, episode, moviehash }) 
         current.release = result.release;
       } else if (!current.release) {
         current.release = result.release;
+      }
+      // Closest by release-name similarity, independent of the strict tick:
+      // the tick stays exact-match-only, but the warning can name the file
+      // most likely to be in sync when nothing is exact.
+      const { score, veto } = releaseSimilarity(result.release, fileName);
+      if (!veto && (current.closestScore === undefined || score > current.closestScore)) {
+        current.closestScore = score;
+        current.closestRelease = result.release;
       }
       languages[result.language] = current;
     }
@@ -3030,6 +3040,7 @@ export const getPlaybackSubtitles = async (req, res) => {
       season,
       episode,
       moviehash: ownedSession?.videoHash ?? null,
+      fileName: ownedSession?.fileName ?? '',
     });
 
     // External sidecars are tiny; fetch them before touching TorBox or starting
@@ -3124,12 +3135,66 @@ export const getPlaybackSubtitles = async (req, res) => {
     };
     // externalTracks was labelled before the verdict landed; join back to the
     // addon entries (which carry the release names) by id for the tick flag.
+    // Same join also scores release-name similarity: the auto-pick below can
+    // then prefer the closest file instead of the most downloaded one.
     const subsById = new Map((externalSubs || []).map((s) => [s.id, s]));
+    // A suggestion must clear this bar: title-overlap alone (~10) is not
+    // enough to prefer a file over the popular pick, but a same-source or
+    // same-group hit always is.
+    const SUGGEST_FLOOR = 20;
+    const bestByLang = new Map();
     for (const track of externalTracks) {
-      if (trackMatched(subsById.get(track.id))) track.matched = true;
+      const sub = subsById.get(track.id);
+      if (trackMatched(sub)) track.matched = true;
+      const name = String(sub?.name || sub?.release || '').trim();
+      const { score, veto } = releaseSimilarity(name, playingFileName);
+      track.similarity = veto ? Number.NEGATIVE_INFINITY : score;
+      if (!veto) {
+        const lang = String(track.language || '').toLowerCase();
+        const best = bestByLang.get(lang);
+        if (!best || score > best.score) bestByLang.set(lang, { track, score });
+      }
+    }
+    for (const { track, score } of bestByLang.values()) {
+      if (score >= SUGGEST_FLOOR) track.suggested = true;
     }
 
     const combinedTracks = [...embeddedTracks, ...externalTracks];
+
+    // The viewer's own uploads for this exact title, if any. Trusted above
+    // every guess: a human chose this file for this film, so it outranks the
+    // similarity suggestion and the popularity pick alike — but never an
+    // embedded or hash-verified track, which are proven, not chosen.
+    // Minted fresh tokens like embedded tracks; the stored file is permanent.
+    try {
+      const mine = await db.collection('user_subtitles').find({
+        userIdStr: String(req.user?.userId ?? ''),
+        tmdbId,
+        season: season ?? null,
+        episode: episode ?? null,
+      }).sort({ createdAt: -1 }).toArray();
+      for (const up of mine) {
+        if (!up?.file) continue;
+        try {
+          await fs.access(up.file);
+        } catch {
+          continue;
+        }
+        const token = crypto.randomBytes(32).toString('hex');
+        await setCache(subTokenKey(token), { file: up.file }, SUB_TOKEN_TTL);
+        combinedTracks.unshift({
+          id: `upload:${String(up._id)}`,
+          language: up.language || '',
+          label: up.label || `${subLabel(up.language)} — Tệp của bạn`,
+          url: `/api/playback/subtitles/vtt/${token}`,
+          ready: true,
+          source: 'upload',
+          suggested: true,
+        });
+      }
+    } catch {
+      // Uploads are a bonus track source: never fail the list for them.
+    }
 
     if (combinedTracks.length > 0) {
       const probeSummary = {
@@ -3713,6 +3778,99 @@ export const leavePlaybackSession = async (req, res) => {
   } catch (error) {
     console.error('leavePlaybackSession error:', error.message);
     return fail(res, 500, 'Lỗi server');
+  }
+};
+
+/* ------------------------------------------------------- upload subtitles */
+
+const safeUserDir = (userIdStr) => String(userIdStr || 'anon').replace(/[^a-zA-Z0-9_-]/g, '_').slice(0, 64) || 'anon';
+
+/**
+ * POST /api/playback/subtitles/upload — a viewer brings their own .srt.
+ *
+ * Body is JSON, never multipart: { content, filename, language, tmdbId,
+ * season?, episode? }. The frontend reads the file as text, so no new parser
+ * dependency — but that also means every byte rule must be enforced here,
+ * because the client is never trusted: size cap, extension, timestamp
+ * structure, language shape, title scope. Anything off fails with a
+ * sentence the uploader can act on, not a status code.
+ *
+ * Stored per user+title+episode and offered back on every later subtitles
+ * list for the same title (source 'upload', auto-picked: an explicit human
+ * choice for this title outranks every guess). Capped per title; oldest pruned
+ * with its file. Served through the same unguessable vtt tokens as embedded
+ * tracks, minted per list request.
+ */
+export const uploadSubtitle = async (req, res) => {
+  try {
+    const userIdStr = String(req.user?.userId ?? '');
+    if (!userIdStr) return fail(res, 401, 'Chưa đăng nhập');
+    const { content, filename, language, tmdbId, season = null, episode = null } = req.body || {};
+    const titleId = Number(tmdbId);
+    if (!Number.isInteger(titleId) || titleId <= 0) {
+      return fail(res, 400, 'Thiếu mã phim (tmdbId)');
+    }
+    const cleanSeason = season === null || season === undefined ? null : Number(season);
+    const cleanEpisode = episode === null || episode === undefined ? null : Number(episode);
+    if ((cleanSeason !== null && !Number.isInteger(cleanSeason)) || (cleanEpisode !== null && !Number.isInteger(cleanEpisode))) {
+      return fail(res, 400, 'Tập phim không hợp lệ');
+    }
+    const lang = String(language || '').toLowerCase();
+    if (!/^[a-z]{2,3}$/.test(lang)) {
+      return fail(res, 400, 'Mã ngôn ngữ không hợp lệ (ví dụ: vi, en)');
+    }
+    if (!/\.(srt|vtt)$/i.test(String(filename || ''))) {
+      return fail(res, 400, 'Chỉ nhận file .srt hoặc .vtt');
+    }
+    let vtt;
+    try {
+      vtt = toVttDocument(content, filename);
+    } catch (error) {
+      return fail(res, 400, error.message);
+    }
+
+    const db = getDB();
+    const key = { userIdStr, tmdbId: titleId, season: cleanSeason, episode: cleanEpisode };
+    const dir = subsPath('uploads', safeUserDir(userIdStr));
+    await fs.mkdir(dir, { recursive: true });
+    const storedName = `${titleId}-${cleanSeason ?? 'x'}-${cleanEpisode ?? 'x'}-${crypto.randomBytes(8).toString('hex')}.vtt`;
+    const file = path.join(dir, storedName);
+    await fs.writeFile(file, vtt, 'utf8');
+
+    const row = {
+      ...key,
+      userId: toObjectIdOrRaw(req.user.userId),
+      language: lang,
+      label: `${subLabel(lang)} — Tệp của bạn`,
+      file,
+      createdAt: new Date(),
+    };
+    const inserted = await db.collection('user_subtitles').insertOne(row);
+    // Cap per title: oldest uploads (and their files) go first. Count after
+    // insert so a full house still accepts the new file, then prunes down.
+    const existing = await db.collection('user_subtitles').find(key).sort({ createdAt: 1 }).toArray();
+    for (const old of existing.slice(0, Math.max(0, existing.length - UPLOAD_MAX_PER_TITLE))) {
+      await db.collection('user_subtitles').deleteOne({ _id: old._id }).catch(() => null);
+      if (old.file && old.file !== file) await fs.unlink(old.file).catch(() => null);
+    }
+
+    const token = crypto.randomBytes(32).toString('hex');
+    await setCache(subTokenKey(token), { file }, SUB_TOKEN_TTL);
+    return res.json({
+      success: true,
+      data: {
+        id: `upload:${String(inserted.insertedId)}`,
+        language: lang,
+        label: row.label,
+        url: `/api/playback/subtitles/vtt/${token}`,
+        ready: true,
+        source: 'upload',
+        suggested: true,
+      },
+    });
+  } catch (error) {
+    console.error('uploadSubtitle error:', error.message);
+    return fail(res, error.status || 500, error.message || 'Lỗi server');
   }
 };
 

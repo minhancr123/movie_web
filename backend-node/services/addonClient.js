@@ -143,6 +143,161 @@ export const releaseNamesMatch = (a, b) => {
 };
 
 /**
+ * How likely a subtitle timed for `subRelease` is in sync with `fileName.
+ *
+ * releaseNamesMatch above answers a yes/no question for the tick mark, and a
+ * no there just means "unproven" — but the picker still has to choose among
+ * the unproven. This scores the same evidence on a scale so the closest file
+ * surfaces first instead of the most downloaded one.
+ *
+ * Facets, in decreasing order of what actually moves cue timing:
+ * - content identity (year, SxxEyy): a mismatch is a different video, so it
+ *   vetoes outright rather than scoring low. Matching adds little — same film
+ *   is the baseline expectation, not an achievement.
+ * - source (WEB-DL vs WEBRip vs BluRay vs HDTV): different masters drift.
+ *   Match weighs most; a both-present mismatch penalises hard.
+ * - group (`-FQM`, `-EVO`): same group usually means same encode chain.
+ * - resolution, codec: weak signals, mostly tie-breakers.
+ * - remaining title tokens: Jaccard overlap so "Extended" vs "Theatrical"
+ *   still counts for something without deciding anything alone.
+ *
+ * Returns { score, veto }. Veto is a different answer from a low score: the
+ * caller must exclude vetoed entries, not rank them last.
+ */
+const RELEASE_FACETS = {
+  source: ['web-dl', 'webdl', 'webrip', 'web-rip', 'bluray', 'blu-ray', 'hdtv', 'dvdrip', 'dvd', 'hdrip', 'hdcam', 'cam', 'telesync'],
+  resolution: ['2160p', '1080p', '720p', '480p', '4k'],
+  codec: ['x264', 'x265', 'h264', 'h265', 'xvid', 'divx', 'av1', 'hevc'],
+};
+
+const releaseTokens = (s) => String(s || '').toLowerCase().split(/[^a-z0-9]+/).filter(Boolean);
+
+/**
+ * Source facet from the joined tokens: "WEB-DL", "WEBDL" and "WEB.DL" all
+ * join to a string containing "webdl", while the token list holds ["web",
+ * "dl"] — so single-token lookup can never see multi-word facets. Longest
+ * first, so "hdcam" wins over the "cam" inside it.
+ */
+const SOURCE_FACETS = [
+  ['bluray', ['bluray', 'blu-ray']],
+  ['webdl', ['webdl', 'web-dl']],
+  ['webrip', ['webrip', 'web-rip']],
+  ['hdtv', ['hdtv']],
+  ['dvdrip', ['dvdrip']],
+  ['hdrip', ['hdrip']],
+  ['hdcam', ['hdcam']],
+  ['telesync', ['telesync']],
+  ['cam', ['cam']],
+  ['ts', ['ts']],
+  ['dvd', ['dvd']],
+];
+const RESOLUTION_FACETS = ['2160p', '1080p', '720p', '480p', '4k'];
+const CODEC_FACETS = [
+  ['x264', ['x264', 'h264']],
+  ['x265', ['x265', 'h265', 'hevc']],
+  ['xvid', ['xvid']],
+  ['divx', ['divx']],
+  ['av1', ['av1']],
+];
+
+const detectFacet = (joined, table) => {
+  for (const [canonical, forms] of table) {
+    if (forms.some((f) => joined.includes(f.replace(/-/g, '')))) return canonical;
+  }
+  return null;
+};
+
+const detectResolution = (tokens) => {
+  const set = new Set(tokens);
+  for (const r of RESOLUTION_FACETS) {
+    if (set.has(r)) return r;
+  }
+  return null;
+};
+
+const detectCodec = (tokens) => {
+  const set = new Set(tokens);
+  for (const [canonical, forms] of CODEC_FACETS) {
+    if (forms.some((f) => set.has(f))) return canonical;
+  }
+  return null;
+};
+
+const trailingGroup = (s) => {
+  const m = String(s || '').match(/[-_. ]([a-z0-9]{2,12})(\.[a-z]{2,4})?$/i);
+  return m ? m[1].toLowerCase() : null;
+};
+
+const contentIds = (tokens) => {
+  const years = tokens.filter((t) => /^(19|20)\d{2}$/.test(t));
+  const eps = tokens.filter((t) => /^s\d{1,2}e\d{1,3}$/.test(t));
+  return { years, eps };
+};
+
+export const releaseSimilarity = (subRelease, fileName) => {
+  const sub = releaseTokens(subRelease);
+  const file = releaseTokens(fileName);
+  if (sub.length === 0 || file.length === 0) return { score: 0, veto: false };
+
+  // Different video entirely: never rank, exclude.
+  const subIds = contentIds(sub);
+  const fileIds = contentIds(file);
+  if (subIds.years.length > 0 && fileIds.years.length > 0
+    && !subIds.years.some((y) => fileIds.years.includes(y))) {
+    return { score: Number.NEGATIVE_INFINITY, veto: true };
+  }
+  if (subIds.eps.length > 0 && fileIds.eps.length > 0
+    && !subIds.eps.some((e) => fileIds.eps.includes(e))) {
+    return { score: Number.NEGATIVE_INFINITY, veto: true };
+  }
+
+  const subJoined = sub.join('');
+  const fileJoined = file.join('');
+  let score = 0;
+  const subSource = detectFacet(subJoined, SOURCE_FACETS);
+  const fileSource = detectFacet(fileJoined, SOURCE_FACETS);
+  if (subSource && fileSource) {
+    score += subSource === fileSource ? 25 : -20;
+  }
+  const subGroup = trailingGroup(subRelease);
+  const fileGroup = trailingGroup(fileName);
+  // Only comparable when both sides name one: a missing group is no signal,
+  // not a mismatch.
+  if (subGroup && fileGroup) {
+    score += subGroup === fileGroup ? 30 : -15;
+  }
+  const subRes = detectResolution(sub);
+  const fileRes = detectResolution(file);
+  if (subRes && fileRes) {
+    score += subRes === fileRes ? 15 : -10;
+  }
+  const subCodec = detectCodec(sub);
+  const fileCodec = detectCodec(file);
+  if (subCodec && fileCodec) {
+    score += subCodec === fileCodec ? 10 : -5;
+  }
+
+  // Title overlap on whatever is left after facets, year and episode are out.
+  // Same film is the baseline, so it adds a little rather than deciding.
+  const facetTokens = new Set();
+  for (const [, forms] of SOURCE_FACETS) {
+    for (const f of forms) facetTokens.add(f.replace(/-/g, ''));
+  }
+  const skip = new Set([
+    ...facetTokens, ...RESOLUTION_FACETS,
+    ...CODEC_FACETS.flatMap(([, forms]) => forms),
+    ...subIds.years, ...subIds.eps, ...fileIds.years, ...fileIds.eps,
+  ]);
+  const subTitle = sub.filter((t) => !skip.has(t));
+  const fileTitle = new Set(file.filter((t) => !skip.has(t)));
+  if (subTitle.length > 0 && fileTitle.size > 0) {
+    const overlap = subTitle.filter((t) => fileTitle.has(t)).length;
+    score += Math.round((overlap / Math.max(subTitle.length, fileTitle.size)) * 10);
+  }
+  return { score, veto: false };
+};
+
+/**
  * How one variant is described in the picker.
  *
  * Best: the release it was timed for. Failing that, the addon it came from —

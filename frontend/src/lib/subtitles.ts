@@ -26,6 +26,12 @@ export interface SubTrack {
    * variants cannot be verified, so they stay unticked rather than guessed.
    */
   matched?: boolean;
+  /**
+   * Closest release-name match when nothing is exact (see releaseSimilarity
+   * server-side). Not a ✓ — timing is likelier, not proven. Ranks above the
+   * popularity pick in auto-select, below verified matches.
+   */
+  suggested?: boolean;
 }
 
 /**
@@ -61,17 +67,22 @@ export const isReadyTrack = (t: { ready?: boolean; url: string; source?: string;
 /** Server-verified file match: sidecar timed for the exact playing file. */
 export const isMatchedTrack = (t: { matched?: boolean }): boolean => t.matched === true;
 
+/** Closest release-name match when nothing is exact: better sync odds than popularity. */
+export const isSuggestedTrack = (t: { suggested?: boolean }): boolean => t.suggested === true;
+
 /**
  * Best Vietnamese pick, ranked by timing trust:
  * 1. embedded (extracted from the playing file — exact),
  * 2. matched sidecar (server-verified release match),
- * 3. first ready Vietnamese sidecar (right language, timing not guaranteed).
+ * 3. suggested sidecar (closest release name when nothing is exact),
+ * 4. first ready Vietnamese sidecar (right language, timing not guaranteed).
  */
-export const pickBestViTrack = <T extends { language: string; url: string; source?: string; id: string; ready?: boolean; matched?: boolean }>(
+export const pickBestViTrack = <T extends { language: string; url: string; source?: string; id: string; ready?: boolean; matched?: boolean; suggested?: boolean }>(
   tracks: T[],
 ): T | undefined =>
   tracks.find((t) => isReadyTrack(t) && isViTrack(t) && isEmbeddedTrack(t))
   || tracks.find((t) => isReadyTrack(t) && isViTrack(t) && isMatchedTrack(t))
+  || tracks.find((t) => isReadyTrack(t) && isViTrack(t) && isSuggestedTrack(t))
   || tracks.find((t) => isReadyTrack(t) && isViTrack(t));
 
 const TS = '(\\d{2,}):(\\d{2}):(\\d{2})[.,](\\d{3})';

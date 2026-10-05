@@ -237,6 +237,16 @@ export const playbackAPI = {
     playbackSessionId?: string;
     externalOnly?: boolean;
   }) => authClient.post('/playback/subtitles', data),
+  // Viewer-uploaded .srt: file read as text client-side, JSON body (no
+  // multipart dependency). The response is a ready track, selected now.
+  uploadSubtitle: (data: {
+    content: string;
+    filename: string;
+    language: string;
+    tmdbId: number;
+    season?: number | null;
+    episode?: number | null;
+  }) => authClient.post('/playback/subtitles/upload', data),
 };
 
 /** Absolute backend URL for relative asset paths (extracted VTT sidecars). */

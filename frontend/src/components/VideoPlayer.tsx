@@ -535,6 +535,10 @@ export default function VideoPlayer({ src, movie, episode, authToken, durationSe
     const [cueCache, setCueCache] = useState<Record<string, SubCue[]>>({});
     const [cuesLoading, setCuesLoading] = useState(false);
     const [subJobId, setSubJobId] = useState<string | null>(null);
+    // Viewer upload (.srt): file read as text and POSTed as JSON. Kept local
+    // to this menu — the track list itself carries the uploaded entry.
+    const [subUploading, setSubUploading] = useState(false);
+    const subFileRef = useRef<HTMLInputElement | null>(null);
     const subLoadModeRef = useRef<'idle' | 'external' | 'full'>('idle');
     const subHasTracksRef = useRef(false);
     // Epoch of the in-flight inventory request (null = none). Scoped per
@@ -561,8 +565,9 @@ export default function VideoPlayer({ src, movie, episode, authToken, durationSe
     // A manual choice always sticks (autoSubRef false).
     const autoRank = (t: SubTrack | undefined): number => {
         if (!t) return -1;
-        if (isEmbeddedTrack(t)) return 2;
-        if (t.matched === true) return 1;
+        if (isEmbeddedTrack(t)) return 3;
+        if (t.matched === true) return 2;
+        if (t.suggested === true) return 1;
         return 0;
     };
     const maybeAutoPickSub = useCallback((tracks: SubTrack[]) => {
@@ -854,6 +859,53 @@ export default function VideoPlayer({ src, movie, episode, authToken, durationSe
     // initial pick above. An earlier version re-forced English whenever the
     // current track wasn't English, which fought the viewer: picking Vietnamese
     // immediately bounced back to English, so switching tracks never stuck.
+
+    // Viewer upload: their own .srt for this title. Read as text and POSTed
+    // as JSON (no multipart dependency); the server validates, converts to
+    // VTT and returns a ready track, which is picked immediately — an explicit
+    // human choice for this title outranks every guess, so no auto-pick dance.
+    const detectUploadLang = (filename: string): string => {
+        const m = filename.toLowerCase().match(/[.]([a-z]{2,3})\.(srt|vtt)$/);
+        if (m && ['vi', 'vie', 'en', 'eng', 'fr', 'de', 'es', 'ja', 'ko', 'zh', 'th'].includes(m[1])) {
+            return m[1].length === 3 ? m[1].slice(0, 2) : m[1];
+        }
+        return 'vi';
+    };
+    const handleSubUpload = async (file: File) => {
+        if (subUploading) return;
+        if (!subContext?.tmdbId) {
+            showSyncToast('Mở phim trước khi tải phụ đề lên');
+            return;
+        }
+        if (file.size > 2 * 1024 * 1024) {
+            showSyncToast('File quá lớn (tối đa 2MB)');
+            return;
+        }
+        setSubUploading(true);
+        try {
+            const content = await file.text();
+            const r = await playbackAPI.uploadSubtitle({
+                content,
+                filename: file.name,
+                language: detectUploadLang(file.name),
+                tmdbId: Number(subContext.tmdbId),
+                ...(subContext.season != null ? { season: Number(subContext.season) } : {}),
+                ...(subContext.episode != null ? { episode: Number(subContext.episode) } : {}),
+            });
+            const track = r.data?.data;
+            if (!track?.url || !track?.id) throw new Error('Máy chủ không trả về track');
+            setSubTracks((prev) => [...prev.filter((t) => t.id !== track.id), track]);
+            pickSubtitle(track.id);
+            showSyncToast('Đã thêm phụ đề của bạn');
+        } catch (err: unknown) {
+            const msg = (err as { response?: { data?: { message?: string } }; message?: string })
+                ?.response?.data?.message || (err instanceof Error && err.message) || 'không rõ nguyên nhân';
+            showSyncToast(`Tải lên thất bại: ${String(msg).slice(0, 120)}`);
+        } finally {
+            setSubUploading(false);
+            if (subFileRef.current) subFileRef.current.value = '';
+        }
+    };
 
     // Restore delay memory when subtitle track is picked (per-track delay)
     useEffect(() => {
@@ -3014,6 +3066,31 @@ export default function VideoPlayer({ src, movie, episode, authToken, durationSe
                                                                 </button>
                                                             );
                                                         })}
+                                                    </div>
+                                                    {/* Viewer upload: their own .srt when no timed
+                                                        sidecar exists. Lives beside the tracks (not in
+                                                        the error area below) because it is an action,
+                                                        not a status. */}
+                                                    <div className="flex items-center gap-2">
+                                                        <input
+                                                            ref={subFileRef}
+                                                            type="file"
+                                                            accept=".srt,.vtt"
+                                                            className="hidden"
+                                                            aria-label="Tải lên phụ đề"
+                                                            onChange={(e) => {
+                                                                const f = e.target.files?.[0];
+                                                                if (f) void handleSubUpload(f);
+                                                            }}
+                                                        />
+                                                        <button
+                                                            onClick={() => subFileRef.current?.click()}
+                                                            disabled={subUploading}
+                                                            title="Dùng file .srt của bạn cho đúng bản phim này"
+                                                            className="px-2 py-1.5 rounded-md text-[10px] font-bold transition-all border border-dashed border-white/20 text-cinema-subtle hover:text-white hover:border-white/40 disabled:opacity-50"
+                                                        >
+                                                            {subUploading ? 'Đang tải lên…' : '＋ Tải lên .srt'}
+                                                        </button>
                                                     </div>
                                                     {/* OpenSubtitles verdict for THIS file. Saying so up front beats
                                                         letting the viewer discover the drift twenty minutes in. */}
