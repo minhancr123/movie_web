@@ -26,6 +26,35 @@ cinevn.me {
 	encode zstd gzip
 	header -Server
 
+	# Access log, for telling crawlers apart (Googlebot vs junk bots) the next
+	# time traffic spikes. Query strings carry playback tokens
+	# (?access_token=, ?media_grant=), so they are deleted before the line is
+	# written — logs must never become a token store.
+	#
+	# To a self-rotating file: this box's journal never receives Caddy's
+	# stdout (verified empty after a valid, reloaded config), and a failed
+	# experiment proved the point the other way — a root-owned access.log
+	# makes the reload fail because the caddy user cannot open it. So: the
+	# file must be owned by caddy (created by the daemon on first write,
+	# never by a root-run validate), and it stays out of git.
+	# Gotcha: `sudo caddy validate` itself creates the file as root — always
+	# rm -f it after validating and before reloading.
+	log {
+		output file /var/log/caddy/access.log {
+			roll_size 50mb
+			roll_keep 5
+		}
+		format filter {
+			wrap json
+			fields {
+				request>uri query {
+					delete access_token
+					delete media_grant
+				}
+			}
+		}
+	}
+
 	route {
 		@diagnostic path /api/local-playback-diagnostic /api/local-playback-diagnostic/*
 		respond @diagnostic 404
