@@ -828,9 +828,18 @@ export default function VideoPlayer({ src, movie, episode, authToken, durationSe
             const cues = await fetchCues(apiUrl(track.url));
             setCueCache((prev) => ({ ...prev, [track.id]: cues }));
         } catch {
-            // Keep the track selectable; the overlay simply shows nothing while
-            // the file fails. A retry happens on next select.
-            setCueCache((prev) => ({ ...prev, [track.id]: [] }));
+            // Leave the key absent on failure: an empty array is truthy, so
+            // storing it would make the guard above skip every later call and
+            // the track could never recover without remounting — the overlay
+            // would show nothing forever after one transient failure (expired
+            // token, evicted cache entry, hiccup). Absent means the next
+            // select retries the fetch.
+            setCueCache((prev) => {
+                if (!(track.id in prev)) return prev;
+                const next = { ...prev };
+                delete next[track.id];
+                return next;
+            });
         } finally {
             setCuesLoading(false);
         }
