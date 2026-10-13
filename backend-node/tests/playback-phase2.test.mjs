@@ -99,7 +99,16 @@ const rejected = remux.decidePlaybackMode(
   { format: 'matroska', video: { codec: 'hevc' }, audio: [] }, { hevc: false },
 );
 assert.equal(direct.mode, 'direct');
+assert.equal(direct.directBrowserSafe, true, 'compatible MP4 may be delivered untouched');
 assert.equal(remuxed.mode, 'remux');
+assert.equal(remuxed.directBrowserSafe, false, 'remux-only sources cannot bypass conversion on low disk');
+const safariMkv = remux.decidePlaybackMode(
+  { format: 'matroska,webm', video: { codec: 'hevc', profile: 'Main 10' }, audio: [{ codec: 'aac', profile: 'LC', channels: 2 }] },
+  { hevc: true, hevcMain10: true, webm: true },
+);
+assert.equal(safariMkv.audioBrowserSafe, true);
+assert.equal(safariMkv.mode, 'remux');
+assert.equal(safariMkv.directBrowserSafe, false, 'decodable AAC does not make a HEVC MKV safe for Safari direct play');
 assert.equal(rejected.mode, 'reject');
 const multiAudio = remux.decidePlaybackMode(
   { format: 'mov,mp4', video: { codec: 'h264' }, audio: [{ codec: 'aac', streamIndex: 1 }, { codec: 'dts', streamIndex: 2 }] }, { hevc: false }, 1,

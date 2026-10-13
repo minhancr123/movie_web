@@ -1947,15 +1947,16 @@ export const resolvePlayback = async (req, res) => {
             + `remux can ~${Math.round(diskFit.needBytes / 1024 ** 3)}GB, `
             + `trong ${Math.round((diskFit.freeBytes || 0) / 1024 ** 3)}GB`,
           );
-          // Only downgrade when the browser can actually decode this file's
-          // audio. Direct play hands over the untouched source, so for a track
+          // Only downgrade when the full file is browser-compatible, including
+          // container, video and selected audio. Decodable audio alone does not
+          // make an MKV suitable for native Safari playback. For a track
           // Chrome cannot read the viewer gets video and no sound at all — a
           // worse outcome than waiting, and one they cannot fix from the
           // player. Such a candidate is dropped instead so the next source
           // gets its turn; if every source needs the remux the loop ends on
           // lastError and the viewer is told to retry, which is the same
           // reading RemuxNoSpaceError already gives them.
-          if (decision.audioBrowserSafe) {
+          if (decision.directBrowserSafe) {
             decision.mode = 'direct';
             decision.reason = 'Đang phát trực tiếp bản gốc.';
             // The actions were computed for a remux above: a direct answer
@@ -1965,9 +1966,9 @@ export const resolvePlayback = async (req, res) => {
           } else {
             console.warn(
               `resolvePlayback bo qua nguon cho tmdb=${tmdbId}: `
-              + `audio khong giai ma duoc tren client, va remux la thieu cho ngay`,
+              + `file goc khong tuong thich browser, va remux la thieu cho ngay`,
             );
-            lastError = new Error('Không đủ dung lượng để chuẩn hoá âm thanh cho nguồn này');
+            lastError = new Error('Không đủ dung lượng để chuẩn hoá nguồn này cho trình duyệt');
             continue;
           }
         }

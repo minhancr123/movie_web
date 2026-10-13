@@ -459,6 +459,7 @@ export const decidePlaybackMode = (probe, caps = {}, preferredAudioIdx = null, o
       videoCopy: false,
       audioCopy: false,
       audioBrowserSafe,
+      directBrowserSafe: false,
       audioStreamIndex: audio ? audio.streamIndex : null,
       audioChannels: audio ? audio.channels : null,
       audioIndex: targetAudioIdx,
@@ -484,6 +485,7 @@ export const decidePlaybackMode = (probe, caps = {}, preferredAudioIdx = null, o
       audioStreamIndex: null,
       audioIndex: targetAudioIdx,
       audioBrowserSafe,
+      directBrowserSafe: true,
     };
   }
 
@@ -496,6 +498,7 @@ export const decidePlaybackMode = (probe, caps = {}, preferredAudioIdx = null, o
     audioCopy: audio?.codec === 'aac' && audio?.profile === 'LC'
       && Number(audio?.channels) > 0 && Number(audio?.channels) <= 2,
     audioBrowserSafe,
+    directBrowserSafe: false,
     // Absolute ffprobe stream index so ffmpeg maps exactly this track.
     audioStreamIndex: audio ? audio.streamIndex : null,
     audioIndex: targetAudioIdx,
