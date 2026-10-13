@@ -842,7 +842,8 @@ export default function PlaybackSection({
   // fire leave+heartbeat side by side — a leave landing after the heartbeat
   // parks the live session in the abandoned grace window for no reason.
   const isSessionActive =
-    Boolean(playbackSessionId) && (playbackStatus === 'ready' || playbackStatus === 'downloading');
+    Boolean(playbackSessionId) && (playbackStatus === 'ready' || playbackStatus === 'downloading'
+      || (Boolean(playUrl) && playbackStatus !== 'error'));
   useEffect(() => {
     if (!isSessionActive) return;
     const sid = playbackSessionId;

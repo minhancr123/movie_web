@@ -1332,6 +1332,10 @@ export const abandonedWriterIds = (sessionMap = sessions, { now = Date.now(), le
       // Leave-drained only: a session that never tracked viewers keeps the
       // legacy idle-timeout behaviour.
       if (typeof session.abandonedAt === 'number' && t - session.abandonedAt >= leaveGraceMs) {
+        const access = Number(session.lastAccessAt) || 0;
+        // A late leave can race a pipeline rebuild while native media keeps
+        // requesting segments. Later access is evidence the viewer remains.
+        if (access > session.abandonedAt && t - access < leaseMs) continue;
         out.push({ id, at: session.abandonedAt });
       }
       continue;

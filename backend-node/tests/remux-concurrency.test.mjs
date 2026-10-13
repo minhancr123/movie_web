@@ -285,6 +285,7 @@ assert.deepEqual(
     ['media-active', live({ viewers: new Map([['v1', now - VIEWER_LEASE_MS - 1]]), lastAccessAt: now - 1_000 })],
     ['drained-old', live({ viewers: new Map(), abandonedAt: now - LEAVE_GRACE_MS - 1 })],
     ['drained-new', live({ viewers: new Map(), abandonedAt: now - 1_000 })],
+    ['leave-race-active', live({ viewers: new Map(), abandonedAt: now - LEAVE_GRACE_MS - 1, lastAccessAt: now - 1_000 })],
     ['untracked', live({})],
     ['dead', live({ process: { killed: true }, viewers: new Map([['v1', 0]]) })],
   ]);
