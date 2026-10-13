@@ -1,0 +1,278 @@
+{
+  "image": "ghcr.io/viren070/aiostreams@sha256:83893d1c37eaaaf9ad1e9286bd857220a6b8f042a4f1eac3fa7356017aa2b184",
+  "bounded": {
+    "note": "HTTP-level comparison; bypasses CineVN Redis cache. Direct runs first; upstream caches may favour AIO. These are source lists, not playback verification.",
+    "samples": [
+      {
+        "round": "initial",
+        "type": "movie",
+        "id": "tt0133093",
+        "direct": {
+          "seconds": 0.307,
+          "rows": 99,
+          "unique": 99,
+          "source_errors": 0
+        },
+        "aio_same_sources": {
+          "seconds": 2.408,
+          "rows": 99,
+          "unique": 99,
+          "source_errors": 0
+        },
+        "aio_with_comet": {
+          "seconds": 1.116,
+          "rows": 150,
+          "unique": 147,
+          "source_errors": 0
+        },
+        "same_source_overlap": 99,
+        "extra_unique_with_comet": 48
+      },
+      {
+        "round": "initial",
+        "type": "movie",
+        "id": "tt15398776",
+        "direct": {
+          "seconds": 0.232,
+          "rows": 105,
+          "unique": 105,
+          "source_errors": 0
+        },
+        "aio_same_sources": {
+          "seconds": 2.225,
+          "rows": 105,
+          "unique": 105,
+          "source_errors": 0
+        },
+        "aio_with_comet": {
+          "seconds": 0.989,
+          "rows": 150,
+          "unique": 145,
+          "source_errors": 0
+        },
+        "same_source_overlap": 105,
+        "extra_unique_with_comet": 40
+      },
+      {
+        "round": "initial",
+        "type": "series",
+        "id": "tt0903747:1:1",
+        "direct": {
+          "seconds": 0.205,
+          "rows": 52,
+          "unique": 51,
+          "source_errors": 0
+        },
+        "aio_same_sources": {
+          "seconds": 1.683,
+          "rows": 52,
+          "unique": 51,
+          "source_errors": 0
+        },
+        "aio_with_comet": {
+          "seconds": 0.443,
+          "rows": 120,
+          "unique": 109,
+          "source_errors": 0
+        },
+        "same_source_overlap": 51,
+        "extra_unique_with_comet": 58
+      },
+      {
+        "round": "initial",
+        "type": "series",
+        "id": "tt4644488:1:1",
+        "direct": {
+          "seconds": 0.173,
+          "rows": 37,
+          "unique": 37,
+          "source_errors": 0
+        },
+        "aio_same_sources": {
+          "seconds": 1.098,
+          "rows": 37,
+          "unique": 37,
+          "source_errors": 0
+        },
+        "aio_with_comet": {
+          "seconds": 0.383,
+          "rows": 77,
+          "unique": 73,
+          "source_errors": 0
+        },
+        "same_source_overlap": 37,
+        "extra_unique_with_comet": 36
+      },
+      {
+        "round": "repeat",
+        "type": "movie",
+        "id": "tt0133093",
+        "direct": {
+          "seconds": 0.286,
+          "rows": 99,
+          "unique": 99,
+          "source_errors": 0
+        },
+        "aio_same_sources": {
+          "seconds": 0.137,
+          "rows": 99,
+          "unique": 99,
+          "source_errors": 0
+        },
+        "aio_with_comet": {
+          "seconds": 0.188,
+          "rows": 150,
+          "unique": 147,
+          "source_errors": 0
+        },
+        "same_source_overlap": 99,
+        "extra_unique_with_comet": 48
+      },
+      {
+        "round": "repeat",
+        "type": "movie",
+        "id": "tt15398776",
+        "direct": {
+          "seconds": 0.254,
+          "rows": 105,
+          "unique": 105,
+          "source_errors": 0
+        },
+        "aio_same_sources": {
+          "seconds": 0.146,
+          "rows": 105,
+          "unique": 105,
+          "source_errors": 0
+        },
+        "aio_with_comet": {
+          "seconds": 0.39,
+          "rows": 150,
+          "unique": 145,
+          "source_errors": 0
+        },
+        "same_source_overlap": 105,
+        "extra_unique_with_comet": 40
+      },
+      {
+        "round": "repeat",
+        "type": "series",
+        "id": "tt0903747:1:1",
+        "direct": {
+          "seconds": 0.257,
+          "rows": 52,
+          "unique": 51,
+          "source_errors": 0
+        },
+        "aio_same_sources": {
+          "seconds": 0.178,
+          "rows": 52,
+          "unique": 51,
+          "source_errors": 0
+        },
+        "aio_with_comet": {
+          "seconds": 0.254,
+          "rows": 120,
+          "unique": 109,
+          "source_errors": 0
+        },
+        "same_source_overlap": 51,
+        "extra_unique_with_comet": 58
+      },
+      {
+        "round": "repeat",
+        "type": "series",
+        "id": "tt4644488:1:1",
+        "direct": {
+          "seconds": 0.17,
+          "rows": 37,
+          "unique": 37,
+          "source_errors": 0
+        },
+        "aio_same_sources": {
+          "seconds": 0.081,
+          "rows": 37,
+          "unique": 37,
+          "source_errors": 0
+        },
+        "aio_with_comet": {
+          "seconds": 0.158,
+          "rows": 77,
+          "unique": 73,
+          "source_errors": 0
+        },
+        "same_source_overlap": 37,
+        "extra_unique_with_comet": 36
+      }
+    ]
+  },
+  "concurrent_two": {
+    "cold": [
+      {
+        "id": "tt1375666",
+        "success": true,
+        "seconds": 2.193,
+        "count": 150,
+        "source_errors": 0
+      },
+      {
+        "id": "tt1877830",
+        "success": true,
+        "seconds": 2.232,
+        "count": 137,
+        "source_errors": 0
+      },
+      {
+        "id": "tt7660850:1:1",
+        "success": true,
+        "seconds": 1.826,
+        "count": 101,
+        "source_errors": 0
+      },
+      {
+        "id": "tt7366338:1:1",
+        "success": true,
+        "seconds": 2.521,
+        "count": 137,
+        "source_errors": 0
+      }
+    ],
+    "repeat": [
+      {
+        "id": "tt1375666",
+        "success": true,
+        "seconds": 0.15,
+        "count": 150,
+        "source_errors": 0
+      },
+      {
+        "id": "tt1877830",
+        "success": true,
+        "seconds": 0.233,
+        "count": 137,
+        "source_errors": 0
+      },
+      {
+        "id": "tt7660850:1:1",
+        "success": true,
+        "seconds": 0.191,
+        "count": 101,
+        "source_errors": 0
+      },
+      {
+        "id": "tt7366338:1:1",
+        "success": true,
+        "seconds": 0.276,
+        "count": 137,
+        "source_errors": 0
+      }
+    ]
+  },
+  "container": {
+    "healthy": "healthy",
+    "oom": false,
+    "restarts": 0,
+    "memory_limit_bytes": 536870912,
+    "cpu_nano": 500000000,
+    "peak_memory_bytes": 223330304
+  }
+}

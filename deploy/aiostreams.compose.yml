@@ -1,0 +1,34 @@
+services:
+  aiostreams:
+    image: ghcr.io/viren070/aiostreams@sha256:83893d1c37eaaaf9ad1e9286bd857220a6b8f042a4f1eac3fa7356017aa2b184
+    container_name: cineon-aiostreams
+    restart: unless-stopped
+    env_file:
+      - /var/lib/cineon-aiostreams/.env
+    ports:
+      - "127.0.0.1:3100:3000"
+    volumes:
+      - /var/lib/cineon-aiostreams/data:/app/data
+    mem_limit: 512m
+    cpus: 0.5
+    pids_limit: 128
+    healthcheck:
+      start_period: 180s
+    security_opt:
+      - no-new-privileges:true
+    cap_drop:
+      - ALL
+    logging:
+      driver: json-file
+      options:
+        max-size: "10m"
+        max-file: "3"
+    networks:
+      cineon:
+        aliases:
+          - aiostreams
+
+networks:
+  cineon:
+    external: true
+    name: cineon_cineon

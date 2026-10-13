@@ -1,6 +1,7 @@
 import contextlib
 import importlib.util
 import json
+import sqlite3
 from pathlib import Path
 import tempfile
 import unittest
@@ -12,6 +13,27 @@ spec.loader.exec_module(ops)
 
 
 class ProductionOpsTest(unittest.TestCase):
+    def test_aiostreams_snapshot_preserves_wal_commits_and_encryption_key(self):
+        with tempfile.TemporaryDirectory() as temp:
+            root = Path(temp) / 'root'; state = Path(temp) / 'aio'; stage = Path(temp) / 'stage'
+            (root / 'deploy').mkdir(parents=True); (state / 'data').mkdir(parents=True); stage.mkdir()
+            (root / '.env').write_text('STREAM_SOURCE_PROVIDER=aiostreams\n')
+            (root / 'deploy/aiostreams.compose.yml').write_text('services: {}\n')
+            (state / '.env').write_text('SECRET_KEY=' + 'a' * 64 + '\n')
+            with sqlite3.connect(state / 'data/db.sqlite') as connection:
+                connection.execute('PRAGMA journal_mode=WAL')
+                connection.execute('CREATE TABLE configs (name TEXT)')
+                connection.execute("INSERT INTO configs VALUES ('committed-profile')")
+                connection.commit()
+                with patch.object(ops, 'ROOT', root), patch.object(ops, 'AIO_STATE', state):
+                    ops.snapshot_aiostreams(stage)
+            self.assertTrue(ops.verify_aiostreams_snapshot(stage))
+            with sqlite3.connect(stage / 'aiostreams/db.sqlite') as restored:
+                self.assertEqual(restored.execute('SELECT name FROM configs').fetchall(), [('committed-profile',)])
+            (stage / 'aiostreams/.env').write_text('SECRET_KEY=missing\n')
+            with self.assertRaisesRegex(RuntimeError, 'encryption key'):
+                ops.verify_aiostreams_snapshot(stage)
+
     def test_recovery_needs_three_failures_and_has_restart_budget(self):
         self.assertFalse(ops.recovery_allowed({'failures': 2}, 10000))
         self.assertTrue(ops.recovery_allowed({'failures': 3}, 10000))

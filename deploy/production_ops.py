@@ -8,6 +8,8 @@ import json
 import os
 from pathlib import Path
 import secrets
+import sqlite3
+import re as regex
 import shutil
 import subprocess
 import tempfile
@@ -19,6 +21,7 @@ STATE = Path(os.getenv('CINEON_OPS_STATE', '/var/lib/cineon-ops'))
 METRICS = Path('/var/lib/alloy/textfile')
 WRITERS = ['cineon-backend', 'cineon-worker', 'cineon-scheduler']
 SERVICES = WRITERS + ['cineon-frontend', 'cineon-redis', 'cineon-redis-cache']
+AIO_STATE = Path(os.getenv('CINEON_AIO_STATE', '/var/lib/cineon-aiostreams'))
 MONGO_IMAGE = os.getenv('CINEON_MONGO_TOOLS_IMAGE', 'mongo@sha256:d0d926f94df099bff534b7ee5b5986458131a22489dfff8664509af0c1e2ca9c')
 
 
@@ -66,13 +69,55 @@ def recovery_allowed(state, now):
         not events or now - max(events) >= 900)
 
 
+def aiostreams_enabled():
+    path = ROOT / '.env'
+    if not path.exists():
+        return False
+    return any(line.split('=', 1)[0].strip() == 'STREAM_SOURCE_PROVIDER'
+               and line.split('=', 1)[1].strip().strip('\"\'') == 'aiostreams'
+               for line in path.read_text().splitlines() if '=' in line)
+
+
+def snapshot_aiostreams(staging):
+    if not aiostreams_enabled():
+        return
+    target = staging / 'aiostreams'
+    target.mkdir(mode=0o700)
+    for name in ['.env', 'pilot-config.json', 'pilot-multi-config.json']:
+        source = AIO_STATE / name
+        if source.exists():
+            shutil.copy2(source, target / name)
+    shutil.copy2(ROOT / 'deploy/aiostreams.compose.yml', target / 'compose.yml')
+    source_db = AIO_STATE / 'data/db.sqlite'
+    with contextlib.closing(sqlite3.connect(source_db.resolve().as_uri() + '?mode=ro', uri=True)) as source:
+        with contextlib.closing(sqlite3.connect(target / 'db.sqlite')) as destination:
+            source.backup(destination)
+            destination.execute('PRAGMA journal_mode=DELETE')
+            destination.commit()
+    verify_aiostreams_snapshot(staging)
+
+
+def verify_aiostreams_snapshot(staging):
+    target = staging / 'aiostreams'
+    if not target.exists():
+        return False
+    lines = (target / '.env').read_text().splitlines()
+    if not any(regex.fullmatch(r'SECRET_KEY=[0-9a-fA-F]{64}', line) for line in lines):
+        raise RuntimeError('AIOStreams backup is missing its encryption key')
+    with contextlib.closing(sqlite3.connect((target / 'db.sqlite').resolve().as_uri() + '?mode=ro', uri=True)) as db:
+        if db.execute('PRAGMA integrity_check').fetchone()[0] != 'ok':
+            raise RuntimeError('AIOStreams SQLite integrity check failed')
+    return True
+
+
 def monitor():
     with ops_lock():
         p = STATE / 'monitor.json'
         state = json.loads(p.read_text()) if p.exists() else {}
         now = time.time()
         metrics, problems = [], []
-        for name in SERVICES:
+        aio_enabled = aiostreams_enabled()
+        for name in SERVICES + (['cineon-aiostreams'] if aio_enabled else []):
             entry = state.setdefault(name, {})
             try:
                 data = inspect(name)
@@ -87,9 +132,12 @@ def monitor():
                     run(['docker', 'restart', '--time', '30', name], timeout=60)
                     entry['restarts'] = [t for t in entry.get('restarts', []) if now - t < 3600] + [now]
                     print(f'ERROR recovered container={name}', flush=True)
-        for label, url in [('api', 'http://127.0.0.1:5001/healthz'),
+        endpoints = [('api', 'http://127.0.0.1:5001/healthz'),
                            ('frontend', 'http://127.0.0.1:3000/api/health'),
-                           ('public', 'https://cinevn.me/healthz')]:
+                           ('public', 'https://cinevn.me/healthz')]
+        if aio_enabled:
+            endpoints.append(('aiostreams', 'http://127.0.0.1:3100/api/v1/status'))
+        for label, url in endpoints:
             ok, elapsed = probe(url)
             metrics.extend([f'cineon_probe_up{{target="{label}"}} {int(ok)}',
                             f'cineon_probe_duration_seconds{{target="{label}"}} {elapsed:.4f}'])
@@ -152,6 +200,7 @@ def backup():
                 restic('init')
         with tempfile.TemporaryDirectory(prefix='backup-', dir=STATE) as temp:
             staging = Path(temp)
+            snapshot_aiostreams(staging)
             config = staging / 'mongo.yml'
             config.write_text('uri: ' + json.dumps(env['MONGODB_URI']) + '\n')
             config.chmod(0o600)
@@ -215,8 +264,10 @@ def restore(snapshot='latest'):
             if 'TOKEN_ENCRYPTION_KEYS=' not in (stage / '.env').read_text():
                 raise RuntimeError('Backup is missing token encryption keys')
             restic('check', '--read-data')
+            aio_verified = verify_aiostreams_snapshot(stage)
             atomic_json(STATE / 'restore.json', {'time': time.time(), 'snapshot': snapshot, 'collections': len(actual),
-                         'documents': sum(v['documents'] for v in actual.values()), 'indexes_verified': True, 'redis_rdb_verified': True})
+                         'documents': sum(v['documents'] for v in actual.values()), 'indexes_verified': True, 'redis_rdb_verified': True,
+                         'aiostreams_sqlite_verified': aio_verified})
             print('OK isolated restore counts/indexes and Redis RDB verified')
         finally:
             subprocess.run(['docker', 'rm', '-f', '-v', name], capture_output=True)

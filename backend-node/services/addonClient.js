@@ -16,10 +16,12 @@ import { cached, CACHE_TTL, setCache } from '../config/redis.js';
 import { safeFetchJson, safeFetchText, assertUrlShape } from './security/safeFetch.js';
 import { normalizeAddonSubtitle } from './playback/userSubtitles.js';
 import { parseContentRef } from './contentRef.js';
+import { fetchAioStreams, aiostreamsCacheScope } from './playback/aiostreamsClient.js';
 
 const REQUEST_TIMEOUT_MS = 4000;
 const STREAM_CACHE_TTL = 600; // addon answers churn as torrents die
 const MAX_STREAMS_PER_ADDON = 60;
+const aioRetryAfter = new Map();
 const SUBTITLE_REQUEST_TIMEOUT_MS = 5000;
 const SUBTITLE_CACHE_TTL = 6 * 60 * 60;
 const MAX_SUBTITLES = 24;
@@ -604,6 +606,29 @@ const fetchFromAddon = async (addon, type, id) => {
  * candidate, keeping the entry that carried more metadata.
  */
 export const getStreamCandidates = async ({ imdbId, mediaType, season, episode }) => {
+  const aioScope = aiostreamsCacheScope();
+  if (process.env.STREAM_SOURCE_PROVIDER === 'aiostreams' && Date.now() >= (aioRetryAfter.get(aioScope) || 0)) {
+    const media = toStremioId({ imdbId, mediaType, season, episode });
+    if (media) {
+      try {
+        const result = await cached(`aio:streams:v1:${aioScope}:${media.type}:${media.id}`, STREAM_CACHE_TTL, async () => {
+          const rows = await fetchAioStreams(media);
+          const byHash = new Map();
+          for (const row of rows) {
+            const candidate = normalizeStream(row, 'AIOStreams');
+            if (candidate && !byHash.has(candidate.infoHash)) byHash.set(candidate.infoHash, candidate);
+          }
+          if (!byHash.size) throw new Error('AIOStreams returned no usable torrents');
+          return { candidates: [...byHash.values()], errors: [] };
+        });
+        aioRetryAfter.delete(aioScope);
+        return result;
+      } catch {
+        aioRetryAfter.set(aioScope, Date.now() + 30000);
+        console.warn('[sources] AIOStreams unavailable; using configured Stremio fallback');
+      }
+    }
+  }
   const addons = configuredAddons();
   if (!addons.length) return { candidates: [], errors: ['Chưa cấu hình STREMIO_ADDONS'] };
 

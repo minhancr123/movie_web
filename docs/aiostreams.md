@@ -1,0 +1,82 @@
+# AIOStreams for CineVN
+
+CineVN can use a private AIOStreams instance as its primary torrent discovery
+provider. AIOStreams aggregates Torrentio and Comet; CineVN still validates
+infohashes, checks TorBox using the current viewer's connection, probes codecs,
+and runs its existing direct/HLS playback pipeline.
+
+## Deployment
+
+Run `sudo bash deploy/aiostreams-pilot.sh` on the production host. The Compose
+file pins the official image digest, joins `cineon_cineon`, binds only
+`127.0.0.1:3100`, and limits the container to 512 MiB RAM and 0.5 CPU.
+Startup gets a 180-second health grace period. Data and its immutable encryption
+key are stored under root-only `/var/lib/cineon-aiostreams`.
+
+Run `sudo python3 deploy/aiostreams_probe.py --bounded` for a repeatable comparison.
+This creates the private `pilot-multi-config.json`: the existing Torrentio
+configuration plus Comet with 15 results per resolution and 150 overall results.
+The private stream API is configured for 20 requests per 10 seconds.
+
+Enable the adapter through the host's private `.env`:
+
+```dotenv
+STREAM_SOURCE_PROVIDER=aiostreams
+AIOSTREAMS_BASE_URL=http://aiostreams:3000
+AIOSTREAMS_USER_DATA=<base64 of pilot-multi-config.json>
+```
+
+Do not commit the configuration or place debrid account credentials in a shared
+profile. This adapter consumes torrent metadata only, discarding provider URLs
+and request headers. It deliberately leaves TorBox authentication per viewer in
+CineVN. URL-only addons require a separate adapter; the existing Vimo path stays
+independent.
+
+The client rejects redirects, bounds responses to 4 MiB, and times out at eight
+seconds. Failed/empty responses fall back to `STREMIO_ADDONS`; a 30-second cooldown
+avoids repeatedly waiting on an unavailable AIOStreams instance. Redis cache
+keys include a hash of the private configuration so profile changes cannot reuse
+old search responses.
+
+Setting `STREAM_SOURCE_PROVIDER=stremio` and recreating the backend restores
+native addon discovery. The AIOStreams service uses a separate Compose project,
+so application deploys do not recreate it. Public dashboard/addon exposure is
+not configured; the internal API is the integration surface.
+
+## Operations
+
+When AIOStreams is enabled, the existing monitor checks its container and
+`/api/v1/status`; existing Grafana container/probe rules include those metrics.
+Production backup includes its private environment, profile, Compose file, and
+an online SQLite backup. The SQLite backup incorporates committed WAL changes
+and becomes a standalone database. Restore drills check SQLite integrity and
+the presence of the 64-character encryption key without touching the live instance.
+
+## Measurements on 2026-10-13
+
+See [the sanitized results](aiostreams-pilot-results.json). Four addon-level samples
+were queried twice. Another four samples were queried twice with two concurrent
+requests. All bounded AIOStreams searches succeeded without reported source errors.
+
+| Sample | Native addon unique torrents | Bounded AIOStreams + Comet |
+| --- | ---: | ---: |
+| The Matrix | 99 | 147 |
+| Oppenheimer | 105 | 145 |
+| Breaking Bad S1E1 | 51 | 109 |
+| Dragon Ball Super S1E1 | 37 | 73 |
+
+On the additional concurrent samples, first requests took 1.826–2.521 seconds;
+repeated requests took 0.150–0.276 seconds. The bounded instance's observed cgroup
+memory peak was about 213 MiB, with no OOM or restart. The initial unrestricted
+Comet trial approached 489 MiB and is not the deployed profile.
+
+These are discovery tests, not confirmation that every returned torrent is
+cached on TorBox or plays on Safari. Native HTTP comparison bypassed CineVN's
+existing Redis cache and ran before AIOStreams, so upstream caches can bias
+timings in AIOStreams' favour. The original native adapter caps each addon at
+60 rows; the table measures whole addon replies, not source-picker card counts.
+The evidence supports broader source discovery; it does not prove faster cold
+lookups, smoother playback, or long-term availability of external addons.
+
+Official references: [deployment](https://docs.aiostreams.viren070.me/getting-started/deployment/),
+[search API](https://docs.aiostreams.viren070.me/apis/search/).
