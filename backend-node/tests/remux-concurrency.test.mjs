@@ -281,6 +281,8 @@ assert.deepEqual(
   const sessions = new Map([
     ['stale', live({ viewers: new Map([['v1', now - VIEWER_LEASE_MS - 1]]) })],
     ['fresh', live({ viewers: new Map([['v1', now - 1_000]]) })],
+    ['safari-delayed', live({ viewers: new Map([['v1', now - 180_000]]) })],
+    ['media-active', live({ viewers: new Map([['v1', now - VIEWER_LEASE_MS - 1]]), lastAccessAt: now - 1_000 })],
     ['drained-old', live({ viewers: new Map(), abandonedAt: now - LEAVE_GRACE_MS - 1 })],
     ['drained-new', live({ viewers: new Map(), abandonedAt: now - 1_000 })],
     ['untracked', live({})],

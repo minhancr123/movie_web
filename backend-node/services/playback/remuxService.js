@@ -1266,10 +1266,9 @@ export const reapPlan = ({ active, limit, abandoned = [], superseded = [], idle 
  *   a reload inside LEAVE_GRACE_MS re-adopts the still-running writer.
  * - A heartbeat from any viewer revives the session (clears abandonedAt).
  */
-// 90s, not 60s: Chromium throttles background-tab timers to ~1/min after 5
-// minutes, and the player heartbeats every 25s — a lease barely longer than
-// two missed beats would mistake a backgrounded viewer for a departed one.
-export const VIEWER_LEASE_MS = 90 * 1000;
+// Safari/native playback can outlive suspended JavaScript timers. Allow a
+// five-minute heartbeat gap; explicit leave still uses the short grace below.
+export const VIEWER_LEASE_MS = 5 * 60 * 1000;
 export const LEAVE_GRACE_MS = 30 * 1000;
 
 const viewersOf = (session) => {
@@ -1316,7 +1315,7 @@ export const removeSessionViewer = (sessionId, viewerId, now = Date.now()) => {
  * non-empty at some point) and either every lease lapsed past VIEWER_LEASE_MS
  * (tab killed, network lost, no leave arrived) or leave drained the map and
  * LEAVE_GRACE_MS passed (reload window over). Never disturbs a session with a
- * fresh heartbeat, and never touches untracked sessions.
+ * fresh heartbeat or media access, and never touches untracked sessions.
  */
 export const abandonedWriterIds = (sessionMap = sessions, { now = Date.now(), leaseMs = VIEWER_LEASE_MS, leaveGraceMs = LEAVE_GRACE_MS } = {}) => {
   if (!(sessionMap instanceof Map)) return [];
@@ -1339,6 +1338,9 @@ export const abandonedWriterIds = (sessionMap = sessions, { now = Date.now(), le
       const n = Number(seen) || 0;
       if (n > freshest) freshest = n;
     }
+    // Browser timers may pause while native HLS continues requesting media.
+    // A missed heartbeat alone must not stop a writer that is still in use.
+    freshest = Math.max(freshest, Number(session.lastAccessAt) || 0);
     if (t - freshest >= leaseMs) out.push({ id, at: freshest });
   }
   return out.sort((a, b) => a.at - b.at).map((entry) => entry.id);
