@@ -13,6 +13,12 @@ const playback = await import('../controllers/playbackController.js');
 const ranker = await import('../services/playback/sourceRanker.js');
 const remux = await import('../services/playback/remuxService.js');
 
+// Cold restores must not wait several minutes for a paced writer to catch up.
+for (const requested of [3, 29, 30, 299, 600, 1123, 1798]) {
+  const origin = playback.bucketStartAt(requested);
+  assert.ok(origin <= requested && requested - origin < 30, `seek ${requested} starts within 30s`);
+}
+
 /* ------------------------------------------------ tokenVault roundtrip */
 const userId = '507f1f77bcf86cd799439011';
 const sealed = vault.encryptToken('tb_secret_key_123', { userId, provider: 'torbox' });

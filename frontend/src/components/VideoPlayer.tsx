@@ -1081,7 +1081,9 @@ export default function VideoPlayer({ src, movie, episode, authToken, durationSe
                 reused: sessionReused,
             });
             if (verdict !== 'ok') {
-                showSyncToast(verdict === 'seek-ignored'
+                showSyncToast(sessionStartAt > 0
+                    ? `Phim đang chuẩn bị đoạn ${formatTime(seekTargetRef.current)} — chờ một lát nhé`
+                    : verdict === 'seek-ignored'
                     ? `Không mở được đúng đoạn đã chọn. Phim bắt đầu lại từ đầu — thử tua lại sau ít phút`
                     : `Phim đang được chuẩn bị từ đầu — tới ${formatTime(seekTargetRef.current)} sẽ xem được, chờ một lát nhé`);
             }

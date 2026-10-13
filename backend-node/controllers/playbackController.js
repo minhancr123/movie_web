@@ -418,7 +418,9 @@ const SEEK_STARTUP_BUFFER_SECONDS = Math.max(
   4,
   Number(process.env.PLAYBACK_SEEK_STARTUP_BUFFER_SECONDS) || 4,
 );
-export const SEEK_BUCKET_SECONDS = 300;
+// At a paced 2x writer, a five-minute bucket could make a cold resume wait
+// almost 150 seconds. Keep shared seek buckets within a short startup window.
+export const SEEK_BUCKET_SECONDS = 30;
 export const bucketStartAt = (sec = 0) => {
   const val = Number(sec);
   if (!Number.isFinite(val) || val <= 0) return 0;
