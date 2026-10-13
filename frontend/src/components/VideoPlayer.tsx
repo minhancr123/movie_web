@@ -1297,6 +1297,7 @@ export default function VideoPlayer({ src, movie, episode, authToken, durationSe
                         head,
                         finished: data.details?.live === false,
                         canSeekResolve: typeof onSeekToPosition === 'function',
+                        alreadyResolved: resumeFiredKeyRef.current === `${movie.slug}|${episode.slug}|${Math.floor(sessionStartAt + pendingResume)}`,
                     });
                     if (plan.kind === 'none') {
                         pendingResume = null;
@@ -1304,6 +1305,14 @@ export default function VideoPlayer({ src, movie, episode, authToken, durationSe
                         restorePendingRef.current = false;
                         startPlayback();
                         setIsLoading(false);
+                    } else if (plan.kind === 'wait') {
+                        return;
+                    } else if (plan.kind === 'unavailable') {
+                        pendingResume = null;
+                        clearResumeTimer();
+                        const reason = 'Phiên phát đã dừng trước điểm cần xem.';
+                        if (onPlaybackFailure) onPlaybackFailure(reason);
+                        else setError(reason);
                     } else if (plan.kind === 'seek-resolve') {
                         pendingResume = null;
                         clearResumeTimer();
@@ -1316,27 +1325,20 @@ export default function VideoPlayer({ src, movie, episode, authToken, durationSe
                         // would yank playback to the wrong minutes.
                         const displayAt = Math.floor(sessionStartAt + plan.at);
                         const resumeKey = `${movie.slug}|${episode.slug}|${displayAt}`;
-                        if (resumeFiredKeyRef.current === resumeKey) {
-                            // Already tried this exact resume this mount (the
-                            // server answered from-start): play what's buffered
-                            // instead of looping resolves forever.
-                            restorePendingRef.current = false;
-                            startPlayback();
-                            setIsLoading(false);
-                        } else {
-                            resumeFiredKeyRef.current = resumeKey;
-                            beginSeekLock(displayAt);
-                        }
+                        resumeFiredKeyRef.current = resumeKey;
+                        beginSeekLock(displayAt);
                     } else {
                         settleResumeAt(plan.at);
                     }
                 });
-                // Coverage report never came: fall back to a direct restore
-                // attempt rather than spinning forever.
+                // Bound the wait, but never seek into unavailable media.
                 resumeTimer = setTimeout(() => {
                     if (pendingResume === null) return;
-                    settleResumeAt(pendingResume);
-                }, 8000);
+                    pendingResume = null;
+                    const reason = 'Chưa tải được điểm cần xem; đang giữ nguyên vị trí tua.';
+                    if (onPlaybackFailure) onPlaybackFailure(reason);
+                    else setError(reason);
+                }, 30000);
             });
 
             // True once any fragment demuxed cleanly: a later parse failure
@@ -1501,7 +1503,7 @@ export default function VideoPlayer({ src, movie, episode, authToken, durationSe
             const nativeCovered = (target: number): boolean => {
                 if (!(target > 0)) return true;
                 const head = nativeHead();
-                return Number.isFinite(head) && head >= target - 2;
+                return Number.isFinite(head) && head >= target + 0.5;
             };
             let nativeSettled = false;
             let nativeTimer: ReturnType<typeof setTimeout> | undefined;
@@ -1575,9 +1577,17 @@ export default function VideoPlayer({ src, movie, episode, authToken, durationSe
             video.addEventListener('canplay', onNativeCanPlay);
             video.addEventListener('error', onNativeError);
             nativeCleanupRef.current = cleanupNative;
-            // Coverage never arrives (writer died mid-fill): clamp to what is
-            // watchable instead of spinning forever.
-            nativeTimer = setTimeout(() => settleNative(true), 15000);
+            // Coverage never arrives: recover at the intended position,
+            // never clamp backwards to the buffered prefix.
+            nativeTimer = setTimeout(() => {
+                if (nativeCovered(restoreTargetLocal)) { settleNative(false); return; }
+                nativeSettled = true;
+                cleanupNative();
+                setIsLoading(false);
+                const reason = 'Chưa tải được điểm cần xem; đang giữ nguyên vị trí tua.';
+                if (onPlaybackFailure) onPlaybackFailure(reason);
+                else setError(reason);
+            }, 30000);
         } else {
             setError("Trình duyệt không hỗ trợ HLS.");
         }
@@ -1616,6 +1626,7 @@ export default function VideoPlayer({ src, movie, episode, authToken, durationSe
         if (!video) return;
 
         const saveProgress = async (force = false) => {
+            if (restorePendingRef.current || video.seeking) return;
             // Interval ticks skip paused elements (nothing changed), but
             // pause/pagehide callers pass force=true: the position at the
             // exact moment of pausing is what a later resume must restore.
@@ -1697,7 +1708,7 @@ export default function VideoPlayer({ src, movie, episode, authToken, durationSe
             window.removeEventListener('pagehide', saveNow);
             if (saveProgressRef.current === saveProgress) saveProgressRef.current = null;
         };
-    }, [movie, episode, addToHistory]);
+    }, [movie, episode, addToHistory, sessionStartAt, durationSeconds]);
 
     // Event Listeners
     useEffect(() => {

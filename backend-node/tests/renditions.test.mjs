@@ -116,6 +116,13 @@ try {
   assert.equal(second.dedup, true);
   console.log('ok - finished session publishes once, serves bytes');
 
+  await fs.writeFile(path.join(sessionDir, '.interrupted'), 'stopped');
+  const interruptedId = buildRenditionId({ infoHash: 'd'.repeat(40), fileId: 3 });
+  const interrupted = await publishRendition({ renditionId: interruptedId, sessionId: fakeSession });
+  assert.equal(interrupted.ok, false, 'SIGTERM ENDLIST is not a finished film');
+  assert.equal(interrupted.reason, 'interrupted');
+  await fs.rm(path.join(sessionDir, '.interrupted'));
+
   // Incomplete playlists never publish.
   await fs.writeFile(path.join(sessionDir, 'index.m3u8'), '#EXTM3U\n#EXTINF:4.0,\nseg_00000.m4s\n');
   const badId = buildRenditionId({ infoHash: 'e'.repeat(40), fileId: 2 });

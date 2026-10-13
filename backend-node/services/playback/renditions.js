@@ -151,6 +151,9 @@ export const publishRendition = async ({ renditionId, sessionId }) => {
   }
 
   const outDir = renditionPath(id, '.');
+  if (await fs.access(path.join(sessionDir, '.interrupted')).then(() => true, () => false)) {
+    return { ok: false, reason: 'interrupted' };
+  }
   const metaPath = path.join(outDir, 'meta.json');
   try {
     await fs.stat(metaPath);

@@ -181,6 +181,8 @@ export type SeekTarget =
 
 export type ResumePlan =
   | { kind: 'none' }
+  | { kind: 'wait' }
+  | { kind: 'unavailable' }
   | { kind: 'direct'; at: number }
   | { kind: 'seek-resolve'; at: number };
 /**
@@ -193,25 +195,28 @@ export type ResumePlan =
  *
  * Restoring blindly past the written head makes hls.js snap back to ~0
  * ("pause a while -> restarts from the beginning"), so an unfilled target
- * re-resolves from there instead; a finished-but-shorter playlist clamps.
+ * re-resolves once, then waits for coverage. A finished partial playlist must
+ * fail recovery rather than silently moving the viewer backwards.
  */
 export const planResume = (args: {
   resumeAt: number | null;
   head: number;
   finished: boolean;
   canSeekResolve: boolean;
+  alreadyResolved?: boolean;
 }): ResumePlan => {
   const { resumeAt, head, finished, canSeekResolve } = args;
   if (resumeAt === null) return { kind: 'none' };
   if (Number.isFinite(head)) {
-    if (!finished && resumeAt > head - 2 && canSeekResolve) {
-      return { kind: 'seek-resolve', at: resumeAt };
+    if (!finished && resumeAt > head - 2) {
+      return canSeekResolve && !args.alreadyResolved ? { kind: 'seek-resolve', at: resumeAt } : { kind: 'wait' };
     }
     if (finished) {
-      return { kind: 'direct', at: Math.min(resumeAt, Math.max(0, head - 5)) };
+      if (resumeAt > head - 2) return { kind: 'unavailable' };
+      return { kind: 'direct', at: resumeAt };
     }
   }
-  return { kind: 'direct', at: resumeAt };
+  return Number.isFinite(head) ? { kind: 'direct', at: resumeAt } : { kind: 'wait' };
 };
 
 export interface DroppedFramesSample {

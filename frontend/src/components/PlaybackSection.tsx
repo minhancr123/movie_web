@@ -608,6 +608,9 @@ export default function PlaybackSection({
     // the session's origin — see audioSwitchStartAt.
     if (Number.isFinite(positionSeconds) && positionSeconds > 0) {
       playheadRef.current = positionSeconds;
+      if (pendingSeekRef.current !== null && Math.abs(positionSeconds - pendingSeekRef.current) <= 5) {
+        pendingSeekRef.current = null;
+      }
     }
   }, []);
 
@@ -1436,9 +1439,8 @@ export default function PlaybackSection({
       // Same shared helper as handleResolveResponse: origin without target
       // replays the bucket bug.
       applyTargetFromData(data);
-      // This resolve's intent is fulfilled: a pending seek it supersedes (or
-      // embodies) must not linger into a later recovery.
-      pendingSeekRef.current = null;
+      // Keep the seek intent until actual video progress reaches it. A resolve
+      // response only supplies bytes; it is not evidence the restore landed.
       setPendingAudioIndex(null);
       // A silent source swap looks exactly like mistimed subtitles: the Vimo
       // fallback carries its own encode (different cut/timing), so sidecars

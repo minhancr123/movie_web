@@ -91,18 +91,24 @@ test('planResume never restores past the written head', () => {
     // of seeking into unwritten segments (which snaps back to ~0).
     assert.deepEqual(planResume({ resumeAt: 2400, head: 30, finished: false, canSeekResolve: true }),
         { kind: 'seek-resolve', at: 2400 });
-    // No re-resolve path (direct file): restore directly, head is the file.
+    // No resolver available: still never jump into unwritten media.
     assert.deepEqual(planResume({ resumeAt: 2400, head: 30, finished: false, canSeekResolve: false }),
-        { kind: 'direct', at: 2400 });
+        { kind: 'wait' });
     // Covered target: plain restore.
     assert.deepEqual(planResume({ resumeAt: 300, head: 3600, finished: false, canSeekResolve: true }),
         { kind: 'direct', at: 300 });
-    // Finished but shorter than memory (stale history): clamp, never overshoot.
+    // An ended partial playlist must not silently rewind the saved position.
     assert.deepEqual(planResume({ resumeAt: 2400, head: 1800, finished: true, canSeekResolve: true }),
-        { kind: 'direct', at: 1795 });
-    // Unknown head yet: restore directly (coverage handler retries later).
+        { kind: 'unavailable' });
+    // Unknown coverage: keep waiting rather than assigning an unsafe seek.
     assert.deepEqual(planResume({ resumeAt: 300, head: NaN, finished: false, canSeekResolve: true }),
-        { kind: 'direct', at: 300 });
+        { kind: 'wait' });
+});
+
+test('a repeated cold restore waits for coverage instead of playing the bucket origin', () => {
+    assert.deepEqual(planResume({ resumeAt: 27, head: 4, finished: false, canSeekResolve: true, alreadyResolved: true }), { kind: 'wait' });
+    assert.deepEqual(planResume({ resumeAt: 27, head: 32, finished: false, canSeekResolve: true, alreadyResolved: true }), { kind: 'direct', at: 27 });
+    assert.deepEqual(planResume({ resumeAt: 27, head: 4, finished: true, canSeekResolve: true, alreadyResolved: true }), { kind: 'unavailable' });
 });
 
 test('shouldDowngradeForDropped only fires on sustained heavy drops', () => {

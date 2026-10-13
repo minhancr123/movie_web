@@ -659,6 +659,7 @@ const findReusableRemuxSession = async (db, { userId, type, tmdbId, season, epis
 
     try {
       const playlistPath = sessionPath(session.sessionId, 'index.m3u8');
+      if (await fs.access(sessionPath(session.sessionId, '.interrupted')).then(() => true, () => false)) continue;
       await fs.access(playlistPath);
       await fs.access(sessionPath(session.sessionId, 'init.mp4'));
       const playlist = await fs.readFile(playlistPath, 'utf8');

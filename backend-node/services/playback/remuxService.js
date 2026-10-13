@@ -1754,6 +1754,9 @@ export const startRemuxSession = async ({ sessionId, inputUrl, audioCopy = false
     // only once the client asks for the playlist again — so say it out loud
     // here, where it lands in the container log at the moment it happens.
     if (code !== 0) {
+      if (sessions.get(id) === session) {
+        fs.writeFile(path.join(outputDir, '.interrupted'), String(code)).catch(() => {});
+      }
       console.error(
         `ffmpeg remux ${id} thoát với mã ${code}: ${redactSecrets(session.stderr).slice(-800)}`,
       );
@@ -1903,6 +1906,9 @@ export const stopRemuxSession = async (sessionId) => {
   const session = sessions.get(id);
   if (!session) return false;
   if (session.process && !session.process.killed && session.exitCode === undefined) {
+    // FFmpeg emits ENDLIST on SIGTERM too. Persist failure before the kill so
+    // restart/reuse cannot mistake a partial file for a finished movie.
+    await fs.writeFile(path.join(session.outputDir, '.interrupted'), 'stopped').catch(() => {});
     session.process.kill('SIGTERM');
   }
   sessions.delete(id);
