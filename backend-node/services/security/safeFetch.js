@@ -176,7 +176,7 @@ const requestOnce = ({ url, port, address, family, method, headers, timeoutMs })
  * GET a user-supplied URL safely, following redirects with full re-validation.
  * Returns `{ status, headers, body }`; the caller parses.
  */
-export const safeFetchJson = async (rawUrl, { timeoutMs = 10000, headers = {} } = {}) => {
+export const safeFetchText = async (rawUrl, { timeoutMs = 10000, headers = {} } = {}) => {
   let target = rawUrl;
 
   for (let hop = 0; hop <= MAX_REDIRECTS; hop++) {
@@ -198,11 +198,7 @@ export const safeFetchJson = async (rawUrl, { timeoutMs = 10000, headers = {} } 
       if (response.status < 200 || response.status >= 300) {
         throw new Error(`Addon trả về ${response.status}`);
       }
-      try {
-        return JSON.parse(response.body);
-      } catch {
-        throw new Error('Addon không trả về JSON hợp lệ');
-      }
+      return response.body;
     }
 
     // Resolve relative Location against the current hop, then loop to re-check it.
@@ -210,4 +206,13 @@ export const safeFetchJson = async (rawUrl, { timeoutMs = 10000, headers = {} } 
   }
 
   throw new SsrfError(`Vượt quá ${MAX_REDIRECTS} lần chuyển hướng`);
+};
+
+export const safeFetchJson = async (rawUrl, options = {}) => {
+  const body = await safeFetchText(rawUrl, options);
+  try {
+    return JSON.parse(body);
+  } catch {
+    throw new Error('Addon không trả về JSON hợp lệ');
+  }
 };

@@ -308,12 +308,14 @@ const isBrowserAudioCodec = (codec, profile = null, channels = null, caps = {}) 
 };
 const isMp4Container = (format) => String(format || '').split(',').includes('mov') || String(format || '').includes('mp4');
 /**
- * WebM container: ffprobe reports it as "matroska,webm", plain MKV as bare
- * "matroska". The distinction matters because browsers play the former
- * (Chrome/Firefox) and never the latter progressively — and Safari plays
- * neither, which is why callers must also check caps.webm.
+ * ffprobe uses the shared "matroska,webm" demuxer name for MKV too.
+ * WebM capability only covers WebM codecs; it does not make HEVC/EAC3
+ * or H264/AAC inside Matroska playable in a browser.
  */
-const isWebmContainer = (format) => String(format || '').split(',').includes('webm');
+const isWebmContainer = (format, videoCodec, audioCodec) =>
+  String(format || '').split(',').includes('webm')
+  && ['vp8', 'vp9', 'av1'].includes(String(videoCodec || '').toLowerCase())
+  && (!audioCodec || ['opus', 'vorbis'].includes(String(audioCodec).toLowerCase()));
 
 /**
  * HEVC beyond 8-bit (Main 10, Main 12, …)? Either ffprobe's profile tag
@@ -473,7 +475,8 @@ export const decidePlaybackMode = (probe, caps = {}, preferredAudioIdx = null, o
   // cannot tell Chrome's WebM from Safari's no-WebM, so the client reports it
   // the same way it reports every other codec it can or cannot decode.
   const containerDirectOk =
-    isMp4Container(probe.format) || (isWebmContainer(probe.format) && Boolean(caps.webm));
+    isMp4Container(probe.format)
+    || (isWebmContainer(probe.format, codec, audio?.codec) && Boolean(caps.webm));
   if (containerDirectOk && audioCopy && (targetAudioIdx === 0 || audios.length === 1)) {
     return {
       mode: 'direct',
@@ -486,14 +489,12 @@ export const decidePlaybackMode = (probe, caps = {}, preferredAudioIdx = null, o
 
   return {
     mode: 'remux',
-    reason: `Remux video copy, audio ${audio?.codec || 'unknown'} -> AAC-LC`,
+    reason: `Remux video copy, audio ${audio?.codec || 'unknown'} ${audio?.codec === 'aac' && audio?.profile === 'LC' && Number(audio?.channels) <= 2 ? 'copy' : '-> AAC-LC'}`,
     videoCopy: true,
-    // In HLS fMP4 remux, always transcode audio to standard AAC-LC stereo (-c:a aac -b:a 192k -ac 2).
-    // Copying arbitrary source audio (e.g. AAC Main profile, HE-AAC, 5.1/7.1 channels) directly into fMP4
-    // causes Chrome/MSE to reject the SourceBuffer or throw MEDIA_ERROR. Video remains copy (0% CPU).
-    // E-AC 3 is the one exception now, and only on a client that said it
-    // decodes it — see isBrowserAudioCodec.
-    audioCopy: false,
+    // Only proven mono/stereo AAC-LC is copied into fMP4. Unknown profiles,
+    // surround, and other codecs keep the compatible AAC stereo encode.
+    audioCopy: audio?.codec === 'aac' && audio?.profile === 'LC'
+      && Number(audio?.channels) > 0 && Number(audio?.channels) <= 2,
     audioBrowserSafe,
     // Absolute ffprobe stream index so ffmpeg maps exactly this track.
     audioStreamIndex: audio ? audio.streamIndex : null,
@@ -882,7 +883,7 @@ export const buildVideoArgs = (video, encoder) => {
   };
 };
 
-export const buildFfmpegArgs = ({ inputUrl, outputDir, audioCopy = false, segmentSeconds = REMUX_SEGMENT_SECONDS, audioStreamIndex = null, audioChannels = null, audioDelayMs = 0, video = null, encoder = null }) => {
+export const buildFfmpegArgs = ({ inputUrl, outputDir, audioCopy = false, segmentSeconds = REMUX_SEGMENT_SECONDS, audioStreamIndex = null, audioChannels = null, audioDelayMs = 0, video = null, encoder = null, readRate = process.env.REMUX_READ_RATE }) => {
   // Explicit output-side audio delay, chained onto any existing audio filter
   // before the stereo fold. Byte-identical to the old command when 0, which is
   // what every caller passes: a container mux offset is NOT a defect to correct
@@ -907,6 +908,9 @@ export const buildFfmpegArgs = ({ inputUrl, outputDir, audioCopy = false, segmen
   '+genpts',
   // Hardware decode has to be declared before the input it applies to.
   ...videoArgs.input,
+  // Pace background processing on small VPSes. Two times playback still
+  // builds a buffer while leaving CPU for API requests and other viewers.
+  ...(Number(readRate) > 0 ? ['-readrate', String(Number(readRate))] : []),
   '-i',
   inputUrl,
   '-map',
@@ -2265,6 +2269,12 @@ const readCacheEntry = async (dirent) => {
 };
 
 export const cleanupTranscodeCache = async (overrides = {}) => {
+  // Reap explicit departed viewers even when no new resolve needs the slot.
+  // The lease/grace rules protect background tabs and quick page reloads.
+  const abandonedStopped = [];
+  for (const id of abandonedWriterIds()) {
+    if (await stopRemuxSession(id)) abandonedStopped.push(id);
+  }
   await fs.mkdir(TRANSCODE_ROOT, { recursive: true });
   const dirents = await fs.readdir(TRANSCODE_ROOT, { withFileTypes: true });
   const entries = (await Promise.all(dirents.map(readCacheEntry))).filter(Boolean);
@@ -2287,7 +2297,7 @@ export const cleanupTranscodeCache = async (overrides = {}) => {
   return {
     scanned: entries.length,
     deletedIds,
-    stoppedIds: plan.stopIds.filter((id) => deletedIds.includes(id)),
+    stoppedIds: [...abandonedStopped, ...plan.stopIds.filter((id) => deletedIds.includes(id))],
     deletedBytes,
     retainedBytes: Math.max(0, entries.reduce((sum, entry) => sum + entry.sizeBytes, 0) - deletedBytes),
     overLimitBytes: plan.overLimitBytes,

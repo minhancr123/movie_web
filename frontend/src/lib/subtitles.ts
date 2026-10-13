@@ -85,6 +85,17 @@ export const pickBestViTrack = <T extends { language: string; url: string; sourc
   || tracks.find((t) => isReadyTrack(t) && isViTrack(t) && isSuggestedTrack(t))
   || tracks.find((t) => isReadyTrack(t) && isViTrack(t));
 
+/** Timing confidence first; Vietnamese wins ties, English is the fallback. */
+export const autoSubtitleRank = (track: SubTrack | undefined): number => {
+  if (!track || !isReadyTrack(track) || (!isViTrack(track) && !isEnTrack(track))) return -1;
+  const timing = isEmbeddedTrack(track) ? 3 : track.matched ? 2 : track.suggested ? 1 : 0;
+  return timing * 10 + (isViTrack(track) ? 2 : 1);
+};
+
+export const pickAutoSubtitle = (tracks: SubTrack[]): SubTrack | undefined =>
+  tracks.reduce<SubTrack | undefined>((best, track) =>
+    autoSubtitleRank(track) > autoSubtitleRank(best) ? track : best, undefined);
+
 const TS = '(\\d{2,}):(\\d{2}):(\\d{2})[.,](\\d{3})';
 const TS_SHORT = '(\\d{2}):(\\d{2})[.,](\\d{3})';
 

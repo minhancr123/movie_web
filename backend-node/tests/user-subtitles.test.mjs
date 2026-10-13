@@ -9,7 +9,7 @@
  * Run: node tests/user-subtitles.test.mjs
  */
 import assert from 'node:assert/strict';
-import { parseSrt, toVttDocument, UPLOAD_MAX_BYTES } from '../services/playback/userSubtitles.js';
+import { parseSrt, toVttDocument, normalizeAddonSubtitle, UPLOAD_MAX_BYTES } from '../services/playback/userSubtitles.js';
 
 /* ------------------------------------------------------------ parsing */
 
@@ -62,6 +62,12 @@ assert.ok(vtt.endsWith('\n'), 'trailing newline');
 // mangling cues the player already understands).
 const vttIn = 'WEBVTT\n\n00:00:01.000 --> 00:00:04.000\nHi\n';
 assert.ok(toVttDocument(vttIn, 'x.vtt').startsWith('WEBVTT'), 'VTT passes through');
+
+const addonVtt = 'WEBVTT\n\n1\n0:12:00.100 --> 0:12:02.500\n{\\i1}Hello, world{\\i}\n';
+const normalizedAddon = normalizeAddonSubtitle(addonVtt);
+assert.ok(normalizedAddon.includes('00:12:00.100 --> 00:12:02.500'), 'ASS-converted hours become valid VTT');
+assert.ok(normalizedAddon.includes('Hello, world'), 'dialogue survives conversion');
+assert.throws(() => normalizeAddonSubtitle('WEBVTT\n\n00:00:00.000 --> 00:00:12.000\nThis subtitle action expired. Reopen the subtitle menu to refresh it.'), /hết hạn/);
 
 // Oversize rejected before conversion work happens.
 const big = `1\n00:00:01,000 --> 00:00:02,000\n${'x'.repeat(UPLOAD_MAX_BYTES)}\n`;

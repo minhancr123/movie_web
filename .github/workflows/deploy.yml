@@ -10,6 +10,7 @@ on:
       - 'backend-node/**'
       - 'frontend/**'
       - 'docker-compose.prod.yml'
+      - 'deploy/**'
       - '.github/workflows/deploy.yml'
       - '.github/workflows/ci.yml'
       # Docs-only changes (e.g. backend-node/README.md) must not burn a
@@ -185,6 +186,8 @@ jobs:
           script: |
             set -euo pipefail
             cd /opt/cineon
+            exec 9>/var/lock/cineon-production.lock
+            flock -x 9
 
             SHA="${{ github.sha }}"
             BACKEND_IMAGE=ghcr.io/${{ github.repository_owner }}/movie-web-backend@${{ needs.docker.outputs.backend_digest }}
@@ -215,7 +218,7 @@ jobs:
             if [ "$USEP" -ge 85 ]; then
               echo "disk at ${USEP}% — pruning before pull"
               docker builder prune -af >/dev/null 2>&1 || true
-              docker image prune -af >/dev/null 2>&1 || true
+              docker image prune -f >/dev/null 2>&1 || true
               USEP=$(df --output=pcent / | tail -1 | tr -d ' %')
             fi
             [ "$USEP" -lt 92 ] || { echo "::error::disk still at ${USEP}% after prune — refusing to pull"; exit 1; }
@@ -223,6 +226,9 @@ jobs:
             # Rollback targets are image IDs, not tags: tags move, IDs do not.
             PREV_BACKEND=$(docker inspect -f '{{.Image}}' cineon-backend 2>/dev/null || true)
             PREV_FRONTEND=$(docker inspect -f '{{.Image}}' cineon-frontend 2>/dev/null || true)
+            PREV_RELEASE=$(grep -E '^RELEASE_ID=' .env | cut -d= -f2 || true)
+            [ -z "$PREV_BACKEND" ] || docker tag "$PREV_BACKEND" cineon-rollback-backend:previous
+            [ -z "$PREV_FRONTEND" ] || docker tag "$PREV_FRONTEND" cineon-rollback-frontend:previous
             echo "Current images: backend=${PREV_BACKEND:-none} frontend=${PREV_FRONTEND:-none}"
 
             rollback() {
@@ -334,14 +340,14 @@ jobs:
             set_env RELEASE_ID "$SHA"
             set_env BACKEND_IMAGE "$BACKEND_IMAGE"
             set_env FRONTEND_IMAGE "$FRONTEND_IMAGE"
-            # prune -a, not just -f: every deploy pulls a new digest image and
-            # the old ones keep their layers but lose all consumers, which
-            # plain prune (dangling only) never reclaims. Measured at 15GB of
-            # dead images after a week of CI deploys. Runs only on the success
-            # path, after rollback targets are no longer needed — which is why
-            # .env is written first: the images it now names are the live ones.
+            # Retain one known-working image pair for manual rollback.
+            # Builder cache is disposable; tagged rollback images are not.
+            umask 077
+            printf 'BACKEND_IMAGE=%s\nFRONTEND_IMAGE=%s\nRELEASE_ID=%s\n' \
+              'cineon-rollback-backend:previous' 'cineon-rollback-frontend:previous' "$PREV_RELEASE" > .rollback.env
+            sudo -n python3 deploy/production_ops.py install
             docker builder prune -af >/dev/null 2>&1 || true
-            docker image prune -af >/dev/null 2>&1 || true
+            docker image prune -f >/dev/null 2>&1 || true
             df -h / | tail -1
 
             echo "DEPLOY_OK $SHA"

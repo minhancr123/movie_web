@@ -13,7 +13,7 @@ import { detectCapabilities } from '@/lib/capabilities';
 import {
     fetchCues, activeCues,
     isEmbeddedTrack, trackSource, isViTrack, isEnTrack, isReadyTrack,
-    pickBestViTrack,
+    pickAutoSubtitle, autoSubtitleRank,
     type SubCue, type SubTrack,
 } from '@/lib/subtitles';
 import { computeResumeAt, pickDisplayDuration, decideSeekTarget, planResume, shouldAutoplayAfterRebuild, shouldDowngradeForDropped, subtitleLookupTime, classifyStartAt, toLocalSeekTarget } from '@/lib/playback-progress';
@@ -552,28 +552,16 @@ export default function VideoPlayer({ src, movie, episode, authToken, durationSe
     const subSourceEpochRef = useRef(0);
     const subSourceKeyRef = useRef<string | null>(null);
 
-    // Best Vietnamese pick, ranked by timing trust: embedded (exact) first,
-    // then a server-verified matched sidecar, otherwise the addon's first
-    // Vietnamese sidecar (right language, timing not guaranteed).
-    const bestViTrack = (tracks: SubTrack[]) => pickBestViTrack(tracks);
-
-    // Auto-select Vietnamese, upgrading to a better-timed track when one
+    // Auto-select a Vietnamese/English track by timing trust, upgrading when one
     // appears later. The background prefetch returns online-only lists, while
     // the session-backed inventory (or a finished extraction job) can add
     // matched/embedded tracks afterwards — without this the first generic
     // "Tiếng Việt 1" would stick forever even after the synced track lands.
     // A manual choice always sticks (autoSubRef false).
-    const autoRank = (t: SubTrack | undefined): number => {
-        if (!t) return -1;
-        if (isEmbeddedTrack(t)) return 3;
-        if (t.matched === true) return 2;
-        if (t.suggested === true) return 1;
-        return 0;
-    };
     const maybeAutoPickSub = useCallback((tracks: SubTrack[]) => {
         if (!autoSubRef.current) return;
         const currentId = selectedSubRef.current;
-        const best = bestViTrack(tracks);
+        const best = pickAutoSubtitle(tracks);
         if (!best) return;
         if (currentId === 'off' || currentId === '') {
             autoSubSourceRef.current = trackSource(best);
@@ -582,7 +570,7 @@ export default function VideoPlayer({ src, movie, episode, authToken, durationSe
             return;
         }
         const current = tracks.find((t) => t.id === currentId);
-        if (best.id !== currentId && autoRank(best) > autoRank(current)) {
+        if (best.id !== currentId && autoSubtitleRank(best) > autoSubtitleRank(current)) {
             autoSubSourceRef.current = trackSource(best);
             setSelectedSub(best.id);
             void ensureCues(best);
@@ -864,10 +852,7 @@ export default function VideoPlayer({ src, movie, episode, authToken, durationSe
         }
     };
 
-    // NOTE: there is deliberately no "auto-prefer English" effect beyond the
-    // initial pick above. An earlier version re-forced English whenever the
-    // current track wasn't English, which fought the viewer: picking Vietnamese
-    // immediately bounced back to English, so switching tracks never stuck.
+    // Manual choices disable automatic selection until the source changes.
 
     // Viewer upload: their own .srt for this title. Read as text and POSTed
     // as JSON (no multipart dependency); the server validates, converts to

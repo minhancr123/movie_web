@@ -1,3 +1,6 @@
+import './services/observability/instrument.js';
+import * as Sentry from '@sentry/node';
+import { observeHttpFailures } from './services/observability/sentry.js';
 import express from 'express';
 import cors from 'cors';
 import helmet from 'helmet';
@@ -36,6 +39,7 @@ process.on('unhandledRejection', (reason) => {
 });
 
 const app = express();
+if (process.env.SENTRY_DSN) app.use(observeHttpFailures);
 const httpServer = createServer(app);
 // CORS_ORIGIN / FRONTEND_URL, so a new deployment does not need a code change
 // to answer its own domain. Empty in production means "nothing configured",
@@ -224,6 +228,7 @@ app.use('*', (req, res) => {
 });
 
 // Error handler
+if (process.env.SENTRY_DSN) Sentry.setupExpressErrorHandler(app);
 app.use((err, req, res, next) => {
   const isProd = process.env.NODE_ENV === 'production';
   

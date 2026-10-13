@@ -93,6 +93,15 @@ export const toVttDocument = (text, filename = '') => {
 export const uploadKey = ({ userId, tmdbId, season = null, episode = null }) =>
   [String(userId), String(tmdbId), season ?? '', episode ?? ''].join(':');
 
+/** Addon converters may return VTT with ASS-style hours or an expiry notice. */
+export const normalizeAddonSubtitle = (text) => {
+  if (/This subtitle action expired/i.test(String(text))) {
+    throw new Error('Liên kết phụ đề hết hạn');
+  }
+  const cues = String(text || '').replace(/^\uFEFF/, '').replace(/^\s*WEBVTT[^\n]*\n/i, '');
+  return toVttDocument(cues, 'subtitle.srt');
+};
+
 export default {
   UPLOAD_MAX_BYTES,
   UPLOAD_MAX_PER_TITLE,

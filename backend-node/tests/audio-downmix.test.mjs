@@ -88,6 +88,20 @@ const stereoProbe = {
 };
 const stereoDecision = decidePlaybackMode(stereoProbe, { hevc: true, av1: true });
 assert.equal(stereoDecision.audioChannels, 2);
+assert.equal(stereoDecision.audioCopy, true, 'known stereo AAC-LC should avoid re-encoding');
+assert.equal(argsFor({ audioCopy: stereoDecision.audioCopy })[argsFor({ audioCopy: stereoDecision.audioCopy }).indexOf('-c:a') + 1], 'copy');
+for (const audio of [
+  { codec: 'aac', profile: 'HE-AAC', channels: 2 },
+  { codec: 'aac', profile: 'LC', channels: 6 },
+  { codec: 'aac', channels: 2 },
+  { codec: 'aac', profile: 'LC' },
+]) {
+  assert.equal(decidePlaybackMode({ ...stereoProbe, audio: [audio] }, { hevc: true }).audioCopy, false);
+}
+const pacedArgs = argsFor({ readRate: 2 });
+assert.ok(pacedArgs.indexOf('-readrate') < pacedArgs.indexOf('-i'));
+assert.equal(pacedArgs[pacedArgs.indexOf('-readrate') + 1], '2');
+assert.ok(!argsFor({ readRate: 0 }).includes('-readrate'));
 assert.equal(afOf(argsFor({ audioChannels: stereoDecision.audioChannels })), null);
 console.log('ok - decidePlaybackMode carries channel count end to end');
 
@@ -137,8 +151,7 @@ assert.equal(webmSafari.mode, 'remux', 'WebM without webm caps must still remux'
 const webmMissing = decidePlaybackMode(webmProbe, { hevc: false, av1: false });
 assert.equal(webmMissing.mode, 'remux', 'a missing webm flag defaults to remux, never direct');
 
-// Bare MKV is never direct-playable progressively, whatever the client claims:
-// "matroska" without ",webm" is the whole distinction.
+// MKV must remux even when ffprobe reports its shared WebM demuxer name.
 const mkvProbe = {
   format: 'matroska',
   video: { codec: 'h264' },
@@ -146,6 +159,15 @@ const mkvProbe = {
 };
 const mkvDirect = decidePlaybackMode(mkvProbe, { hevc: false, av1: false, webm: true });
 assert.equal(mkvDirect.mode, 'remux', 'bare MKV must never go direct, even with webm caps');
+assert.equal(decidePlaybackMode({ ...mkvProbe, format: 'matroska,webm' },
+  { hevc: true, eac3: true, webm: true }).mode, 'remux',
+  'H264/AAC Matroska must not be mistaken for WebM');
+assert.equal(decidePlaybackMode({
+  format: 'matroska,webm',
+  video: { codec: 'hevc' },
+  audio: [{ index: 0, streamIndex: 1, codec: 'eac3', channels: 2 }],
+}, { hevc: true, eac3: true, webm: true }).mode, 'remux',
+  'Safari WebM support must not send HEVC/EAC3 MKV directly');
 console.log('ok - WebM goes direct behind its flag; MKV never does');
 
 /* ------------------------------------------- superseded remux selection */

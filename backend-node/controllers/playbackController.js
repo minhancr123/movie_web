@@ -3488,9 +3488,10 @@ export const serveSubtitleVtt = async (req, res) => {
   const token = String(req.params.token || '');
   if (!/^[a-f0-9]{64}$/.test(token)) return fail(res, 404, 'Không tìm thấy phụ đề');
   const entry = await getCache(subTokenKey(token));
-  if (!entry?.file) return fail(res, 404, 'Liên kết phụ đề đã hết hạn');
+  if (!entry?.file && !entry?.body) return fail(res, 404, 'Liên kết phụ đề đã hết hạn');
   res.type('text/vtt; charset=utf-8');
   res.set('Cache-Control', 'public, max-age=86400');
+  if (entry.body) return res.send(entry.body);
   return res.sendFile(entry.file);
 };
 

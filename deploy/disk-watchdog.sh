@@ -33,7 +33,7 @@ fi
 
 log "OVER THRESHOLD — pruning unused docker data (running containers and volumes untouched)"
 docker builder prune -af >/dev/null 2>&1 || true
-docker image prune -af >/dev/null 2>&1 || true
+docker image prune -f >/dev/null 2>&1 || true
 after=$(df --output=pcent / | tail -1 | tr -d ' %')
 log "after prune: use=${after}%"
 df -h / | tail -1
