@@ -52,7 +52,8 @@ export const pickRecoveryTarget = (args: {
   playhead?: number | null;
   historyProgress?: number | null;
 }): number => {
-  const pending = sanePosition(args.pendingSeek);
+  const pending = args.pendingSeek != null && Number.isFinite(args.pendingSeek) && args.pendingSeek >= 0
+    ? args.pendingSeek : null;
   if (pending !== null) return pending;
   const head = sanePosition(args.playhead);
   if (head !== null) return Math.max(0, head - RECOVERY_BACKOFF);

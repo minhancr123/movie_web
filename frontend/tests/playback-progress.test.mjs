@@ -306,6 +306,7 @@ test('pickRecoveryTarget prefers the freshest intent and never rewinds to the bu
         298,
         'history is the fallback when no live playhead exists',
     );
+    assert.equal(pickRecoveryTarget({ pendingSeek: 0, playhead: 5389, historyProgress: 5389 }), 0, 'explicit restart beats old playhead');
     assert.equal(pickRecoveryTarget({}), 0, 'nothing known starts at 0');
     assert.equal(pickRecoveryTarget({ playhead: 1 }), 0, 'near-zero clamps, never negative');
 });

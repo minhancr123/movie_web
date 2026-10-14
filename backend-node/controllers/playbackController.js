@@ -14,6 +14,8 @@
  */
 
 import crypto from 'crypto';
+import { pickBestFile, fileIdentity, FILE_SELECTION_BUILD } from '../services/playback/fileSelection.js';
+export { pickBestFile };
 import { remuxWindowSeconds, pricedRemuxSeconds, completedSessionCovers, budgetedWindowSeconds } from '../services/playback/remuxWindow.js';
 import fs from 'fs/promises';
 import path from 'path';
@@ -143,18 +145,18 @@ const PROBE_RESULT_TTL = 7 * 24 * 60 * 60;
  * a file with 2 B-frames: the cached probe predated `hasBFrames`. Bump this
  * whenever the probe shape changes; old entries are then simply never read.
  */
-const PROBE_SHAPE_VERSION = 2;
+const PROBE_SHAPE_VERSION = 3;
 
-const probeFactsKey = (infoHash) =>
-  `playback:probe:v${PROBE_SHAPE_VERSION}:${String(infoHash).toLowerCase()}`;
+const probeFactsKey = (infoHash, fileId) =>
+  `playback:probe:v${PROBE_SHAPE_VERSION}:${fileIdentity(infoHash, fileId)}`;
 /** Measured keyframe a given -ss lands on; the file never changes, so this keeps. */
-const seekOriginKey = (infoHash, at) =>
-  `playback:seekorigin:${String(infoHash).toLowerCase()}:${at}`;
+const seekOriginKey = (infoHash, at, fileId) =>
+  `playback:seekorigin:v2:${fileIdentity(infoHash, fileId)}:${at}`;
 /** Origins are keyed on immutable bytes: one success fixes every later seek. */
 const SEEK_ORIGIN_TTL = 7 * 24 * 60 * 60;
 // OpenSubtitles hash of the picked file. Cached so repeat resolves of the same
 // source never re-issue the two range requests.
-const fileHashKey = (infoHash) => `playback:oshash:${String(infoHash).toLowerCase()}`;
+const fileHashKey = (infoHash, fileId) => `playback:oshash:v2:${fileIdentity(infoHash, fileId)}`;
 /** Clamp a lip-sync delay to the UI range [0, 1000] ms. */
 const clampLipSyncMs = (v) => Math.min(1000, Math.max(0, Math.round(Number(v) || 0)));
 
@@ -288,51 +290,6 @@ export const isSessionOwner = (session, userId) =>
 
 /* ------------------------------------------------------------- file picking */
 
-const VIDEO_EXTENSIONS = ['.mkv', '.mp4', '.avi', '.mov', '.webm', '.m2ts', '.ts', '.m4v'];
-
-const lowerName = (file) => `${file?.path || ''}\n${file?.name || ''}`.toLowerCase();
-
-const isVideoFile = (file) => {
-  const name = lowerName(file);
-  if (/sample|trailer|proof|rarbg|subpack|\.srt$|\.nfo$|\.jpg$|\.png$/.test(name)) return false;
-  return VIDEO_EXTENSIONS.some((ext) => name.includes(ext));
-};
-
-/**
- * Pick the file to play. Episode-aware: when season/episode are known, a
- * filename carrying SxxEyy wins over a larger sibling (e.g. a season pack's
- * biggest file may be a different episode).
- */
-export const pickBestFile = (files, { season = null, episode = null } = {}) => {
-  const list = Array.isArray(files) ? files.filter((f) => f && f.fileId !== undefined) : [];
-  if (!list.length) return null;
-
-  const videos = list.filter(isVideoFile);
-  const pool = videos.length ? videos : [...list].sort((a, b) => Number(b.size || 0) - Number(a.size || 0));
-
-  if (Number.isInteger(season) && Number.isInteger(episode)) {
-    const pad = (n) => String(n).padStart(2, '0');
-    const patterns = [
-      `s${pad(season)}e${pad(episode)}`,
-      `${season}x${pad(episode)}`,
-      `e${pad(episode)}`,
-      `ep${pad(episode)}`,
-      `tap ${episode}`,
-    ];
-    const matched = pool.filter((file) => {
-      const name = lowerName(file);
-      return patterns.some((p) => name.includes(p));
-    });
-    if (matched.length) {
-      matched.sort((a, b) => Number(b.size || 0) - Number(a.size || 0));
-      return matched[0];
-    }
-  }
-
-  pool.sort((a, b) => Number(b.size || 0) - Number(a.size || 0));
-  return pool[0];
-};
-
 /**
  * Titles a release name may legitimately use, so the ranker can reject torrents
  * an addon mapped to the wrong IMDb id. Scene releases almost always use the
@@ -348,7 +305,7 @@ export const pickBestFile = (files, { season = null, episode = null } = {}) => {
  */
 const applyProbeFacts = async (candidates) => {
   const facts = await Promise.all(
-    candidates.map((candidate) => getCache(probeFactsKey(candidate.infoHash))),
+    candidates.map((candidate) => getCache(probeFactsKey(candidate.infoHash, candidate.fileIdx))),
   );
   return candidates.map((candidate, index) => {
     const fact = facts[index];
@@ -370,9 +327,9 @@ const applyProbeFacts = async (candidates) => {
   });
 };
 
-const rememberProbeFacts = (infoHash, probe) =>
+const rememberProbeFacts = (infoHash, probe, fileId) =>
   setCache(
-    probeFactsKey(infoHash),
+    probeFactsKey(infoHash, fileId),
     {
       codec: probe?.video?.codec || null,
       height: probe?.video?.height || null,
@@ -608,6 +565,7 @@ const saveSession = async (db, doc) => {
   const now = new Date();
   const record = {
     ...doc,
+    fileSelectionBuild: FILE_SELECTION_BUILD,
     createdAt: now,
     updatedAt: now,
     expiresAt: new Date(Date.now() + SESSION_TTL_MS),
@@ -657,7 +615,7 @@ const findReusableRemuxSession = async (db, { userId, type, tmdbId, season, epis
     // build 1) predate current compensation policy and must never be served
     // as fixed. Checked before the local ffprobe so stale sessions do not
     // even cost a probe; they age out through normal expiry.
-    if (session.remuxBuild !== REMUX_BUILD) continue;
+    if (session.remuxBuild !== REMUX_BUILD || session.fileSelectionBuild !== FILE_SELECTION_BUILD) continue;
 
     try {
       const playlistPath = sessionPath(session.sessionId, 'index.m3u8');
@@ -1533,7 +1491,7 @@ export const resolvePlayback = async (req, res) => {
         // whole life. Fall back to the cached probe facts for the same file.
         let reuseShiftMs = Number(reusable.presentationShiftMs);
         if (!Number.isFinite(reuseShiftMs)) {
-          const facts = await getCache(probeFactsKey(candidate.infoHash));
+          const facts = await getCache(probeFactsKey(candidate.infoHash, reusable.fileId));
           reuseShiftMs = facts ? presentationShiftMs({ video: facts }) : 0;
         }
         lastShiftMs = reuseShiftMs;
@@ -1710,7 +1668,7 @@ export const resolvePlayback = async (req, res) => {
         });
       }
 
-      const file = pickBestFile(prepared.files, { season, episode });
+      const file = pickBestFile(prepared.files, { season, episode, fileIdx: candidate.fileIdx, filename: candidate.filename, ...(type === 'movie' ? titleExpectation(detail) : {}) });
       if (!file) {
         lastError = new Error('Torrent không có file video nào');
         continue;
@@ -1763,7 +1721,7 @@ export const resolvePlayback = async (req, res) => {
       }
       // Record before acting on it: a rejection here is exactly the fact the
       // ranker needs next time so this source stops consuming a retry slot.
-      await rememberProbeFacts(candidate.infoHash, probe);
+      await rememberProbeFacts(candidate.infoHash, probe, file.fileId);
       let windowSeconds = Number(probe.duration) > 0 || runtimeMinutes > 0 ? requestedWindowSeconds : 0;
       // Declared here (loop-body scope) so the rendition key and the remux
       // below share one value.
@@ -1811,12 +1769,12 @@ export const resolvePlayback = async (req, res) => {
       // Identify the exact file for subtitle matching. Best-effort: two 64 KiB
       // range requests, and a failure only costs hash-accurate subtitles — the
       // addon still answers on IMDb id alone.
-      let fileHash = await getCache(fileHashKey(candidate.infoHash));
+      let fileHash = await getCache(fileHashKey(candidate.infoHash, file.fileId));
       if (!fileHash) {
         try {
           fileHash = await computeOpenSubtitlesHash(inputUrl, file.size);
           if (fileHash) {
-            await setCache(fileHashKey(candidate.infoHash), fileHash, PROBE_FACTS_TTL);
+            await setCache(fileHashKey(candidate.infoHash, file.fileId), fileHash, PROBE_FACTS_TTL);
           }
         } catch (error) {
           console.warn(`opensubtitles hash bỏ qua infoHash=${candidate.infoHash}: ${error.message}`);
@@ -2018,6 +1976,7 @@ export const resolvePlayback = async (req, res) => {
           infoHash: String(candidate.infoHash).toLowerCase(),
           torrentId: prepared.torrentId,
           fileId: file.fileId,
+        sourceFileName: file.name || '',
           fileName: publicFileName(file.name || ''),
           videoHash: fileHash?.videoHash ?? null,
           videoSize: fileHash?.videoSize ?? null,
@@ -2129,6 +2088,7 @@ export const resolvePlayback = async (req, res) => {
           infoHash: String(candidate.infoHash).toLowerCase(),
           torrentId: prepared.torrentId,
           fileId: file.fileId,
+        sourceFileName: file.name || '',
           fileName: publicFileName(file.name || ''),
           videoHash: fileHash?.videoHash ?? null,
           videoSize: fileHash?.videoSize ?? null,
@@ -2202,7 +2162,7 @@ export const resolvePlayback = async (req, res) => {
         // implausible answer keeps the requested position — status quo ante.
         let seekOriginPromise = null;
         if (startAt > 0 && seekOriginProbeEnabled()) {
-          const originKey = seekOriginKey(candidate.infoHash, startAt);
+          const originKey = seekOriginKey(candidate.infoHash, startAt, file.fileId);
           seekOriginPromise = (async () => {
             try {
               const hit = cachedSeekOrigin(await getCache(originKey));
@@ -2375,6 +2335,7 @@ export const resolvePlayback = async (req, res) => {
         infoHash: String(candidate.infoHash).toLowerCase(),
         torrentId: prepared.torrentId,
         fileId: file.fileId,
+        sourceFileName: file.name || '',
           fileName: publicFileName(file.name || ''),
           videoHash: fileHash?.videoHash ?? null,
           videoSize: fileHash?.videoSize ?? null,
@@ -2655,7 +2616,7 @@ export const prewarmPlayback = async (req, res) => {
       return res.json({ success: true, data: { warmed: false, state: 'downloading' } });
     }
 
-    const file = pickBestFile(prepared.files, { season, episode });
+    const file = pickBestFile(prepared.files, { season, episode, fileIdx: target.fileIdx, filename: target.filename, ...(type === 'movie' ? titleExpectation(detail) : {}) });
     if (!file) return fail(res, 422, 'Torrent không có file video nào');
 
     let inputUrl;
@@ -2682,7 +2643,7 @@ export const prewarmPlayback = async (req, res) => {
       }
       await setCache(probeCacheKey, probe, PROBE_RESULT_TTL);
     }
-    await rememberProbeFacts(target.infoHash, probe);
+    await rememberProbeFacts(target.infoHash, probe, file.fileId);
 
     return res.json({
       success: true,
@@ -3066,7 +3027,7 @@ export const getPlaybackSubtitles = async (req, res) => {
         && isSessionOwner(playbackSession, req.user.userId)
       ) {
         ownedSession = playbackSession;
-        probeFacts = await getCache(probeFactsKey(playbackSession.infoHash));
+        probeFacts = await getCache(probeFactsKey(playbackSession.infoHash, playbackSession.fileId));
       }
     }
 
@@ -3083,7 +3044,7 @@ export const getPlaybackSubtitles = async (req, res) => {
       season,
       episode,
       moviehash: ownedSession?.videoHash ?? null,
-      fileName: ownedSession?.fileName ?? '',
+      fileName: ownedSession?.sourceFileName ?? ownedSession?.fileName ?? '',
     });
 
     // External sidecars are tiny; fetch them before touching TorBox or starting
@@ -3108,7 +3069,7 @@ export const getPlaybackSubtitles = async (req, res) => {
       for (let i = 0; i < probeFacts.subtitles.length; i += 1) {
         const s = probeFacts.subtitles[i];
         if (!isConvertibleSubtitle(s.codec)) continue;
-        const file = subsPath(`${infoHash}-${i}.vtt`);
+        const file = subsPath(`${fileIdentity(infoHash, ownedSession.fileId)}-${i}.vtt`);
         let ready = false;
         try {
           await fs.access(file);
@@ -3120,7 +3081,7 @@ export const getPlaybackSubtitles = async (req, res) => {
           const token = crypto.randomBytes(32).toString('hex');
           await setCache(subTokenKey(token), { file }, SUB_TOKEN_TTL);
           embeddedTracks.push({
-            id: `${infoHash}:${i}`,
+            id: `${fileIdentity(infoHash, ownedSession.fileId)}:${i}`,
             language: s.language || '',
             label: `${subLabel(s.language)} (Gốc nhúng)`,
             url: `/api/playback/subtitles/vtt/${token}`,
@@ -3167,7 +3128,7 @@ export const getPlaybackSubtitles = async (req, res) => {
       const hit = Object.entries(langs).find(([k]) => normLang2(k) === normLang2(lang));
       return hit ? hit[1] : null;
     };
-    const playingFileName = ownedSession?.fileName || '';
+    const playingFileName = ownedSession?.sourceFileName || ownedSession?.fileName || '';
     const trackMatched = (subtitle) => {
       const name = String(subtitle?.name || '').trim();
       if (!name) return false;
@@ -3320,6 +3281,7 @@ export const getPlaybackSubtitles = async (req, res) => {
     let probe = null;
     let inputUrl = '';
     let pickedHash = '';
+    let pickedFileId = null;
     for (const candidate of pool.slice(0, 3)) {
       try {
         const prepared = await torbox.prepareSource(debridKey, {
@@ -3327,7 +3289,7 @@ export const getPlaybackSubtitles = async (req, res) => {
           infoHash: candidate.infoHash,
         });
         if (prepared.state !== 'ready') continue;
-        const file = pickBestFile(prepared.files, { season, episode });
+        const file = pickBestFile(prepared.files, { season, episode, fileIdx: candidate.fileIdx, filename: candidate.filename, ...(type === 'movie' ? titleExpectation(detail) : {}) });
         if (!file) continue;
         inputUrl = await torbox.getDownloadUrl(debridKey, {
           torrentId: prepared.torrentId,
@@ -3336,13 +3298,15 @@ export const getPlaybackSubtitles = async (req, res) => {
         });
         probe = await ffprobe(inputUrl);
         pickedHash = String(candidate.infoHash).toLowerCase();
+        pickedFileId = file.fileId;
         break;
       } catch {
         continue;
       }
     }
     if (!probe) return fail(res, 404, 'Không trích được thông tin file từ nguồn này');
-    await rememberProbeFacts(pickedHash, probe);
+    await rememberProbeFacts(pickedHash, probe, pickedFileId);
+    const pickedScope = fileIdentity(pickedHash, pickedFileId);
 
     const audio = audioInfo(probe.audio);
     const hasSubs = (probe.subtitles || []).length > 0;
@@ -3359,13 +3323,14 @@ export const getPlaybackSubtitles = async (req, res) => {
       })),
     };
     const textSubs = (probe.subtitles || [])
+      .map((s, inventoryIndex) => ({ ...s, inventoryIndex }))
       .filter((s) => isConvertibleSubtitle(s.codec))
       .slice(0, MAX_SUB_TRACKS);
 
-    // Fast path: a finished inventory is cached per infohash — repeat opens
-    // return instantly without touching TorBox or ffmpeg again. v2: response
+    // Fast path: inventory is cached per torrent file — repeat opens
+    // return instantly without touching TorBox or ffmpeg again. v3: file identity and response
     // shape carries the probe summary + per-track readiness.
-    const inventoryKey = `playback:subs:v2:${pickedHash}`;
+    const inventoryKey = `playback:subs:v3:${pickedScope}`;
     const cachedInventory = await getCache(inventoryKey);
     if (cachedInventory?.done) {
       return res.json({
@@ -3382,9 +3347,9 @@ export const getPlaybackSubtitles = async (req, res) => {
 
     const minted = [];
     const pending = [];
-    for (let i = 0; i < textSubs.length; i += 1) {
-      const s = textSubs[i];
-      const file = subsPath(`${pickedHash}-${i}.vtt`);
+    for (const s of textSubs) {
+      const i = s.inventoryIndex;
+      const file = subsPath(`${pickedScope}-${i}.vtt`);
       let ready = false;
       let url = '';
       try {
@@ -3397,7 +3362,7 @@ export const getPlaybackSubtitles = async (req, res) => {
         const token = crypto.randomBytes(32).toString('hex');
         await setCache(subTokenKey(token), { file }, SUB_TOKEN_TTL);
         url = `/api/playback/subtitles/vtt/${token}`;
-        minted.push({ id: `${pickedHash}:${i}`, language: s.language || '', label: subLabel(s.language), url, ready: true });
+        minted.push({ id: `${pickedScope}:${i}`, language: s.language || '', label: subLabel(s.language), url, ready: true, source: 'embedded' });
       } else {
         pending.push({ s, i, file });
       }
@@ -3406,11 +3371,12 @@ export const getPlaybackSubtitles = async (req, res) => {
     const tracks = [
       ...minted,
       ...pending.map(({ s, i }) => ({
-        id: `${pickedHash}:${i}`,
+        id: `${pickedScope}:${i}`,
         language: s.language || '',
         label: subLabel(s.language),
         url: '',
         ready: false,
+        source: 'embedded',
       })),
     ];
 
@@ -3435,10 +3401,10 @@ export const getPlaybackSubtitles = async (req, res) => {
     void runSubtitleExtractionJob({
       jobId,
       inventoryKey,
-      pickedHash,
+      pickedHash: pickedScope,
       inputUrl,
       probeSummary,
-      pending: pending.map(({ s, i, file }) => ({ streamIndex: s.streamIndex, outPath: file, trackId: `${pickedHash}:${i}` })),
+      pending: pending.map(({ s, i, file }) => ({ streamIndex: s.streamIndex, outPath: file, trackId: `${pickedScope}:${i}` })),
     });
     return res.json({
       success: true,
@@ -3716,7 +3682,7 @@ export const getPlaybackSession = async (req, res) => {
           { sessionId: session.sessionId },
           { $set: { mode: 'remux', progress: 100, updatedAt: new Date() } },
         );
-        const { _id, userId, userIdStr, ...publicSession } = session;
+        const { _id, userId, userIdStr, sourceFileName, fileSelectionBuild, ...publicSession } = session;
         return res.json({
           success: true,
           data: {
@@ -3754,7 +3720,7 @@ export const getPlaybackSession = async (req, res) => {
       }
     }
 
-    const { _id, userId, userIdStr, ...publicSession } = session;
+    const { _id, userId, userIdStr, sourceFileName, fileSelectionBuild, ...publicSession } = session;
     return res.json({ success: true, data: publicSession });
   } catch (error) {
     console.error('getPlaybackSession error:', error.message);
