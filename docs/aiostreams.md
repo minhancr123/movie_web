@@ -96,6 +96,16 @@ Zilean/Knaben contributed to the movie/series results and SeaDex contributed to
 the anime sample. The earlier 5s-per-scraper trial took 6.49–8.26s with transient
 source errors; this is why the final profile bounds scraper waits at 3s.
 
+Two additional searches (Oppenheimer and Prison Break S1E1) were run concurrently
+with the production 8s request deadline. They completed in 6.04s and 7.02s,
+returning 93 and 36 cached torrents respectively. Both had Zilean/Knaben source
+timeouts and retained Torrentio/Comet results. This remains a dependency on
+external scraper availability, rather than a guarantee of error-free searches.
+
+The live backend was verified on release `1fdfdea` with the credential-free
+saved profile and the owner's account-scoped searches: Insidious returned 7
+candidates and Dragon Ball Super returned 31, through AIOStreams.
+
 ## Operations
 
 When AIOStreams is enabled, the existing monitor checks its container and
