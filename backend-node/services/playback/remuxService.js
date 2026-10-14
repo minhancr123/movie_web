@@ -886,7 +886,7 @@ export const buildVideoArgs = (video, encoder) => {
   };
 };
 
-export const buildFfmpegArgs = ({ inputUrl, outputDir, audioCopy = false, segmentSeconds = REMUX_SEGMENT_SECONDS, audioStreamIndex = null, audioChannels = null, audioDelayMs = 0, video = null, encoder = null, readRate = process.env.REMUX_READ_RATE }) => {
+export const buildFfmpegArgs = ({ inputUrl, outputDir, audioCopy = false, segmentSeconds = REMUX_SEGMENT_SECONDS, audioStreamIndex = null, audioChannels = null, audioDelayMs = 0, video = null, encoder = null, readRate = process.env.REMUX_READ_RATE, windowSeconds = 0 }) => {
   // Explicit output-side audio delay, chained onto any existing audio filter
   // before the stereo fold. Byte-identical to the old command when 0, which is
   // what every caller passes: a container mux offset is NOT a defect to correct
@@ -916,6 +916,7 @@ export const buildFfmpegArgs = ({ inputUrl, outputDir, audioCopy = false, segmen
   ...(Number(readRate) > 0 ? ['-readrate', String(Number(readRate))] : []),
   '-i',
   inputUrl,
+  ...(windowSeconds > 0 ? ['-t', String(windowSeconds)] : []),
   '-map',
   '0:v:0',
   '-map',
@@ -1609,7 +1610,7 @@ export const assertVideoTranscodeAllowed = async (video) => {
   }
 };
 
-export const startRemuxSession = async ({ sessionId, inputUrl, audioCopy = false, audioStreamIndex = null, audioChannels = null, audioDelayMs = 0, video = null, durationSeconds = null }) => {
+export const startRemuxSession = async ({ sessionId, inputUrl, audioCopy = false, audioStreamIndex = null, audioChannels = null, audioDelayMs = 0, video = null, durationSeconds = null, windowSeconds = 0 }) => {
   const id = safeId(sessionId);
   if (!id) throw new Error('sessionId không hợp lệ');
   // Policy guard FIRST, before writer-limit/disk checks, directories, and any
@@ -1634,9 +1635,11 @@ export const startRemuxSession = async ({ sessionId, inputUrl, audioCopy = false
   // It reaps expendable writers first when full, self-releases after
   // RESERVATION_TTL_MS, and is released in the finally below on every path
   // that does not end in a live writer.
+  const pricedDuration = windowSeconds > 0
+    ? Math.min(Number(durationSeconds) || windowSeconds, windowSeconds) : durationSeconds;
   const needBytesEarly = estimateSessionBytes({
     kbps: video?.kbps,
-    durationSeconds,
+    durationSeconds: pricedDuration,
     height: video?.height,
   });
   const acquired = await acquireWriterReservation({ sessionId: id, needBytes: needBytesEarly });
@@ -1660,7 +1663,7 @@ export const startRemuxSession = async ({ sessionId, inputUrl, audioCopy = false
   // the viewer can retry is a far better outcome than a full filesystem.
   const needBytes = estimateSessionBytes({
     kbps: video?.kbps,
-    durationSeconds,
+    durationSeconds: pricedDuration,
     height: video?.height,
   });
   // Bytes promised to other admitted-but-unwritten jobs count as spent
@@ -1692,9 +1695,11 @@ export const startRemuxSession = async ({ sessionId, inputUrl, audioCopy = false
   const outputDir = path.join(TRANSCODE_ROOT, id);
   await fs.rm(outputDir, { recursive: true, force: true });
   await fs.mkdir(outputDir, { recursive: true });
+  // A cleanly ended chunk is still not a full film or a full tail.
+  if (windowSeconds > 0) await fs.writeFile(path.join(outputDir, '.windowed'), String(windowSeconds));
 
   const encoder = video?.mode === 'transcode' ? await detectVideoEncoder() : null;
-  const args = buildFfmpegArgs({ inputUrl, outputDir, audioCopy, audioStreamIndex, audioChannels, audioDelayMs, video, encoder });
+  const args = buildFfmpegArgs({ inputUrl, outputDir, audioCopy, audioStreamIndex, audioChannels, audioDelayMs, video, encoder, windowSeconds });
   // Consume the reservation NOW, synchronously, immediately before the spawn:
   // disk checks, cache cleanup, mkdir and encoder detection all awaited
   // above, and the 45s TTL may have released the token meanwhile. Spawning

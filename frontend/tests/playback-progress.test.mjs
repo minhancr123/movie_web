@@ -20,7 +20,19 @@ execFileSync(
 const { computeResumeAt, clampSeekToHead, pickDisplayDuration, decideSeekTarget, planResume, shouldAutoplayAfterRebuild, shouldDowngradeForDropped, audioSwitchStartAt, subtitleLookupTime, classifyStartAt, toLocalSeekTarget, pickRecoveryTarget, hasSustainedProgress, pickFailoverStartAt, RECOVERY_BACKOFF } = await import(
     pathToFileURL(path.join(outDir, 'playback-progress.js')).href
 );
+const { nextRemuxWindowAt } = await import(pathToFileURL(path.join(outDir, 'playback-progress.js')).href);
 process.on('exit', () => rmSync(outDir, { recursive: true, force: true }));
+
+test('progressive CDN seeks use the requested position beyond the downloaded prefix', () => {
+    assert.deepEqual(decideSeekTarget({ target: 1123, startAt: 0, headLocal: 960, canReresolve: true, progressive: true }),
+        { kind: 'direct', localTime: 1123, clamped: false });
+});
+test('bounded remux continues at its real edge and never loops at film EOF or an unexpectedly short chunk', () => {
+    assert.equal(nextRemuxWindowAt(900, 602.4, 7200, 600), 1502);
+    assert.equal(nextRemuxWindowAt(6600, 600, 7200, 600), null);
+    assert.equal(nextRemuxWindowAt(900, 10, 7200, 600), null);
+    assert.equal(nextRemuxWindowAt(0, 600, 7200, 0), null);
+});
 
 test('computeResumeAt backs off 2s and clamps to duration', () => {
     assert.equal(computeResumeAt(302, 3600), 300);

@@ -116,6 +116,8 @@ services:
       - VIDEO_TRANSCODE_FALLBACK=${VIDEO_TRANSCODE_FALLBACK:-never}
       - REMUX_MAX_WRITERS=${REMUX_MAX_WRITERS:-1}
       - REMUX_READ_RATE=${REMUX_READ_RATE:-2}
+      # New clients can prepare finite VOD chunks; zero keeps legacy behavior.
+      - PLAYBACK_REMUX_WINDOW_SECONDS=${PLAYBACK_REMUX_WINDOW_SECONDS:-0}
       - TRANSCODE_LIVE_IDLE_MINUTES=${TRANSCODE_LIVE_IDLE_MINUTES:-5}
       # Behind Caddy. Wrong here and every viewer shares one rate limit.
       - TRUST_PROXY=${TRUST_PROXY:-1}

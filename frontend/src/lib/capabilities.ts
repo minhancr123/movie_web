@@ -1,4 +1,5 @@
 export interface ClientCapabilities {
+  windowedRemux?: boolean;
   hevc: boolean;
   /**
    * HEVC Main 10 (10-bit) specifically. Many browsers decode 8-bit HEVC but
@@ -98,6 +99,7 @@ export function detectCapabilities(): ClientCapabilities {
       MediaSource.isTypeSupported('video/webm; codecs="vp9, opus"'));
 
   return {
+    windowedRemux: true,
     hevc,
     hevcMain10,
     av1,

@@ -57,6 +57,7 @@ services:
       RENDITIONS_MAX_GB: ${RENDITIONS_MAX_GB:-3}
       VIDEO_TRANSCODE_FALLBACK: never
       REMUX_MAX_WRITERS: ${REMUX_MAX_WRITERS:-1}
+      PLAYBACK_REMUX_WINDOW_SECONDS: ${PLAYBACK_REMUX_WINDOW_SECONDS:-0}
       TRUST_PROXY: "true"
     volumes: [transcodes:/data/transcodes]
     depends_on:

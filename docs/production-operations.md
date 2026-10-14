@@ -14,6 +14,32 @@ Existing sessions/renditions are reused. Viewer leases are reaped by the
 minute janitor, including when no new viewer is waiting. Untracked sessions
 retain the idle timeout. Active viewers are never deleted to meet a cache cap.
 
+### Bounded remux and seeking
+
+`PLAYBACK_REMUX_WINDOW_SECONDS=600` enables finite ten-minute VOD chunks for
+clients advertising `windowedRemux`. The default is zero; older clients keep
+the full-film pipeline. Known bitrate can shorten a chunk to fit an estimated
+0.85 GiB media budget. Disk reservations price only the remaining chunk, while
+the existing free-space reserve and one-writer admission still apply. Unknown
+film duration keeps the legacy pipeline. This estimate is not a hard byte cap.
+
+Direct compatible files seek using the CDN's byte-range support. MKV sources
+go through FFmpeg into append-only HLS playlists with small fMP4 segments.
+For a far seek, the server opens the source near the requested film time and
+reports its measured keyframe origin. The player advances inside that chunk
+to the requested time rather than showing the earlier keyframe. Recovery
+retains that target until playback reports progress there. Completed partial
+sessions are reused only when their actual playlist covers the requested time;
+published seek tails with an unknown origin are no longer reused.
+
+Near a chunk's end the player prepares the next chunk in the background and
+then switches while preserving play/pause intent and the full-film clock.
+A failed preparation falls back to a foreground resolve and can pause briefly.
+Finite chunks carry `.windowed` and cannot be published as complete films.
+The existing 3 GiB session cache and 3 GiB rendition cache evict idle data;
+active leases can temporarily exceed these targets. No sliding/live playlist
+or deletion of segments currently being watched is introduced.
+
 ## Monitoring and recovery
 
 Run `sudo python3 deploy/production_ops.py install` once. Systemd timers

@@ -253,6 +253,7 @@ export const parseCandidate = (candidate, { expectedTitles = [], expectedYear = 
  * which plays essentially everywhere.
  */
 export const normalizeCapabilities = (caps = {}) => ({
+  windowedRemux: caps.windowedRemux === true,
   hevc: Boolean(caps.hevc),
   // Old clients predate the Main 10 probe and send no hevcMain10: inherit
   // `hevc` so their behaviour is exactly what shipped before (a capable

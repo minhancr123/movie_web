@@ -151,6 +151,9 @@ export const publishRendition = async ({ renditionId, sessionId }) => {
   }
 
   const outDir = renditionPath(id, '.');
+  if (await fs.access(path.join(sessionDir, '.windowed')).then(() => true, () => false)) {
+    return { ok: false, reason: 'bounded-window' };
+  }
   if (await fs.access(path.join(sessionDir, '.interrupted')).then(() => true, () => false)) {
     return { ok: false, reason: 'interrupted' };
   }

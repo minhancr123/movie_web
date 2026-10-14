@@ -191,6 +191,7 @@ export const playbackAPI = {
     sourceToken?: string;
     audioIndex?: number;
     resolveId?: string;
+    startAt?: number;
   }, signal?: AbortSignal) => authClient.post('/playback/resolve', data, { timeout: 120_000, ...(signal ? { signal } : {}) }),
   prewarm: (data: {
     type: string;

@@ -278,9 +278,13 @@ export const decideSeekTarget = (args: {
   startAt: number;
   headLocal: number;
   canReresolve: boolean;
+  progressive?: boolean;
 }): SeekTarget => {
   const { startAt, headLocal, canReresolve } = args;
   const target = Number.isFinite(args.target) ? Math.max(0, args.target) : 0;
+  // A progressive CDN file can fetch a new HTTP range anywhere in the film.
+  // Its buffered prefix is not the full seekable extent of the source.
+  if (args.progressive) return { kind: 'direct', localTime: target, clamped: false };
   const headDisplay = Number.isFinite(headLocal) ? startAt + headLocal : NaN;
   const beforeStart = target < Math.max(0, startAt - 1);
   const pastHead = Number.isFinite(headDisplay) && target > headDisplay - 2;
@@ -296,6 +300,14 @@ export const decideSeekTarget = (args: {
     localTime: Math.max(0, clampedDisplay - startAt),
     clamped: clampedDisplay < target,
   };
+};
+
+export const nextRemuxWindowAt = (startAt: number, localAt: number, fullDuration: number, windowSeconds: number): number | null => {
+  const at = startAt + localAt;
+  // Never retry an unexpectedly short/broken chunk or loop at the film's end.
+  return windowSeconds > 0 && Number.isFinite(at) && fullDuration > 0
+    && localAt >= windowSeconds - 10 && at < fullDuration - 2
+    ? Math.floor(at) : null;
 };
 
 /**

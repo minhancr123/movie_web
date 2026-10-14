@@ -16,7 +16,7 @@ import {
     pickAutoSubtitle, autoSubtitleRank,
     type SubCue, type SubTrack,
 } from '@/lib/subtitles';
-import { computeResumeAt, pickDisplayDuration, decideSeekTarget, planResume, shouldAutoplayAfterRebuild, shouldDowngradeForDropped, subtitleLookupTime, classifyStartAt, toLocalSeekTarget } from '@/lib/playback-progress';
+import { computeResumeAt, pickDisplayDuration, decideSeekTarget, nextRemuxWindowAt, planResume, shouldAutoplayAfterRebuild, shouldDowngradeForDropped, subtitleLookupTime, classifyStartAt, toLocalSeekTarget } from '@/lib/playback-progress';
 import {
     useAudioEnhancer, DEFAULT_AUDIO_ENHANCER,
     type AudioEnhancerSettings,
@@ -124,6 +124,8 @@ interface VideoPlayerProps {
      * overlay that invites mashing. Null when no seek is resolving.
      */
     seekProgress?: { label?: string | null; percent?: number | null } | null;
+    windowSeconds?: number;
+    onPrepareWindow?: (at: number) => Promise<void>;
     /** Fired when currentTime advances past the stall threshold. Lets the
         parent reset its recovery counter so isolated stalls don't accumulate. */
     /** Live playhead in full-film seconds (display time, not element time). */
@@ -157,7 +159,7 @@ interface VideoPlayerProps {
     fullscreenTargetRef?: React.RefObject<HTMLDivElement | null>;
 }
 
-export default function VideoPlayer({ src, movie, episode, authToken, durationSeconds, onNextEpisode, subContext, onPickAudio, activeAudioIndex, pendingAudioIndex = null, onPlaybackFailure, onUnplayableSource, reloadKey = 0, onPlaybackProgress, presentationShiftMs = 0, seekStartSupported = true, sessionReused = false, onDecodeOverload, onCinemaChange, onVideoReady, fullscreenTargetRef, startAt = 0, targetAt = null, onSeekToPosition, onCancelSeek, seekProgress = null }: VideoPlayerProps) {
+export default function VideoPlayer({ src, movie, episode, authToken, durationSeconds, onNextEpisode, subContext, onPickAudio, activeAudioIndex, pendingAudioIndex = null, onPlaybackFailure, onUnplayableSource, reloadKey = 0, onPlaybackProgress, presentationShiftMs = 0, seekStartSupported = true, sessionReused = false, onDecodeOverload, onCinemaChange, onVideoReady, fullscreenTargetRef, startAt = 0, targetAt = null, onSeekToPosition, onCancelSeek, seekProgress = null, windowSeconds = 0, onPrepareWindow }: VideoPlayerProps) {
     const videoRef = useRef<HTMLVideoElement>(null);
     const containerRef = useRef<HTMLDivElement>(null);
 
@@ -406,12 +408,15 @@ export default function VideoPlayer({ src, movie, episode, authToken, durationSe
     // down next to handleSeek.
     const [seekTarget, setSeekTarget] = useState<number | null>(null);
     const seekTargetRef = useRef<number | null>(null);
-    const beginSeekLock = (at: number) => {
+    const seekResumeIntentRef = useRef(false);
+    const preparedWindowRef = useRef<string>('');
+    const beginSeekLock = (at: number, resume?: boolean) => {
+        if (seekTargetRef.current === null) seekResumeIntentRef.current = resume ?? !videoRef.current?.paused;
         seekTargetRef.current = at;
         setSeekTarget(at);
         const video = videoRef.current;
         if (video) {
-            userPausedRef.current = true;
+            userPausedRef.current = !seekResumeIntentRef.current;
             try {
                 video.pause();
             } catch {}
@@ -421,6 +426,7 @@ export default function VideoPlayer({ src, movie, episode, authToken, durationSe
     const clearSeekLock = () => {
         seekTargetRef.current = null;
         setSeekTarget(null);
+        seekResumeIntentRef.current = false;
     };
     const seekFireEpochRef = useRef(0);
     const seekFiredEpochRef = useRef(0);
@@ -1596,7 +1602,7 @@ export default function VideoPlayer({ src, movie, episode, authToken, durationSe
             cancelled = true;
             // Remember intent for the next pipeline: a paused teardown must
             // rebuild paused, a playing one may resume playing.
-            pausedBeforeRebuildRef.current = video.paused;
+            pausedBeforeRebuildRef.current = seekResumeIntentRef.current ? false : video.paused;
             if (resumeTimer !== undefined) {
                 clearTimeout(resumeTimer);
                 resumeTimer = undefined;
@@ -1720,6 +1726,16 @@ export default function VideoPlayer({ src, movie, episode, authToken, durationSe
             // pre-restore tick must never overwrite the parent's last-good
             // playhead (the "recovery replays from 0/bucket" class of bugs).
             if (restorePendingRef.current) return;
+            if (Number.isFinite(video.duration) && video.currentTime < video.duration - 90) preparedWindowRef.current = '';
+            if (windowSeconds > 0 && onPrepareWindow && !video.paused && Number.isFinite(video.duration)
+                && video.currentTime >= video.duration - Math.min(45, windowSeconds / 3) && seekTargetRef.current === null) {
+                const at = nextRemuxWindowAt(sessionStartAt, video.duration, durationSeconds || 0, windowSeconds);
+                const key = `${src}|${at}`;
+                if (at !== null && preparedWindowRef.current !== key) {
+                    preparedWindowRef.current = key;
+                    void onPrepareWindow(at);
+                }
+            }
             if (video.paused) setCurrentTime(video.currentTime);
             if (video.currentTime > lastProgressRef.current + 0.25) {
                 localStallRecoveryRef.current = false;
@@ -1746,7 +1762,7 @@ export default function VideoPlayer({ src, movie, episode, authToken, durationSe
             armStallTimer();
         };
         const handlePause = () => {
-            userPausedRef.current = true;
+            if (seekTargetRef.current === null && !restorePendingRef.current) userPausedRef.current = true;
             clearStallTimer();
             setIsPlaying(false);
             // Persist the exact stop point now: the 10s interval skips paused
@@ -1781,6 +1797,15 @@ export default function VideoPlayer({ src, movie, episode, authToken, durationSe
         };
         const handleEnded = () => {
             clearStallTimer();
+            const next = nextRemuxWindowAt(sessionStartAt, video.currentTime, durationSeconds || 0, windowSeconds);
+            if (next !== null && onSeekToPosition) {
+                beginSeekLock(next, true);
+                return;
+            }
+            if (windowSeconds > 0 && sessionStartAt + video.currentTime < (durationSeconds || 0) - 2) {
+                onPlaybackFailure?.('Đoạn phim dừng sớm; đang mở lại đúng vị trí.');
+                return;
+            }
             setIsPlaying(false);
             // if (onNextEpisode) onNextEpisode(); // Optional auto-next
         };
@@ -1809,7 +1834,7 @@ export default function VideoPlayer({ src, movie, episode, authToken, durationSe
             video.removeEventListener('canplay', handleCanPlay);
             video.removeEventListener('ended', handleEnded);
         }
-    }, [onNextEpisode, durationSeconds, onPlaybackFailure, onPlaybackProgress, sessionStartAt]);
+    }, [onNextEpisode, durationSeconds, onPlaybackFailure, onPlaybackProgress, sessionStartAt, windowSeconds, onSeekToPosition, onPrepareWindow, src]);
 
     // Decode-overload watchdog: caps report decodability, never speed. A slow
     // decoder lags every heavy title with audio permanently ahead of the
@@ -2044,6 +2069,7 @@ export default function VideoPlayer({ src, movie, episode, authToken, durationSe
             startAt: sessionStartAt,
             headLocal: playlistHeadEnd(),
             canReresolve: typeof onSeekToPosition === 'function',
+            progressive: !src.includes('.m3u8'),
         });
         if (decision.kind === 'reresolve') {
             // Hard-lock the old pipeline immediately: the current element is
@@ -2094,6 +2120,7 @@ export default function VideoPlayer({ src, movie, episode, authToken, durationSe
             startAt: sessionStartAt,
             headLocal: playlistHeadEnd(),
             canReresolve: typeof onSeekToPosition === 'function',
+            progressive: !src.includes('.m3u8'),
         });
         if (decision.kind === 'reresolve') {
             beginSeekLock(decision.at);

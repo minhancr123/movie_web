@@ -201,6 +201,7 @@ export default function PlaybackSection({
   // Far seeks resolve a session beginning at the target; the player maps its
   // truncated 0-based playlist back onto the full film with this.
   const [startOffset, setStartOffset] = useState<number>(0);
+  const [windowSeconds, setWindowSeconds] = useState(0);
   // Absolute position the viewer asked for (pre-bucket target), alongside the
   // session origin above. The player restores to the target, not the origin:
   // target=780/origin=600 seeks local=180 once covered, never plays from 0.
@@ -990,8 +991,10 @@ export default function PlaybackSection({
   // Target of the in-flight seek-resolve, if any. A recovery that fires
   // while a seek is pending adopts it instead of rebuilding from the old
   // (stalled) position, which would strand the viewer where they tried to
-  // leave. Cleared whenever any resolve response applies.
+  // leave. Cleared once playback reports progress at the requested position.
   const pendingSeekRef = useRef<number | null>(null);
+  const stagedWindowRef = useRef<{ at: number; token: string; audio: number | null; preparedAt: number; data: any } | null>(null);
+  const stagedAbortRef = useRef<AbortController | null>(null);
   // Applied session offset mirror (startOffset state): recovery and audio
   // switches re-resolve the CURRENT timeline, not from zero.
   const startOffsetRef = useRef<number>(0);
@@ -1033,7 +1036,9 @@ export default function PlaybackSection({
     // See the seek-resolve path: a reused whole-film session is a deliberate
     // choice by the server, not a dropped seek, and the player says so.
     setSessionReused(data.reused === true);
-    pendingSeekRef.current = null;
+    setWindowSeconds(Number(data.windowSeconds) || 0);
+    // Keep the requested position until the player reports progress there.
+    // A failure during restore must retry the target, not the old playhead.
     // Seek/audio-switch resolves land here instead of the inline path: they
     // settle the waiting room the same way.
     clearBusyWait();
@@ -1097,6 +1102,50 @@ export default function PlaybackSection({
   // while a session beginning at the target warms up. The player debounces
   // scrub ticks and shows its own indicator; here each call fires exactly
   // one resolve, and stale responses are dropped by the epoch check above.
+  const prepareNextWindow = useCallback(async (displaySeconds: number) => {
+    const at = Math.floor(displaySeconds);
+    const token = activeTokenRef.current;
+    const audio = activeAudioIndexRef.current;
+    const epoch = seekEpochRef.current;
+    stagedAbortRef.current?.abort();
+    const controller = new AbortController();
+    stagedAbortRef.current = controller;
+    stagedWindowRef.current = null;
+    try {
+      const response = await playbackAPI.resolve({
+        type, tmdbId, ...(type === 'tv' ? {
+          season: season ?? undefined,
+          episode: currentEpisode ?? undefined,
+        } : {}),
+        capabilities: detectCapabilities(), sourceToken: token || undefined,
+        audioIndex: audio ?? undefined, startAt: at,
+      }, controller.signal);
+      const data = response.data?.data;
+      if (controller.signal.aborted || epoch !== seekEpochRef.current || token !== activeTokenRef.current
+        || audio !== activeAudioIndexRef.current || data?.mode !== 'remux' || !data.windowSeconds || data.fallbackSource) return;
+      // Resolve may return before the head start finishes. Keep the current
+      // movie on screen while the next chunk's own session fills its buffer.
+      if (data.warmingUp) {
+        for (let i = 0; i < 25; i++) {
+          await new Promise(resolve => setTimeout(resolve, 1000));
+          if (controller.signal.aborted || epoch !== seekEpochRef.current) return;
+          const status = await playbackAPI.getSession(data.sessionId);
+          if (status.data?.data?.ready) { data.warmingUp = false; break; }
+        }
+      }
+      if (!controller.signal.aborted && epoch === seekEpochRef.current && !data.warmingUp) {
+        stagedWindowRef.current = { at, token, audio, preparedAt: Date.now(), data };
+      }
+    } catch {
+      // Best effort: foreground seek at the boundary remains the fallback.
+    }
+  }, [type, tmdbId, season, currentEpisode]);
+
+  useEffect(() => () => {
+    stagedAbortRef.current?.abort();
+    stagedWindowRef.current = null;
+  }, [type, tmdbId, season, currentEpisode]);
+
   const requestSeekPosition = useCallback((displaySeconds: number) => {
     const at = Math.max(0, Math.floor(displaySeconds));
     pendingSeekRef.current = at;
@@ -1104,12 +1153,20 @@ export default function PlaybackSection({
     // pickAudio): the stale button spinner must not survive the new intent.
     setPendingAudioIndex(null);
     const epoch = ++seekEpochRef.current;
+    const staged = stagedWindowRef.current;
+    stagedWindowRef.current = null;
+    stagedAbortRef.current?.abort();
+    if (staged && Date.now() - staged.preparedAt < 120000 && Math.abs(staged.at - at) <= 1 && staged.token === activeTokenRef.current
+      && staged.audio === activeAudioIndexRef.current) {
+      handleResolveResponse({ ...staged.data, requestedPositionSeconds: at }, epoch);
+      return Promise.resolve();
+    }
     return startPlaybackResolutionRef.current(
       activeTokenRef.current,
       activeAudioIndexRef.current ?? undefined,
       { preservePlayer: true, startAt: at, seekEpoch: epoch },
     );
-  }, []);
+  }, [handleResolveResponse]);
 
   // The viewer went back to direct seeking while a seek-resolve was in
   // flight: invalidate it so its late response cannot apply.
@@ -1269,6 +1326,7 @@ export default function PlaybackSection({
             // the wrong full-film coordinate for bucketed seek sessions.
             const returnedOffset = typeof st.startOffset === 'number' && st.startOffset > 0 ? st.startOffset : 0;
             setStartOffset(returnedOffset);
+            setWindowSeconds(Number(st.windowSeconds) || 0);
             startOffsetRef.current = returnedOffset;
             applyTargetFromData(st);
             setFileName(st.fileName || '');
@@ -1429,6 +1487,7 @@ export default function PlaybackSection({
       // session and a server that dropped the seek both answer startAt>0 with
       // startOffset=0, and only this flag tells them apart.
       setSessionReused(data.reused === true);
+      setWindowSeconds(Number(data.windowSeconds) || 0);
       setPresentationShiftMs(
         typeof data.presentationShiftMs === 'number' && data.presentationShiftMs > 0
           ? data.presentationShiftMs
@@ -2186,6 +2245,8 @@ export default function PlaybackSection({
             activeAudioIndex={activeAudioIndex}
             pendingAudioIndex={pendingAudioIndex}
             startAt={startOffset}
+            windowSeconds={playMode === 'remux' ? windowSeconds : 0}
+            onPrepareWindow={prepareNextWindow}
             targetAt={targetPosition}
             presentationShiftMs={presentationShiftMs}
             seekStartSupported={seekStartSupported}

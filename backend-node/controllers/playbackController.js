@@ -14,6 +14,7 @@
  */
 
 import crypto from 'crypto';
+import { remuxWindowSeconds, pricedRemuxSeconds, completedSessionCovers, budgetedWindowSeconds } from '../services/playback/remuxWindow.js';
 import fs from 'fs/promises';
 import path from 'path';
 import { getDB } from '../config/database.js';
@@ -650,6 +651,7 @@ const findReusableRemuxSession = async (db, { userId, type, tmdbId, season, epis
   ).toArray();
 
   for (const session of sessions) {
+    if (session.windowSeconds > 0 && !caps.windowedRemux) continue;
     if (!session?.playlistUrl) continue;
     // Generation gate: bytes remuxed under an older recipe (missing stamp =
     // build 1) predate current compensation policy and must never be served
@@ -671,6 +673,7 @@ const findReusableRemuxSession = async (db, { userId, type, tmdbId, season, epis
         0,
       );
       const sessionHead = (session.startAt || 0) + duration;
+      if (complete && !completedSessionCovers(session.startAt, duration, requestedStartAt)) continue;
       const minRequiredCoverage = requestedStartAt + (requestedStartAt > 0 ? SEEK_STARTUP_BUFFER_SECONDS : STARTUP_BUFFER_SECONDS);
       if (!complete && sessionHead < minRequiredCoverage) {
         // Behind the viewer — but only worth abandoning if a replacement could
@@ -1111,6 +1114,7 @@ export const resolvePlayback = async (req, res) => {
    // The cost is what the feature bought: a far seek waits for the prefix.
    const startAt = seekStartEnabled() ? bucketStartAt(requestedStartAt) : 0;
    const caps = normalizeCapabilities(capabilities);
+   const requestedWindowSeconds = remuxWindowSeconds(caps.windowedRemux && seekStartEnabled());
    // Preferred embedded audio track (ffprobe order); null = default first track.
    const audioIdx =
      Number.isInteger(parsed.audioIndex) && parsed.audioIndex >= 0 ? parsed.audioIndex : null;
@@ -1590,6 +1594,7 @@ export const resolvePlayback = async (req, res) => {
             // the seek, and the viewer is told to restart a backend doing
             // exactly the right thing.
             reused: true,
+            windowSeconds: reusable.windowSeconds || 0,
             // Whether truncated sessions are offered at all. Without it the
             // client cannot tell a server that ignored the seek from one that
             // deliberately serves the whole film, and warns about the wrong one.
@@ -1607,7 +1612,7 @@ export const resolvePlayback = async (req, res) => {
     // Auto can avoid expensive TorBox/probe round trips for oversized MKVs.
     // This only changes ordering: actual probe-based admission remains below,
     // and a manual choice still gets exactly the requested release.
-    if (!sourceToken) {
+    if (!sourceToken && !requestedWindowSeconds) {
       const freeBytes = await freeDiskBytes();
       const reservedBytes = pendingReservationBytes();
       attempts = prioritizeDiskFitSources(playable, (needBytes) => admitRemuxDisk({
@@ -1759,6 +1764,7 @@ export const resolvePlayback = async (req, res) => {
       // Record before acting on it: a rejection here is exactly the fact the
       // ranker needs next time so this source stops consuming a retry slot.
       await rememberProbeFacts(candidate.infoHash, probe);
+      let windowSeconds = Number(probe.duration) > 0 || runtimeMinutes > 0 ? requestedWindowSeconds : 0;
       // Declared here (loop-body scope) so the rendition key and the remux
       // below share one value.
       let audioDelayMs = 0;
@@ -1913,6 +1919,13 @@ export const resolvePlayback = async (req, res) => {
         : (decision.audioCopy === false ? 'encode' : 'copy');
 
       if (decision.mode === 'remux' && inputUrl && file) {
+        if (windowSeconds) {
+          windowSeconds = budgetedWindowSeconds(videoPlan.kbps, windowSeconds);
+          if (!windowSeconds) {
+            lastError = new Error('Nguồn quá lớn cho đoạn phát; đang thử bản nhẹ hơn');
+            continue;
+          }
+        }
         // A session this size may not fit on the box at all: a 4K remux was
         // measured at 33GB against a floor of 12GB free, and video transcode
         // is off, so there is no smaller rung to step down to. The film is
@@ -1950,7 +1963,7 @@ export const resolvePlayback = async (req, res) => {
           freeBytes: await freeDiskBytes(),
           needBytes: estimateSessionBytes({
             kbps: videoPlan.kbps,
-            durationSeconds: pricedDurationSec,
+            durationSeconds: pricedRemuxSeconds(pricedDurationSec, windowSeconds, startAt),
             height: videoPlan.height,
           }),
           // Bytes promised to other starting writers count as spent, so a
@@ -2094,7 +2107,8 @@ export const resolvePlayback = async (req, res) => {
         segmentSeconds: REMUX_SEGMENT_SECONDS,
       });
       stage('published', attemptTag);
-      const published = await findPublishedRendition(db, renditionKey);
+      // Old published tails lack a measured origin and were labelled zero.
+      const published = startAt === 0 ? await findPublishedRendition(db, renditionKey) : null;
       if (published) {
         const pubSessionId = buildSessionId();
         // Stable cross-viewer URL (not per-session): every viewer of these
@@ -2170,7 +2184,8 @@ export const resolvePlayback = async (req, res) => {
           video: videoPlan,
           // Priced before the writer starts: a 4K remux is tens of GB and a
           // box that fills up fails deploys, not just this film.
-          durationSeconds: fullDurationSeconds,
+          durationSeconds: pricedRemuxSeconds(fullDurationSeconds, windowSeconds, startAt),
+          windowSeconds,
         });
         // Lost the race while spawning: hand the slot straight back instead
         // of leaving an orphan writer for a departed film.
@@ -2378,6 +2393,7 @@ export const resolvePlayback = async (req, res) => {
           // The MEASURED origin, not the requested one: reuse coverage maths
           // and the client's film clock both depend on it being the truth.
           startAt: seekOrigin,
+          windowSeconds,
           presentationShiftMs: shiftMs,
           audioIndex: decision.audioIndex ?? 0,
           progress: 100,
@@ -2400,6 +2416,7 @@ export const resolvePlayback = async (req, res) => {
           // Truncated-timeline origin: the playlist covers [startOffset, end],
           // presented 0-based. 0 for ordinary from-the-start sessions.
           startOffset: seekOrigin,
+          windowSeconds,
           // Absolute position the viewer asked for, BEFORE bucketing rounded
           // it to the origin above. Additive: old clients keep startOffset.
           requestedPositionSeconds: requestedStartAt,
@@ -2619,7 +2636,7 @@ export const prewarmPlayback = async (req, res) => {
     // the very provider/probe latency this endpoint is intended to hide.
     const freeBytes = await freeDiskBytes();
     const reservedBytes = pendingReservationBytes();
-    const target = prioritizeDiskFitSources(playable, (needBytes) => admitRemuxDisk({
+    const target = remuxWindowSeconds(caps.windowedRemux && seekStartEnabled()) ? best : prioritizeDiskFitSources(playable, (needBytes) => admitRemuxDisk({
       freeBytes, reservedBytes, needBytes,
     }).admitted)[0] ?? best ?? null;
     if (!target) return fail(res, 422, 'Không có nguồn nào phát được trên thiết bị này');
@@ -3598,6 +3615,7 @@ export const getPlaybackSession = async (req, res) => {
             sessionId: session.sessionId,
             mode: 'remux',
             bufferedSeconds: total,
+            windowSeconds: session.windowSeconds || 0,
             startupTargetSeconds: startupBufferForStartAt(session.startAt),
             ready: true,
             writerAlive: true,
@@ -3644,6 +3662,7 @@ export const getPlaybackSession = async (req, res) => {
           sessionId: session.sessionId,
           mode: 'remux',
           bufferedSeconds: buffered,
+          windowSeconds: session.windowSeconds || 0,
           startupTargetSeconds: startupBufferForStartAt(session.startAt),
           ready: state.ended || buffered >= startupBufferForStartAt(session.startAt),
           // Process existence is insufficient: a wedged ffmpeg process remains

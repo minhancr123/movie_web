@@ -41,8 +41,8 @@ test('the episode switch is client state, not a navigation', () => {
 
 test('every resolve asks for the episode actually on screen', () => {
   const requests = source.match(/episode: currentEpisode \?\? undefined,/g) || [];
-  assert.equal(requests.length, 3,
-    'resolve, recover and the provider-connect path all send currentEpisode');
+  assert.equal(requests.length, 4,
+    'resolve, recover, window preparation and provider-connect all send currentEpisode');
   assert.doesNotMatch(source, /episode: episode \?\? undefined/,
     'nothing still sends the stale prop');
   // If any dep array still watched the prop, the re-resolve chain would break.
