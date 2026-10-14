@@ -33,7 +33,7 @@ const grotesk = Space_Grotesk({
 // instead of an anonymous system font.
 const beVietnamPro = Be_Vietnam_Pro({
   subsets: ["latin", "vietnamese"],
-  weight: ["700", "800", "900"],
+  weight: ["600", "700", "800", "900"],
   display: "swap",
   variable: "--font-bevn",
 });

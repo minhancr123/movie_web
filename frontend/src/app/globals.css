@@ -28,6 +28,15 @@ body {
   overflow-x: hidden;
 }
 
+/* One Vietnamese-capable face keeps accented movie titles consistent. */
+.movie-title {
+  font-family: var(--font-bevn), var(--font-jakarta), system-ui, sans-serif;
+  font-weight: 600;
+  line-height: 1.2;
+  letter-spacing: -0.025em;
+  text-wrap: balance;
+}
+
 /* Custom Premium Scrollbar */
 ::-webkit-scrollbar {
   width: 6px;

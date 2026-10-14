@@ -157,8 +157,8 @@ export default async function CatalogDetailPage({ params, searchParams }: PagePa
           </div>
         </div>
 
-        <div>
-          <h1 className="font-syne text-display-hero-mobile text-white md:text-display-hero">
+        <div className="min-w-0">
+          <h1 className="movie-title max-w-4xl text-3xl text-white md:text-4xl lg:text-[2.75rem]">
             {detail.title}
           </h1>
           {detail.originalTitle && detail.originalTitle !== detail.title && (

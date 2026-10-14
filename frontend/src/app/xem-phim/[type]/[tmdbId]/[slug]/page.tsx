@@ -126,7 +126,7 @@ export default async function WatchPage({ params, searchParams }: PageParams) {
                   VISIONOS
                 </span>
               </div>
-              <h1 className="mt-1 truncate font-syne text-headline-lg text-white md:text-headline-xl">
+              <h1 className="movie-title mt-2 text-xl text-white md:text-2xl lg:text-3xl">
                 {detail.title}
               </h1>
               {type === 'tv' && season && episode ? (
