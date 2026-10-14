@@ -28,8 +28,11 @@ go through FFmpeg into append-only HLS playlists with small fMP4 segments.
 For a far seek, the server opens the source near the requested film time and
 reports its measured keyframe origin. The player advances inside that chunk
 to the requested time rather than showing the earlier keyframe. Recovery
-retains that target until playback reports progress there. Completed partial
-sessions are reused only when their actual playlist covers the requested time;
+retains that target until playback reports progress there.
+The player holds playback until metadata, `seeked`, and a decoded frame confirm
+the restored position; internal load pauses do not replace the viewer's intent.
+Each seek intent resolves once, then waits for the new playlist's coverage.
+Completed partial sessions are reused only when their actual playlist covers the requested time;
 published seek tails with an unknown origin are no longer reused.
 
 Near a chunk's end the player prepares the next chunk in the background and

@@ -16,7 +16,8 @@ import {
     pickAutoSubtitle, autoSubtitleRank,
     type SubCue, type SubTrack,
 } from '@/lib/subtitles';
-import { computeResumeAt, pickDisplayDuration, decideSeekTarget, nextRemuxWindowAt, planResume, shouldAutoplayAfterRebuild, shouldDowngradeForDropped, subtitleLookupTime, classifyStartAt, toLocalSeekTarget } from '@/lib/playback-progress';
+import { computeResumeAt, pickDisplayDuration, decideSeekTarget, nextRemuxWindowAt, planResume, shouldDowngradeForDropped, subtitleLookupTime, classifyStartAt, toLocalSeekTarget } from '@/lib/playback-progress';
+import { restoreBeforePlayback, restorePlayIntent } from '@/lib/playback-restore';
 import {
     useAudioEnhancer, DEFAULT_AUDIO_ENHANCER,
     type AudioEnhancerSettings,
@@ -392,8 +393,6 @@ export default function VideoPlayer({ src, movie, episode, authToken, durationSe
     // other effects. The saver itself skips paused elements, so callers that
     // run *because* of a pause pass force=true.
     const saveProgressRef = useRef<((force?: boolean) => void) | null>(null);
-    // Deferred resume listener (removed in the pipeline effect cleanup).
-    const resumeListenerRef = useRef<(() => void) | null>(null);
     // True while a fresh pipeline still owes its positional restore. Gates
     // the first progress reports: a rebuilt element ticks timeupdate at 0
     // before the restore seek lands, and that 0 must never overwrite the
@@ -409,9 +408,12 @@ export default function VideoPlayer({ src, movie, episode, authToken, durationSe
     const [seekTarget, setSeekTarget] = useState<number | null>(null);
     const seekTargetRef = useRef<number | null>(null);
     const seekResumeIntentRef = useRef(false);
+    const seekIntentSerialRef = useRef(0);
+    const firedSeekIntentRef = useRef(-1);
     const preparedWindowRef = useRef<string>('');
     const beginSeekLock = (at: number, resume?: boolean) => {
         if (seekTargetRef.current === null) seekResumeIntentRef.current = resume ?? !videoRef.current?.paused;
+        seekIntentSerialRef.current += 1;
         seekTargetRef.current = at;
         setSeekTarget(at);
         const video = videoRef.current;
@@ -430,11 +432,8 @@ export default function VideoPlayer({ src, movie, episode, authToken, durationSe
     };
     const seekFireEpochRef = useRef(0);
     const seekFiredEpochRef = useRef(0);
-    // One auto-resume seek per title per mount. A resume past the fresh remux
-    // head fires a seek-resolve; if the server answers it from-start anyway
-    // (seek bucketing), the rebuild would resume with the SAME target again —
-    // an endless resolve/supersede loop ("hiện phim rồi mà vẫn load tiếp").
-    // Manual seeks bypass this (different path) and stay repeatable.
+    // Manual seeks remain repeatable, but a newly opened partial playlist
+    // waits for its target instead of resolving the same intent twice.
     const resumeFiredKeyRef = useRef<string | null>(null);
     // Playback intent across pipeline rebuilds (recovery, seek sessions):
     // a rebuild of a paused player must stay paused, never auto-play.
@@ -1055,13 +1054,13 @@ export default function VideoPlayer({ src, movie, episode, authToken, durationSe
                 ? targetAt
                 : historyResume);
         const restoreTargetLocal = targetAbsolute === null ? 0 : toLocalSeekTarget(targetAbsolute, sessionStartAt);
-        restorePendingRef.current = restoreTargetLocal > 0;
-        // A new pipeline means the seek (if any) landed: drop its indicator.
-        // Failures clear it via the fire-promise catch above instead. If this
-        // line clears a seek but the session does NOT begin at the requested
-        // point, the mismatch toast below says so.
+        const playAfterRestore = restorePlayIntent(hasPlayedRef.current, pausedBeforeRebuildRef.current,
+            userPausedRef.current, seekTargetRef.current === null ? null : seekResumeIntentRef.current);
+        restorePendingRef.current = true;
+        // A new source has not necessarily decoded the requested frame yet.
+        // Keep its seek indicator until position restoration is confirmed.
         if (seekTargetRef.current !== null && typeof window !== 'undefined') {
-            console.debug(`[seek] overlay cleared by pipeline rebuild (src=${src.slice(0, 80)}, startAt=${sessionStartAt})`);
+            console.debug(`[seek] restoring target=${targetAbsolute}, origin=${sessionStartAt}`);
         }
         // A remux session that does not begin at the requested point means one
         // of two very different things, and telling the viewer the wrong one is
@@ -1094,8 +1093,6 @@ export default function VideoPlayer({ src, movie, episode, authToken, durationSe
                     : `Phim đang được chuẩn bị từ đầu — tới ${formatTime(seekTargetRef.current)} sẽ xem được, chờ một lát nhé`);
             }
         }
-        clearSeekLock();
-
         const isHlsSrc = /\.m3u8(\?|#|$)/i.test(src);
 
         // This effect re-runs on src/token changes and tears down the old player.
@@ -1105,21 +1102,13 @@ export default function VideoPlayer({ src, movie, episode, authToken, durationSe
         // Resume-coverage timeout holder: cleared if the pipeline tears down
         // before the playlist reports how much of the film it covers yet.
         let resumeTimer: ReturnType<typeof setTimeout> | undefined;
+        let cancelPositionRestore: (() => void) | undefined;
 
         const startPlayback = () => {
             if (cancelled) return;
-            // A rebuild of a player the viewer had paused (recovery after a
-            // dead session, a seek made while paused) stays paused instead of
-            // shouting over whatever they switched to. Fresh mounts always
-            // try: the tap-to-play prompt covers the blocked case.
-            // userPausedRef is the latest intent (pause/play events);
-            // pausedBeforeRebuildRef backs it up at teardown. Either saying
-            // "paused" wins: an unwanted autoplay is far worse than a
-            // stay-paused that one tap reverses.
-            // The explicit pause() below is belt and suspenders: it also
-            // settles any play request that slipped in around the teardown
-            // (pause on an already-paused element is a silent no-op).
-            if (!shouldAutoplayAfterRebuild(hasPlayedRef.current, pausedBeforeRebuildRef.current) || userPausedRef.current) {
+            // Use intent captured before internal pause/load events. A seek
+            // made while playing resumes; one made while paused stays paused.
+            if (!playAfterRestore) {
                 setIsPlaying(false);
                 try {
                     video.pause();
@@ -1155,25 +1144,39 @@ export default function VideoPlayer({ src, movie, episode, authToken, durationSe
             );
         };
 
-        const restoreProgress = () => {
-            // Direct files carry whole-file timelines (origin is always 0),
-            // so the absolute target applies as-is. It already folds the
-            // history seed in when the parent sent none.
-            const at = targetAbsolute !== null && targetAbsolute > 0 ? targetAbsolute : 0;
-            if (at <= 0) return;
-            const duration = durationSeconds || (Number.isFinite(video.duration) ? video.duration : 0);
-            video.currentTime = duration > 0 ? Math.min(at, Math.max(duration - 5, 0)) : at;
+        const finishPositionRestore = () => {
+            if (cancelled) return;
+            restorePendingRef.current = false;
+            // A paused seek may emit its last timeupdate before this gate
+            // opens. Publish the confirmed position instead of the old clock.
+            setCurrentTime(video.currentTime);
+            onPlaybackProgress?.(sessionStartAt + video.currentTime);
+            clearSeekLock();
+            userPausedRef.current = !playAfterRestore;
+            startPlayback();
+            setIsLoading(false);
+        };
+        const awaitPositionRestore = (target: number, covered?: () => boolean) => {
+            cancelPositionRestore?.();
+            cancelPositionRestore = restoreBeforePlayback(video, target, {
+                covered,
+                ready: finishPositionRestore,
+                failed: () => {
+                    if (cancelled) return;
+                    const reason = 'Chưa tải được điểm cần xem; đang giữ nguyên vị trí tua.';
+                    if (onPlaybackFailure) onPlaybackFailure(reason);
+                    else setError(reason);
+                },
+            });
         };
 
         if (!isHlsSrc) {
             video.src = src;
             const onLoaded = () => {
-                restoreProgress();
-                restorePendingRef.current = false;
-                startPlayback();
-                setIsLoading(false);
+                awaitPositionRestore(restoreTargetLocal);
             };
             const onSrcError = () => {
+                cancelPositionRestore?.();
                 setIsLoading(false);
                 // Same unplayable-file path as HLS/native below: a direct
                 // MP4 the decoder rejects (code 4) must fail over, not retry.
@@ -1196,6 +1199,8 @@ export default function VideoPlayer({ src, movie, episode, authToken, durationSe
             video.addEventListener('error', onSrcError);
             return () => {
                 cancelled = true;
+                pausedBeforeRebuildRef.current = restorePendingRef.current ? !playAfterRestore : video.paused;
+                cancelPositionRestore?.();
                 video.removeEventListener('loadedmetadata', onLoaded);
                 video.removeEventListener('error', onSrcError);
             };
@@ -1204,6 +1209,7 @@ export default function VideoPlayer({ src, movie, episode, authToken, durationSe
         if (Hls.isSupported()) {
             const hls = new Hls({
                 enableWorker: true,
+                startPosition: restoreTargetLocal,
                 lowLatencyMode: false,
                 // Keep a healthy cushion for a remote remux whose download
                 // speed can fluctuate, while retaining only one minute behind.
@@ -1250,9 +1256,7 @@ export default function VideoPlayer({ src, movie, episode, authToken, durationSe
                 // replay the bucket's first ten minutes on every recovery.
                 const resumeAt: number | null = restoreTargetLocal > 0 ? restoreTargetLocal : null;
                 if (resumeAt === null) {
-                    restorePendingRef.current = false;
-                    startPlayback();
-                    setIsLoading(false);
+                    awaitPositionRestore(0);
                     return;
                 }
 
@@ -1276,23 +1280,8 @@ export default function VideoPlayer({ src, movie, episode, authToken, durationSe
                 const settleResumeAt = (target: number) => {
                     pendingResume = null;
                     clearResumeTimer();
-                    restorePendingRef.current = false;
-                    const applyResume = () => {
-                        try {
-                            video.currentTime = target;
-                        } catch {
-                            // Metadata still not ready; the loadedmetadata
-                            // retry below applies it as soon as it is.
-                        }
-                    };
-                    // Belt and suspenders: apply now when metadata is already
-                    // here, and always leave the one-shot retry for the case
-                    // it is not (re-applying the same value is a no-op).
-                    resumeListenerRef.current = applyResume;
-                    video.addEventListener('loadedmetadata', applyResume, { once: true });
-                    applyResume();
-                    startPlayback();
-                    setIsLoading(false);
+                    hls.startLoad(target);
+                    awaitPositionRestore(target);
                 };
                 hls.on(Hls.Events.LEVEL_UPDATED, (_event, data) => {
                     if (pendingResume === null) return;
@@ -1303,14 +1292,12 @@ export default function VideoPlayer({ src, movie, episode, authToken, durationSe
                         head,
                         finished: data.details?.live === false,
                         canSeekResolve: typeof onSeekToPosition === 'function',
-                        alreadyResolved: resumeFiredKeyRef.current === `${movie.slug}|${episode.slug}|${Math.floor(sessionStartAt + pendingResume)}`,
+                        alreadyResolved: resumeFiredKeyRef.current === `${movie.slug}|${episode.slug}|${Math.floor(targetAbsolute ?? (sessionStartAt + pendingResume))}`,
                     });
                     if (plan.kind === 'none') {
                         pendingResume = null;
                         clearResumeTimer();
-                        restorePendingRef.current = false;
-                        startPlayback();
-                        setIsLoading(false);
+                        awaitPositionRestore(0);
                     } else if (plan.kind === 'wait') {
                         return;
                     } else if (plan.kind === 'unavailable') {
@@ -1484,116 +1471,41 @@ export default function VideoPlayer({ src, movie, episode, authToken, durationSe
                 }
             });
         } else if (video.canPlayType('application/vnd.apple.mpegurl')) {
-            // Native HLS cannot set headers, so the token rides the query string
-            // (the backend's media guard accepts ?access_token=).
-            video.src =
-                authToken && src.includes('/api/playback/hls/')
-                    ? `${src}${src.includes('?') ? '&' : '?'}access_token=${encodeURIComponent(authToken)}`
-                    : src;
-            // Same restore policy as the hls.js branch, expressed with the
-            // element's own ranges: seeking past the written head snaps back
-            // to 0 on Safari, so hold the spinner until seekable/buffered
-            // covers the local target. Handlers are NAMED and removed on
-            // teardown — anonymous ones accumulated a copy per rebuild.
-            const nativeHead = (): number => {
+            const nativeCovered = () => {
+                if (restoreTargetLocal <= 0) return true;
+                if (video.readyState < 1) return false;
                 try {
-                    const s = video.seekable;
-                    if (s.length > 0) return s.end(s.length - 1);
-                    const b = video.buffered;
-                    if (b.length > 0) return b.end(b.length - 1);
-                } catch {
-                    // Ranges can throw mid-teardown on some WebKit builds.
-                }
-                return NaN;
-            };
-            const nativeCovered = (target: number): boolean => {
-                if (!(target > 0)) return true;
-                const head = nativeHead();
-                return Number.isFinite(head) && head >= target + 0.5;
-            };
-            let nativeSettled = false;
-            let nativeTimer: ReturnType<typeof setTimeout> | undefined;
-            const cleanupNative = () => {
-                video.removeEventListener('loadedmetadata', onNativeLoaded);
-                video.removeEventListener('progress', onNativeProgress);
-                video.removeEventListener('canplay', onNativeCanPlay);
-                video.removeEventListener('error', onNativeError);
-                if (nativeTimer !== undefined) {
-                    clearTimeout(nativeTimer);
-                    nativeTimer = undefined;
-                }
-            };
-            const settleNative = (clampToCoverage: boolean) => {
-                if (nativeSettled) return;
-                nativeSettled = true;
-                cleanupNative();
-                restorePendingRef.current = false;
-                if (restoreTargetLocal > 0) {
-                    let at = restoreTargetLocal;
-                    if (clampToCoverage) {
-                        const head = nativeHead();
-                        at = Number.isFinite(head) && head > 4 ? Math.min(at, Math.max(0, head - 2)) : 0;
+                    for (const ranges of [video.seekable, video.buffered]) {
+                        for (let i = 0; i < ranges.length; i++) {
+                            if (ranges.start(i) <= restoreTargetLocal && ranges.end(i) >= restoreTargetLocal + 0.5) return true;
+                        }
                     }
-                    try {
-                        video.currentTime = at;
-                    } catch {
-                        // Element not seekable yet; the watchdog/recovery path
-                        // owns what happens next, not a spinner forever.
-                    }
-                }
-                startPlayback();
-                setIsLoading(false);
-            };
-            const onNativeLoaded = () => {
-                // Metadata is in but bytes may not be: settle at once only
-                // when the target is already covered.
-                if (nativeCovered(restoreTargetLocal)) settleNative(false);
-            };
-            const onNativeProgress = () => {
-                if (nativeCovered(restoreTargetLocal)) settleNative(false);
-            };
-            const onNativeCanPlay = () => {
-                if (nativeCovered(restoreTargetLocal)) settleNative(false);
+                } catch { /* Ranges may change during a media load. */ }
+                return false;
             };
             const onNativeError = () => {
-                cleanupNative();
-                restorePendingRef.current = false;
-                setIsLoading(false);
-                // MEDIA_ERR_SRC_NOT_SUPPORTED: the bytes are not playable
-                // here at all (e.g. Main 10 on an 8-bit decoder) — same
-                // failover path as the hls.js codec fatals above.
-                try {
-                    const mediaError = (video as HTMLVideoElement).error;
-                    if (mediaError && mediaError.code === 4 /* MEDIA_ERR_SRC_NOT_SUPPORTED */) {
-                        const unplayable = onUnplayableSourceRef.current;
-                        if (unplayable) unplayable();
-                        else if (onPlaybackFailure) onPlaybackFailure('Trình duyệt không giải mã được bản phát này.');
-                        else setError('Trình duyệt không giải mã được bản phát này. Bấm Thử lại để nối lại.');
-                        return;
-                    }
-                } catch {
-                    // Reading .error can throw mid-teardown on some builds.
+                cancelPositionRestore?.();
+                if (cancelled) return;
+                if (video.error?.code === 4) {
+                    const unplayable = onUnplayableSourceRef.current;
+                    if (unplayable) unplayable();
+                    else if (onPlaybackFailure) onPlaybackFailure('Trình duyệt không giải mã được bản phát này.');
+                    else setError('Trình duyệt không giải mã được bản phát này. Bấm Thử lại để nối lại.');
+                    return;
                 }
                 const reason = 'Liên kết phát trực tiếp bị gián đoạn.';
                 if (onPlaybackFailure) onPlaybackFailure(reason);
                 else setError(`${reason} Bấm Thử lại để nối lại.`);
             };
-            video.addEventListener('loadedmetadata', onNativeLoaded);
-            video.addEventListener('progress', onNativeProgress);
-            video.addEventListener('canplay', onNativeCanPlay);
             video.addEventListener('error', onNativeError);
-            nativeCleanupRef.current = cleanupNative;
-            // Coverage never arrives: recover at the intended position,
-            // never clamp backwards to the buffered prefix.
-            nativeTimer = setTimeout(() => {
-                if (nativeCovered(restoreTargetLocal)) { settleNative(false); return; }
-                nativeSettled = true;
-                cleanupNative();
-                setIsLoading(false);
-                const reason = 'Chưa tải được điểm cần xem; đang giữ nguyên vị trí tua.';
-                if (onPlaybackFailure) onPlaybackFailure(reason);
-                else setError(reason);
-            }, 30000);
+            nativeCleanupRef.current = () => video.removeEventListener('error', onNativeError);
+            // Stop the old source, reset its ranges, then wait for the new
+            // seek to finish. Never play its keyframe origin while restoring.
+            video.pause();
+            video.src = authToken && src.includes('/api/playback/hls/')
+                ? `${src}${src.includes('?') ? '&' : '?'}access_token=${encodeURIComponent(authToken)}` : src;
+            video.load();
+            awaitPositionRestore(restoreTargetLocal, nativeCovered);
         } else {
             setError("Trình duyệt không hỗ trợ HLS.");
         }
@@ -1602,14 +1514,12 @@ export default function VideoPlayer({ src, movie, episode, authToken, durationSe
             cancelled = true;
             // Remember intent for the next pipeline: a paused teardown must
             // rebuild paused, a playing one may resume playing.
-            pausedBeforeRebuildRef.current = seekResumeIntentRef.current ? false : video.paused;
+            pausedBeforeRebuildRef.current = restorePendingRef.current ? !playAfterRestore
+                : seekResumeIntentRef.current ? false : video.paused;
+            cancelPositionRestore?.();
             if (resumeTimer !== undefined) {
                 clearTimeout(resumeTimer);
                 resumeTimer = undefined;
-            }
-            if (resumeListenerRef.current) {
-                video.removeEventListener('loadedmetadata', resumeListenerRef.current);
-                resumeListenerRef.current = null;
             }
             if (nativeCleanupRef.current) {
                 nativeCleanupRef.current();
@@ -2146,7 +2056,11 @@ export default function VideoPlayer({ src, movie, episode, authToken, durationSe
     useEffect(() => {
         if (seekTarget === null || typeof onSeekToPosition !== 'function') return;
         const at = seekTarget;
+        const intent = seekIntentSerialRef.current;
+        if (firedSeekIntentRef.current === intent) return;
         const timer = setTimeout(() => {
+            firedSeekIntentRef.current = intent;
+            resumeFiredKeyRef.current = `${movie.slug}|${episode.slug}|${Math.floor(at)}`;
             const epoch = ++seekFireEpochRef.current;
             seekFiredEpochRef.current = epoch;
             showSyncToast(`Đang tải phim từ ${formatTime(at)}…`);
@@ -2159,7 +2073,7 @@ export default function VideoPlayer({ src, movie, episode, authToken, durationSe
                     // Resolve failed and no newer seek superseded it: drop the
                     // indicator and say why over the still-playing picture
                     // instead of failing blind (the old segment keeps running).
-                    if (seekFiredEpochRef.current === epoch) {
+                    if (seekFiredEpochRef.current === epoch && seekIntentSerialRef.current === intent) {
                         clearSeekLock();
                         const reason = err instanceof Error && err.message
                             ? err.message.slice(0, 140)
@@ -2172,7 +2086,7 @@ export default function VideoPlayer({ src, movie, episode, authToken, durationSe
                 });
         }, 650);
         return () => clearTimeout(timer);
-    }, [seekTarget, onSeekToPosition]);
+    }, [seekTarget, onSeekToPosition, movie.slug, episode.slug]);
 
     const handleVolumeChange = (e: React.ChangeEvent<HTMLInputElement>) => {
         const vol = Number(e.target.value);

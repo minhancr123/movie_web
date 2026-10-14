@@ -19,7 +19,8 @@ export default function SeekHarness() {
   const [src, setSrc] = useState(SLOW);
   const [startAt, setStartAt] = useState(0);
   const [windowMode, setWindowMode] = useState(false);
-  const [targetAt, setTargetAt] = useState<number | null>(null);
+  // Test cases start at zero, independent of earlier runs' saved history.
+  const [targetAt, setTargetAt] = useState<number | null>(0);
   const stagedRef = useRef<number | null>(null);
   useEffect(() => {
     if (new URLSearchParams(window.location.search).get('window') === '1') {
@@ -47,7 +48,9 @@ export default function SeekHarness() {
           reject(new Error('422 mô phỏng: không còn nguồn nào khả dụng'));
           return;
         }
-        setStartAt(Math.floor(displaySeconds));
+        const bucketed = new URLSearchParams(window.location.search).get('bucket') === '1';
+        setStartAt(bucketed ? Math.floor(displaySeconds / 30) * 30 : Math.floor(displaySeconds));
+        setTargetAt(displaySeconds);
         setSrc(FULL);
         resolve(undefined);
       }, fail ? 1000 : 2500);
