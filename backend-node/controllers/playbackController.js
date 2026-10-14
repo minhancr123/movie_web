@@ -2612,7 +2612,14 @@ export const prewarmPlayback = async (req, res) => {
       ...titleExpectation(detail),
       videoTranscode,
     });
-    const target = best ?? playable[0] ?? null;
+    // Match Auto's disk-aware order as well as its direct-play preference.
+    // Warming an oversized MKV while resolve selects a smaller file wastes
+    // the very provider/probe latency this endpoint is intended to hide.
+    const freeBytes = await freeDiskBytes();
+    const reservedBytes = pendingReservationBytes();
+    const target = prioritizeDiskFitSources(playable, (needBytes) => admitRemuxDisk({
+      freeBytes, reservedBytes, needBytes,
+    }).admitted)[0] ?? best ?? null;
     if (!target) return fail(res, 422, 'Không có nguồn nào phát được trên thiết bị này');
 
     let prepared;

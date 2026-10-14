@@ -1,6 +1,6 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { rankCandidates, normalizeCapabilities, isPreferredAutoSource, hasKnownHeight } from '../services/playback/sourceRanker.js';
+import { rankCandidates, normalizeCapabilities, isPreferredAutoSource, hasKnownHeight, prioritizeDirectCandidates } from '../services/playback/sourceRanker.js';
 
 const caps = { hevc: true, hdr: true, maxHeight: 2160, maxBitrateMbps: 0 };
 const make = (height, i = 0) => ({
@@ -11,6 +11,33 @@ const make = (height, i = 0) => ({
 });
 const candidates = [...Array.from({ length: 20 }, (_, i) => make(2160, i)), make(1080), make(720)];
 const options = { runtimeMinutes: 53, expectedTitles: ['Lanterns'] };
+
+test('cached browser-friendly MP4 is tried first at the same quality, while all manual sources remain available', () => {
+  const mkv = { ...make(1080), filename: 'Lanterns.1080p.BluRay.H264.DTS.5.1.mkv', sizeBytes: 4e9 };
+  const mp4 = { ...make(1080, 1), filename: 'Lanterns.1080p.WEB-DL.H264.AAC.2.0.mp4', sizeBytes: 2e9 };
+  const ranked = rankCandidates([mkv, mp4], caps, options);
+  assert.equal(ranked.best.infoHash, mp4.infoHash);
+  assert.equal(ranked.playable.length, 2);
+  assert.equal(ranked.playable.find(s => s.infoHash === mkv.infoHash).playable, true);
+});
+test('direct-play hint preserves quality/readiness/HDR slots and cannot promote incompatible audio or codec', () => {
+  const mkv = { infoHash: 'mkv', playable: true, resolution: 1080, cached: true, hdr: false, container: 'mkv', codec: 'h264' };
+  const direct = { ...mkv, infoHash: 'direct', container: 'mp4', audio: { browserFriendly: true } };
+  const higher = { ...mkv, infoHash: 'higher', resolution: 2160 };
+  const lower = { ...direct, infoHash: 'lower', resolution: 720 };
+  const pending = { ...direct, infoHash: 'pending', cached: false };
+  const hdr = { ...mkv, infoHash: 'hdr', hdr: true };
+  const ordered = prioritizeDirectCandidates([higher, mkv, lower, pending, hdr, direct]);
+  assert.deepEqual(ordered.map(s => s.infoHash), ['higher', 'direct', 'lower', 'pending', 'hdr', 'mkv']);
+  for (const incompatible of [
+    { ...direct, audio: { browserFriendly: false } },
+    { ...direct, audio: undefined },
+    { ...direct, codec: 'hevc' },
+    { ...direct, codec: null },
+  ]) {
+    assert.deepEqual(prioritizeDirectCandidates([mkv, incompatible]), [mkv, incompatible]);
+  }
+});
 
 test('phone Auto chooses 1080p without removing manually selectable 4K', () => {
   const result = rankCandidates(candidates, { ...caps, preferredMaxHeight: 1080 }, options);

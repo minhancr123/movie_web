@@ -555,6 +555,33 @@ export const scoreCandidate = (candidate, caps, { runtimeMinutes = null, videoTr
  * Unplayable entries are kept but flagged, so the UI can explain *why* a 4K
  * release is not being offered instead of silently hiding it.
  */
+// Reorder only equal quality/readiness slots. This avoids a direct-play hint
+// trading a cached 1080p release for 720p, HDR for SDR, or ready for downloading.
+// Labels are hints, not permission to bypass resolve's full codec/audio probe.
+export const prioritizeDirectCandidates = (ranked) => {
+  const groups = new Map();
+  const likelyDirect = (source) => source.cached && source.container === 'mp4'
+    && source.codec === 'h264' && source.audio?.browserFriendly;
+  const keyFor = (source) => JSON.stringify([
+    source.playable, source.resolution, Boolean(source.cached), source.hdr,
+  ]);
+  for (const source of ranked) {
+    const key = keyFor(source);
+    if (!groups.has(key)) groups.set(key, []);
+    groups.get(key).push(source);
+  }
+  for (const group of groups.values()) {
+    group.sort((a, b) => Number(Boolean(likelyDirect(b))) - Number(Boolean(likelyDirect(a))));
+  }
+  const positions = new Map();
+  return ranked.map((source) => {
+    const key = keyFor(source);
+    const index = positions.get(key) || 0;
+    positions.set(key, index + 1);
+    return groups.get(key)[index];
+  });
+};
+
 export const rankCandidates = (
   candidates,
   rawCaps,
@@ -584,11 +611,14 @@ export const rankCandidates = (
       return b.score - a.score;
     });
 
+  // Resolve, prewarm and the picker share the same order, so prewarming never
+  // spends a TorBox/probe round trip on a different release than Auto opens.
+  const ordered = prioritizeDirectCandidates(ranked);
   return {
     caps,
-    best: ranked.find((candidate) => candidate.playable) || null,
-    playable: ranked.filter((candidate) => candidate.playable),
-    rejected: ranked.filter((candidate) => !candidate.playable),
+    best: ordered.find((candidate) => candidate.playable) || null,
+    playable: ordered.filter((candidate) => candidate.playable),
+    rejected: ordered.filter((candidate) => !candidate.playable),
   };
 };
 
