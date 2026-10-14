@@ -67,6 +67,25 @@ test('invalid quality preferences do not change playback capability', () => {
 });
 
 const picker = await import('../services/playback/sourcePicker.js').catch(() => null);
+test('Auto reaches a fitting source ahead of oversized MKVs without dropping fallback releases', () => {
+  const oversized = Array.from({ length: 6 }, (_, i) => ({ infoHash: `large-${i}`, container: 'mkv', sizeBytes: 12e9 }));
+  const fitting = { infoHash: 'small', container: 'mkv', sizeBytes: 3e9 };
+  const original = [...oversized, fitting];
+  const ordered = picker.prioritizeDiskFitSources(original, size => size <= 6e9);
+  assert.equal(ordered.slice(0, 5)[0], fitting);
+  assert.deepEqual(ordered.slice(1), oversized);
+  assert.deepEqual(original, [...oversized, fitting], 'does not mutate ranked/reuse list');
+});
+test('disk hints preserve direct MP4 and unknown sources and do not change ordering when disk fits', () => {
+  const sources = [
+    { container: 'mp4', sizeBytes: 12e9 },
+    { container: 'mkv', sizeBytes: null },
+    { container: null, sizeBytes: 12e9 },
+    { container: 'mkv', sizeBytes: 12e9 },
+  ];
+  assert.deepEqual(picker.prioritizeDiskFitSources(sources, () => true), sources);
+  assert.deepEqual(picker.prioritizeDiskFitSources(sources, () => false), sources);
+});
 test('Auto cannot reuse 4K ahead of a ready preferred source; manual 4K still reuses', () => {
   assert.equal(typeof picker?.selectReuseCandidates, 'function');
   const attempts = [{ ...make(1080), resolution: 1080 }, { ...make(2160), resolution: 2160 }];

@@ -33,7 +33,7 @@ import { toVttDocument, UPLOAD_MAX_PER_TITLE } from '../services/playback/userSu
 import * as torbox from '../services/debrid/torbox.js';
 import { DebridError } from '../services/debrid/torbox.js';
 import { rankCandidates, normalizeCapabilities } from '../services/playback/sourceRanker.js';
-import { selectDiverseSources, selectReuseCandidates } from '../services/playback/sourcePicker.js';
+import { selectDiverseSources, selectReuseCandidates, prioritizeDiskFitSources } from '../services/playback/sourcePicker.js';
 import {
   ffprobe,
   decidePlaybackMode,
@@ -1600,6 +1600,18 @@ export const resolvePlayback = async (req, res) => {
           },
         });
       }
+    }
+
+    // Existing renditions were considered above, before any disk-based hint.
+    // Auto can avoid expensive TorBox/probe round trips for oversized MKVs.
+    // This only changes ordering: actual probe-based admission remains below,
+    // and a manual choice still gets exactly the requested release.
+    if (!sourceToken) {
+      const freeBytes = await freeDiskBytes();
+      const reservedBytes = pendingReservationBytes();
+      attempts = prioritizeDiskFitSources(playable, (needBytes) => admitRemuxDisk({
+        freeBytes, reservedBytes, needBytes,
+      }).admitted).slice(0, MAX_ATTEMPTS);
     }
 
     // 6. Try the top candidates until one yields a playable file.

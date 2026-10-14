@@ -1,5 +1,22 @@
 import { hasKnownHeight, isPreferredAutoSource } from './sourceRanker.js';
 
+/** Metadata is only a hint: defer oversized MKVs, never reject them here.
+ * MP4 may play directly without disk, and unknown/pack sizes need probing.
+ * Keep the ranker's order within each group. Run AFTER ready-session reuse,
+ * since a rendition already on disk needs no new full-file allocation.
+ */
+export const prioritizeDiskFitSources = (sources, canFit) => {
+  const preferred = [];
+  const deferred = [];
+  for (const source of sources) {
+    const size = Number(source.sizeBytes);
+    const oversized = source.container === 'mkv'
+      && Number.isFinite(size) && size > 0 && !canFit(size);
+    (oversized ? deferred : preferred).push(source);
+  }
+  return [...preferred, ...deferred];
+};
+
 /**
  * Picker buckets, in the order they are shown. The backend tags every source
  * with one of these (`qualityGroup`) so the client never has to re-derive the
