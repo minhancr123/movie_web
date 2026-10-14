@@ -138,7 +138,7 @@ const HeroSection = ({ movies }: HeroSectionProps) => {
               </div>
 
               <h2
-                className={`movie-title text-3xl md:text-4xl lg:text-[2.75rem] text-white mb-2 md:mb-4 drop-shadow-xl line-clamp-3 pb-1 transition-all duration-700 delay-200 ${isActive ? 'translate-y-0 opacity-100 blur-0' : 'translate-y-10 opacity-0 blur-sm'
+                className={`movie-title text-3xl md:text-4xl lg:text-[2.75rem] text-white mb-2 md:mb-4 drop-shadow-xl py-1 transition-all duration-700 delay-200 ${isActive ? 'translate-y-0 opacity-100 blur-0' : 'translate-y-10 opacity-0 blur-sm'
                   }`}
                 style={{
                   transform: isActive ? `translate(${mousePos.x * -5}px, ${mousePos.y * -5}px)` : undefined

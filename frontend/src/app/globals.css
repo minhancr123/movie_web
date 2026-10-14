@@ -32,7 +32,7 @@ body {
 .movie-title {
   font-family: var(--font-bevn), var(--font-jakarta), system-ui, sans-serif;
   font-weight: 600;
-  line-height: 1.2;
+  line-height: 1.35;
   letter-spacing: -0.025em;
   text-wrap: balance;
 }
