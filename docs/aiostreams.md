@@ -43,6 +43,59 @@ native addon discovery. The AIOStreams service uses a separate Compose project,
 so application deploys do not recreate it. Public dashboard/addon exposure is
 not configured; the internal API is the integration surface.
 
+## QuackStart-derived profile
+
+`deploy/aiostreams_quack.py` builds a bounded profile from the existing private
+`pilot-multi-config.json`. The reviewed rules in
+`deploy/aiostreams/quackstart-rules.json` were retrieved from
+[QuackStart](https://duck-tools.pages.dev/quackstart/) on 2026-10-14, including
+its quality ranking expressions and strict title/year/episode matching.
+The source ranking references the Releases-Regex rules named in that snapshot.
+
+The profile keeps Torrentio and the bounded Comet manifest, adding Zilean,
+Knaben and anime-only SeaDex. It caps results at 150 overall, 40 per resolution,
+and scraper waits at 3s.
+Optional paid scrapers and Usenet are not enabled. Native browser compatibility
+and disk admission remain authoritative; release ranking is retained only
+inside equal resolution/HDR/readiness groups, after direct-play priority.
+
+Saved `quack-config.json` contains no TorBox key. The backend injects the current
+viewer's decrypted key only into the request to the fixed internal AIO peer.
+Redis metadata caches and failure cooldowns include the account key's hash in
+their scope. Direct links and authorization headers are discarded from replies.
+The private AIO service needs `--max-http-header-size=131072` for the larger
+configuration header. Its CPU/RAM limits remain unchanged.
+
+Build the operator profile with:
+
+```sh
+sudo python3 deploy/aiostreams_quack.py \
+  /var/lib/cineon-aiostreams/pilot-multi-config.json \
+  /var/lib/cineon-aiostreams/quack-config.json
+```
+
+Only after deploying the account-scoping backend should the host's private
+`AIOSTREAMS_USER_DATA` be changed to the base64-encoded new profile and the
+backend/worker/scheduler recreated. Preserve the previous profile value for
+rollback. Production backups include `quack-config.json`; actual account
+connections stay in the encrypted Mongo provider-connection records.
+
+The final bounded profile was tested against one connected TorBox account on
+2026-10-14. These queries followed earlier pilot calls, so upstream caches were
+warm; timings are discovery latency, not playback startup or a cold-cache SLA.
+
+| Sample | Unique cached torrents returned | Search seconds | Source errors |
+| --- | ---: | ---: | ---: |
+| Insidious | 7 | 1.80 | 0 |
+| The Matrix | 99 | 1.96 | 0 |
+| Breaking Bad S1E1 | 91 | 1.71 | 0 |
+| Dragon Ball Super S1E1 | 31 | 2.03 | 0 |
+
+The Matrix retained 40 4K and 40 1080p rows plus lower-resolution alternatives.
+Zilean/Knaben contributed to the movie/series results and SeaDex contributed to
+the anime sample. The earlier 5s-per-scraper trial took 6.49–8.26s with transient
+source errors; this is why the final profile bounds scraper waits at 3s.
+
 ## Operations
 
 When AIOStreams is enabled, the existing monitor checks its container and

@@ -5,6 +5,20 @@ const MAX_RESPONSE_BYTES = 4 * 1024 * 1024;
 export const aiostreamsCacheScope = (config = process.env.AIOSTREAMS_USER_DATA || '') =>
   crypto.createHash('sha256').update(config).digest('hex').slice(0, 20);
 
+/** Only the fixed internal AIO peer receives this request-scoped credential.
+ * The operator's saved profile contains no account key. Never persist output.
+ */
+export const aiostreamsUserDataForKey = (debridKey, base = process.env.AIOSTREAMS_USER_DATA || '') => {
+  const config = JSON.parse(Buffer.from(base, 'base64').toString('utf8'));
+  if (!config.cinevnAccountScoped) return base;
+  if (typeof debridKey !== 'string' || !debridKey) throw new Error('AIOStreams account connection is missing');
+  delete config.cinevnAccountScoped;
+  config.services = [{ id: 'torbox', enabled: true, credentials: { apiKey: debridKey } }];
+  if (process.env.TMDB_API_KEY) config.tmdbApiKey = process.env.TMDB_API_KEY;
+  if (process.env.TMDB_READ_TOKEN) config.tmdbAccessToken = process.env.TMDB_READ_TOKEN;
+  return Buffer.from(JSON.stringify(config)).toString('base64');
+};
+
 /** A fixed, operator-configured Docker peer; never a URL supplied by a viewer. */
 export const fetchAioStreams = async ({ type, id }, {
   env = process.env, fetchFn = globalThis.fetch, timeoutMs = 8000,
@@ -21,6 +35,7 @@ export const fetchAioStreams = async ({ type, id }, {
   if (!env.AIOSTREAMS_USER_DATA) throw new Error('AIOStreams configuration is missing');
   const url = new URL('/api/v1/search', base);
   url.search = new URLSearchParams({ type, id, format: 'true' }).toString();
+  url.searchParams.append('requiredFields', 'infoHash');
   const controller = new AbortController();
   const timer = setTimeout(() => controller.abort(), timeoutMs);
   try {
@@ -43,9 +58,10 @@ export const fetchAioStreams = async ({ type, id }, {
     if (!payload.success || !Array.isArray(payload.data?.results)) throw new Error('AIOStreams search failed');
     // Return Stremio-shaped metadata to the existing validated infohash path.
     // Account-specific debrid links are deliberately not shared between viewers.
-    return payload.data.results.slice(0, 150).map((row) => ({
+    return payload.data.results.slice(0, 150).map((row, index) => ({
       infoHash: row.infoHash,
       fileIdx: row.fileIdx,
+      discoveryRank: index,
       name: row.name || 'AIOStreams',
       title: row.filename || row.description || '',
       description: row.description || '',

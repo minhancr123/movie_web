@@ -1,0 +1,458 @@
+{
+  "titleMatching": {
+    "mode": "exact",
+    "similarityThreshold": 0.95,
+    "enabled": true,
+    "requestTypes": [],
+    "addons": []
+  },
+  "yearMatching": {
+    "enabled": true,
+    "tolerance": 0,
+    "strict": true,
+    "strictTypes": [
+      "movie"
+    ],
+    "requestTypes": [],
+    "addons": []
+  },
+  "seasonEpisodeMatching": {
+    "enabled": true,
+    "strict": true,
+    "requestTypes": [],
+    "addons": []
+  },
+  "deduplicator": {
+    "enabled": true,
+    "excludeAddons": [],
+    "multiGroupBehaviour": "aggressive",
+    "keys": [
+      "filename",
+      "infoHash"
+    ],
+    "cached": "single_result",
+    "uncached": "single_result",
+    "p2p": "single_result",
+    "http": "disabled",
+    "live": "disabled",
+    "youtube": "disabled",
+    "external": "disabled",
+    "smartDetectAttributes": [
+      "size",
+      "resolution",
+      "quality",
+      "visualTags",
+      "audioTags",
+      "audioChannels",
+      "languages",
+      "encode",
+      "edition",
+      "network",
+      "remastered"
+    ],
+    "smartDetectRounding": 10,
+    "libraryBehaviour": "ignore"
+  },
+  "sortCriteria": {
+    "global": [
+      {
+        "key": "cached",
+        "direction": "desc"
+      },
+      {
+        "key": "seadex",
+        "direction": "desc"
+      },
+      {
+        "key": "streamExpressionScore",
+        "direction": "desc"
+      },
+      {
+        "key": "resolution",
+        "direction": "desc"
+      },
+      {
+        "key": "quality",
+        "direction": "desc"
+      },
+      {
+        "key": "visualTag",
+        "direction": "desc"
+      },
+      {
+        "key": "audioTag",
+        "direction": "desc"
+      },
+      {
+        "key": "bitrate",
+        "direction": "desc"
+      },
+      {
+        "key": "language",
+        "direction": "desc"
+      }
+    ],
+    "movies": [],
+    "series": [],
+    "anime": [],
+    "cached": [],
+    "uncached": [],
+    "cachedMovies": [],
+    "uncachedMovies": [],
+    "cachedSeries": [],
+    "uncachedSeries": [],
+    "cachedAnime": [],
+    "uncachedAnime": []
+  },
+  "digitalReleaseFilter": {
+    "enabled": true,
+    "tolerance": 0,
+    "requestTypes": [],
+    "addons": []
+  },
+  "rankedStreamExpressions": [
+    {
+      "expression": "<SYNCED: https://raw.githubusercontent.com/Vidhin05/Releases-Regex/main/English/expressions.json>",
+      "score": 0,
+      "enabled": true
+    },
+    {
+      "expression": "rseMatched(streams,'Remux T1','Remux T2','Remux T3','UHD Bluray T1','HD Bluray T1','UHD Bluray T2','HD Bluray T2','UHD Bluray T3','HD Bluray T3','Web T1','Web T2','Web T3','Web T4','Web T5','Web T6','Web Scene','SeaDex Best','SeaDex Alt','BD T1','BD T2','BD T3','BD T4','BD T5','BD T6','BD T7','BD T8','Asian T1','Asian T2','Asian T3')",
+      "score": 100000,
+      "enabled": true
+    },
+    {
+      "expression": "/*#4k REMUX*/ /*Regex Bitrate Check*/ count(resolution(quality(rseMatched(streams,'Remux T1','Remux T2','Remux T3','UHD Bluray T1','HD Bluray T1','UHD Bluray T2','HD Bluray T2','UHD Bluray T3','HD Bluray T3','Web T1','Web T2','Web T3','Web T4','Web T5','Web T6','Web Scene','SeaDex Best','SeaDex Alt','BD T1','BD T2','BD T3','BD T4','BD T5','BD T6','BD T7','BD T8','Asian T1','Asian T2','Asian T3'),'Bluray REMUX'),'2160p'))>0? negate(rseMatched(streams,'Remux T1','Remux T2','Remux T3','UHD Bluray T1','HD Bluray T1','UHD Bluray T2','HD Bluray T2','UHD Bluray T3','HD Bluray T3','Web T1','Web T2','Web T3','Web T4','Web T5','Web T6','Web Scene','SeaDex Best','SeaDex Alt','BD T1','BD T2','BD T3','BD T4','BD T5','BD T6','BD T7','BD T8','Asian T1','Asian T2','Asian T3'),bitrate(resolution(quality(streams,'Bluray REMUX'),'2160p'), median(values(resolution(quality(rseMatched(streams,'Remux T1','Remux T2','Remux T3','UHD Bluray T1','HD Bluray T1','UHD Bluray T2','HD Bluray T2','UHD Bluray T3','HD Bluray T3','Web T1','Web T2','Web T3','Web T4','Web T5','Web T6','Web Scene','SeaDex Best','SeaDex Alt','BD T1','BD T2','BD T3','BD T4','BD T5','BD T6','BD T7','BD T8','Asian T1','Asian T2','Asian T3'),'Bluray REMUX'),'2160p'),'bitrate'))*0.75, median(values(resolution(quality(rseMatched(streams,'Remux T1','Remux T2','Remux T3','UHD Bluray T1','HD Bluray T1','UHD Bluray T2','HD Bluray T2','UHD Bluray T3','HD Bluray T3','Web T1','Web T2','Web T3','Web T4','Web T5','Web T6','Web Scene','SeaDex Best','SeaDex Alt','BD T1','BD T2','BD T3','BD T4','BD T5','BD T6','BD T7','BD T8','Asian T1','Asian T2','Asian T3'),'Bluray REMUX'),'2160p'),'bitrate'))*1.5)):[]",
+      "score": 100300,
+      "enabled": true
+    },
+    {
+      "expression": "/*#4k REMUX*/ /*4k Bluray Regex Bitrate Check*/ count(resolution(quality(rseMatched(streams,'Remux T1','Remux T2','Remux T3','UHD Bluray T1','HD Bluray T1','UHD Bluray T2','HD Bluray T2','UHD Bluray T3','HD Bluray T3','Web T1','Web T2','Web T3','Web T4','Web T5','Web T6','Web Scene','SeaDex Best','SeaDex Alt','BD T1','BD T2','BD T3','BD T4','BD T5','BD T6','BD T7','BD T8','Asian T1','Asian T2','Asian T3'),'Bluray REMUX'),'2160p'))==0 and count(resolution(quality(rseMatched(streams,'Remux T1','Remux T2','Remux T3','UHD Bluray T1','HD Bluray T1','UHD Bluray T2','HD Bluray T2','UHD Bluray T3','HD Bluray T3','Web T1','Web T2','Web T3','Web T4','Web T5','Web T6','Web Scene','SeaDex Best','SeaDex Alt','BD T1','BD T2','BD T3','BD T4','BD T5','BD T6','BD T7','BD T8','Asian T1','Asian T2','Asian T3'),'Bluray'),'2160p'))>0? negate(rseMatched(streams,'Remux T1','Remux T2','Remux T3','UHD Bluray T1','HD Bluray T1','UHD Bluray T2','HD Bluray T2','UHD Bluray T3','HD Bluray T3','Web T1','Web T2','Web T3','Web T4','Web T5','Web T6','Web Scene','SeaDex Best','SeaDex Alt','BD T1','BD T2','BD T3','BD T4','BD T5','BD T6','BD T7','BD T8','Asian T1','Asian T2','Asian T3'),bitrate(resolution(quality(streams,'Bluray REMUX'),'2160p'),median(values(resolution(quality(rseMatched(streams,'Remux T1','Remux T2','Remux T3','UHD Bluray T1','HD Bluray T1','UHD Bluray T2','HD Bluray T2','UHD Bluray T3','HD Bluray T3','Web T1','Web T2','Web T3','Web T4','Web T5','Web T6','Web Scene','SeaDex Best','SeaDex Alt','BD T1','BD T2','BD T3','BD T4','BD T5','BD T6','BD T7','BD T8','Asian T1','Asian T2','Asian T3'),'Bluray'),'2160p'),'bitrate'))*0.75,median(values(resolution(quality(rseMatched(streams,'Remux T1','Remux T2','Remux T3','UHD Bluray T1','HD Bluray T1','UHD Bluray T2','HD Bluray T2','UHD Bluray T3','HD Bluray T3','Web T1','Web T2','Web T3','Web T4','Web T5','Web T6','Web Scene','SeaDex Best','SeaDex Alt','BD T1','BD T2','BD T3','BD T4','BD T5','BD T6','BD T7','BD T8','Asian T1','Asian T2','Asian T3'),'Bluray'),'2160p'),'bitrate'))*1.5)):[]",
+      "score": 100250,
+      "enabled": true
+    },
+    {
+      "expression": "/*#4k REMUX*/ /*Median Bitrate Check*/ count(resolution(quality(rseMatched(streams,'Remux T1','Remux T2','Remux T3','UHD Bluray T1','HD Bluray T1','UHD Bluray T2','HD Bluray T2','UHD Bluray T3','HD Bluray T3','Web T1','Web T2','Web T3','Web T4','Web T5','Web T6','Web Scene','SeaDex Best','SeaDex Alt','BD T1','BD T2','BD T3','BD T4','BD T5','BD T6','BD T7','BD T8','Asian T1','Asian T2','Asian T3'),'Bluray REMUX','Bluray'),'2160p'))==0 and count(bitrate(resolution(quality(streams,'Bluray REMUX'),'2160p'),median(values(bitrate(resolution(quality(streams,'Bluray REMUX'),'2160p'),'20Mbps'),'bitrate'))*0.70,median(values(bitrate(resolution(quality(streams,'Bluray REMUX'),'2160p'),'20Mbps'),'bitrate'))*1.30))>=3?bitrate(resolution(quality(streams,'Bluray REMUX'),'2160p'),median(values(bitrate(resolution(quality(streams,'Bluray REMUX'),'2160p'),'20Mbps'),'bitrate'))*0.70,median(values(bitrate(resolution(quality(streams,'Bluray REMUX'),'2160p'),'20Mbps'),'bitrate'))*1.5):[]",
+      "score": 100200,
+      "enabled": true
+    },
+    {
+      "expression": "/*#4k Bluray*/ /*Regex Bitrate Check*/ count(resolution(quality(rseMatched(streams,'Remux T1','Remux T2','Remux T3','UHD Bluray T1','HD Bluray T1','UHD Bluray T2','HD Bluray T2','UHD Bluray T3','HD Bluray T3','Web T1','Web T2','Web T3','Web T4','Web T5','Web T6','Web Scene','SeaDex Best','SeaDex Alt','BD T1','BD T2','BD T3','BD T4','BD T5','BD T6','BD T7','BD T8','Asian T1','Asian T2','Asian T3'),'Bluray'),'2160p'))>0? negate(rseMatched(streams,'Remux T1','Remux T2','Remux T3','UHD Bluray T1','HD Bluray T1','UHD Bluray T2','HD Bluray T2','UHD Bluray T3','HD Bluray T3','Web T1','Web T2','Web T3','Web T4','Web T5','Web T6','Web Scene','SeaDex Best','SeaDex Alt','BD T1','BD T2','BD T3','BD T4','BD T5','BD T6','BD T7','BD T8','Asian T1','Asian T2','Asian T3'),bitrate(resolution(quality(streams,'Bluray'),'2160p'), median(values(resolution(quality(rseMatched(streams,'Remux T1','Remux T2','Remux T3','UHD Bluray T1','HD Bluray T1','UHD Bluray T2','HD Bluray T2','UHD Bluray T3','HD Bluray T3','Web T1','Web T2','Web T3','Web T4','Web T5','Web T6','Web Scene','SeaDex Best','SeaDex Alt','BD T1','BD T2','BD T3','BD T4','BD T5','BD T6','BD T7','BD T8','Asian T1','Asian T2','Asian T3'),'Bluray'),'2160p'),'bitrate'))*0.75, median(values(resolution(quality(rseMatched(streams,'Remux T1','Remux T2','Remux T3','UHD Bluray T1','HD Bluray T1','UHD Bluray T2','HD Bluray T2','UHD Bluray T3','HD Bluray T3','Web T1','Web T2','Web T3','Web T4','Web T5','Web T6','Web Scene','SeaDex Best','SeaDex Alt','BD T1','BD T2','BD T3','BD T4','BD T5','BD T6','BD T7','BD T8','Asian T1','Asian T2','Asian T3'),'Bluray'),'2160p'),'bitrate'))*1.5)):[]",
+      "score": 100300,
+      "enabled": true
+    },
+    {
+      "expression": "/*#4k WEB-DL*/ /*Regex Bitrate Check*/ count(resolution(quality(rseMatched(streams,'Remux T1','Remux T2','Remux T3','UHD Bluray T1','HD Bluray T1','UHD Bluray T2','HD Bluray T2','UHD Bluray T3','HD Bluray T3','Web T1','Web T2','Web T3','Web T4','Web T5','Web T6','Web Scene','SeaDex Best','SeaDex Alt','BD T1','BD T2','BD T3','BD T4','BD T5','BD T6','BD T7','BD T8','Asian T1','Asian T2','Asian T3'),'WEB-DL'),'2160p'))>0?negate(rseMatched(streams,'Remux T1','Remux T2','Remux T3','UHD Bluray T1','HD Bluray T1','UHD Bluray T2','HD Bluray T2','UHD Bluray T3','HD Bluray T3','Web T1','Web T2','Web T3','Web T4','Web T5','Web T6','Web Scene','SeaDex Best','SeaDex Alt','BD T1','BD T2','BD T3','BD T4','BD T5','BD T6','BD T7','BD T8','Asian T1','Asian T2','Asian T3'),bitrate(resolution(quality(streams,'WEB-DL'),'2160p'),median(values(resolution(quality(rseMatched(streams,'Remux T1','Remux T2','Remux T3','UHD Bluray T1','HD Bluray T1','UHD Bluray T2','HD Bluray T2','UHD Bluray T3','HD Bluray T3','Web T1','Web T2','Web T3','Web T4','Web T5','Web T6','Web Scene','SeaDex Best','SeaDex Alt','BD T1','BD T2','BD T3','BD T4','BD T5','BD T6','BD T7','BD T8','Asian T1','Asian T2','Asian T3'),'WEB-DL'),'2160p'),'bitrate'))*0.75,median(values(resolution(quality(rseMatched(streams,'Remux T1','Remux T2','Remux T3','UHD Bluray T1','HD Bluray T1','UHD Bluray T2','HD Bluray T2','UHD Bluray T3','HD Bluray T3','Web T1','Web T2','Web T3','Web T4','Web T5','Web T6','Web Scene','SeaDex Best','SeaDex Alt','BD T1','BD T2','BD T3','BD T4','BD T5','BD T6','BD T7','BD T8','Asian T1','Asian T2','Asian T3'),'WEB-DL'),'2160p'),'bitrate'))*1.5)):[] ",
+      "score": 100100,
+      "enabled": true
+    },
+    {
+      "expression": "/*#4k WEB-DL*/ /*4k WEBRip Regex Check*/ count(resolution(quality(rseMatched(streams,'Remux T1','Remux T2','Remux T3','UHD Bluray T1','HD Bluray T1','UHD Bluray T2','HD Bluray T2','UHD Bluray T3','HD Bluray T3','Web T1','Web T2','Web T3','Web T4','Web T5','Web T6','Web Scene','SeaDex Best','SeaDex Alt','BD T1','BD T2','BD T3','BD T4','BD T5','BD T6','BD T7','BD T8','Asian T1','Asian T2','Asian T3'),'WEB-DL'),'2160p'))==0 and count(resolution(quality(rseMatched(streams,'Remux T1','Remux T2','Remux T3','UHD Bluray T1','HD Bluray T1','UHD Bluray T2','HD Bluray T2','UHD Bluray T3','HD Bluray T3','Web T1','Web T2','Web T3','Web T4','Web T5','Web T6','Web Scene','SeaDex Best','SeaDex Alt','BD T1','BD T2','BD T3','BD T4','BD T5','BD T6','BD T7','BD T8','Asian T1','Asian T2','Asian T3'),'WEBRip'),'2160p'))>0?negate(rseMatched(streams,'Remux T1','Remux T2','Remux T3','UHD Bluray T1','HD Bluray T1','UHD Bluray T2','HD Bluray T2','UHD Bluray T3','HD Bluray T3','Web T1','Web T2','Web T3','Web T4','Web T5','Web T6','Web Scene','SeaDex Best','SeaDex Alt','BD T1','BD T2','BD T3','BD T4','BD T5','BD T6','BD T7','BD T8','Asian T1','Asian T2','Asian T3'),bitrate(resolution(quality(streams,'WEB-DL'),'2160p'),median(values(resolution(quality(rseMatched(streams,'Remux T1','Remux T2','Remux T3','UHD Bluray T1','HD Bluray T1','UHD Bluray T2','HD Bluray T2','UHD Bluray T3','HD Bluray T3','Web T1','Web T2','Web T3','Web T4','Web T5','Web T6','Web Scene','SeaDex Best','SeaDex Alt','BD T1','BD T2','BD T3','BD T4','BD T5','BD T6','BD T7','BD T8','Asian T1','Asian T2','Asian T3'),'WEBRip'),'2160p'),'bitrate'))*0.75,median(values(resolution(quality(rseMatched(streams,'Remux T1','Remux T2','Remux T3','UHD Bluray T1','HD Bluray T1','UHD Bluray T2','HD Bluray T2','UHD Bluray T3','HD Bluray T3','Web T1','Web T2','Web T3','Web T4','Web T5','Web T6','Web Scene','SeaDex Best','SeaDex Alt','BD T1','BD T2','BD T3','BD T4','BD T5','BD T6','BD T7','BD T8','Asian T1','Asian T2','Asian T3'),'WEBRip'),'2160p'),'bitrate'))*1.5)):[]",
+      "score": 100050,
+      "enabled": true
+    },
+    {
+      "expression": "/*#4k WEB-DL*/ /*Median Bitrate Check*/ count(resolution(quality(rseMatched(streams,'Remux T1','Remux T2','Remux T3','UHD Bluray T1','HD Bluray T1','UHD Bluray T2','HD Bluray T2','UHD Bluray T3','HD Bluray T3','Web T1','Web T2','Web T3','Web T4','Web T5','Web T6','Web Scene','SeaDex Best','SeaDex Alt','BD T1','BD T2','BD T3','BD T4','BD T5','BD T6','BD T7','BD T8','Asian T1','Asian T2','Asian T3'),'WEB-DL','WEBRip'),'2160p'))==0 and count(bitrate(resolution(quality(streams,'WEB-DL'),'2160p'),median(values(bitrate(resolution(quality(streams,'WEB-DL'),'2160p'),'5Mbps'),'bitrate'))*0.70,median(values(bitrate(resolution(quality(streams,'WEB-DL'),'2160p'),'5Mbps'),'bitrate'))*1.30))>=3?bitrate(resolution(quality(streams,'WEB-DL'),'2160p'),median(values(bitrate(resolution(quality(streams,'WEB-DL'),'2160p'),'5Mbps'),'bitrate'))*0.70,median(values(bitrate(resolution(quality(streams,'WEB-DL'),'2160p'),'5Mbps'),'bitrate'))*1.5):[]",
+      "score": 100000,
+      "enabled": true
+    },
+    {
+      "expression": "/*#1080p REMUX*/ /*Regex Bitrate Check*/ count(resolution(quality(rseMatched(streams,'Remux T1','Remux T2','Remux T3','UHD Bluray T1','HD Bluray T1','UHD Bluray T2','HD Bluray T2','UHD Bluray T3','HD Bluray T3','Web T1','Web T2','Web T3','Web T4','Web T5','Web T6','Web Scene','SeaDex Best','SeaDex Alt','BD T1','BD T2','BD T3','BD T4','BD T5','BD T6','BD T7','BD T8','Asian T1','Asian T2','Asian T3'),'Bluray REMUX'),'1080p'))>0?negate(rseMatched(streams,'Remux T1','Remux T2','Remux T3','UHD Bluray T1','HD Bluray T1','UHD Bluray T2','HD Bluray T2','UHD Bluray T3','HD Bluray T3','Web T1','Web T2','Web T3','Web T4','Web T5','Web T6','Web Scene','SeaDex Best','SeaDex Alt','BD T1','BD T2','BD T3','BD T4','BD T5','BD T6','BD T7','BD T8','Asian T1','Asian T2','Asian T3'),bitrate(resolution(quality(streams,'Bluray REMUX'),'1080p'),median(values(resolution(quality(rseMatched(streams,'Remux T1','Remux T2','Remux T3','UHD Bluray T1','HD Bluray T1','UHD Bluray T2','HD Bluray T2','UHD Bluray T3','HD Bluray T3','Web T1','Web T2','Web T3','Web T4','Web T5','Web T6','Web Scene','SeaDex Best','SeaDex Alt','BD T1','BD T2','BD T3','BD T4','BD T5','BD T6','BD T7','BD T8','Asian T1','Asian T2','Asian T3'),'Bluray REMUX'),'1080p'),'bitrate'))*0.75,median(values(resolution(quality(rseMatched(streams,'Remux T1','Remux T2','Remux T3','UHD Bluray T1','HD Bluray T1','UHD Bluray T2','HD Bluray T2','UHD Bluray T3','HD Bluray T3','Web T1','Web T2','Web T3','Web T4','Web T5','Web T6','Web Scene','SeaDex Best','SeaDex Alt','BD T1','BD T2','BD T3','BD T4','BD T5','BD T6','BD T7','BD T8','Asian T1','Asian T2','Asian T3'),'Bluray REMUX'),'1080p'),'bitrate'))*1.5)):[]",
+      "score": 100300,
+      "enabled": true
+    },
+    {
+      "expression": "/*#1080p REMUX*/ /*1080p Bluray Regex Check*/ count(resolution(quality(rseMatched(streams,'Remux T1','Remux T2','Remux T3','UHD Bluray T1','HD Bluray T1','UHD Bluray T2','HD Bluray T2','UHD Bluray T3','HD Bluray T3','Web T1','Web T2','Web T3','Web T4','Web T5','Web T6','Web Scene','SeaDex Best','SeaDex Alt','BD T1','BD T2','BD T3','BD T4','BD T5','BD T6','BD T7','BD T8','Asian T1','Asian T2','Asian T3'),'Bluray REMUX'),'1080p'))==0 and count(resolution(quality(rseMatched(streams,'Remux T1','Remux T2','Remux T3','UHD Bluray T1','HD Bluray T1','UHD Bluray T2','HD Bluray T2','UHD Bluray T3','HD Bluray T3','Web T1','Web T2','Web T3','Web T4','Web T5','Web T6','Web Scene','SeaDex Best','SeaDex Alt','BD T1','BD T2','BD T3','BD T4','BD T5','BD T6','BD T7','BD T8','Asian T1','Asian T2','Asian T3'),'Bluray'),'1080p'))>0?negate(rseMatched(streams,'Remux T1','Remux T2','Remux T3','UHD Bluray T1','HD Bluray T1','UHD Bluray T2','HD Bluray T2','UHD Bluray T3','HD Bluray T3','Web T1','Web T2','Web T3','Web T4','Web T5','Web T6','Web Scene','SeaDex Best','SeaDex Alt','BD T1','BD T2','BD T3','BD T4','BD T5','BD T6','BD T7','BD T8','Asian T1','Asian T2','Asian T3'),bitrate(resolution(quality(streams,'Bluray REMUX'),'1080p'),median(values(resolution(quality(rseMatched(streams,'Remux T1','Remux T2','Remux T3','UHD Bluray T1','HD Bluray T1','UHD Bluray T2','HD Bluray T2','UHD Bluray T3','HD Bluray T3','Web T1','Web T2','Web T3','Web T4','Web T5','Web T6','Web Scene','SeaDex Best','SeaDex Alt','BD T1','BD T2','BD T3','BD T4','BD T5','BD T6','BD T7','BD T8','Asian T1','Asian T2','Asian T3'),'Bluray'),'1080p'),'bitrate'))*0.75,median(values(resolution(quality(rseMatched(streams,'Remux T1','Remux T2','Remux T3','UHD Bluray T1','HD Bluray T1','UHD Bluray T2','HD Bluray T2','UHD Bluray T3','HD Bluray T3','Web T1','Web T2','Web T3','Web T4','Web T5','Web T6','Web Scene','SeaDex Best','SeaDex Alt','BD T1','BD T2','BD T3','BD T4','BD T5','BD T6','BD T7','BD T8','Asian T1','Asian T2','Asian T3'),'Bluray'),'1080p'),'bitrate'))*1.5)):[]",
+      "score": 100250,
+      "enabled": true
+    },
+    {
+      "expression": "/*#1080p REMUX*/ /*Median Bitrate Check*/ count(resolution(quality(rseMatched(streams,'Remux T1','Remux T2','Remux T3','UHD Bluray T1','HD Bluray T1','UHD Bluray T2','HD Bluray T2','UHD Bluray T3','HD Bluray T3','Web T1','Web T2','Web T3','Web T4','Web T5','Web T6','Web Scene','SeaDex Best','SeaDex Alt','BD T1','BD T2','BD T3','BD T4','BD T5','BD T6','BD T7','BD T8','Asian T1','Asian T2','Asian T3'),'Bluray REMUX','Bluray'),'1080p'))==0 and count(bitrate(resolution(quality(streams,'Bluray REMUX'),'1080p'),median(values(bitrate(resolution(quality(streams,'Bluray REMUX'),'1080p'),'10Mbps'),'bitrate'))*0.70,median(values(bitrate(resolution(quality(streams,'Bluray REMUX'),'1080p'),'10Mbps'),'bitrate'))*1.30))>=3?bitrate(resolution(quality(streams,'Bluray REMUX'),'1080p'),median(values(bitrate(resolution(quality(streams,'Bluray REMUX'),'1080p'),'10Mbps'),'bitrate'))*0.70,median(values(bitrate(resolution(quality(streams,'Bluray REMUX'),'1080p'),'10Mbps'),'bitrate'))*1.5):[]",
+      "score": 100200,
+      "enabled": true
+    },
+    {
+      "expression": "/*#1080p Bluray*/ /*Regex Bitrate Check*/ count(resolution(quality(rseMatched(streams,'Remux T1','Remux T2','Remux T3','UHD Bluray T1','HD Bluray T1','UHD Bluray T2','HD Bluray T2','UHD Bluray T3','HD Bluray T3','Web T1','Web T2','Web T3','Web T4','Web T5','Web T6','Web Scene','SeaDex Best','SeaDex Alt','BD T1','BD T2','BD T3','BD T4','BD T5','BD T6','BD T7','BD T8','Asian T1','Asian T2','Asian T3'),'Bluray'),'1080p'))>0?negate(rseMatched(streams,'Remux T1','Remux T2','Remux T3','UHD Bluray T1','HD Bluray T1','UHD Bluray T2','HD Bluray T2','UHD Bluray T3','HD Bluray T3','Web T1','Web T2','Web T3','Web T4','Web T5','Web T6','Web Scene','SeaDex Best','SeaDex Alt','BD T1','BD T2','BD T3','BD T4','BD T5','BD T6','BD T7','BD T8','Asian T1','Asian T2','Asian T3'),bitrate(resolution(quality(streams,'Bluray'),'1080p'),median(values(resolution(quality(rseMatched(streams,'Remux T1','Remux T2','Remux T3','UHD Bluray T1','HD Bluray T1','UHD Bluray T2','HD Bluray T2','UHD Bluray T3','HD Bluray T3','Web T1','Web T2','Web T3','Web T4','Web T5','Web T6','Web Scene','SeaDex Best','SeaDex Alt','BD T1','BD T2','BD T3','BD T4','BD T5','BD T6','BD T7','BD T8','Asian T1','Asian T2','Asian T3'),'Bluray'),'1080p'),'bitrate'))*0.75,median(values(resolution(quality(rseMatched(streams,'Remux T1','Remux T2','Remux T3','UHD Bluray T1','HD Bluray T1','UHD Bluray T2','HD Bluray T2','UHD Bluray T3','HD Bluray T3','Web T1','Web T2','Web T3','Web T4','Web T5','Web T6','Web Scene','SeaDex Best','SeaDex Alt','BD T1','BD T2','BD T3','BD T4','BD T5','BD T6','BD T7','BD T8','Asian T1','Asian T2','Asian T3'),'Bluray'),'1080p'),'bitrate'))*1.5)):[]",
+      "score": 100300,
+      "enabled": true
+    },
+    {
+      "expression": "/*#1080p Bluray*/ /*Median Bitrate Check*/ count(resolution(quality(rseMatched(streams,'Remux T1','Remux T2','Remux T3','UHD Bluray T1','HD Bluray T1','UHD Bluray T2','HD Bluray T2','UHD Bluray T3','HD Bluray T3','Web T1','Web T2','Web T3','Web T4','Web T5','Web T6','Web Scene','SeaDex Best','SeaDex Alt','BD T1','BD T2','BD T3','BD T4','BD T5','BD T6','BD T7','BD T8','Asian T1','Asian T2','Asian T3'),'Bluray'),'1080p'))==0 and count(bitrate(resolution(quality(streams,'Bluray'),'1080p'),median(values(bitrate(resolution(quality(streams,'Bluray'),'1080p'),'5Mbps'),'bitrate'))*0.70,median(values(bitrate(resolution(quality(streams,'Bluray'),'1080p'),'5Mbps'),'bitrate'))*1.30))>=3?bitrate(resolution(quality(streams,'Bluray'),'1080p'),median(values(bitrate(resolution(quality(streams,'Bluray'),'1080p'),'5Mbps'),'bitrate'))*0.70,median(values(bitrate(resolution(quality(streams,'Bluray'),'1080p'),'5Mbps'),'bitrate'))*1.5):[]",
+      "score": 100250,
+      "enabled": true
+    },
+    {
+      "expression": "/*#4k WEBRip*/ /*Regex Bitrate Check*/ count(resolution(quality(rseMatched(streams,'Remux T1','Remux T2','Remux T3','UHD Bluray T1','HD Bluray T1','UHD Bluray T2','HD Bluray T2','UHD Bluray T3','HD Bluray T3','Web T1','Web T2','Web T3','Web T4','Web T5','Web T6','Web Scene','SeaDex Best','SeaDex Alt','BD T1','BD T2','BD T3','BD T4','BD T5','BD T6','BD T7','BD T8','Asian T1','Asian T2','Asian T3'),'WEBRip'),'2160p'))>0?negate(rseMatched(streams,'Remux T1','Remux T2','Remux T3','UHD Bluray T1','HD Bluray T1','UHD Bluray T2','HD Bluray T2','UHD Bluray T3','HD Bluray T3','Web T1','Web T2','Web T3','Web T4','Web T5','Web T6','Web Scene','SeaDex Best','SeaDex Alt','BD T1','BD T2','BD T3','BD T4','BD T5','BD T6','BD T7','BD T8','Asian T1','Asian T2','Asian T3'),bitrate(resolution(quality(streams,'WEBRip'),'2160p'),median(values(resolution(quality(rseMatched(streams,'Remux T1','Remux T2','Remux T3','UHD Bluray T1','HD Bluray T1','UHD Bluray T2','HD Bluray T2','UHD Bluray T3','HD Bluray T3','Web T1','Web T2','Web T3','Web T4','Web T5','Web T6','Web Scene','SeaDex Best','SeaDex Alt','BD T1','BD T2','BD T3','BD T4','BD T5','BD T6','BD T7','BD T8','Asian T1','Asian T2','Asian T3'),'WEBRip'),'2160p'),'bitrate'))*0.75,median(values(resolution(quality(rseMatched(streams,'Remux T1','Remux T2','Remux T3','UHD Bluray T1','HD Bluray T1','UHD Bluray T2','HD Bluray T2','UHD Bluray T3','HD Bluray T3','Web T1','Web T2','Web T3','Web T4','Web T5','Web T6','Web Scene','SeaDex Best','SeaDex Alt','BD T1','BD T2','BD T3','BD T4','BD T5','BD T6','BD T7','BD T8','Asian T1','Asian T2','Asian T3'),'WEBRip'),'2160p'),'bitrate'))*1.5)):[]",
+      "score": 100100,
+      "enabled": true
+    },
+    {
+      "expression": "/*#1080p WEB-DL*/ /*Regex Bitrate Check*/ count(resolution(quality(rseMatched(streams,'Remux T1','Remux T2','Remux T3','UHD Bluray T1','HD Bluray T1','UHD Bluray T2','HD Bluray T2','UHD Bluray T3','HD Bluray T3','Web T1','Web T2','Web T3','Web T4','Web T5','Web T6','Web Scene','SeaDex Best','SeaDex Alt','BD T1','BD T2','BD T3','BD T4','BD T5','BD T6','BD T7','BD T8','Asian T1','Asian T2','Asian T3'),'WEB-DL'),'1080p'))>0?negate(rseMatched(streams,'Remux T1','Remux T2','Remux T3','UHD Bluray T1','HD Bluray T1','UHD Bluray T2','HD Bluray T2','UHD Bluray T3','HD Bluray T3','Web T1','Web T2','Web T3','Web T4','Web T5','Web T6','Web Scene','SeaDex Best','SeaDex Alt','BD T1','BD T2','BD T3','BD T4','BD T5','BD T6','BD T7','BD T8','Asian T1','Asian T2','Asian T3'),bitrate(resolution(quality(streams,'WEB-DL'),'1080p'),median(values(resolution(quality(rseMatched(streams,'Remux T1','Remux T2','Remux T3','UHD Bluray T1','HD Bluray T1','UHD Bluray T2','HD Bluray T2','UHD Bluray T3','HD Bluray T3','Web T1','Web T2','Web T3','Web T4','Web T5','Web T6','Web Scene','SeaDex Best','SeaDex Alt','BD T1','BD T2','BD T3','BD T4','BD T5','BD T6','BD T7','BD T8','Asian T1','Asian T2','Asian T3'),'WEB-DL'),'1080p'),'bitrate'))*0.75,median(values(resolution(quality(rseMatched(streams,'Remux T1','Remux T2','Remux T3','UHD Bluray T1','HD Bluray T1','UHD Bluray T2','HD Bluray T2','UHD Bluray T3','HD Bluray T3','Web T1','Web T2','Web T3','Web T4','Web T5','Web T6','Web Scene','SeaDex Best','SeaDex Alt','BD T1','BD T2','BD T3','BD T4','BD T5','BD T6','BD T7','BD T8','Asian T1','Asian T2','Asian T3'),'WEB-DL'),'1080p'),'bitrate'))*1.5)):[]",
+      "score": 100100,
+      "enabled": true
+    },
+    {
+      "expression": "/*#1080p WEB-DL*/ /*1080p WEBRip Regex Check*/ count(resolution(quality(rseMatched(streams,'Remux T1','Remux T2','Remux T3','UHD Bluray T1','HD Bluray T1','UHD Bluray T2','HD Bluray T2','UHD Bluray T3','HD Bluray T3','Web T1','Web T2','Web T3','Web T4','Web T5','Web T6','Web Scene','SeaDex Best','SeaDex Alt','BD T1','BD T2','BD T3','BD T4','BD T5','BD T6','BD T7','BD T8','Asian T1','Asian T2','Asian T3'),'WEB-DL'),'1080p'))==0 and count(resolution(quality(rseMatched(streams,'Remux T1','Remux T2','Remux T3','UHD Bluray T1','HD Bluray T1','UHD Bluray T2','HD Bluray T2','UHD Bluray T3','HD Bluray T3','Web T1','Web T2','Web T3','Web T4','Web T5','Web T6','Web Scene','SeaDex Best','SeaDex Alt','BD T1','BD T2','BD T3','BD T4','BD T5','BD T6','BD T7','BD T8','Asian T1','Asian T2','Asian T3'),'WEBRip'),'1080p'))>0?negate(rseMatched(streams,'Remux T1','Remux T2','Remux T3','UHD Bluray T1','HD Bluray T1','UHD Bluray T2','HD Bluray T2','UHD Bluray T3','HD Bluray T3','Web T1','Web T2','Web T3','Web T4','Web T5','Web T6','Web Scene','SeaDex Best','SeaDex Alt','BD T1','BD T2','BD T3','BD T4','BD T5','BD T6','BD T7','BD T8','Asian T1','Asian T2','Asian T3'),bitrate(resolution(quality(streams,'WEB-DL'),'1080p'),median(values(resolution(quality(rseMatched(streams,'Remux T1','Remux T2','Remux T3','UHD Bluray T1','HD Bluray T1','UHD Bluray T2','HD Bluray T2','UHD Bluray T3','HD Bluray T3','Web T1','Web T2','Web T3','Web T4','Web T5','Web T6','Web Scene','SeaDex Best','SeaDex Alt','BD T1','BD T2','BD T3','BD T4','BD T5','BD T6','BD T7','BD T8','Asian T1','Asian T2','Asian T3'),'WEBRip'),'1080p'),'bitrate'))*0.75,median(values(resolution(quality(rseMatched(streams,'Remux T1','Remux T2','Remux T3','UHD Bluray T1','HD Bluray T1','UHD Bluray T2','HD Bluray T2','UHD Bluray T3','HD Bluray T3','Web T1','Web T2','Web T3','Web T4','Web T5','Web T6','Web Scene','SeaDex Best','SeaDex Alt','BD T1','BD T2','BD T3','BD T4','BD T5','BD T6','BD T7','BD T8','Asian T1','Asian T2','Asian T3'),'WEBRip'),'1080p'),'bitrate'))*1.5)):[]",
+      "score": 100050,
+      "enabled": true
+    },
+    {
+      "expression": "/*#1080p WEB-DL*/ /*Median Bitrate Check*/ count(resolution(quality(rseMatched(streams,'Remux T1','Remux T2','Remux T3','UHD Bluray T1','HD Bluray T1','UHD Bluray T2','HD Bluray T2','UHD Bluray T3','HD Bluray T3','Web T1','Web T2','Web T3','Web T4','Web T5','Web T6','Web Scene','SeaDex Best','SeaDex Alt','BD T1','BD T2','BD T3','BD T4','BD T5','BD T6','BD T7','BD T8','Asian T1','Asian T2','Asian T3'),'WEB-DL','WEBRip'),'1080p'))==0 and count(bitrate(resolution(quality(streams,'WEB-DL'),'1080p'),median(values(bitrate(resolution(quality(streams,'WEB-DL'),'1080p'),'3Mbps'),'bitrate'))*0.70,median(values(bitrate(resolution(quality(streams,'WEB-DL'),'1080p'),'3Mbps'),'bitrate'))*1.30))>=3?bitrate(resolution(quality(streams,'WEB-DL'),'1080p'),median(values(bitrate(resolution(quality(streams,'WEB-DL'),'1080p'),'3Mbps'),'bitrate'))*0.70,median(values(bitrate(resolution(quality(streams,'WEB-DL'),'1080p'),'3Mbps'),'bitrate'))*2):[]",
+      "score": 100000,
+      "enabled": true
+    },
+    {
+      "expression": "/*#1080p WEBRip*/ /*Regex Bitrate Check*/ count(resolution(quality(rseMatched(streams,'Remux T1','Remux T2','Remux T3','UHD Bluray T1','HD Bluray T1','UHD Bluray T2','HD Bluray T2','UHD Bluray T3','HD Bluray T3','Web T1','Web T2','Web T3','Web T4','Web T5','Web T6','Web Scene','SeaDex Best','SeaDex Alt','BD T1','BD T2','BD T3','BD T4','BD T5','BD T6','BD T7','BD T8','Asian T1','Asian T2','Asian T3'),'WEBRip'),'1080p'))>0?negate(rseMatched(streams,'Remux T1','Remux T2','Remux T3','UHD Bluray T1','HD Bluray T1','UHD Bluray T2','HD Bluray T2','UHD Bluray T3','HD Bluray T3','Web T1','Web T2','Web T3','Web T4','Web T5','Web T6','Web Scene','SeaDex Best','SeaDex Alt','BD T1','BD T2','BD T3','BD T4','BD T5','BD T6','BD T7','BD T8','Asian T1','Asian T2','Asian T3'),bitrate(resolution(quality(streams,'WEBRip'),'1080p'),median(values(resolution(quality(rseMatched(streams,'Remux T1','Remux T2','Remux T3','UHD Bluray T1','HD Bluray T1','UHD Bluray T2','HD Bluray T2','UHD Bluray T3','HD Bluray T3','Web T1','Web T2','Web T3','Web T4','Web T5','Web T6','Web Scene','SeaDex Best','SeaDex Alt','BD T1','BD T2','BD T3','BD T4','BD T5','BD T6','BD T7','BD T8','Asian T1','Asian T2','Asian T3'),'WEBRip'),'1080p'),'bitrate'))*0.75,median(values(resolution(quality(rseMatched(streams,'Remux T1','Remux T2','Remux T3','UHD Bluray T1','HD Bluray T1','UHD Bluray T2','HD Bluray T2','UHD Bluray T3','HD Bluray T3','Web T1','Web T2','Web T3','Web T4','Web T5','Web T6','Web Scene','SeaDex Best','SeaDex Alt','BD T1','BD T2','BD T3','BD T4','BD T5','BD T6','BD T7','BD T8','Asian T1','Asian T2','Asian T3'),'WEBRip'),'1080p'),'bitrate'))*1.5)):[]",
+      "score": 100100,
+      "enabled": true
+    },
+    {
+      "expression": "/*#720p Bluray*/ /*Regex Bitrate Check*/ count(resolution(quality(rseMatched(streams,'Remux T1','Remux T2','Remux T3','UHD Bluray T1','HD Bluray T1','UHD Bluray T2','HD Bluray T2','UHD Bluray T3','HD Bluray T3','Web T1','Web T2','Web T3','Web T4','Web T5','Web T6','Web Scene','SeaDex Best','SeaDex Alt','BD T1','BD T2','BD T3','BD T4','BD T5','BD T6','BD T7','BD T8','Asian T1','Asian T2','Asian T3'),'Bluray'),'720p'))>0?negate(rseMatched(streams,'Remux T1','Remux T2','Remux T3','UHD Bluray T1','HD Bluray T1','UHD Bluray T2','HD Bluray T2','UHD Bluray T3','HD Bluray T3','Web T1','Web T2','Web T3','Web T4','Web T5','Web T6','Web Scene','SeaDex Best','SeaDex Alt','BD T1','BD T2','BD T3','BD T4','BD T5','BD T6','BD T7','BD T8','Asian T1','Asian T2','Asian T3'),bitrate(resolution(quality(streams,'Bluray'),'720p'),median(values(resolution(quality(rseMatched(streams,'Remux T1','Remux T2','Remux T3','UHD Bluray T1','HD Bluray T1','UHD Bluray T2','HD Bluray T2','UHD Bluray T3','HD Bluray T3','Web T1','Web T2','Web T3','Web T4','Web T5','Web T6','Web Scene','SeaDex Best','SeaDex Alt','BD T1','BD T2','BD T3','BD T4','BD T5','BD T6','BD T7','BD T8','Asian T1','Asian T2','Asian T3'),'Bluray'),'720p'),'bitrate'))*0.75,median(values(resolution(quality(rseMatched(streams,'Remux T1','Remux T2','Remux T3','UHD Bluray T1','HD Bluray T1','UHD Bluray T2','HD Bluray T2','UHD Bluray T3','HD Bluray T3','Web T1','Web T2','Web T3','Web T4','Web T5','Web T6','Web Scene','SeaDex Best','SeaDex Alt','BD T1','BD T2','BD T3','BD T4','BD T5','BD T6','BD T7','BD T8','Asian T1','Asian T2','Asian T3'),'Bluray'),'720p'),'bitrate'))*1.5)):[]",
+      "score": 100300,
+      "enabled": true
+    },
+    {
+      "expression": "/*#720p WEB-DL*/ /*Regex Bitrate Check*/ count(resolution(quality(rseMatched(streams,'Remux T1','Remux T2','Remux T3','UHD Bluray T1','HD Bluray T1','UHD Bluray T2','HD Bluray T2','UHD Bluray T3','HD Bluray T3','Web T1','Web T2','Web T3','Web T4','Web T5','Web T6','Web Scene','SeaDex Best','SeaDex Alt','BD T1','BD T2','BD T3','BD T4','BD T5','BD T6','BD T7','BD T8','Asian T1','Asian T2','Asian T3'),'WEB-DL'),'720p'))>0?negate(rseMatched(streams,'Remux T1','Remux T2','Remux T3','UHD Bluray T1','HD Bluray T1','UHD Bluray T2','HD Bluray T2','UHD Bluray T3','HD Bluray T3','Web T1','Web T2','Web T3','Web T4','Web T5','Web T6','Web Scene','SeaDex Best','SeaDex Alt','BD T1','BD T2','BD T3','BD T4','BD T5','BD T6','BD T7','BD T8','Asian T1','Asian T2','Asian T3'),bitrate(resolution(quality(streams,'WEB-DL'),'720p'),median(values(resolution(quality(rseMatched(streams,'Remux T1','Remux T2','Remux T3','UHD Bluray T1','HD Bluray T1','UHD Bluray T2','HD Bluray T2','UHD Bluray T3','HD Bluray T3','Web T1','Web T2','Web T3','Web T4','Web T5','Web T6','Web Scene','SeaDex Best','SeaDex Alt','BD T1','BD T2','BD T3','BD T4','BD T5','BD T6','BD T7','BD T8','Asian T1','Asian T2','Asian T3'),'WEB-DL'),'720p'),'bitrate'))*0.90,median(values(resolution(quality(rseMatched(streams,'Remux T1','Remux T2','Remux T3','UHD Bluray T1','HD Bluray T1','UHD Bluray T2','HD Bluray T2','UHD Bluray T3','HD Bluray T3','Web T1','Web T2','Web T3','Web T4','Web T5','Web T6','Web Scene','SeaDex Best','SeaDex Alt','BD T1','BD T2','BD T3','BD T4','BD T5','BD T6','BD T7','BD T8','Asian T1','Asian T2','Asian T3'),'WEB-DL'),'720p'),'bitrate'))*2)):[]",
+      "score": 100100,
+      "enabled": true
+    },
+    {
+      "expression": "/*#720p WEB-DL*/ /*720p WEBRip Regex Check*/ count(resolution(quality(rseMatched(streams,'Remux T1','Remux T2','Remux T3','UHD Bluray T1','HD Bluray T1','UHD Bluray T2','HD Bluray T2','UHD Bluray T3','HD Bluray T3','Web T1','Web T2','Web T3','Web T4','Web T5','Web T6','Web Scene','SeaDex Best','SeaDex Alt','BD T1','BD T2','BD T3','BD T4','BD T5','BD T6','BD T7','BD T8','Asian T1','Asian T2','Asian T3'),'WEB-DL'),'720p'))==0 and count(resolution(quality(rseMatched(streams,'Remux T1','Remux T2','Remux T3','UHD Bluray T1','HD Bluray T1','UHD Bluray T2','HD Bluray T2','UHD Bluray T3','HD Bluray T3','Web T1','Web T2','Web T3','Web T4','Web T5','Web T6','Web Scene','SeaDex Best','SeaDex Alt','BD T1','BD T2','BD T3','BD T4','BD T5','BD T6','BD T7','BD T8','Asian T1','Asian T2','Asian T3'),'WEBRip'),'720p'))>0?negate(rseMatched(streams,'Remux T1','Remux T2','Remux T3','UHD Bluray T1','HD Bluray T1','UHD Bluray T2','HD Bluray T2','UHD Bluray T3','HD Bluray T3','Web T1','Web T2','Web T3','Web T4','Web T5','Web T6','Web Scene','SeaDex Best','SeaDex Alt','BD T1','BD T2','BD T3','BD T4','BD T5','BD T6','BD T7','BD T8','Asian T1','Asian T2','Asian T3'),bitrate(resolution(quality(streams,'WEB-DL'),'720p'),median(values(resolution(quality(rseMatched(streams,'Remux T1','Remux T2','Remux T3','UHD Bluray T1','HD Bluray T1','UHD Bluray T2','HD Bluray T2','UHD Bluray T3','HD Bluray T3','Web T1','Web T2','Web T3','Web T4','Web T5','Web T6','Web Scene','SeaDex Best','SeaDex Alt','BD T1','BD T2','BD T3','BD T4','BD T5','BD T6','BD T7','BD T8','Asian T1','Asian T2','Asian T3'),'WEBRip'),'720p'),'bitrate'))*0.90,median(values(resolution(quality(rseMatched(streams,'Remux T1','Remux T2','Remux T3','UHD Bluray T1','HD Bluray T1','UHD Bluray T2','HD Bluray T2','UHD Bluray T3','HD Bluray T3','Web T1','Web T2','Web T3','Web T4','Web T5','Web T6','Web Scene','SeaDex Best','SeaDex Alt','BD T1','BD T2','BD T3','BD T4','BD T5','BD T6','BD T7','BD T8','Asian T1','Asian T2','Asian T3'),'WEBRip'),'720p'),'bitrate'))*2)):[]",
+      "score": 100050,
+      "enabled": true
+    },
+    {
+      "expression": "/*#720p WEB-DL*/ /*Median Bitrate Check*/ count(resolution(quality(rseMatched(streams,'Remux T1','Remux T2','Remux T3','UHD Bluray T1','HD Bluray T1','UHD Bluray T2','HD Bluray T2','UHD Bluray T3','HD Bluray T3','Web T1','Web T2','Web T3','Web T4','Web T5','Web T6','Web Scene','SeaDex Best','SeaDex Alt','BD T1','BD T2','BD T3','BD T4','BD T5','BD T6','BD T7','BD T8','Asian T1','Asian T2','Asian T3'),'WEB-DL','WEBRip'),'720p'))==0 and count(bitrate(resolution(quality(streams,'WEB-DL'),'720p'),median(values(bitrate(resolution(quality(streams,'WEB-DL'),'720p'),'1Mbps'),'bitrate'))*0.70,median(values(bitrate(resolution(quality(streams,'WEB-DL'),'720p'),'1Mbps'),'bitrate'))*1.30))>=3?bitrate(resolution(quality(streams,'WEB-DL'),'720p'),median(values(bitrate(resolution(quality(streams,'WEB-DL'),'720p'),'1Mbps'),'bitrate'))*0.70,median(values(bitrate(resolution(quality(streams,'WEB-DL'),'720p'),'1Mbps'),'bitrate'))*2):[]",
+      "score": 100000,
+      "enabled": true
+    },
+    {
+      "expression": "/*#720p WEBRip*/ /*Regex Bitrate Check*/ count(resolution(quality(rseMatched(streams,'Remux T1','Remux T2','Remux T3','UHD Bluray T1','HD Bluray T1','UHD Bluray T2','HD Bluray T2','UHD Bluray T3','HD Bluray T3','Web T1','Web T2','Web T3','Web T4','Web T5','Web T6','Web Scene','SeaDex Best','SeaDex Alt','BD T1','BD T2','BD T3','BD T4','BD T5','BD T6','BD T7','BD T8','Asian T1','Asian T2','Asian T3'),'WEBRip'),'720p'))>0?negate(rseMatched(streams,'Remux T1','Remux T2','Remux T3','UHD Bluray T1','HD Bluray T1','UHD Bluray T2','HD Bluray T2','UHD Bluray T3','HD Bluray T3','Web T1','Web T2','Web T3','Web T4','Web T5','Web T6','Web Scene','SeaDex Best','SeaDex Alt','BD T1','BD T2','BD T3','BD T4','BD T5','BD T6','BD T7','BD T8','Asian T1','Asian T2','Asian T3'),bitrate(resolution(quality(streams,'WEBRip'),'720p'),median(values(resolution(quality(rseMatched(streams,'Remux T1','Remux T2','Remux T3','UHD Bluray T1','HD Bluray T1','UHD Bluray T2','HD Bluray T2','UHD Bluray T3','HD Bluray T3','Web T1','Web T2','Web T3','Web T4','Web T5','Web T6','Web Scene','SeaDex Best','SeaDex Alt','BD T1','BD T2','BD T3','BD T4','BD T5','BD T6','BD T7','BD T8','Asian T1','Asian T2','Asian T3'),'WEBRip'),'720p'),'bitrate'))*0.90,median(values(resolution(quality(rseMatched(streams,'Remux T1','Remux T2','Remux T3','UHD Bluray T1','HD Bluray T1','UHD Bluray T2','HD Bluray T2','UHD Bluray T3','HD Bluray T3','Web T1','Web T2','Web T3','Web T4','Web T5','Web T6','Web Scene','SeaDex Best','SeaDex Alt','BD T1','BD T2','BD T3','BD T4','BD T5','BD T6','BD T7','BD T8','Asian T1','Asian T2','Asian T3'),'WEBRip'),'720p'),'bitrate'))*2)):[]",
+      "score": 100100,
+      "enabled": true
+    },
+    {
+      "expression": "/*#576p Bluray*/ /*Regex Bitrate Check*/ count(resolution(quality(rseMatched(streams,'Remux T1','Remux T2','Remux T3','UHD Bluray T1','HD Bluray T1','UHD Bluray T2','HD Bluray T2','UHD Bluray T3','HD Bluray T3','Web T1','Web T2','Web T3','Web T4','Web T5','Web T6','Web Scene','SeaDex Best','SeaDex Alt','BD T1','BD T2','BD T3','BD T4','BD T5','BD T6','BD T7','BD T8','Asian T1','Asian T2','Asian T3'),'Bluray'),'576p'))>0?negate(rseMatched(streams,'Remux T1','Remux T2','Remux T3','UHD Bluray T1','HD Bluray T1','UHD Bluray T2','HD Bluray T2','UHD Bluray T3','HD Bluray T3','Web T1','Web T2','Web T3','Web T4','Web T5','Web T6','Web Scene','SeaDex Best','SeaDex Alt','BD T1','BD T2','BD T3','BD T4','BD T5','BD T6','BD T7','BD T8','Asian T1','Asian T2','Asian T3'),bitrate(resolution(quality(streams,'Bluray'),'576p'),median(values(resolution(quality(rseMatched(streams,'Remux T1','Remux T2','Remux T3','UHD Bluray T1','HD Bluray T1','UHD Bluray T2','HD Bluray T2','UHD Bluray T3','HD Bluray T3','Web T1','Web T2','Web T3','Web T4','Web T5','Web T6','Web Scene','SeaDex Best','SeaDex Alt','BD T1','BD T2','BD T3','BD T4','BD T5','BD T6','BD T7','BD T8','Asian T1','Asian T2','Asian T3'),'Bluray'),'576p'),'bitrate'))*0.90,median(values(resolution(quality(rseMatched(streams,'Remux T1','Remux T2','Remux T3','UHD Bluray T1','HD Bluray T1','UHD Bluray T2','HD Bluray T2','UHD Bluray T3','HD Bluray T3','Web T1','Web T2','Web T3','Web T4','Web T5','Web T6','Web Scene','SeaDex Best','SeaDex Alt','BD T1','BD T2','BD T3','BD T4','BD T5','BD T6','BD T7','BD T8','Asian T1','Asian T2','Asian T3'),'Bluray'),'576p'),'bitrate'))*2)):[]",
+      "score": 100300,
+      "enabled": true
+    },
+    {
+      "expression": "/*#480p Bluray*/ /*Regex Bitrate Check*/ count(resolution(quality(rseMatched(streams,'Remux T1','Remux T2','Remux T3','UHD Bluray T1','HD Bluray T1','UHD Bluray T2','HD Bluray T2','UHD Bluray T3','HD Bluray T3','Web T1','Web T2','Web T3','Web T4','Web T5','Web T6','Web Scene','SeaDex Best','SeaDex Alt','BD T1','BD T2','BD T3','BD T4','BD T5','BD T6','BD T7','BD T8','Asian T1','Asian T2','Asian T3'),'Bluray'),'480p'))>0?negate(rseMatched(streams,'Remux T1','Remux T2','Remux T3','UHD Bluray T1','HD Bluray T1','UHD Bluray T2','HD Bluray T2','UHD Bluray T3','HD Bluray T3','Web T1','Web T2','Web T3','Web T4','Web T5','Web T6','Web Scene','SeaDex Best','SeaDex Alt','BD T1','BD T2','BD T3','BD T4','BD T5','BD T6','BD T7','BD T8','Asian T1','Asian T2','Asian T3'),bitrate(resolution(quality(streams,'Bluray'),'480p'),median(values(resolution(quality(rseMatched(streams,'Remux T1','Remux T2','Remux T3','UHD Bluray T1','HD Bluray T1','UHD Bluray T2','HD Bluray T2','UHD Bluray T3','HD Bluray T3','Web T1','Web T2','Web T3','Web T4','Web T5','Web T6','Web Scene','SeaDex Best','SeaDex Alt','BD T1','BD T2','BD T3','BD T4','BD T5','BD T6','BD T7','BD T8','Asian T1','Asian T2','Asian T3'),'Bluray'),'480p'),'bitrate'))*0.90,median(values(resolution(quality(rseMatched(streams,'Remux T1','Remux T2','Remux T3','UHD Bluray T1','HD Bluray T1','UHD Bluray T2','HD Bluray T2','UHD Bluray T3','HD Bluray T3','Web T1','Web T2','Web T3','Web T4','Web T5','Web T6','Web Scene','SeaDex Best','SeaDex Alt','BD T1','BD T2','BD T3','BD T4','BD T5','BD T6','BD T7','BD T8','Asian T1','Asian T2','Asian T3'),'Bluray'),'480p'),'bitrate'))*2)):[]",
+      "score": 100300,
+      "enabled": true
+    },
+    {
+      "expression": "/*#576p WEB-DL*/ /*Regex Bitrate Check*/ count(resolution(quality(rseMatched(streams,'Remux T1','Remux T2','Remux T3','UHD Bluray T1','HD Bluray T1','UHD Bluray T2','HD Bluray T2','UHD Bluray T3','HD Bluray T3','Web T1','Web T2','Web T3','Web T4','Web T5','Web T6','Web Scene','SeaDex Best','SeaDex Alt','BD T1','BD T2','BD T3','BD T4','BD T5','BD T6','BD T7','BD T8','Asian T1','Asian T2','Asian T3'),'WEB-DL'),'576p'))>0?negate(rseMatched(streams,'Remux T1','Remux T2','Remux T3','UHD Bluray T1','HD Bluray T1','UHD Bluray T2','HD Bluray T2','UHD Bluray T3','HD Bluray T3','Web T1','Web T2','Web T3','Web T4','Web T5','Web T6','Web Scene','SeaDex Best','SeaDex Alt','BD T1','BD T2','BD T3','BD T4','BD T5','BD T6','BD T7','BD T8','Asian T1','Asian T2','Asian T3'),bitrate(resolution(quality(streams,'WEB-DL'),'576p'),median(values(resolution(quality(rseMatched(streams,'Remux T1','Remux T2','Remux T3','UHD Bluray T1','HD Bluray T1','UHD Bluray T2','HD Bluray T2','UHD Bluray T3','HD Bluray T3','Web T1','Web T2','Web T3','Web T4','Web T5','Web T6','Web Scene','SeaDex Best','SeaDex Alt','BD T1','BD T2','BD T3','BD T4','BD T5','BD T6','BD T7','BD T8','Asian T1','Asian T2','Asian T3'),'WEB-DL'),'576p'),'bitrate'))*0.90,median(values(resolution(quality(rseMatched(streams,'Remux T1','Remux T2','Remux T3','UHD Bluray T1','HD Bluray T1','UHD Bluray T2','HD Bluray T2','UHD Bluray T3','HD Bluray T3','Web T1','Web T2','Web T3','Web T4','Web T5','Web T6','Web Scene','SeaDex Best','SeaDex Alt','BD T1','BD T2','BD T3','BD T4','BD T5','BD T6','BD T7','BD T8','Asian T1','Asian T2','Asian T3'),'WEB-DL'),'576p'),'bitrate'))*2)):[]",
+      "score": 100100,
+      "enabled": true
+    },
+    {
+      "expression": "/*#576p WEB-DL*/ /*576p WEBRip Regex Check*/ count(resolution(quality(rseMatched(streams,'Remux T1','Remux T2','Remux T3','UHD Bluray T1','HD Bluray T1','UHD Bluray T2','HD Bluray T2','UHD Bluray T3','HD Bluray T3','Web T1','Web T2','Web T3','Web T4','Web T5','Web T6','Web Scene','SeaDex Best','SeaDex Alt','BD T1','BD T2','BD T3','BD T4','BD T5','BD T6','BD T7','BD T8','Asian T1','Asian T2','Asian T3'),'WEB-DL'),'576p'))==0 and count(resolution(quality(rseMatched(streams,'Remux T1','Remux T2','Remux T3','UHD Bluray T1','HD Bluray T1','UHD Bluray T2','HD Bluray T2','UHD Bluray T3','HD Bluray T3','Web T1','Web T2','Web T3','Web T4','Web T5','Web T6','Web Scene','SeaDex Best','SeaDex Alt','BD T1','BD T2','BD T3','BD T4','BD T5','BD T6','BD T7','BD T8','Asian T1','Asian T2','Asian T3'),'WEBRip'),'576p'))>0?negate(rseMatched(streams,'Remux T1','Remux T2','Remux T3','UHD Bluray T1','HD Bluray T1','UHD Bluray T2','HD Bluray T2','UHD Bluray T3','HD Bluray T3','Web T1','Web T2','Web T3','Web T4','Web T5','Web T6','Web Scene','SeaDex Best','SeaDex Alt','BD T1','BD T2','BD T3','BD T4','BD T5','BD T6','BD T7','BD T8','Asian T1','Asian T2','Asian T3'),bitrate(resolution(quality(streams,'WEB-DL'),'576p'),median(values(resolution(quality(rseMatched(streams,'Remux T1','Remux T2','Remux T3','UHD Bluray T1','HD Bluray T1','UHD Bluray T2','HD Bluray T2','UHD Bluray T3','HD Bluray T3','Web T1','Web T2','Web T3','Web T4','Web T5','Web T6','Web Scene','SeaDex Best','SeaDex Alt','BD T1','BD T2','BD T3','BD T4','BD T5','BD T6','BD T7','BD T8','Asian T1','Asian T2','Asian T3'),'WEBRip'),'576p'),'bitrate'))*0.90,median(values(resolution(quality(rseMatched(streams,'Remux T1','Remux T2','Remux T3','UHD Bluray T1','HD Bluray T1','UHD Bluray T2','HD Bluray T2','UHD Bluray T3','HD Bluray T3','Web T1','Web T2','Web T3','Web T4','Web T5','Web T6','Web Scene','SeaDex Best','SeaDex Alt','BD T1','BD T2','BD T3','BD T4','BD T5','BD T6','BD T7','BD T8','Asian T1','Asian T2','Asian T3'),'WEBRip'),'576p'),'bitrate'))*2)):[]",
+      "score": 100050,
+      "enabled": true
+    },
+    {
+      "expression": "/*#576p WEB-DL*/ /*Median Bitrate Check*/ count(resolution(quality(rseMatched(streams,'Remux T1','Remux T2','Remux T3','UHD Bluray T1','HD Bluray T1','UHD Bluray T2','HD Bluray T2','UHD Bluray T3','HD Bluray T3','Web T1','Web T2','Web T3','Web T4','Web T5','Web T6','Web Scene','SeaDex Best','SeaDex Alt','BD T1','BD T2','BD T3','BD T4','BD T5','BD T6','BD T7','BD T8','Asian T1','Asian T2','Asian T3'),'WEB-DL','WEBRip'),'576p'))==0 and count(bitrate(resolution(quality(streams,'WEB-DL'),'576p'),median(values(bitrate(resolution(quality(streams,'WEB-DL'),'576p'),'250kbps'),'bitrate'))*0.70,median(values(bitrate(resolution(quality(streams,'WEB-DL'),'576p'),'250kbps'),'bitrate'))*1.30))>=3?bitrate(resolution(quality(streams,'WEB-DL'),'576p'),median(values(bitrate(resolution(quality(streams,'WEB-DL'),'576p'),'250kbps'),'bitrate'))*0.70,median(values(bitrate(resolution(quality(streams,'WEB-DL'),'576p'),'250kbps'),'bitrate'))*2):[]",
+      "score": 100000,
+      "enabled": true
+    },
+    {
+      "expression": "/*#576p WEBRip*/ /*Regex Bitrate Check*/ count(resolution(quality(rseMatched(streams,'Remux T1','Remux T2','Remux T3','UHD Bluray T1','HD Bluray T1','UHD Bluray T2','HD Bluray T2','UHD Bluray T3','HD Bluray T3','Web T1','Web T2','Web T3','Web T4','Web T5','Web T6','Web Scene','SeaDex Best','SeaDex Alt','BD T1','BD T2','BD T3','BD T4','BD T5','BD T6','BD T7','BD T8','Asian T1','Asian T2','Asian T3'),'WEBRip'),'576p'))>0?negate(rseMatched(streams,'Remux T1','Remux T2','Remux T3','UHD Bluray T1','HD Bluray T1','UHD Bluray T2','HD Bluray T2','UHD Bluray T3','HD Bluray T3','Web T1','Web T2','Web T3','Web T4','Web T5','Web T6','Web Scene','SeaDex Best','SeaDex Alt','BD T1','BD T2','BD T3','BD T4','BD T5','BD T6','BD T7','BD T8','Asian T1','Asian T2','Asian T3'),bitrate(resolution(quality(streams,'WEBRip'),'576p'),median(values(resolution(quality(rseMatched(streams,'Remux T1','Remux T2','Remux T3','UHD Bluray T1','HD Bluray T1','UHD Bluray T2','HD Bluray T2','UHD Bluray T3','HD Bluray T3','Web T1','Web T2','Web T3','Web T4','Web T5','Web T6','Web Scene','SeaDex Best','SeaDex Alt','BD T1','BD T2','BD T3','BD T4','BD T5','BD T6','BD T7','BD T8','Asian T1','Asian T2','Asian T3'),'WEBRip'),'576p'),'bitrate'))*0.90,median(values(resolution(quality(rseMatched(streams,'Remux T1','Remux T2','Remux T3','UHD Bluray T1','HD Bluray T1','UHD Bluray T2','HD Bluray T2','UHD Bluray T3','HD Bluray T3','Web T1','Web T2','Web T3','Web T4','Web T5','Web T6','Web Scene','SeaDex Best','SeaDex Alt','BD T1','BD T2','BD T3','BD T4','BD T5','BD T6','BD T7','BD T8','Asian T1','Asian T2','Asian T3'),'WEBRip'),'576p'),'bitrate'))*2)):[]",
+      "score": 100100,
+      "enabled": true
+    },
+    {
+      "expression": "/*#576p DVD REMUX*/ /*Regex Bitrate Check*/ count(resolution(quality(rseMatched(streams,'Remux T1','Remux T2','Remux T3','UHD Bluray T1','HD Bluray T1','UHD Bluray T2','HD Bluray T2','UHD Bluray T3','HD Bluray T3','Web T1','Web T2','Web T3','Web T4','Web T5','Web T6','Web Scene','SeaDex Best','SeaDex Alt','BD T1','BD T2','BD T3','BD T4','BD T5','BD T6','BD T7','BD T8','Asian T1','Asian T2','Asian T3'),'DVD REMUX'),'576p'))>0?negate(rseMatched(streams,'Remux T1','Remux T2','Remux T3','UHD Bluray T1','HD Bluray T1','UHD Bluray T2','HD Bluray T2','UHD Bluray T3','HD Bluray T3','Web T1','Web T2','Web T3','Web T4','Web T5','Web T6','Web Scene','SeaDex Best','SeaDex Alt','BD T1','BD T2','BD T3','BD T4','BD T5','BD T6','BD T7','BD T8','Asian T1','Asian T2','Asian T3'),bitrate(resolution(quality(streams,'DVD REMUX'),'576p'),median(values(resolution(quality(rseMatched(streams,'Remux T1','Remux T2','Remux T3','UHD Bluray T1','HD Bluray T1','UHD Bluray T2','HD Bluray T2','UHD Bluray T3','HD Bluray T3','Web T1','Web T2','Web T3','Web T4','Web T5','Web T6','Web Scene','SeaDex Best','SeaDex Alt','BD T1','BD T2','BD T3','BD T4','BD T5','BD T6','BD T7','BD T8','Asian T1','Asian T2','Asian T3'),'DVD REMUX'),'576p'),'bitrate'))*0.90,median(values(resolution(quality(rseMatched(streams,'Remux T1','Remux T2','Remux T3','UHD Bluray T1','HD Bluray T1','UHD Bluray T2','HD Bluray T2','UHD Bluray T3','HD Bluray T3','Web T1','Web T2','Web T3','Web T4','Web T5','Web T6','Web Scene','SeaDex Best','SeaDex Alt','BD T1','BD T2','BD T3','BD T4','BD T5','BD T6','BD T7','BD T8','Asian T1','Asian T2','Asian T3'),'DVD REMUX'),'576p'),'bitrate'))*2)):[]",
+      "score": 100300,
+      "enabled": true
+    },
+    {
+      "expression": "/*#576p DVD REMUX*/ /*576p DVDRip Regex Check*/ count(resolution(quality(rseMatched(streams,'Remux T1','Remux T2','Remux T3','UHD Bluray T1','HD Bluray T1','UHD Bluray T2','HD Bluray T2','UHD Bluray T3','HD Bluray T3','Web T1','Web T2','Web T3','Web T4','Web T5','Web T6','Web Scene','SeaDex Best','SeaDex Alt','BD T1','BD T2','BD T3','BD T4','BD T5','BD T6','BD T7','BD T8','Asian T1','Asian T2','Asian T3'),'DVD REMUX'),'576p'))==0 and count(resolution(quality(rseMatched(streams,'Remux T1','Remux T2','Remux T3','UHD Bluray T1','HD Bluray T1','UHD Bluray T2','HD Bluray T2','UHD Bluray T3','HD Bluray T3','Web T1','Web T2','Web T3','Web T4','Web T5','Web T6','Web Scene','SeaDex Best','SeaDex Alt','BD T1','BD T2','BD T3','BD T4','BD T5','BD T6','BD T7','BD T8','Asian T1','Asian T2','Asian T3'),'DVDRip'),'576p'))>0?negate(rseMatched(streams,'Remux T1','Remux T2','Remux T3','UHD Bluray T1','HD Bluray T1','UHD Bluray T2','HD Bluray T2','UHD Bluray T3','HD Bluray T3','Web T1','Web T2','Web T3','Web T4','Web T5','Web T6','Web Scene','SeaDex Best','SeaDex Alt','BD T1','BD T2','BD T3','BD T4','BD T5','BD T6','BD T7','BD T8','Asian T1','Asian T2','Asian T3'),bitrate(resolution(quality(streams,'DVD REMUX'),'576p'),median(values(resolution(quality(rseMatched(streams,'Remux T1','Remux T2','Remux T3','UHD Bluray T1','HD Bluray T1','UHD Bluray T2','HD Bluray T2','UHD Bluray T3','HD Bluray T3','Web T1','Web T2','Web T3','Web T4','Web T5','Web T6','Web Scene','SeaDex Best','SeaDex Alt','BD T1','BD T2','BD T3','BD T4','BD T5','BD T6','BD T7','BD T8','Asian T1','Asian T2','Asian T3'),'DVDRip'),'576p'),'bitrate'))*0.90,median(values(resolution(quality(rseMatched(streams,'Remux T1','Remux T2','Remux T3','UHD Bluray T1','HD Bluray T1','UHD Bluray T2','HD Bluray T2','UHD Bluray T3','HD Bluray T3','Web T1','Web T2','Web T3','Web T4','Web T5','Web T6','Web Scene','SeaDex Best','SeaDex Alt','BD T1','BD T2','BD T3','BD T4','BD T5','BD T6','BD T7','BD T8','Asian T1','Asian T2','Asian T3'),'DVDRip'),'576p'),'bitrate'))*2)):[]",
+      "score": 100250,
+      "enabled": true
+    },
+    {
+      "expression": "/*#576p DVDRip*/ /*Regex Bitrate Check*/ count(resolution(quality(rseMatched(streams,'Remux T1','Remux T2','Remux T3','UHD Bluray T1','HD Bluray T1','UHD Bluray T2','HD Bluray T2','UHD Bluray T3','HD Bluray T3','Web T1','Web T2','Web T3','Web T4','Web T5','Web T6','Web Scene','SeaDex Best','SeaDex Alt','BD T1','BD T2','BD T3','BD T4','BD T5','BD T6','BD T7','BD T8','Asian T1','Asian T2','Asian T3'),'DVDRip'),'576p'))>0?negate(rseMatched(streams,'Remux T1','Remux T2','Remux T3','UHD Bluray T1','HD Bluray T1','UHD Bluray T2','HD Bluray T2','UHD Bluray T3','HD Bluray T3','Web T1','Web T2','Web T3','Web T4','Web T5','Web T6','Web Scene','SeaDex Best','SeaDex Alt','BD T1','BD T2','BD T3','BD T4','BD T5','BD T6','BD T7','BD T8','Asian T1','Asian T2','Asian T3'),bitrate(resolution(quality(streams,'DVDRip'),'576p'),median(values(resolution(quality(rseMatched(streams,'Remux T1','Remux T2','Remux T3','UHD Bluray T1','HD Bluray T1','UHD Bluray T2','HD Bluray T2','UHD Bluray T3','HD Bluray T3','Web T1','Web T2','Web T3','Web T4','Web T5','Web T6','Web Scene','SeaDex Best','SeaDex Alt','BD T1','BD T2','BD T3','BD T4','BD T5','BD T6','BD T7','BD T8','Asian T1','Asian T2','Asian T3'),'DVDRip'),'576p'),'bitrate'))*0.90,median(values(resolution(quality(rseMatched(streams,'Remux T1','Remux T2','Remux T3','UHD Bluray T1','HD Bluray T1','UHD Bluray T2','HD Bluray T2','UHD Bluray T3','HD Bluray T3','Web T1','Web T2','Web T3','Web T4','Web T5','Web T6','Web Scene','SeaDex Best','SeaDex Alt','BD T1','BD T2','BD T3','BD T4','BD T5','BD T6','BD T7','BD T8','Asian T1','Asian T2','Asian T3'),'DVDRip'),'576p'),'bitrate'))*2)):[]",
+      "score": 100300,
+      "enabled": true
+    },
+    {
+      "expression": "/*#480p WEB-DL*/ /*Regex Bitrate Check*/ count(resolution(quality(rseMatched(streams,'Remux T1','Remux T2','Remux T3','UHD Bluray T1','HD Bluray T1','UHD Bluray T2','HD Bluray T2','UHD Bluray T3','HD Bluray T3','Web T1','Web T2','Web T3','Web T4','Web T5','Web T6','Web Scene','SeaDex Best','SeaDex Alt','BD T1','BD T2','BD T3','BD T4','BD T5','BD T6','BD T7','BD T8','Asian T1','Asian T2','Asian T3'),'WEB-DL'),'480p'))>0?negate(rseMatched(streams,'Remux T1','Remux T2','Remux T3','UHD Bluray T1','HD Bluray T1','UHD Bluray T2','HD Bluray T2','UHD Bluray T3','HD Bluray T3','Web T1','Web T2','Web T3','Web T4','Web T5','Web T6','Web Scene','SeaDex Best','SeaDex Alt','BD T1','BD T2','BD T3','BD T4','BD T5','BD T6','BD T7','BD T8','Asian T1','Asian T2','Asian T3'),bitrate(resolution(quality(streams,'WEB-DL'),'480p'),median(values(resolution(quality(rseMatched(streams,'Remux T1','Remux T2','Remux T3','UHD Bluray T1','HD Bluray T1','UHD Bluray T2','HD Bluray T2','UHD Bluray T3','HD Bluray T3','Web T1','Web T2','Web T3','Web T4','Web T5','Web T6','Web Scene','SeaDex Best','SeaDex Alt','BD T1','BD T2','BD T3','BD T4','BD T5','BD T6','BD T7','BD T8','Asian T1','Asian T2','Asian T3'),'WEB-DL'),'480p'),'bitrate'))*0.90,median(values(resolution(quality(rseMatched(streams,'Remux T1','Remux T2','Remux T3','UHD Bluray T1','HD Bluray T1','UHD Bluray T2','HD Bluray T2','UHD Bluray T3','HD Bluray T3','Web T1','Web T2','Web T3','Web T4','Web T5','Web T6','Web Scene','SeaDex Best','SeaDex Alt','BD T1','BD T2','BD T3','BD T4','BD T5','BD T6','BD T7','BD T8','Asian T1','Asian T2','Asian T3'),'WEB-DL'),'480p'),'bitrate'))*2)):[]",
+      "score": 100100,
+      "enabled": true
+    },
+    {
+      "expression": "/*#480p WEB-DL*/ /*480p WEBRip Regex Check*/ count(resolution(quality(rseMatched(streams,'Remux T1','Remux T2','Remux T3','UHD Bluray T1','HD Bluray T1','UHD Bluray T2','HD Bluray T2','UHD Bluray T3','HD Bluray T3','Web T1','Web T2','Web T3','Web T4','Web T5','Web T6','Web Scene','SeaDex Best','SeaDex Alt','BD T1','BD T2','BD T3','BD T4','BD T5','BD T6','BD T7','BD T8','Asian T1','Asian T2','Asian T3'),'WEB-DL'),'480p'))==0 and count(resolution(quality(rseMatched(streams,'Remux T1','Remux T2','Remux T3','UHD Bluray T1','HD Bluray T1','UHD Bluray T2','HD Bluray T2','UHD Bluray T3','HD Bluray T3','Web T1','Web T2','Web T3','Web T4','Web T5','Web T6','Web Scene','SeaDex Best','SeaDex Alt','BD T1','BD T2','BD T3','BD T4','BD T5','BD T6','BD T7','BD T8','Asian T1','Asian T2','Asian T3'),'WEBRip'),'480p'))>0?negate(rseMatched(streams,'Remux T1','Remux T2','Remux T3','UHD Bluray T1','HD Bluray T1','UHD Bluray T2','HD Bluray T2','UHD Bluray T3','HD Bluray T3','Web T1','Web T2','Web T3','Web T4','Web T5','Web T6','Web Scene','SeaDex Best','SeaDex Alt','BD T1','BD T2','BD T3','BD T4','BD T5','BD T6','BD T7','BD T8','Asian T1','Asian T2','Asian T3'),bitrate(resolution(quality(streams,'WEB-DL'),'480p'),median(values(resolution(quality(rseMatched(streams,'Remux T1','Remux T2','Remux T3','UHD Bluray T1','HD Bluray T1','UHD Bluray T2','HD Bluray T2','UHD Bluray T3','HD Bluray T3','Web T1','Web T2','Web T3','Web T4','Web T5','Web T6','Web Scene','SeaDex Best','SeaDex Alt','BD T1','BD T2','BD T3','BD T4','BD T5','BD T6','BD T7','BD T8','Asian T1','Asian T2','Asian T3'),'WEBRip'),'480p'),'bitrate'))*0.90,median(values(resolution(quality(rseMatched(streams,'Remux T1','Remux T2','Remux T3','UHD Bluray T1','HD Bluray T1','UHD Bluray T2','HD Bluray T2','UHD Bluray T3','HD Bluray T3','Web T1','Web T2','Web T3','Web T4','Web T5','Web T6','Web Scene','SeaDex Best','SeaDex Alt','BD T1','BD T2','BD T3','BD T4','BD T5','BD T6','BD T7','BD T8','Asian T1','Asian T2','Asian T3'),'WEBRip'),'480p'),'bitrate'))*2)):[]",
+      "score": 100050,
+      "enabled": true
+    },
+    {
+      "expression": "/*#480p WEB-DL*/ /*Median Bitrate Check*/ count(resolution(quality(rseMatched(streams,'Remux T1','Remux T2','Remux T3','UHD Bluray T1','HD Bluray T1','UHD Bluray T2','HD Bluray T2','UHD Bluray T3','HD Bluray T3','Web T1','Web T2','Web T3','Web T4','Web T5','Web T6','Web Scene','SeaDex Best','SeaDex Alt','BD T1','BD T2','BD T3','BD T4','BD T5','BD T6','BD T7','BD T8','Asian T1','Asian T2','Asian T3'),'WEB-DL','WEBRip'),'480p'))==0 and count(bitrate(resolution(quality(streams,'WEB-DL'),'480p'),median(values(bitrate(resolution(quality(streams,'WEB-DL'),'480p'),'250kbps'),'bitrate'))*0.70,median(values(bitrate(resolution(quality(streams,'WEB-DL'),'480p'),'250kbps'),'bitrate'))*1.30))>=3?bitrate(resolution(quality(streams,'WEB-DL'),'480p'),median(values(bitrate(resolution(quality(streams,'WEB-DL'),'480p'),'250kbps'),'bitrate'))*0.70,median(values(bitrate(resolution(quality(streams,'WEB-DL'),'480p'),'250kbps'),'bitrate'))*2):[]",
+      "score": 100050,
+      "enabled": true
+    },
+    {
+      "expression": "/*#480p WEBRip*/ /*Regex Bitrate Check*/ count(resolution(quality(rseMatched(streams,'Remux T1','Remux T2','Remux T3','UHD Bluray T1','HD Bluray T1','UHD Bluray T2','HD Bluray T2','UHD Bluray T3','HD Bluray T3','Web T1','Web T2','Web T3','Web T4','Web T5','Web T6','Web Scene','SeaDex Best','SeaDex Alt','BD T1','BD T2','BD T3','BD T4','BD T5','BD T6','BD T7','BD T8','Asian T1','Asian T2','Asian T3'),'WEBRip'),'480p'))>0?negate(rseMatched(streams,'Remux T1','Remux T2','Remux T3','UHD Bluray T1','HD Bluray T1','UHD Bluray T2','HD Bluray T2','UHD Bluray T3','HD Bluray T3','Web T1','Web T2','Web T3','Web T4','Web T5','Web T6','Web Scene','SeaDex Best','SeaDex Alt','BD T1','BD T2','BD T3','BD T4','BD T5','BD T6','BD T7','BD T8','Asian T1','Asian T2','Asian T3'),bitrate(resolution(quality(streams,'WEBRip'),'480p'),median(values(resolution(quality(rseMatched(streams,'Remux T1','Remux T2','Remux T3','UHD Bluray T1','HD Bluray T1','UHD Bluray T2','HD Bluray T2','UHD Bluray T3','HD Bluray T3','Web T1','Web T2','Web T3','Web T4','Web T5','Web T6','Web Scene','SeaDex Best','SeaDex Alt','BD T1','BD T2','BD T3','BD T4','BD T5','BD T6','BD T7','BD T8','Asian T1','Asian T2','Asian T3'),'WEBRip'),'480p'),'bitrate'))*0.90,median(values(resolution(quality(rseMatched(streams,'Remux T1','Remux T2','Remux T3','UHD Bluray T1','HD Bluray T1','UHD Bluray T2','HD Bluray T2','UHD Bluray T3','HD Bluray T3','Web T1','Web T2','Web T3','Web T4','Web T5','Web T6','Web Scene','SeaDex Best','SeaDex Alt','BD T1','BD T2','BD T3','BD T4','BD T5','BD T6','BD T7','BD T8','Asian T1','Asian T2','Asian T3'),'WEBRip'),'480p'),'bitrate'))*2)):[]",
+      "score": 100100,
+      "enabled": true
+    },
+    {
+      "expression": "/*#480p DVD REMUX*/ /*Regex Bitrate Check*/ count(resolution(quality(rseMatched(streams,'Remux T1','Remux T2','Remux T3','UHD Bluray T1','HD Bluray T1','UHD Bluray T2','HD Bluray T2','UHD Bluray T3','HD Bluray T3','Web T1','Web T2','Web T3','Web T4','Web T5','Web T6','Web Scene','SeaDex Best','SeaDex Alt','BD T1','BD T2','BD T3','BD T4','BD T5','BD T6','BD T7','BD T8','Asian T1','Asian T2','Asian T3'),'DVD REMUX'),'480p'))>0?negate(rseMatched(streams,'Remux T1','Remux T2','Remux T3','UHD Bluray T1','HD Bluray T1','UHD Bluray T2','HD Bluray T2','UHD Bluray T3','HD Bluray T3','Web T1','Web T2','Web T3','Web T4','Web T5','Web T6','Web Scene','SeaDex Best','SeaDex Alt','BD T1','BD T2','BD T3','BD T4','BD T5','BD T6','BD T7','BD T8','Asian T1','Asian T2','Asian T3'),bitrate(resolution(quality(streams,'DVD REMUX'),'480p'),median(values(resolution(quality(rseMatched(streams,'Remux T1','Remux T2','Remux T3','UHD Bluray T1','HD Bluray T1','UHD Bluray T2','HD Bluray T2','UHD Bluray T3','HD Bluray T3','Web T1','Web T2','Web T3','Web T4','Web T5','Web T6','Web Scene','SeaDex Best','SeaDex Alt','BD T1','BD T2','BD T3','BD T4','BD T5','BD T6','BD T7','BD T8','Asian T1','Asian T2','Asian T3'),'DVD REMUX'),'480p'),'bitrate'))*0.90,median(values(resolution(quality(rseMatched(streams,'Remux T1','Remux T2','Remux T3','UHD Bluray T1','HD Bluray T1','UHD Bluray T2','HD Bluray T2','UHD Bluray T3','HD Bluray T3','Web T1','Web T2','Web T3','Web T4','Web T5','Web T6','Web Scene','SeaDex Best','SeaDex Alt','BD T1','BD T2','BD T3','BD T4','BD T5','BD T6','BD T7','BD T8','Asian T1','Asian T2','Asian T3'),'DVD REMUX'),'480p'),'bitrate'))*2)):[]",
+      "score": 100300,
+      "enabled": true
+    },
+    {
+      "expression": "/*#480p DVD REMUX*/ /*480p DVDRip Regex Check*/ count(resolution(quality(rseMatched(streams,'Remux T1','Remux T2','Remux T3','UHD Bluray T1','HD Bluray T1','UHD Bluray T2','HD Bluray T2','UHD Bluray T3','HD Bluray T3','Web T1','Web T2','Web T3','Web T4','Web T5','Web T6','Web Scene','SeaDex Best','SeaDex Alt','BD T1','BD T2','BD T3','BD T4','BD T5','BD T6','BD T7','BD T8','Asian T1','Asian T2','Asian T3'),'DVD REMUX'),'480p'))==0 and count(resolution(quality(rseMatched(streams,'Remux T1','Remux T2','Remux T3','UHD Bluray T1','HD Bluray T1','UHD Bluray T2','HD Bluray T2','UHD Bluray T3','HD Bluray T3','Web T1','Web T2','Web T3','Web T4','Web T5','Web T6','Web Scene','SeaDex Best','SeaDex Alt','BD T1','BD T2','BD T3','BD T4','BD T5','BD T6','BD T7','BD T8','Asian T1','Asian T2','Asian T3'),'DVDRip'),'480p'))>0?negate(rseMatched(streams,'Remux T1','Remux T2','Remux T3','UHD Bluray T1','HD Bluray T1','UHD Bluray T2','HD Bluray T2','UHD Bluray T3','HD Bluray T3','Web T1','Web T2','Web T3','Web T4','Web T5','Web T6','Web Scene','SeaDex Best','SeaDex Alt','BD T1','BD T2','BD T3','BD T4','BD T5','BD T6','BD T7','BD T8','Asian T1','Asian T2','Asian T3'),bitrate(resolution(quality(streams,'DVD REMUX'),'480p'),median(values(resolution(quality(rseMatched(streams,'Remux T1','Remux T2','Remux T3','UHD Bluray T1','HD Bluray T1','UHD Bluray T2','HD Bluray T2','UHD Bluray T3','HD Bluray T3','Web T1','Web T2','Web T3','Web T4','Web T5','Web T6','Web Scene','SeaDex Best','SeaDex Alt','BD T1','BD T2','BD T3','BD T4','BD T5','BD T6','BD T7','BD T8','Asian T1','Asian T2','Asian T3'),'DVDRip'),'480p'),'bitrate'))*0.90,median(values(resolution(quality(rseMatched(streams,'Remux T1','Remux T2','Remux T3','UHD Bluray T1','HD Bluray T1','UHD Bluray T2','HD Bluray T2','UHD Bluray T3','HD Bluray T3','Web T1','Web T2','Web T3','Web T4','Web T5','Web T6','Web Scene','SeaDex Best','SeaDex Alt','BD T1','BD T2','BD T3','BD T4','BD T5','BD T6','BD T7','BD T8','Asian T1','Asian T2','Asian T3'),'DVDRip'),'480p'),'bitrate'))*2)):[]",
+      "score": 100250,
+      "enabled": true
+    },
+    {
+      "expression": "/*#480p DVDRip*/ /*Regex Bitrate Check*/ count(resolution(quality(rseMatched(streams,'Remux T1','Remux T2','Remux T3','UHD Bluray T1','HD Bluray T1','UHD Bluray T2','HD Bluray T2','UHD Bluray T3','HD Bluray T3','Web T1','Web T2','Web T3','Web T4','Web T5','Web T6','Web Scene','SeaDex Best','SeaDex Alt','BD T1','BD T2','BD T3','BD T4','BD T5','BD T6','BD T7','BD T8','Asian T1','Asian T2','Asian T3'),'DVDRip'),'480p'))>0?negate(rseMatched(streams,'Remux T1','Remux T2','Remux T3','UHD Bluray T1','HD Bluray T1','UHD Bluray T2','HD Bluray T2','UHD Bluray T3','HD Bluray T3','Web T1','Web T2','Web T3','Web T4','Web T5','Web T6','Web Scene','SeaDex Best','SeaDex Alt','BD T1','BD T2','BD T3','BD T4','BD T5','BD T6','BD T7','BD T8','Asian T1','Asian T2','Asian T3'),bitrate(resolution(quality(streams,'DVDRip'),'480p'),median(values(resolution(quality(rseMatched(streams,'Remux T1','Remux T2','Remux T3','UHD Bluray T1','HD Bluray T1','UHD Bluray T2','HD Bluray T2','UHD Bluray T3','HD Bluray T3','Web T1','Web T2','Web T3','Web T4','Web T5','Web T6','Web Scene','SeaDex Best','SeaDex Alt','BD T1','BD T2','BD T3','BD T4','BD T5','BD T6','BD T7','BD T8','Asian T1','Asian T2','Asian T3'),'DVDRip'),'480p'),'bitrate'))*0.90,median(values(resolution(quality(rseMatched(streams,'Remux T1','Remux T2','Remux T3','UHD Bluray T1','HD Bluray T1','UHD Bluray T2','HD Bluray T2','UHD Bluray T3','HD Bluray T3','Web T1','Web T2','Web T3','Web T4','Web T5','Web T6','Web Scene','SeaDex Best','SeaDex Alt','BD T1','BD T2','BD T3','BD T4','BD T5','BD T6','BD T7','BD T8','Asian T1','Asian T2','Asian T3'),'DVDRip'),'480p'),'bitrate'))*2)):[]",
+      "score": 100300,
+      "enabled": true
+    },
+    {
+      "expression": "/*#4k REMUX*/ /*Minimum Bitrate*/ bitrate(resolution(quality(streams,'Bluray REMUX'),'2160p'),'20Mbps')",
+      "score": 96000,
+      "enabled": true
+    },
+    {
+      "expression": "/*#1080p REMUX*/ /*Minimum Bitrate*/ bitrate(resolution(quality(streams,'Bluray REMUX'),'1080p'),'10Mbps')",
+      "score": 86000,
+      "enabled": true
+    },
+    {
+      "expression": "/*#4k Bluray*/ /*Minimum Bitrate*/ bitrate(resolution(quality(streams,'Bluray'),'2160p'),'10Mbps')",
+      "score": 76000,
+      "enabled": true
+    },
+    {
+      "expression": "/*#1080p Bluray*/ /*Minimum Bitrate*/ bitrate(resolution(quality(streams,'Bluray'),'1080p'),'3.5Mbps')",
+      "score": 66000,
+      "enabled": true
+    },
+    {
+      "expression": "/*#4k WEB-DL*/ /*Minimum Bitrate*/ bitrate(resolution(quality(streams,'WEB-DL'),'2160p'),'5Mbps')",
+      "score": 56000,
+      "enabled": true
+    },
+    {
+      "expression": "/*#1080p WEB-DL*/ /*Minimum Bitrate*/ bitrate(resolution(quality(streams,'WEB-DL'),'1080p'),'3Mbps')",
+      "score": 46000,
+      "enabled": true
+    },
+    {
+      "expression": "/*#4k WEBRip*/ /*Minimum Bitrate*/ bitrate(resolution(quality(streams,'WEBRip'),'2160p'),'5Mbps')",
+      "score": 36000,
+      "enabled": true
+    },
+    {
+      "expression": "/*#1080p WEBRip*/ /*Minimum Bitrate*/ bitrate(resolution(quality(streams,'WEBRip'),'1080p'),'3Mbps')",
+      "score": 26000,
+      "enabled": true
+    },
+    {
+      "expression": "/*#720p Bluray*/ /*Minimum Bitrate*/ bitrate(resolution(quality(streams,'Bluray'),'720p'),'2Mbps')",
+      "score": 21000,
+      "enabled": true
+    },
+    {
+      "expression": "/*#720p WEB-DL*/ /*Minimum Bitrate*/ bitrate(resolution(quality(streams,'WEB-DL'),'720p'),'1Mbps')",
+      "score": 16000,
+      "enabled": true
+    },
+    {
+      "expression": "/*#720p WEBRip*/ /*Minimum Bitrate*/ bitrate(resolution(quality(streams,'WEBRip'),'720p'),'1Mbps')",
+      "score": 11000,
+      "enabled": true
+    },
+    {
+      "expression": "/*#576p Bluray*/ /*Minimum Bitrate*/ bitrate(resolution(quality(streams,'Bluray'),'576p'),'500kbps')",
+      "score": 10000,
+      "enabled": true
+    },
+    {
+      "expression": "/*#480p Bluray*/ /*Minimum Bitrate*/ bitrate(resolution(quality(streams,'Bluray'),'480p'),'500kbps')",
+      "score": 9000,
+      "enabled": true
+    },
+    {
+      "expression": "/*#576p WEB-DL*/ /*Minimum Bitrate*/ bitrate(resolution(quality(streams,'WEB-DL'),'576p'),'250kbps')",
+      "score": 8000,
+      "enabled": true
+    },
+    {
+      "expression": "/*#576p WEBRip*/ /*Minimum Bitrate*/ bitrate(resolution(quality(streams,'WEBRip'),'576p'),'250kbps')",
+      "score": 7000,
+      "enabled": true
+    },
+    {
+      "expression": "/*#576p DVD REMUX*/ /*Minimum Bitrate*/ bitrate(resolution(quality(streams,'DVD REMUX'),'576p'),'250kbps')",
+      "score": 6000,
+      "enabled": true
+    },
+    {
+      "expression": "/*#576p DVDRip*/ /*Minimum Bitrate*/ bitrate(resolution(quality(streams,'DVDRip'),'576p'),'100kbps')",
+      "score": 5000,
+      "enabled": true
+    },
+    {
+      "expression": "/*#480p WEB-DL*/ /*Minimum Bitrate*/ bitrate(resolution(quality(streams,'WEB-DL'),'480p'),'250kbps')",
+      "score": 4000,
+      "enabled": true
+    },
+    {
+      "expression": "/*#480p WEBRip*/ /*Minimum Bitrate*/ bitrate(resolution(quality(streams,'WEBRip'),'480p'),'250kbps')",
+      "score": 3000,
+      "enabled": true
+    },
+    {
+      "expression": "/*#480p DVD REMUX*/ /*Minimum Bitrate*/ bitrate(resolution(quality(streams,'DVD REMUX'),'480p'),'250kbps')",
+      "score": 2000,
+      "enabled": true
+    },
+    {
+      "expression": "/*#480p DVDRip*/ /*Minimum Bitrate*/ bitrate(resolution(quality(streams,'DVDRip'),'480p'),'100kbps')",
+      "score": 1000,
+      "enabled": true
+    }
+  ],
+  "presets": [
+    {
+      "type": "seadex",
+      "instanceId": "cd5",
+      "enabled": true,
+      "options": {
+        "name": "SeaDex",
+        "timeout": 5000,
+        "mediaTypes": [
+          "anime"
+        ]
+      }
+    },
+    {
+      "type": "zilean",
+      "instanceId": "419",
+      "enabled": true,
+      "options": {
+        "name": "Zilean",
+        "timeout": 5000,
+        "mediaTypes": [],
+        "useMultipleInstances": false
+      }
+    },
+    {
+      "type": "knaben",
+      "instanceId": "88f",
+      "enabled": true,
+      "options": {
+        "name": "Knaben",
+        "timeout": 5000,
+        "mediaTypes": [],
+        "useMultipleInstances": false
+      }
+    }
+  ],
+  "source": "https://duck-tools.pages.dev/quackstart/",
+  "retrieved": "2026-10-14"
+}

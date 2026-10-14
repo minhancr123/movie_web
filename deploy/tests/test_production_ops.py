@@ -20,6 +20,7 @@ class ProductionOpsTest(unittest.TestCase):
             (root / '.env').write_text('STREAM_SOURCE_PROVIDER=aiostreams\n')
             (root / 'deploy/aiostreams.compose.yml').write_text('services: {}\n')
             (state / '.env').write_text('SECRET_KEY=' + 'a' * 64 + '\n')
+            (state / 'quack-config.json').write_text('{"cinevnAccountScoped": true}')
             with sqlite3.connect(state / 'data/db.sqlite') as connection:
                 connection.execute('PRAGMA journal_mode=WAL')
                 connection.execute('CREATE TABLE configs (name TEXT)')
@@ -28,6 +29,7 @@ class ProductionOpsTest(unittest.TestCase):
                 with patch.object(ops, 'ROOT', root), patch.object(ops, 'AIO_STATE', state):
                     ops.snapshot_aiostreams(stage)
             self.assertTrue(ops.verify_aiostreams_snapshot(stage))
+            self.assertTrue(json.loads((stage / 'aiostreams/quack-config.json').read_text())['cinevnAccountScoped'])
             with sqlite3.connect(stage / 'aiostreams/db.sqlite') as restored:
                 self.assertEqual(restored.execute('SELECT name FROM configs').fetchall(), [('committed-profile',)])
             (stage / 'aiostreams/.env').write_text('SECRET_KEY=missing\n')

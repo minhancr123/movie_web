@@ -1,5 +1,5 @@
 import assert from 'node:assert/strict';
-import { fetchAioStreams, aiostreamsCacheScope } from '../services/playback/aiostreamsClient.js';
+import { fetchAioStreams, aiostreamsCacheScope, aiostreamsUserDataForKey } from '../services/playback/aiostreamsClient.js';
 
 const env = { AIOSTREAMS_BASE_URL: 'http://aiostreams:3000', AIOSTREAMS_USER_DATA: 'private-test-config' };
 const media = { type: 'series', id: 'tt0903747:1:1' };
@@ -19,6 +19,7 @@ assert.ok(called);
 assert.equal(rows[0].behaviorHints.filename, 'Show.S01E01.1080p.AVC.mkv');
 assert.equal(rows[0].behaviorHints.videoSize, 1234);
 assert.equal(rows[0].fileIdx, 2);
+assert.equal(rows[0].discoveryRank, 0);
 assert.ok(!('url' in rows[0]) && !('requestHeaders' in rows[0]), 'shared torrent feed never shares debrid credentials');
 
 for (const base of ['http://169.254.169.254:3000', 'http://aiostreams:3000/other', 'http://user:pass@aiostreams:3000']) {
@@ -32,6 +33,13 @@ await assert.rejects(fetchAioStreams(media, { env, timeoutMs: 5, fetchFn: (_url,
 }) }), /aborted/);
 assert.notEqual(aiostreamsCacheScope('profile-a'), aiostreamsCacheScope('profile-b'));
 assert.equal(aiostreamsCacheScope('profile-a'), aiostreamsCacheScope('profile-a'));
+const shared = Buffer.from(JSON.stringify({ cinevnAccountScoped: true, presets: [], services: [] })).toString('base64');
+const accountA = aiostreamsUserDataForKey('private-key-a', shared);
+const accountB = aiostreamsUserDataForKey('private-key-b', shared);
+assert.notEqual(aiostreamsCacheScope(accountA), aiostreamsCacheScope(accountB), 'account metadata caches must be isolated');
+assert.equal(JSON.parse(Buffer.from(accountA, 'base64').toString()).services[0].credentials.apiKey, 'private-key-a');
+assert.ok(!Buffer.from(shared, 'base64').toString().includes('private-key-a'), 'saved profile stays credential-free');
+assert.throws(() => aiostreamsUserDataForKey(null, shared), /connection is missing/);
 console.log('OK AIOStreams metadata, internal peer boundary, timeout, response limit and cache isolation');
 
 process.env.MONGODB_URI = 'mongodb://127.0.0.1:27017/test';
@@ -39,7 +47,7 @@ process.env.REDIS_URL = 'redis://127.0.0.1:6399';
 process.env.STREMIO_ADDONS = '';
 process.env.STREAM_SOURCE_PROVIDER = 'aiostreams';
 process.env.AIOSTREAMS_BASE_URL = env.AIOSTREAMS_BASE_URL;
-process.env.AIOSTREAMS_USER_DATA = 'fallback-probe';
+process.env.AIOSTREAMS_USER_DATA = Buffer.from(JSON.stringify({ presets: [] })).toString('base64');
 let attempts = 0;
 const originalFetch = globalThis.fetch;
 globalThis.fetch = async () => { attempts += 1; return new Response('', { status: 503 }); };

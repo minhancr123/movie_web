@@ -1401,6 +1401,7 @@ export const resolvePlayback = async (req, res) => {
     stage('sources');
     const { candidates, errors: addonErrors } = detail.imdbId 
       ? await getStreamCandidates({
+          debridKey,
           imdbId: detail.imdbId,
           mediaType: type,
           season,
@@ -2583,6 +2584,7 @@ export const prewarmPlayback = async (req, res) => {
     }
 
     const { candidates } = await getStreamCandidates({
+      debridKey,
       imdbId: detail.imdbId,
       mediaType: type,
       season,
@@ -2775,6 +2777,7 @@ export const listPlaybackSources = async (req, res) => {
     if (detail.imdbId) {
       try {
         const streamRes = await getStreamCandidates({
+          debridKey,
           imdbId: detail.imdbId,
           mediaType: type,
           season,
@@ -3275,6 +3278,7 @@ export const getPlaybackSubtitles = async (req, res) => {
     }
 
     const { candidates } = await getStreamCandidates({
+      debridKey,
       imdbId: detail.imdbId,
       mediaType: type,
       season,

@@ -12,6 +12,17 @@ const make = (height, i = 0) => ({
 const candidates = [...Array.from({ length: 20 }, (_, i) => make(2160, i)), make(1080), make(720)];
 const options = { runtimeMinutes: 53, expectedTitles: ['Lanterns'] };
 
+test('QuackStart release order is retained only within equal quality, after direct playback', () => {
+  const mkv = { playable: true, resolution: 1080, cached: true, hdr: null, container: 'mkv', codec: 'h264' };
+  const ranked = [
+    { ...mkv, infoHash: '4k', resolution: 2160, discoveryRank: 20 },
+    { ...mkv, infoHash: 'generic', discoveryRank: 12 },
+    { ...mkv, infoHash: 'tier1', discoveryRank: 0 },
+    { ...mkv, infoHash: 'direct', container: 'mp4', audio: { browserFriendly: true }, discoveryRank: 15 },
+  ];
+  assert.deepEqual(prioritizeDirectCandidates(ranked).map(s => s.infoHash), ['4k', 'direct', 'tier1', 'generic']);
+});
+
 test('cached browser-friendly MP4 is tried first at the same quality, while all manual sources remain available', () => {
   const mkv = { ...make(1080), filename: 'Lanterns.1080p.BluRay.H264.DTS.5.1.mkv', sizeBytes: 4e9 };
   const mp4 = { ...make(1080, 1), filename: 'Lanterns.1080p.WEB-DL.H264.AAC.2.0.mp4', sizeBytes: 2e9 };

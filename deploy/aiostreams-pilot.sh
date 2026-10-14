@@ -12,9 +12,13 @@ env = state / '.env'
 if not env.exists():
     env.write_text('BASE_URL=http://aiostreams:3000\nSECRET_KEY=' + secrets.token_hex(32)
         + '\nDATABASE_URI=sqlite://./data/db.sqlite\n'
-        'NODE_OPTIONS=--max-old-space-size=256 --max-semi-space-size=8 --expose-gc\n'
+        'NODE_OPTIONS=--max-old-space-size=256 --max-semi-space-size=8 --expose-gc --max-http-header-size=131072\n'
         'LOG_LEVEL=warn\nLOG_BUFFER_MAX_BYTES=4194304\nLOG_BUFFER_MAX_ENTRIES=1000\n'
         'STREAM_API_RATE_LIMIT_MAX_REQUESTS=20\nSTREAM_API_RATE_LIMIT_WINDOW=10\n')
+contents = env.read_text()
+if '--max-http-header-size=' not in contents:
+    contents = contents.replace('--expose-gc', '--expose-gc --max-http-header-size=131072')
+    env.write_text(contents)
 env.chmod(0o600)
 items = json.loads(subprocess.check_output(['docker', 'inspect', 'cineon-backend']))[0]['Config']['Env']
 values = dict(item.split('=', 1) for item in items if '=' in item)

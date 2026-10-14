@@ -16,7 +16,7 @@ import { cached, CACHE_TTL, setCache } from '../config/redis.js';
 import { safeFetchJson, safeFetchText, assertUrlShape } from './security/safeFetch.js';
 import { normalizeAddonSubtitle } from './playback/userSubtitles.js';
 import { parseContentRef } from './contentRef.js';
-import { fetchAioStreams, aiostreamsCacheScope } from './playback/aiostreamsClient.js';
+import { fetchAioStreams, aiostreamsCacheScope, aiostreamsUserDataForKey } from './playback/aiostreamsClient.js';
 
 const REQUEST_TIMEOUT_MS = 4000;
 const STREAM_CACHE_TTL = 600; // addon answers churn as torrents die
@@ -575,6 +575,8 @@ const normalizeStream = (stream, addonHost) => {
     fileIdx: Number.isInteger(stream.fileIdx) ? stream.fileIdx : null,
     sizeBytes: Number(stream.behaviorHints?.videoSize || stream.size || 0) || null,
     source: addonHost,
+    ...(addonHost === 'AIOStreams' && Number.isInteger(stream.discoveryRank)
+      ? { discoveryRank: stream.discoveryRank } : {}),
   };
 };
 
@@ -605,14 +607,15 @@ const fetchFromAddon = async (addon, type, id) => {
  * rather than thrown. Duplicate infohashes across addons collapse into one
  * candidate, keeping the entry that carried more metadata.
  */
-export const getStreamCandidates = async ({ imdbId, mediaType, season, episode }) => {
-  const aioScope = aiostreamsCacheScope();
+export const getStreamCandidates = async ({ imdbId, mediaType, season, episode, debridKey }) => {
+  const aioScope = aiostreamsCacheScope(JSON.stringify([process.env.AIOSTREAMS_USER_DATA || '', debridKey || '']));
   if (process.env.STREAM_SOURCE_PROVIDER === 'aiostreams' && Date.now() >= (aioRetryAfter.get(aioScope) || 0)) {
     const media = toStremioId({ imdbId, mediaType, season, episode });
     if (media) {
       try {
+        const userData = aiostreamsUserDataForKey(debridKey);
         const result = await cached(`aio:streams:v1:${aioScope}:${media.type}:${media.id}`, STREAM_CACHE_TTL, async () => {
-          const rows = await fetchAioStreams(media);
+          const rows = await fetchAioStreams(media, { env: { ...process.env, AIOSTREAMS_USER_DATA: userData } });
           const byHash = new Map();
           for (const row of rows) {
             const candidate = normalizeStream(row, 'AIOStreams');

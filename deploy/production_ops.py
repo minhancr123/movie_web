@@ -83,7 +83,7 @@ def snapshot_aiostreams(staging):
         return
     target = staging / 'aiostreams'
     target.mkdir(mode=0o700)
-    for name in ['.env', 'pilot-config.json', 'pilot-multi-config.json']:
+    for name in ['.env', 'pilot-config.json', 'pilot-multi-config.json', 'quack-config.json']:
         source = AIO_STATE / name
         if source.exists():
             shutil.copy2(source, target / name)

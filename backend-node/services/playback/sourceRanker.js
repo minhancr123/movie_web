@@ -571,7 +571,15 @@ export const prioritizeDirectCandidates = (ranked) => {
     groups.get(key).push(source);
   }
   for (const group of groups.values()) {
-    group.sort((a, b) => Number(Boolean(likelyDirect(b))) - Number(Boolean(likelyDirect(a))));
+    group.sort((a, b) => {
+      const direct = Number(Boolean(likelyDirect(b))) - Number(Boolean(likelyDirect(a)));
+      if (direct) return direct;
+      // Preserve AIO/QuackStart's release-group ranking inside equal quality
+      // slots, after the browser direct-play preference. Native addon rows
+      // carry no discoveryRank and keep their existing score order.
+      return Number.isInteger(a.discoveryRank) && Number.isInteger(b.discoveryRank)
+        ? a.discoveryRank - b.discoveryRank : 0;
+    });
   }
   const positions = new Map();
   return ranked.map((source) => {
