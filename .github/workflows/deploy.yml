@@ -346,6 +346,9 @@ jobs:
             printf 'BACKEND_IMAGE=%s\nFRONTEND_IMAGE=%s\nRELEASE_ID=%s\n' \
               'cineon-rollback-backend:previous' 'cineon-rollback-frontend:previous' "$PREV_RELEASE" > .rollback.env
             sudo -n python3 deploy/production_ops.py install
+            # Release the deploy lock before the cleanup helper takes it.
+            flock -u 9
+            python3 deploy/prune-release-images.py --apply || true
             docker builder prune -af >/dev/null 2>&1 || true
             docker image prune -f >/dev/null 2>&1 || true
             df -h / | tail -1

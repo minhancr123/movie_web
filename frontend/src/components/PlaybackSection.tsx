@@ -6,7 +6,7 @@ import Image from 'next/image';
 import { useSession } from 'next-auth/react';
 import { Loader2, AlertCircle, Key, RefreshCw, CheckCircle2, Download, Film, Layers, PictureInPicture2, ChevronLeft, ChevronRight, ListVideo } from 'lucide-react';
 import VideoPlayer from '@/components/VideoPlayer';
-import { nextPlayableEpisode } from '@/lib/playback-extras';
+import { nextPlayableEpisode, fallbackPlaybackNotice } from '@/lib/playback-extras';
 import CinemaLayer, { type CinemaMode } from '@/components/CinemaLayer';
 
 /** Mirrors PLAYBACK_STARTUP_BUFFER_SECONDS on the server, for the wait copy. */
@@ -1525,10 +1525,10 @@ export default function PlaybackSection({
       // clear only our own banner when a later resolve comes back clean.
       if (data.fallbackSource) {
         setNotice(
-          `Đang phát bản dự phòng vì bản chính tải quá chậm. Phụ đề có thể bị lệch giờ một chút — tua lại sau ít phút để xem bản gốc.`,
+          fallbackPlaybackNotice(data.fallbackSource.code),
         );
       } else {
-        setNotice((prev) => (prev && prev.startsWith('Đang phát bản dự phòng') ? null : prev));
+        setNotice((prev) => (prev && (prev.startsWith('Đang phát bản dự phòng') || prev.startsWith('Không mở được bản chính nên')) ? null : prev));
       }
       // Any success settles the waiting room: the 503 ladder's notice must
       // never outlive the film it was waiting for (keeps the banner above:

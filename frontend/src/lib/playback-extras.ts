@@ -15,3 +15,7 @@ export const seekPreviewPosition = (x: number, left: number, width: number, dura
   const fraction = Math.max(0, Math.min(1, (x - left) / width));
   return { at: Math.min(Math.max(0, duration - 0.1), fraction * duration), percent: fraction * 100 };
 };
+
+export const fallbackPlaybackNotice = (code?: string | null): string => code === 'REMUX_NO_SPACE'
+  ? 'Đang phát bản dự phòng vì máy chủ thiếu dung lượng để chuẩn bị bản chính. Bạn có thể chọn nguồn khác trong danh sách nguồn.'
+  : 'Không mở được bản chính nên đang phát bản dự phòng. Bản này có thể khác thời lượng hoặc phụ đề; bạn có thể chọn nguồn khác trong danh sách nguồn.';

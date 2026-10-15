@@ -20,18 +20,22 @@
 #   (crontab -l 2>/dev/null; echo "*/30 * * * * /opt/cineon/deploy/disk-watchdog.sh >> /opt/cineon/disk-watchdog.log 2>&1") | crontab -
 set -uo pipefail
 
-THRESHOLD_PCT="${DISK_WATCHDOG_THRESHOLD_PCT:-80}"
+THRESHOLD_PCT="${DISK_WATCHDOG_THRESHOLD_PCT:-75}"
+MIN_FREE_GB="${DISK_WATCHDOG_MIN_FREE_GB:-9}"
+SCRIPT_DIR=$(cd -- "$(dirname -- "$0")" && pwd)
 
 log() { printf '%s [disk-watchdog] %s\n' "$(date -u '+%Y-%m-%dT%H:%M:%SZ')" "$*"; }
 
 usep=$(df --output=pcent / | tail -1 | tr -d ' %')
 log "use=${usep}% threshold=${THRESHOLD_PCT}%"
 
-if [ "$usep" -lt "$THRESHOLD_PCT" ]; then
+free_kb=$(df --output=avail / | tail -1 | tr -d ' ')
+if [ "$usep" -lt "$THRESHOLD_PCT" ] && [ "$free_kb" -ge "$((MIN_FREE_GB * 1024 * 1024))" ]; then
   exit 0
 fi
 
-log "OVER THRESHOLD — pruning unused docker data (running containers and volumes untouched)"
+log "LOW HEADROOM — pruning obsolete release images (container and rollback pins preserved)"
+python3 "$SCRIPT_DIR/prune-release-images.py" --apply || log "release cleanup failed; retained images"
 docker builder prune -af >/dev/null 2>&1 || true
 docker image prune -f >/dev/null 2>&1 || true
 after=$(df --output=pcent / | tail -1 | tr -d ' %')

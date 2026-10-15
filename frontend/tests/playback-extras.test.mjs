@@ -8,7 +8,7 @@ import { pathToFileURL } from 'node:url';
 const root = path.resolve(import.meta.dirname, '..');
 const out = mkdtempSync(path.join(tmpdir(), 'playback-extras-'));
 execFileSync(process.execPath, [path.join(root, 'node_modules/typescript/bin/tsc'), 'src/lib/playback-extras.ts', '--outDir', out, '--module', 'commonjs', '--target', 'es2020', '--skipLibCheck'], { cwd: root });
-const { nextPlayableEpisode, activeSkipMark, seekPreviewPosition } = await import(pathToFileURL(path.join(out, 'playback-extras.js')).href);
+const { nextPlayableEpisode, activeSkipMark, seekPreviewPosition, fallbackPlaybackNotice } = await import(pathToFileURL(path.join(out, 'playback-extras.js')).href);
 process.on('exit', () => rmSync(out, { recursive: true, force: true }));
 test('next episode uses real episode numbers, never loops or jumps into an unaired episode', () => {
   const episodes = [{ episodeNumber: 3 }, { episodeNumber: 1 }, { episodeNumber: 2, airDate: '2026-10-16' }];
@@ -35,4 +35,10 @@ test('hover times span the full film, not just the written HLS prefix', () => {
   assert.equal(seekPreviewPosition(0, 100, 600, 7200).at, 0);
   assert.equal(seekPreviewPosition(900, 100, 600, 7200).at, 7199.9);
   assert.equal(seekPreviewPosition(1, 0, 0, 7200), null);
+});
+
+test('fallback wording identifies disk exhaustion without claiming that seeking repairs it', () => {
+  assert.match(fallbackPlaybackNotice('REMUX_NO_SPACE'), /thiếu dung lượng/);
+  assert.doesNotMatch(fallbackPlaybackNotice('VIDEO_TRANSCODE_FORBIDDEN'), /tải quá chậm|tua lại/);
+  assert.doesNotMatch(fallbackPlaybackNotice(), /tải quá chậm|tua lại/);
 });

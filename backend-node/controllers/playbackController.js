@@ -1955,7 +1955,7 @@ export const resolvePlayback = async (req, res) => {
               `resolvePlayback bo qua nguon cho tmdb=${tmdbId}: `
               + `file goc khong tuong thich browser, va remux la thieu cho ngay`,
             );
-            lastError = new Error('Không đủ dung lượng để chuẩn hoá nguồn này cho trình duyệt');
+            lastError = new RemuxNoSpaceError(diskFit);
             continue;
           }
         }
@@ -2430,6 +2430,7 @@ export const resolvePlayback = async (req, res) => {
         // so the player says so instead of looking like mistimed subtitles.
         vimoFallback.data.fallbackSource = {
           kind: 'vimo',
+          code: lastError?.code || null,
           reason: publicText(String(lastError?.message || ''), 'Nguồn phát đang bận, vui lòng thử lại').slice(0, 160),
         };
         return res.json({ success: true, data: vimoFallback.data });
