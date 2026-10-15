@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 #
-# Disk watchdog for the 30 GB box. Runs from cron every 30 minutes.
+# Disk watchdog for the 30 GB box. Installed as a systemd timer every 15 minutes.
 #
 # What already cleans itself, and why this still exists:
 # - the transcode janitor (every 60s) manages only its own cache dir against
@@ -11,8 +11,8 @@
 # Pulled digest images were measured accumulating 15 GB in a single week,
 # which filled the disk and made the remux guard refuse every film.
 #
-# Over THRESHOLD_PCT it prunes what no container uses (builder cache plus
-# untagged images) and logs before/after. It never touches running
+# Below the free-space floor or over THRESHOLD_PCT it removes obsolete
+# release digests and disposable Docker cache, preserving pinned rollback images. It never touches running
 # containers, volumes, or the transcode cache — the app's janitor owns that,
 # and deleting what it is filling would corrupt in-flight viewers.
 #

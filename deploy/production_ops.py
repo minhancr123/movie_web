@@ -307,17 +307,19 @@ def install():
     script = ROOT / 'deploy/production_ops.py'
     for name, command, schedule in [('monitor', 'monitor', '*-*-* *:*:00'),
                                      ('backup', 'backup', '*-*-* 19:00:00 UTC'),
-                                     ('restore', 'restore', 'Sun *-*-* 20:00:00 UTC')]:
+                                     ('restore', 'restore', 'Sun *-*-* 20:00:00 UTC'),
+                                     ('disk-watchdog', None, '*-*-* *:0/15:00')]:
         Path(f'/etc/systemd/system/cineon-{name}.service').write_text(
             '[Unit]\nDescription=CineVN ' + name + '\nAfter=docker.service network-online.target\n'
             '[Service]\nType=oneshot\nUMask=0077\nNice=10\nIOSchedulingClass=best-effort\nIOSchedulingPriority=7\n'
-            'ExecStart=/usr/bin/python3 ' + str(script) + ' ' + command + '\nTimeoutStartSec=2400\n')
+            'ExecStart=' + ('/usr/bin/bash ' + str(ROOT / 'deploy/disk-watchdog.sh') if name == 'disk-watchdog'
+                            else '/usr/bin/python3 ' + str(script) + ' ' + command) + '\nTimeoutStartSec=2400\n')
         Path(f'/etc/systemd/system/cineon-{name}.timer').write_text(
             '[Unit]\nDescription=CineVN ' + name + ' schedule\n[Timer]\nOnCalendar=' + schedule + '\n'
             'Persistent=true\nRandomizedDelaySec=' + ('0' if name == 'monitor' else '120') + '\n'
             '[Install]\nWantedBy=timers.target\n')
     run(['systemctl', 'daemon-reload'])
-    run(['systemctl', 'enable', '--now', 'cineon-monitor.timer', 'cineon-backup.timer', 'cineon-restore.timer'])
+    run(['systemctl', 'enable', '--now', 'cineon-monitor.timer', 'cineon-backup.timer', 'cineon-restore.timer', 'cineon-disk-watchdog.timer'])
 
 
 if __name__ == '__main__':
