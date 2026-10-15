@@ -20,7 +20,7 @@
   "author": "",
   "license": "ISC",
   "dependencies": {
-    "@elastic/elasticsearch": "^8.15.0",
+    "@elastic/elasticsearch": "^9.5.1",
     "@sentry/node": "11.0.0",
     "bcryptjs": "^2.4.3",
     "bullmq": "^5.21.0",
