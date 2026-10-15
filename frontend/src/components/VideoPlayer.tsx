@@ -3,6 +3,8 @@
 import React, { useEffect, useRef, useState, useCallback } from 'react';
 import { createPortal } from 'react-dom';
 import Hls from 'hls.js';
+import { SeekPreview, TimelineSkip, NextEpisodePrompt } from './PlaybackExtras';
+import { seekPreviewPosition } from '@/lib/playback-extras';
 import {
     Play, Pause, Maximize, Minimize, Volume2, Volume1, VolumeX,
     RotateCcw, RotateCw, Settings, SkipForward, Loader2, Captions, X
@@ -58,6 +60,8 @@ interface VideoPlayerProps {
         slug: string;
     };
     onNextEpisode?: () => void;
+    nextEpisodeLabel?: string;
+    suspended?: boolean;
     /**
      * Subtitle/audo inventory context. The player lazily asks the backend
      * which embedded audio + text-subtitle tracks the playing source has and
@@ -160,11 +164,18 @@ interface VideoPlayerProps {
     fullscreenTargetRef?: React.RefObject<HTMLDivElement | null>;
 }
 
-export default function VideoPlayer({ src, movie, episode, authToken, durationSeconds, onNextEpisode, subContext, onPickAudio, activeAudioIndex, pendingAudioIndex = null, onPlaybackFailure, onUnplayableSource, reloadKey = 0, onPlaybackProgress, presentationShiftMs = 0, seekStartSupported = true, sessionReused = false, onDecodeOverload, onCinemaChange, onVideoReady, fullscreenTargetRef, startAt = 0, targetAt = null, onSeekToPosition, onCancelSeek, seekProgress = null, windowSeconds = 0, onPrepareWindow }: VideoPlayerProps) {
+export default function VideoPlayer({ src, movie, episode, authToken, durationSeconds, onNextEpisode, nextEpisodeLabel, suspended = false, subContext, onPickAudio, activeAudioIndex, pendingAudioIndex = null, onPlaybackFailure, onUnplayableSource, reloadKey = 0, onPlaybackProgress, presentationShiftMs = 0, seekStartSupported = true, sessionReused = false, onDecodeOverload, onCinemaChange, onVideoReady, fullscreenTargetRef, startAt = 0, targetAt = null, onSeekToPosition, onCancelSeek, seekProgress = null, windowSeconds = 0, onPrepareWindow }: VideoPlayerProps) {
     const videoRef = useRef<HTMLVideoElement>(null);
     const containerRef = useRef<HTMLDivElement>(null);
 
     const [isPlaying, setIsPlaying] = useState(false);
+    const [episodeEnded, setEpisodeEnded] = useState(false);
+    const [autoNextEnabled, setAutoNextEnabled] = useState(true);
+    const [hoverPreview, setHoverPreview] = useState<{ at: number; percent: number } | null>(null);
+    useEffect(() => {
+        try { setAutoNextEnabled(localStorage.getItem('cine_player_auto_next') !== 'false'); } catch {}
+    }, []);
+    useEffect(() => { setEpisodeEnded(false); setHoverPreview(null); }, [src, episode.slug, reloadKey]);
     const [duration, setDuration] = useState(0);
     const [currentTime, setCurrentTime] = useState(0);
     const [volume, setVolume] = useState(1);
@@ -412,6 +423,8 @@ export default function VideoPlayer({ src, movie, episode, authToken, durationSe
     const firedSeekIntentRef = useRef(-1);
     const preparedWindowRef = useRef<string>('');
     const beginSeekLock = (at: number, resume?: boolean) => {
+        if (suspended) return;
+        setEpisodeEnded(false);
         if (seekTargetRef.current === null) seekResumeIntentRef.current = resume ?? !videoRef.current?.paused;
         seekIntentSerialRef.current += 1;
         seekTargetRef.current = at;
@@ -441,6 +454,7 @@ export default function VideoPlayer({ src, movie, episode, authToken, durationSe
     // events); pausedBeforeRebuildRef snapshots the element at teardown as a
     // backstop for rebuilds that happen without events in between.
     const hasPlayedRef = useRef(false);
+    const pipelineContentRef = useRef<string | null>(null);
     const pausedBeforeRebuildRef = useRef(false);
     const userPausedRef = useRef(false);
 
@@ -1020,6 +1034,18 @@ export default function VideoPlayer({ src, movie, episode, authToken, durationSe
         const video = videoRef.current;
         if (!video) return;
 
+        if (suspended) {
+            seekIntentSerialRef.current += 1;
+            clearSeekLock();
+            grantRestoreRef.current = null;
+            restorePendingRef.current = true;
+            video.pause();
+            setIsPlaying(false);
+            return;
+        }
+        const contentKey = `${movie.slug}:${episode.slug}`;
+        const contentChanged = pipelineContentRef.current !== null && pipelineContentRef.current !== contentKey;
+        pipelineContentRef.current = contentKey;
         setError(null);
         setIsLoading(true);
         // Fresh pipeline, no picture yet: poster covers the black gap below
@@ -1045,7 +1071,7 @@ export default function VideoPlayer({ src, movie, episode, authToken, durationSe
         // target, which may be minutes stale (or 0) by now. Consumed once —
         // later seeks must never inherit it.
         let grantRestore: number | null = null;
-        if (typeof grantRestoreRef.current === 'number' && Number.isFinite(grantRestoreRef.current)) {
+        if (!contentChanged && typeof grantRestoreRef.current === 'number' && Number.isFinite(grantRestoreRef.current)) {
             grantRestore = grantRestoreRef.current;
         }
         grantRestoreRef.current = null;
@@ -1054,7 +1080,7 @@ export default function VideoPlayer({ src, movie, episode, authToken, durationSe
                 ? targetAt
                 : historyResume);
         const restoreTargetLocal = targetAbsolute === null ? 0 : toLocalSeekTarget(targetAbsolute, sessionStartAt);
-        const playAfterRestore = restorePlayIntent(hasPlayedRef.current, pausedBeforeRebuildRef.current,
+        const playAfterRestore = contentChanged || restorePlayIntent(hasPlayedRef.current, pausedBeforeRebuildRef.current,
             userPausedRef.current, seekTargetRef.current === null ? null : seekResumeIntentRef.current);
         restorePendingRef.current = true;
         // A new source has not necessarily decoded the requested frame yet.
@@ -1534,7 +1560,7 @@ export default function VideoPlayer({ src, movie, episode, authToken, durationSe
             // read as a stall. It re-arms on the next play/waiting event.
             clearStallTimer();
         };
-    }, [src, movie.slug, episode.slug, authToken, retryKey, reloadKey, onPlaybackFailure, seekStartSupported, targetAt]);
+    }, [src, movie.slug, episode.slug, authToken, retryKey, reloadKey, onPlaybackFailure, seekStartSupported, targetAt, suspended]);
 
     // History Saver
     useEffect(() => {
@@ -1665,6 +1691,7 @@ export default function VideoPlayer({ src, movie, episode, authToken, durationSe
 
         const handleDurationChange = () => setDuration(pickDisplayDuration(video.duration, durationSeconds));
         const handlePlay = () => {
+            setEpisodeEnded(false);
             hasPlayedRef.current = true;
             userPausedRef.current = false;
             setIsPlaying(true);
@@ -1717,7 +1744,8 @@ export default function VideoPlayer({ src, movie, episode, authToken, durationSe
                 return;
             }
             setIsPlaying(false);
-            // if (onNextEpisode) onNextEpisode(); // Optional auto-next
+            const expectedEnd = Number(durationSeconds) > 0 ? Number(durationSeconds) : sessionStartAt + video.duration;
+            setEpisodeEnded(Number.isFinite(expectedEnd) && expectedEnd > 0 && sessionStartAt + video.currentTime >= expectedEnd - 2);
         };
 
         video.addEventListener('timeupdate', handleTimeUpdate);
@@ -1966,8 +1994,9 @@ export default function VideoPlayer({ src, movie, episode, authToken, durationSe
         return NaN;
     };
 
-    const handleSeek = (e: React.ChangeEvent<HTMLInputElement>) => {
-        const raw = Number(e.target.value);
+    const seekToAbsolute = (raw: number) => {
+        if (suspended) return;
+        setEpisodeEnded(false);
         const video = videoRef.current;
         if (!video) return;
         // Targets inside the written window play instantly; targets outside
@@ -2009,11 +2038,13 @@ export default function VideoPlayer({ src, movie, episode, authToken, durationSe
         }
         setCurrentTime(decision.localTime);
     };
+    const handleSeek = (e: React.ChangeEvent<HTMLInputElement>) => seekToAbsolute(Number(e.target.value));
 
     // Tap-friendly ±10s seek shared by buttons, keyboard and gestures.
     // Routes through decideSeekTarget so remux sessions past the written head
     // trigger a server re-resolve instead of stalling on missing segments.
     const seekBy = useCallback((deltaSeconds: number) => {
+        if (suspended) return;
         const video = videoRef.current;
         if (!video) return;
         if (seekTargetRef.current !== null) {
@@ -2047,14 +2078,14 @@ export default function VideoPlayer({ src, movie, episode, authToken, durationSe
         }
         setCurrentTime(decision.localTime);
         handleMouseMove();
-    }, [displayTime, fullDuration, sessionStartAt, onSeekToPosition, showSyncToast, handleMouseMove]);
+    }, [displayTime, fullDuration, sessionStartAt, onSeekToPosition, showSyncToast, handleMouseMove, suspended]);
 
     // In-flight far-seek target (display seconds). Set per scrub tick, fired
     // debounced: without this, one drag spawns a resolve (and an ffmpeg)
     // per tick and sessions pile up faster than the server reaps them.
     // (State + epoch refs live near the top refs; togglePlay reads them.)
     useEffect(() => {
-        if (seekTarget === null || typeof onSeekToPosition !== 'function') return;
+        if (suspended || seekTarget === null || typeof onSeekToPosition !== 'function') return;
         const at = seekTarget;
         const intent = seekIntentSerialRef.current;
         if (firedSeekIntentRef.current === intent) return;
@@ -2086,7 +2117,7 @@ export default function VideoPlayer({ src, movie, episode, authToken, durationSe
                 });
         }, 650);
         return () => clearTimeout(timer);
-    }, [seekTarget, onSeekToPosition, movie.slug, episode.slug]);
+    }, [seekTarget, onSeekToPosition, movie.slug, episode.slug, suspended]);
 
     const handleVolumeChange = (e: React.ChangeEvent<HTMLInputElement>) => {
         const vol = Number(e.target.value);
@@ -2143,6 +2174,7 @@ export default function VideoPlayer({ src, movie, episode, authToken, durationSe
     // Keyboard shortcuts
     useEffect(() => {
         const handleKeyDown = (e: KeyboardEvent) => {
+            if (suspended) return;
             if (document.activeElement?.tagName === 'INPUT' || document.activeElement?.tagName === 'TEXTAREA') return;
 
             switch (e.key.toLowerCase()) {
@@ -2195,7 +2227,7 @@ export default function VideoPlayer({ src, movie, episode, authToken, durationSe
 
         window.addEventListener('keydown', handleKeyDown);
         return () => window.removeEventListener('keydown', handleKeyDown);
-    }, [togglePlay, toggleFullscreen, adjustSubDelay, adjustSecondaryOffset, seekBy]);
+    }, [togglePlay, toggleFullscreen, adjustSubDelay, adjustSecondaryOffset, seekBy, suspended]);
 
     if (error) {
         return (
@@ -2316,6 +2348,8 @@ export default function VideoPlayer({ src, movie, episode, authToken, durationSe
                     className="pointer-events-none absolute inset-0 h-full w-full object-cover opacity-40"
                 />
             )}
+            {!suspended && !episodeEnded && <TimelineSkip sessionId={subContext?.playbackSessionId} at={displayTime} duration={fullDuration} onSeek={seekToAbsolute} onNext={onNextEpisode} />}
+            {onNextEpisode && <NextEpisodePrompt ended={episodeEnded} enabled={autoNextEnabled} label={nextEpisodeLabel || 'Tập tiếp theo'} onNext={onNextEpisode} onCancel={() => setEpisodeEnded(false)} />}
             <video
                 ref={videoRef}
                 className={`w-full h-full ${videoScale === 'cover' ? 'object-cover' : videoScale === 'fill' ? 'object-fill' : 'object-contain'}`}
@@ -2490,7 +2524,14 @@ export default function VideoPlayer({ src, movie, episode, authToken, durationSe
                 {/* Progress Bar (taller invisible hit area for touch).
                     The track thickens on hover/active and stays vertically
                     centered, so it feels like YouTube's seek bar. */}
-                <div className="relative w-full h-6 -mt-1 cursor-pointer mb-1 flex items-center group/progress">
+                <div className="relative w-full h-6 -mt-1 cursor-pointer mb-1 flex items-center group/progress"
+                    onPointerMove={(event) => {
+                        if (event.pointerType === 'touch') return;
+                        const rect = event.currentTarget.getBoundingClientRect();
+                        setHoverPreview(seekPreviewPosition(event.clientX, rect.left, rect.width, fullDuration));
+                    }}
+                    onPointerLeave={() => setHoverPreview(null)}>
+                    {hoverPreview && <SeekPreview at={hoverPreview.at} percent={hoverPreview.percent} sessionId={subContext?.playbackSessionId} />}
                     <div className="absolute left-0 right-0 top-1/2 -translate-y-1/2 h-1.5 rounded-full group-hover/progress:h-3 group-active/progress:h-3 transition-all duration-200">
                         <div className="absolute top-0 left-0 h-full w-full bg-white/20 rounded-full overflow-hidden">
                             <div
@@ -2645,6 +2686,13 @@ export default function VideoPlayer({ src, movie, episode, authToken, durationSe
                                     </h4>
 
                                     <div className="min-h-0 flex-1 space-y-4 overflow-y-auto custom-scrollbar px-4 py-3">
+                                        {onNextEpisode && <label className="flex items-center justify-between gap-3 rounded-xl border border-white/10 bg-white/5 p-3 text-sm text-white">
+                                            <span>Tự phát tập kế tiếp</span>
+                                            <input type="checkbox" checked={autoNextEnabled} onChange={event => {
+                                                setAutoNextEnabled(event.target.checked);
+                                                try { localStorage.setItem('cine_player_auto_next', String(event.target.checked)); } catch {}
+                                            }} className="h-4 w-4 accent-amber-500" />
+                                        </label>}
                                         {/* Speed Controller */}
                                         <div>
                                             <div className="flex justify-between items-center mb-2">

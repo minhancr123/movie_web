@@ -97,6 +97,7 @@ export interface CatalogSeason {
 /** Episode entry for the pro player episodes panel (href prebuilt server-side). */
 export interface PlayerEpisode {
   episodeNumber: number;
+  airDate?: string | null;
   name: string;
   overview: string;
   still: string;

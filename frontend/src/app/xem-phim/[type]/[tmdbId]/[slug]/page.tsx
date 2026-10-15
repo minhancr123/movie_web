@@ -88,6 +88,7 @@ export default async function WatchPage({ params, searchParams }: PageParams) {
         seasonName = seasonData.name || `Mùa ${season}`;
         episodes = (seasonData.episodes || []).map((ep) => ({
           episodeNumber: ep.episodeNumber,
+          airDate: ep.airDate,
           name: ep.name,
           overview: ep.overview,
           still: ep.still,

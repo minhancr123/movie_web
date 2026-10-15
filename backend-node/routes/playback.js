@@ -1,4 +1,6 @@
 import express from 'express';
+import { getPlaybackTimeline, getPlaybackThumbnail } from '../controllers/playbackExtrasController.js';
+import { rateLimit } from '../middleware/rateLimit.js';
 import {
   resolvePlayback,
   prewarmPlayback,
@@ -46,6 +48,9 @@ router.get('/hls/r/:renditionId/:asset', mediaAuthMiddleware, hlsAssetRateLimit,
 router.get('/subtitles/vtt/:token', hlsAssetRateLimit, serveSubtitleVtt);
 
 router.use(authMiddleware);
+
+router.get('/session/:sessionId/timeline', playbackPollRateLimit, getPlaybackTimeline);
+router.get('/session/:sessionId/thumbnail', rateLimit({ max: 45, keyPrefix: 'rl:seek-thumbnail' }), getPlaybackThumbnail);
 
 router.post('/resolve', playbackRateLimit, resolvePlayback);
 router.post('/prewarm', playbackRateLimit, prewarmPlayback);

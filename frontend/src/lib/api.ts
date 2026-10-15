@@ -182,6 +182,8 @@ export const providerAPI = {
 };
 
 export const playbackAPI = {
+  timeline: (sessionId: string, signal?: AbortSignal) => authClient.get(`/playback/session/${encodeURIComponent(sessionId)}/timeline`, { signal, timeout: 6000 }),
+  thumbnail: (sessionId: string, at: number, signal?: AbortSignal) => authClient.get(`/playback/session/${encodeURIComponent(sessionId)}/thumbnail`, { params: { at }, responseType: 'blob', signal, timeout: 10_000 }),
   resolve: (data: {
     type: string;
     tmdbId: number;

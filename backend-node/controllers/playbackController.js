@@ -1981,6 +1981,8 @@ export const resolvePlayback = async (req, res) => {
           videoHash: fileHash?.videoHash ?? null,
           videoSize: fileHash?.videoSize ?? null,
           mode: 'direct',
+          durationSeconds: Number(probe.duration) > 0 ? Number(probe.duration) : null,
+          runtimeMinutes,
           videoAction,
           audioAction,
           audioIndex: decision.audioIndex ?? 0,

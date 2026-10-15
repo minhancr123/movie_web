@@ -6,6 +6,7 @@ import Image from 'next/image';
 import { useSession } from 'next-auth/react';
 import { Loader2, AlertCircle, Key, RefreshCw, CheckCircle2, Download, Film, Layers, PictureInPicture2, ChevronLeft, ChevronRight, ListVideo } from 'lucide-react';
 import VideoPlayer from '@/components/VideoPlayer';
+import { nextPlayableEpisode } from '@/lib/playback-extras';
 import CinemaLayer, { type CinemaMode } from '@/components/CinemaLayer';
 
 /** Mirrors PLAYBACK_STARTUP_BUFFER_SECONDS on the server, for the wait copy. */
@@ -294,6 +295,21 @@ export default function PlaybackSection({
    */
   const [switchedEpisode, setSwitchedEpisode] = useState<number | null>(null);
   const currentEpisode = switchedEpisode ?? episode ?? null;
+  // Bind labels/history to the bytes on screen until the next source arrives.
+  const displayedEpisodeRef = useRef({ src: '', episode: currentEpisode });
+  if (playbackStatus === 'ready' && playUrl && displayedEpisodeRef.current.src !== playUrl) {
+    displayedEpisodeRef.current = { src: playUrl, episode: currentEpisode };
+  }
+  const displayedEpisode = displayedEpisodeRef.current.episode;
+  const episodeTransition = type === 'tv' && Boolean(displayedEpisodeRef.current.src) && displayedEpisode !== currentEpisode;
+  const freshEpisodeRef = useRef<string | null>(null);
+  const nextEpisode = type === 'tv' ? nextPlayableEpisode(episodes, currentEpisode) : undefined;
+  const advanceEpisode = useCallback(() => {
+    if (!nextEpisode) return;
+    freshEpisodeRef.current = `${contentRef}:${season}:${nextEpisode.episodeNumber}`;
+    setSwitchedEpisode(nextEpisode.episodeNumber);
+    if (typeof window !== 'undefined') window.history.replaceState(null, '', nextEpisode.href);
+  }, [nextEpisode, contentRef, season]);
   useEffect(() => {
     setSwitchedEpisode(null);
   }, [episode]);
@@ -507,6 +523,7 @@ export default function PlaybackSection({
   const seedConsumedForRef = useRef<string | null>(null);
   const episodeSlug = season && currentEpisode ? `s${season}e${currentEpisode}` : 'full';
   const getResumeSeed = useCallback((): number => {
+    if (freshEpisodeRef.current === `${contentRef}:${season}:${currentEpisode}`) return 0;
     try {
       const saved = history.find((h) => h.slug === contentRef);
       if (!saved || saved.currentEpisode !== episodeSlug) return 0;
@@ -516,7 +533,7 @@ export default function PlaybackSection({
     } catch {
       return 0;
     }
-  }, [history, contentRef, episodeSlug, runtimeMinutes]);
+  }, [history, contentRef, episodeSlug, runtimeMinutes, season, currentEpisode]);
 
   const recoverPlayback = useCallback((reason: string) => {
     // A fatal HLS event and the no-progress watchdog can fire together. Only
@@ -1927,7 +1944,7 @@ export default function PlaybackSection({
     }
   };
 
-  if (playbackStatus === 'checking_provider' || authStatus === 'loading') {
+  if ((playbackStatus === 'checking_provider' || authStatus === 'loading') && !episodeTransition) {
     return (
       <div className="aspect-video w-full rounded-xl bg-surface-dark flex flex-col items-center justify-center border border-white/5 p-6 text-center">
         <Loader2 className="w-10 h-10 text-primary animate-spin mb-3" />
@@ -1986,7 +2003,7 @@ export default function PlaybackSection({
     );
   }
 
-  if (playbackStatus === 'resolving') {
+  if (playbackStatus === 'resolving' && !episodeTransition) {
     return (
       <div className="aspect-video w-full rounded-xl bg-surface-dark flex flex-col items-center justify-center border border-white/5 p-6 text-center">
         <Film className="w-10 h-10 text-primary animate-pulse mb-3" />
@@ -2015,7 +2032,7 @@ export default function PlaybackSection({
     );
   }
 
-  if (playbackStatus === 'downloading') {
+  if (playbackStatus === 'downloading' && !episodeTransition) {
     return (
       <div className="aspect-video w-full rounded-xl bg-surface-dark flex flex-col items-center justify-center border border-white/10 p-6 text-center">
         <Download className="w-10 h-10 text-blue-400 animate-bounce mb-3" />
@@ -2185,7 +2202,7 @@ export default function PlaybackSection({
     );
   }
 
-  if (playbackStatus === 'ready' && playUrl) {
+  if ((playbackStatus === 'ready' || episodeTransition) && playUrl) {
     const movieData = {
       name: title,
       slug: contentRef,
@@ -2195,8 +2212,8 @@ export default function PlaybackSection({
     };
 
     const episodeData = {
-      name: season && episode ? `Mùa ${season} Tập ${episode}` : 'Full',
-      slug: season && episode ? `s${season}e${episode}` : 'full',
+      name: season && displayedEpisode ? `Mùa ${season} Tập ${displayedEpisode}` : 'Full',
+      slug: season && displayedEpisode ? `s${season}e${displayedEpisode}` : 'full',
     };
 
     const is4K = Number(candidate?.resolution) >= 2160;
@@ -2220,14 +2237,17 @@ export default function PlaybackSection({
             <CinemaLayer mode={cinemaMode} video={videoEl} />
             <div className="ambient-fullscreen-frame relative aspect-video w-full rounded-xl overflow-hidden shadow-2xl bg-black border border-white/5">
           <VideoPlayer
+            suspended={episodeTransition}
+            onNextEpisode={nextEpisode && !episodeTransition ? advanceEpisode : undefined}
+            nextEpisodeLabel={nextEpisode ? `Tập ${nextEpisode.episodeNumber} · ${nextEpisode.name}` : undefined}
             onCinemaChange={setCinemaMode}
             onVideoReady={setVideoEl}
             fullscreenTargetRef={fullscreenTargetRef}
-            src={playUrl}
+            src={episodeTransition ? displayedEpisodeRef.current.src : playUrl}
             reloadKey={reloadKey}
             onPlaybackFailure={recoverPlayback}
             onUnplayableSource={handleUnplayableSource}
-            onPlaybackProgress={handlePlaybackProgress}
+            onPlaybackProgress={episodeTransition ? undefined : handlePlaybackProgress}
             onDecodeOverload={handleDecodeOverload}
             movie={movieData}
             episode={episodeData}
@@ -2237,7 +2257,7 @@ export default function PlaybackSection({
               type,
               tmdbId,
               season,
-              episode,
+              episode: displayedEpisode,
               playbackSessionId,
               ...(activeToken ? { sourceToken: activeToken } : {}),
             }}
@@ -2255,6 +2275,12 @@ export default function PlaybackSection({
             onCancelSeek={cancelSeekPosition}
             seekProgress={{ label: resolveStageLabel || null, percent: downloadProgress || null }}
           />
+          {episodeTransition && <div className="absolute inset-0 z-50 flex flex-col items-center justify-center gap-3 bg-black/80 text-white">
+            <Loader2 className="h-8 w-8 animate-spin text-amber-gold" />
+            <p className="text-sm">Đang mở tập {currentEpisode}…</p>
+            {resolveStageLabel && <p className="max-w-xs px-4 text-center text-xs text-white/60">{resolveStageLabel}</p>}
+          </div>}
+
           {/* Live telemetry pills overlay (Stitch player pro) — display only,
               pointer-events-none so player controls stay clickable. */}
           <div className="pointer-events-none absolute left-4 top-3 z-20 flex items-center gap-2">
@@ -2426,6 +2452,7 @@ export default function PlaybackSection({
                       if (clickEvent.button !== 0) return;
                       clickEvent.preventDefault();
                       if (ep.episodeNumber === currentEpisode) return;
+                      freshEpisodeRef.current = null;
                       setSwitchedEpisode(ep.episodeNumber);
                       // The address bar must stay truthful — a reload or a shared
                       // link opens this episode — but replaceState is not a
