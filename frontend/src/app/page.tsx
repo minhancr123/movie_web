@@ -1,3 +1,4 @@
+import { connection } from 'next/server';
 import { getHome, catalogHref, CatalogItem } from '@/lib/catalog';
 import type { HeroMovie } from '@/components/HeroSection';
 import CatalogCard from '@/components/CatalogCard';
@@ -6,8 +7,6 @@ import ContinueWatchingRow from '@/components/ContinueWatchingRow';
 import HeroSection from '@/components/HeroSection';
 import RecommendationsRow from '@/components/RecommendationsRow';
 import SpatialShader from '@/components/SpatialShader';
-
-export const revalidate = 300;
 
 /**
  * HeroSection still speaks the legacy Movie shape. Rather than rewrite its
@@ -25,7 +24,10 @@ const toHeroMovie = (item: CatalogItem): HeroMovie => ({
 });
 
 export default async function Home() {
-  const { trending, popularMovies, popularTv, topRatedMovies } = await getHome();
+  // Builds cannot reach the compose backend. Never publish their empty fallback
+  // as the homepage; render against the running API on each incoming request.
+  await connection();
+  const { trending, popularMovies, popularTv, topRatedMovies } = await getHome({ fresh: true });
 
   const heroItems = trending.filter((item) => item.backdrop).slice(0, 6);
 
@@ -34,10 +36,9 @@ export default async function Home() {
       <div className="glass-panel mt-8 rounded-3xl py-24 px-6 text-center">
         <h1 className="font-syne text-headline-xl text-white">Chưa tải được danh sách phim</h1>
         <p className="mt-3 text-body-lg text-cinema-muted">
-          Backend chưa lấy được dữ liệu từ TMDB. Kiểm tra log server — nếu mạng chặn
-          <code className="mx-1 rounded-lg bg-surface-container px-1.5 py-0.5 font-mono text-body-sm text-amber-gold">api.themoviedb.org</code>
-          thì cần đặt <code className="rounded-lg bg-surface-container px-1.5 py-0.5 font-mono text-body-sm text-amber-gold">TMDB_BASE_URL</code>.
+          Danh sách phim đang tạm thời gián đoạn. Vui lòng thử lại sau ít giây.
         </p>
+        <a href="/" className="mt-6 inline-flex rounded-xl bg-amber-primary px-5 py-3 font-semibold text-black">Thử lại</a>
       </div>
     );
   }

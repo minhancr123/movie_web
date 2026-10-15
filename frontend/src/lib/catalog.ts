@@ -177,8 +177,10 @@ async function get<T>(path: string, revalidate: number, fallback: T): Promise<T>
   }
 }
 
-export const getHome = () =>
-  get<CatalogHome>('/home', REVALIDATE.home, {
+// The live homepage relies on backend caching so an outage response cannot
+// stick in Next's data cache. Other callers (e.g. sitemap) keep their TTL.
+export const getHome = ({ fresh = false }: { fresh?: boolean } = {}) =>
+  get<CatalogHome>('/home', fresh ? 0 : REVALIDATE.home, {
     trending: [],
     popularMovies: [],
     popularTv: [],
