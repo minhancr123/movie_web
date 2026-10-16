@@ -1394,8 +1394,8 @@ export const resolvePlayback = async (req, res) => {
         candidates.map((c) => c.infoHash),
       );
     } catch (error) {
-      if (error instanceof DebridError && error.code === 'invalid_token') {
-        return fail(res, 401, 'TorBox từ chối API key, vui lòng kết nối lại', { code: error.code });
+      if (error instanceof DebridError && ['invalid_token', 'plan_restricted'].includes(error.code)) {
+        return fail(res, error.status, error.code === 'plan_restricted' ? error.message : 'TorBox từ chối API key, vui lòng kết nối lại', { code: error.code });
       }
       cachedMap = {};
     }
@@ -1607,8 +1607,8 @@ export const resolvePlayback = async (req, res) => {
           assumeCached: Boolean(candidate.cached),
         });
       } catch (error) {
-        if (error instanceof DebridError && error.code === 'invalid_token') {
-          return fail(res, 401, 'TorBox từ chối API key, vui lòng kết nối lại', { code: error.code });
+        if (error instanceof DebridError && ['invalid_token', 'plan_restricted'].includes(error.code)) {
+          return fail(res, error.status, error.code === 'plan_restricted' ? error.message : 'TorBox từ chối API key, vui lòng kết nối lại', { code: error.code });
         }
         // Logged, not silent: like the probe below, a bare `continue` makes
         // the failure unfindable. infoHash prefix only — nothing sensitive.
@@ -1684,8 +1684,8 @@ export const resolvePlayback = async (req, res) => {
           userId: String(req.user.userId),
         });
       } catch (error) {
-        if (error instanceof DebridError && error.code === 'invalid_token') {
-          return fail(res, 401, 'TorBox từ chối API key, vui lòng kết nối lại', { code: error.code });
+        if (error instanceof DebridError && ['invalid_token', 'plan_restricted'].includes(error.code)) {
+          return fail(res, error.status, error.code === 'plan_restricted' ? error.message : 'TorBox từ chối API key, vui lòng kết nối lại', { code: error.code });
         }
         lastError = error;
         continue;
@@ -2782,8 +2782,8 @@ export const listPlaybackSources = async (req, res) => {
             candidates.map((c) => c.infoHash),
           );
         } catch (error) {
-          if (error instanceof DebridError && error.code === 'invalid_token') {
-            return fail(res, 401, 'TorBox từ chối API key, vui lòng kết nối lại', { code: error.code });
+          if (error instanceof DebridError && ['invalid_token', 'plan_restricted'].includes(error.code)) {
+            return fail(res, error.status, error.code === 'plan_restricted' ? error.message : 'TorBox từ chối API key, vui lòng kết nối lại', { code: error.code });
           }
           cachedMap = {};
         }
@@ -3936,8 +3936,8 @@ export const refreshPlaybackUrl = async (req, res) => {
         userId: String(req.user.userId),
       });
     } catch (error) {
-      if (error instanceof DebridError && error.code === 'invalid_token') {
-        return fail(res, 401, 'TorBox từ chối API key, vui lòng kết nối lại', { code: error.code });
+      if (error instanceof DebridError && ['invalid_token', 'plan_restricted'].includes(error.code)) {
+        return fail(res, error.status, error.code === 'plan_restricted' ? error.message : 'TorBox từ chối API key, vui lòng kết nối lại', { code: error.code });
       }
       return fail(res, 502, error.message || 'Không cấp lại được đường phát');
     }

@@ -91,6 +91,11 @@ const request = async (path, key, { method = 'GET', params = {}, body, timeoutMs
       /* upstream returned an HTML error page */
     }
 
+    if (response.status === 403 && payload?.error === 'PLAN_RESTRICTED_FEATURE') {
+      throw new DebridError('Gói TorBox hiện tại không hỗ trợ API phát phim. Vui lòng kiểm tra gói dịch vụ trong TorBox.', {
+        status: 403, code: 'plan_restricted',
+      });
+    }
     if (response.status === 401 || response.status === 403) {
       throw new DebridError('TorBox từ chối API key này', { status: 401, code: 'invalid_token' });
     }
@@ -331,6 +336,11 @@ export const prepareSource = async (
         added = JSON.parse(raw);
       } catch {
         throw new DebridError(`TorBox trả về dữ liệu không hợp lệ khi thêm magnet (${response.status})`);
+      }
+      if (response.status === 403 && added?.error === 'PLAN_RESTRICTED_FEATURE') {
+        throw new DebridError('Gói TorBox hiện tại không hỗ trợ API phát phim. Vui lòng kiểm tra gói dịch vụ trong TorBox.', {
+          status: 403, code: 'plan_restricted',
+        });
       }
       if (response.status === 401 || response.status === 403) {
         throw new DebridError('TorBox từ chối API key này', { status: 401, code: 'invalid_token' });

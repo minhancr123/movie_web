@@ -1739,6 +1739,21 @@ export default function PlaybackSection({
       const code = err.response?.data?.code;
       const message = err.response?.data?.message || err.message || 'Không thể chuẩn bị nguồn phát';
 
+      // Provider entitlement is independent of the selected release. Retrying
+      // another source cannot fix it, including on resume or a preserved seek.
+      if (status === 403 && code === 'plan_restricted') {
+        setPlaybackStatus('error');
+        setPendingAudioIndex(null);
+        setErrorMessage('Gói TorBox hiện tại không hỗ trợ API phát phim. Vui lòng kiểm tra gói dịch vụ trong TorBox.');
+        return;
+      }
+      if (status === 401 && (code === 'invalid_token' || code === 'no_token')) {
+        setPlaybackStatus('needs_provider');
+        setPendingAudioIndex(null);
+        setKeyError(message);
+        return;
+      }
+
       if (!sourceToken && resolvedSourceToken && status && status >= 400 && status < 500 && typeof window !== 'undefined') {
         localStorage.removeItem(selectedSourceKey);
         setActiveToken('');
@@ -1811,16 +1826,12 @@ export default function PlaybackSection({
       // over the video) instead of tearing down into the error screen.
       // Ordinary resolves keep the show-error-screen behaviour below.
       // Either way the pending audio spinner is over: the switch did not land.
-      if (options?.startAt) {
+      if (preservePlayer && options?.startAt) {
         setPendingAudioIndex(null);
         throw err;
       }
 
-      if (status === 401 && (err.response?.data?.code === 'invalid_token' || err.response?.data?.code === 'no_token')) {
-        setPlaybackStatus('needs_provider');
-        setPendingAudioIndex(null);
-        setKeyError(message);
-      } else if (err?.code === 'ECONNABORTED') {
+      if (err?.code === 'ECONNABORTED') {
         // Axios timeout: connection silently hung (common on mobile networks)
         setPlaybackStatus('error');
         setPendingAudioIndex(null);

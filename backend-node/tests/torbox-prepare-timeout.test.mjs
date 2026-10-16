@@ -73,6 +73,23 @@ const withStubbedTorbox = async (handler, run) => {
 
 console.log('Testing TorBox prepare timeout handling...');
 
+// A valid account may lose API entitlement. Do not ask the viewer to rotate
+// a healthy key or keep trying sibling releases on an account-wide refusal.
+for (const [status, payload, expectedCode, expectedStatus] of [
+  [403, {success: false, error: 'PLAN_RESTRICTED_FEATURE'}, 'plan_restricted', 403],
+  [401, {success: false, error: 'BAD_TOKEN'}, 'invalid_token', 401],
+  [403, {success: false, error: 'BAD_TOKEN'}, 'invalid_token', 401],
+]) {
+  await assert.rejects(
+    () => withStubbedTorbox(
+      () => jsonResponse(payload, status),
+      () => prepareSource('key-abc', {infoHash: HASH, assumeCached: true}),
+    ),
+    error => error instanceof DebridError && error.code === expectedCode
+      && error.status === expectedStatus && !isTransientDebridError(error),
+  );
+}
+
 // 1. assumeCached reads the cached feed; the default still forces a re-scan.
 {
   const { result, calls } = await withStubbedTorbox(
