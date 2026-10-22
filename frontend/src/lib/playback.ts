@@ -35,6 +35,8 @@ playbackClient.interceptors.request.use(async (config) => {
 export interface ProviderStatus {
   connected: boolean;
   provider: string;
+  mode?: 'personal' | 'shared';
+  canManage?: boolean;
   masked?: string;
   fingerprint?: string | null;
   plan?: string;

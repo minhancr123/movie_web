@@ -436,6 +436,7 @@ export default function PlaybackSection({
     []
   );
   const [torboxKeyInput, setTorboxKeyInput] = useState<string>('');
+  const [providerAccess, setProviderAccess] = useState<{ mode?: string; canManage?: boolean }>({});
   const [isSubmittingKey, setIsSubmittingKey] = useState<boolean>(false);
   const [keyError, setKeyError] = useState<string>('');
 
@@ -1893,6 +1894,7 @@ export default function PlaybackSection({
     try {
       const res = await providerAPI.getStatus();
       const torbox = res.data?.data?.torbox;
+      setProviderAccess({ mode: torbox?.mode, canManage: torbox?.canManage });
       if (torbox && torbox.connected) {
         // First auto-start on an episode opens at the saved position when there
         // is one, so the player never plays from 0 just to re-resolve seconds
@@ -1965,6 +1967,17 @@ export default function PlaybackSection({
   }
 
   if (playbackStatus === 'needs_provider') {
+    if (providerAccess.mode === 'shared') {
+      return (
+        <div className="aspect-video w-full rounded-xl bg-surface-dark flex flex-col items-center justify-center border border-white/10 p-6 text-center">
+          <Key size={24} className="text-primary mb-4" />
+          <h3 className="text-lg font-bold text-white mb-2">Nguồn phát CineVN chưa được kết nối</h3>
+          <p className="text-sm text-cinema-subtle max-w-md mb-4">{providerAccess.canManage ? 'Kết nối TorBox một lần để cấp nguồn cho người xem đã đăng nhập.' : 'Vui lòng chờ quản trị viên kết nối nguồn phát chung. Bạn không cần nhập API key.'}</p>
+          {providerAccess.canManage && <a href="/profile" className="text-primary hover:underline mb-4">Mở Hồ sơ để kết nối TorBox chung</a>}
+          <button onClick={checkProviderConnection} className="text-sm text-white underline">Kiểm tra lại</button>
+        </div>
+      );
+    }
     return (
       <div className="aspect-video w-full rounded-xl bg-surface-dark flex flex-col items-center justify-center border border-white/10 p-6 text-center">
         <div className="w-12 h-12 rounded-full bg-primary/20 flex items-center justify-center text-primary mb-4">

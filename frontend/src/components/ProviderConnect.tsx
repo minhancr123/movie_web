@@ -103,13 +103,15 @@ export default function ProviderConnect({ compact, onStatusChange }: ProviderCon
   }
 
   const connected = Boolean(torbox?.connected);
+  const shared = torbox?.mode === 'shared';
+  const canManage = torbox?.canManage !== false;
 
   return (
     <div className="rounded-xl border border-white/10 bg-surface-light p-4">
       <div className="flex items-center justify-between gap-3">
         <div className="flex items-center gap-2">
           <PlugZap size={18} className={connected ? 'text-green-500' : 'text-cinema-subtle'} />
-          <p className="text-sm font-bold text-white">TorBox</p>
+          <p className="text-sm font-bold text-white">{shared ? 'TorBox chung của CineVN' : 'TorBox'}</p>
         </div>
         {connected ? (
           <span className="flex items-center gap-1 text-xs font-bold text-green-500">
@@ -124,11 +126,11 @@ export default function ProviderConnect({ compact, onStatusChange }: ProviderCon
 
       {connected && torbox ? (
         <div className="mt-3 space-y-2 text-sm">
-          <p className="font-mono text-xs text-cinema-subtle">
+          {canManage ? <p className="font-mono text-xs text-cinema-subtle">
             Key: <span className="text-cinema-text">{torbox.masked || '••••'}</span>
             {torbox.plan && <span className="ml-2 text-cinema-subtle">· {torbox.plan}</span>}
-          </p>
-          {!compact && (
+          </p> : <p className="text-cinema-subtle">CineVN đã kết nối nguồn phát. Bạn không cần nhập API key.</p>}
+          {!compact && canManage && (
             <button
               onClick={handleDisconnect}
               disabled={saving}
@@ -139,6 +141,8 @@ export default function ProviderConnect({ compact, onStatusChange }: ProviderCon
             </button>
           )}
         </div>
+      ) : !canManage ? (
+        <p className="mt-3 text-sm text-cinema-subtle">Nguồn phát chung chưa được cấu hình. Vui lòng chờ quản trị viên kết nối TorBox.</p>
       ) : (
         <form onSubmit={handleConnect} className="mt-3 space-y-2">
           <input
@@ -147,7 +151,7 @@ export default function ProviderConnect({ compact, onStatusChange }: ProviderCon
             spellCheck={false}
             value={apiKey}
             onChange={(e) => setApiKey(e.target.value)}
-            placeholder="Dán TorBox API key..."
+            placeholder={shared ? 'Dán TorBox API key dùng chung...' : 'Dán TorBox API key...'}
             className="w-full rounded-lg border border-white/10 bg-black px-3 py-2 font-mono text-sm text-white placeholder:text-cinema-subtle focus:border-amber-primary focus:outline-none"
           />
           <button
@@ -158,7 +162,7 @@ export default function ProviderConnect({ compact, onStatusChange }: ProviderCon
             {saving ? 'Đang kết nối...' : 'Kết nối TorBox'}
           </button>
           <p className="text-[11px] leading-relaxed text-cinema-subtle">
-            Key chỉ gửi tới server của bạn để xác thực, không bao giờ hiển thị lại.
+            {shared ? 'Key được mã hóa trên server và dùng cấp nguồn cho người xem đã đăng nhập. Chỉ admin được thay đổi kết nối này.' : 'Key chỉ gửi tới server của bạn để xác thực, không bao giờ hiển thị lại.'}
           </p>
         </form>
       )}

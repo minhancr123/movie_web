@@ -17,6 +17,7 @@ import {
   toPublicStatus,
 } from '../services/providers/connectionStore.js';
 import { isVaultConfigured } from '../services/security/tokenVault.js';
+import { canManageProvider, publicProviderStatus } from '../services/providers/keyPolicy.js';
 
 const fail = (res, status, message, extra = {}) =>
   res.status(status).json({ success: false, message, ...extra });
@@ -28,6 +29,9 @@ export const connectProvider = async (req, res) => {
     const provider = normalizeProvider(req.params.provider);
     if (!isSupportedProvider(provider)) {
       return fail(res, 400, 'Provider chưa được hỗ trợ (chỉ có torbox)');
+    }
+    if (!canManageProvider(req.user)) {
+      return fail(res, 403, 'Chỉ admin được thay đổi kết nối TorBox chung');
     }
     if (!isVaultConfigured()) {
       return fail(res, 503, 'Máy chủ chưa cấu hình TOKEN_ENCRYPTION_KEYS nên chưa thể lưu token');
@@ -74,6 +78,9 @@ export const disconnectProvider = async (req, res) => {
     if (!isSupportedProvider(provider)) {
       return fail(res, 400, 'Provider chưa được hỗ trợ (chỉ có torbox)');
     }
+    if (!canManageProvider(req.user)) {
+      return fail(res, 403, 'Chỉ admin được thay đổi kết nối TorBox chung');
+    }
 
     const db = getDB();
     await removeConnection(db, req.user.userId, provider);
@@ -86,12 +93,13 @@ export const disconnectProvider = async (req, res) => {
 
 export const getProviderStatus = async (req, res) => {
   try {
+    res.setHeader('Cache-Control', 'private, no-store');
     const db = getDB();
 
     // `/status` (all) when no provider param is present.
     if (!req.params.provider) {
       const doc = await getConnectionDoc(db, req.user.userId, 'torbox');
-      return res.json({ success: true, data: { torbox: toPublicStatus(doc) } });
+      return res.json({ success: true, data: { torbox: publicProviderStatus(toPublicStatus(doc), req.user) } });
     }
 
     const provider = normalizeProvider(req.params.provider);
@@ -99,7 +107,7 @@ export const getProviderStatus = async (req, res) => {
       return fail(res, 400, 'Provider chưa được hỗ trợ (chỉ có torbox)');
     }
     const doc = await getConnectionDoc(db, req.user.userId, provider);
-    return res.json({ success: true, data: toPublicStatus(doc) });
+    return res.json({ success: true, data: publicProviderStatus(toPublicStatus(doc), req.user) });
   } catch (error) {
     console.error('getProviderStatus error:', error.message);
     return fail(res, 500, 'Lỗi server');

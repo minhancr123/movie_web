@@ -33,6 +33,25 @@ Do not merge the deployment environments or reuse their runtime secrets.
 Only inactive build/release directories may be cleaned up. Never delete an
 active release, runtime secrets, MongoDB data or media currently leased by a viewer.
 
+## Shared TorBox connection
+
+Set `TORBOX_KEY_MODE=shared` in the private backend environment, then restart
+the backend. An admin signs in at `/profile` and connects TorBox once. The
+existing provider verification runs before saving the key with AES-256-GCM
+under a fixed server owner in `provider_connections`. Keep `TOKEN_ENCRYPTION_KEYS`
+stable and backed up privately; the provider secret is never committed to Git.
+
+Authenticated viewers use that shared connection for resolve, prewarm, seek,
+refresh and thumbnails. They cannot change/disconnect it or see its fingerprint
+or account identity. Playback sessions and media grants remain viewer-scoped.
+Shared credentials do not make in-progress remux windows shared across users
+or remove upstream/network limits. No real playback is possible until the admin
+supplies a valid provider key. No existing personal key is silently migrated.
+
+To roll back the credential policy, set `TORBOX_KEY_MODE=personal` and restart.
+Personal connection rows are preserved, while the shared row is unused. Use
+the admin profile disconnect button to remove a shared credential if needed.
+
 ## Provider-free media checks
 
 Generate synthetic patterns and tones, including a 120-second Full HD sample

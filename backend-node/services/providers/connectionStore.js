@@ -1,13 +1,14 @@
 /**
- * Per-user debrid provider token storage.
+ * Encrypted debrid provider token storage, personal or server-owned shared mode.
  *
  * Ciphertext lives in `provider_connections`; the plaintext key never touches
  * Mongo, Redis, logs, or the job queue. Reads decrypt with tokenVault using
- * AAD `userId:provider`, so a row copied between users fails authentication
+ * AAD `ownerId:provider`, so a row copied between owners fails authentication
  * instead of yielding a usable key.
  */
 
 import { ObjectId } from 'mongodb';
+import { credentialOwner } from './keyPolicy.js';
 import {
   encryptToken,
   decryptToken,
@@ -40,16 +41,18 @@ const userFilter = (userId, provider) => ({
 
 export const getConnectionDoc = async (db, userId, provider) => {
   const name = String(provider || '').toLowerCase();
-  return db.collection('provider_connections').findOne(await userFilter(userId, name));
+  return db.collection('provider_connections').findOne(await userFilter(credentialOwner(userId, name), name));
 };
 
 /**
- * Decrypt the caller's provider key. Throws with `status` for HTTP mapping:
- *   404 NO_CONNECTION  — never connected
+ * Decrypt the key selected by the server policy, not by client input.
+ * Throws with `status` for HTTP mapping:
+ *   409 NO_CONNECTION  — never connected
  *   401 INVALID_TOKEN   — ciphertext unusable (key rotation lost / tampered)
  */
 export const getDecryptedKey = async (db, userId, provider) => {
   const name = String(provider || '').toLowerCase();
+  userId = credentialOwner(userId, name);
   const doc = await getConnectionDoc(db, userId, name);
   if (!doc) {
     const error = new Error('Chưa kết nối TorBox');
@@ -98,6 +101,7 @@ export const getDecryptedKey = async (db, userId, provider) => {
 
 export const saveConnection = async (db, userId, provider, { plaintextKey, profile = {} }) => {
   const name = String(provider || '').toLowerCase();
+  userId = credentialOwner(userId, name);
   const userIdStr = String(userId);
   const sealed = encryptToken(plaintextKey, { userId: userIdStr, provider: name });
   const now = new Date();
@@ -131,6 +135,7 @@ export const saveConnection = async (db, userId, provider, { plaintextKey, profi
 
 export const removeConnection = async (db, userId, provider) => {
   const name = String(provider || '').toLowerCase();
+  userId = credentialOwner(userId, name);
   const result = await db
     .collection('provider_connections')
     .deleteOne({ userId: toObjectIdOrRaw(userId), provider: name });
