@@ -1,6 +1,6 @@
 import { getDB } from '../config/database.js';
 import bcrypt from 'bcryptjs';
-import jwt from 'jsonwebtoken';
+import { signAccountToken } from '../services/security/accountToken.js';
 import { body, validationResult } from 'express-validator';
 import { ObjectId } from 'mongodb';
 import { OAuth2Client } from 'google-auth-library';
@@ -53,6 +53,7 @@ export const register = async (req, res) => {
 
     // Create user
     const newUser = {
+      _id: new ObjectId(),
       email,
       username,
       password: hashedPassword,
@@ -63,19 +64,17 @@ export const register = async (req, res) => {
       updatedAt: new Date()
     };
 
-    const result = await db.collection('users').insertOne(newUser);
-
-    // Generate JWT
-    const token = jwt.sign(
+    // Sign before persisting: an invalid token configuration must not leave
+    // an account behind while returning a registration failure.
+    const token = signAccountToken(
       {
-        userId: result.insertedId,
+        userId: newUser._id,
         email,
         username,
         role: newUser.role
-      },
-      process.env.JWT_SECRET,
-      { expiresIn: process.env.JWT_EXPIRE }
+      }
     );
+    const result = await db.collection('users').insertOne(newUser);
 
     res.status(201).json({
       success: true,
@@ -135,15 +134,13 @@ export const login = async (req, res) => {
     }
 
     // Generate JWT
-    const token = jwt.sign(
+    const token = signAccountToken(
       {
         userId: user._id,
         email: user.email,
         username: user.username,
         role: user.role || 'user'
-      },
-      process.env.JWT_SECRET,
-      { expiresIn: process.env.JWT_EXPIRE || '30d' }
+      }
     );
 
     res.json({
@@ -286,14 +283,13 @@ export const googleLogin = async (req, res) => {
     }
 
     // Generate JWT
-    const token = jwt.sign(
+    const token = signAccountToken(
       {
         userId: user._id,
         email: user.email,
-        username: user.username
-      },
-      process.env.JWT_SECRET,
-      { expiresIn: process.env.JWT_EXPIRE }
+        username: user.username,
+        role: user.role || 'user'
+      }
     );
 
     res.json({
