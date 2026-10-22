@@ -5,6 +5,7 @@ import express from 'express';
 import cors from 'cors';
 import helmet from 'helmet';
 import { parseAllowedOrigins } from './config/cors.js';
+import { readListenerConfig } from './config/listener.js';
 import compression from 'compression';
 import dotenv from 'dotenv';
 import { createServer } from 'http';
@@ -39,6 +40,8 @@ process.on('unhandledRejection', (reason) => {
 });
 
 const app = express();
+const listener = readListenerConfig();
+app.set('trust proxy', listener.trustProxyHops);
 if (process.env.SENTRY_DSN) app.use(observeHttpFailures);
 const httpServer = createServer(app);
 // CORS_ORIGIN / FRONTEND_URL, so a new deployment does not need a code change
@@ -284,7 +287,7 @@ const startServer = async () => {
 
 
     // Start listening
-    httpServer.listen(PORT, () => {
+    httpServer.listen(PORT, listener.host, () => {
       console.log(`🚀 Server is running on http://localhost:${PORT}`);
       console.log(`📁 Environment: ${process.env.NODE_ENV}`);
     });

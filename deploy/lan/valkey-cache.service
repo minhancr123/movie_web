@@ -1,0 +1,19 @@
+[Unit]
+Description=CineVN disposable catalog cache (separate from persistent queue)
+After=network.target
+
+[Service]
+Type=simple
+User=valkey
+Group=valkey
+ExecStart=/usr/bin/valkey-server /etc/valkey/cinevn-cache.conf
+Restart=on-failure
+RestartSec=5
+MemoryMax=384M
+NoNewPrivileges=yes
+PrivateTmp=yes
+ProtectSystem=strict
+ProtectHome=yes
+
+[Install]
+WantedBy=multi-user.target

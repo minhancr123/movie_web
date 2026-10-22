@@ -1,0 +1,34 @@
+<!doctype html>
+<html lang="vi"><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Kiểm tra phát video · CineVN</title>
+<style>
+body{margin:0;background:#101116;color:#f3f3f4;font:16px/1.6 system-ui,sans-serif}main{max-width:1000px;margin:40px auto;padding:0 24px}h1{font-size:30px}p{color:#b6b8c2}video{width:100%;aspect-ratio:16/9;background:black;border-radius:14px}button,a{color:inherit}button{background:#272933;border:1px solid #555866;padding:12px 18px;border-radius:9px;cursor:pointer;margin:5px 5px 5px 0}button[aria-pressed=true]{border-color:#ffb34d;background:#44301b}output{display:block;margin-top:16px;padding:14px;background:#1b1d25;border-radius:9px;font-variant-numeric:tabular-nums}small{color:#aaa}
+</style>
+<main><h1>Kiểm tra phát video</h1>
+<p>Video mẫu tự tạo để thử hình ảnh, âm thanh, tua và phụ đề. Không cần tài khoản TorBox.</p>
+<div><button data-src="fullhd.mp4" aria-pressed="true">Full HD</button><button data-src="hls/dddddddddddddddddddddddddddddddd/index.m3u8">Full HD qua HLS</button><button data-src="4k.mp4">4K HEVC · SDR</button></div>
+<video id="video" controls playsinline preload="metadata" src="fullhd.mp4"><track kind="subtitles" srclang="vi" label="Tiếng Việt mẫu" src="vi.vtt" default></video>
+<div><button id="seek">Tua tới 01:30</button><button id="back">Tua về 00:10</button></div>
+<output id="status" aria-live="polite">Đang đọc video…</output>
+<p>Ở Full HD, đối chiếu mốc phụ đề với đồng hồ trong hình. Hãy thử tua tới 01:30 rồi về 00:10. Bản 4K dài 40 giây; chỉ các thiết bị hỗ trợ HEVC mới phát được.</p>
+<small>Đây là kiểm tra video mẫu trong mạng LAN. Kết quả không chứng minh sức tải nhiều người hoặc tốc độ nguồn phim ngoài Internet.</small>
+</main><script src="hls.min.js"></script><script>
+const video=document.querySelector('video'), status=document.querySelector('output');
+let hls=null, label='Full HD', waiting=0;
+const time=s=>`${Math.floor(s/60).toString().padStart(2,'0')}:${Math.floor(s%60).toString().padStart(2,'0')}`;
+function report(){status.textContent=`${label} · ${video.videoWidth} × ${video.videoHeight} · ${time(video.currentTime)} / ${time(Number.isFinite(video.duration)?video.duration:0)} · ${video.paused?'Đang dừng':'Đang phát'} · Chờ dữ liệu: ${waiting} lần`;}
+for(const event of ['loadedmetadata','timeupdate','play','pause','seeked']) video.addEventListener(event,report);
+video.addEventListener('waiting',()=>{waiting++;report();});
+video.addEventListener('error',()=>{status.textContent='Thiết bị chưa phát được nguồn này hoặc tải video bị lỗi. Hãy thử Full HD.';});
+for(const button of document.querySelectorAll('[data-src]')) button.onclick=()=>{
+ if(hls){hls.destroy();hls=null;} label=button.textContent;waiting=0;
+ for(const b of document.querySelectorAll('[data-src]'))b.setAttribute('aria-pressed',String(b===button));
+ const src=button.dataset.src;
+ if(src.endsWith('.m3u8')&&!video.canPlayType('application/vnd.apple.mpegurl')&&window.Hls?.isSupported()){
+  hls=new Hls();hls.loadSource(src);hls.attachMedia(video);
+ }else{video.src=src;video.load();}
+ for(const track of video.textTracks)track.mode='showing';
+};
+document.querySelector('#seek').onclick=()=>{video.currentTime=Math.min(90,Math.max(0,video.duration-2));};
+document.querySelector('#back').onclick=()=>{video.currentTime=10;};
+</script></html>
