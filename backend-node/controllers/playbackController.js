@@ -112,6 +112,7 @@ import {
 import { planAdmission } from '../services/playback/deliveryPlan.js';
 import { getDecryptedKey } from '../services/providers/connectionStore.js';
 import { computeOpenSubtitlesHash } from '../services/playback/opensubtitlesHash.js';
+import { selectEmbeddedSubtitleTracks, needsEmbeddedInventory } from '../services/playback/subtitleInventory.js';
 import * as opensubtitles from '../services/playback/opensubtitles.js';
 import { resolveVimoSource, getVimoStreams, verifyVimoStream } from '../services/playback/vimoClient.js';
 import { resolveYaStreamSource } from '../services/playback/yastreamClient.js';
@@ -3203,7 +3204,11 @@ export const getPlaybackSubtitles = async (req, res) => {
       // Uploads are a bonus track source: never fail the list for them.
     }
 
-    if (combinedTracks.length > 0) {
+    const loadEmbedded = needsEmbeddedInventory({
+      externalOnly, ownedSession, probeFacts, readyTracks: embeddedTracks,
+      convertible: isConvertibleSubtitle,
+    });
+    if (combinedTracks.length > 0 && !loadEmbedded) {
       const probeSummary = {
         audio: audioInfo(probeFacts?.audio),
         subtitles: (probeFacts?.subtitles || []).map((s) => ({
@@ -3272,9 +3277,11 @@ export const getPlaybackSubtitles = async (req, res) => {
       runtimeMinutes,
       ...titleExpectation(detail),
     });
-    const pool = sourceToken
+    // Bind extraction to the owned playing file, even if auto-ranking changed.
+    const pinnedSubtitleSource = ownedSession?.infoHash || sourceToken;
+    const pool = pinnedSubtitleSource
       ? [...playable, ...rejected].filter(
-          (c) => String(c.infoHash).toLowerCase() === String(sourceToken).toLowerCase(),
+          (c) => String(c.infoHash).toLowerCase() === String(pinnedSubtitleSource).toLowerCase(),
         )
       : playable.slice(0, 3);
     if (!pool.length) {
@@ -3292,14 +3299,16 @@ export const getPlaybackSubtitles = async (req, res) => {
           infoHash: candidate.infoHash,
         });
         if (prepared.state !== 'ready') continue;
-        const file = pickBestFile(prepared.files, { season, episode, fileIdx: candidate.fileIdx, filename: candidate.filename, ...(type === 'movie' ? titleExpectation(detail) : {}) });
+        const file = ownedSession
+          ? prepared.files.find(f => String(f.fileId) === String(ownedSession.fileId))
+          : pickBestFile(prepared.files, { season, episode, fileIdx: candidate.fileIdx, filename: candidate.filename, ...(type === 'movie' ? titleExpectation(detail) : {}) });
         if (!file) continue;
         inputUrl = await torbox.getDownloadUrl(debridKey, {
           torrentId: prepared.torrentId,
           fileId: file.fileId,
           userId: String(req.user.userId),
         });
-        probe = await ffprobe(inputUrl);
+        probe = await getCache(probeResultKey(candidate.infoHash, file.fileId)) || await ffprobe(inputUrl);
         pickedHash = String(candidate.infoHash).toLowerCase();
         pickedFileId = file.fileId;
         break;
@@ -3325,15 +3334,12 @@ export const getPlaybackSubtitles = async (req, res) => {
         convertible: isConvertibleSubtitle(s.codec),
       })),
     };
-    const textSubs = (probe.subtitles || [])
-      .map((s, inventoryIndex) => ({ ...s, inventoryIndex }))
-      .filter((s) => isConvertibleSubtitle(s.codec))
-      .slice(0, MAX_SUB_TRACKS);
+    const textSubs = selectEmbeddedSubtitleTracks(probe.subtitles, isConvertibleSubtitle, MAX_SUB_TRACKS);
 
     // Fast path: inventory is cached per torrent file — repeat opens
     // return instantly without touching TorBox or ffmpeg again. v3: file identity and response
     // shape carries the probe summary + per-track readiness.
-    const inventoryKey = `playback:subs:v3:${pickedScope}`;
+    const inventoryKey = `playback:subs:v4:${pickedScope}`;
     const cachedInventory = await getCache(inventoryKey);
     if (cachedInventory?.done) {
       return res.json({
@@ -3348,6 +3354,15 @@ export const getPlaybackSubtitles = async (req, res) => {
       });
     }
 
+    if (cachedInventory?.jobId) {
+      const job = await getCache(subJobKey(cachedInventory.jobId));
+      if (job && !job.done) {
+        return res.json({ success: true, data: {
+          audio, tracks: cachedInventory.tracks,
+          jobId: cachedInventory.jobId, probe: probeSummary, note,
+        } });
+      }
+    }
     const minted = [];
     const pending = [];
     for (const s of textSubs) {
@@ -3365,7 +3380,7 @@ export const getPlaybackSubtitles = async (req, res) => {
         const token = crypto.randomBytes(32).toString('hex');
         await setCache(subTokenKey(token), { file }, SUB_TOKEN_TTL);
         url = `/api/playback/subtitles/vtt/${token}`;
-        minted.push({ id: `${pickedScope}:${i}`, language: s.language || '', label: subLabel(s.language), url, ready: true, source: 'embedded' });
+        minted.push({ id: `${pickedScope}:${i}`, language: s.language || '', label: `${subLabel(s.language)} (Gốc nhúng)`, url, ready: true, source: 'embedded' });
       } else {
         pending.push({ s, i, file });
       }
@@ -3376,11 +3391,12 @@ export const getPlaybackSubtitles = async (req, res) => {
       ...pending.map(({ s, i }) => ({
         id: `${pickedScope}:${i}`,
         language: s.language || '',
-        label: subLabel(s.language),
+        label: `${subLabel(s.language)} (Gốc nhúng)`,
         url: '',
         ready: false,
         source: 'embedded',
       })),
+      ...externalTracks,
     ];
 
     if (pending.length === 0) {

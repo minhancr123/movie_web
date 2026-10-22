@@ -632,7 +632,8 @@ export default function VideoPlayer({ src, movie, episode, authToken, durationSe
     const loadSubtitleInventory = useCallback(async (allowEmbedded = false) => {
         if (!subContext) return;
         if (subLoadModeRef.current === 'full') return;
-        if (subLoadModeRef.current === 'external' && (subHasTracksRef.current || !allowEmbedded)) return;
+        // Opening the menu can upgrade online subtitles to exact-file tracks.
+        if (subLoadModeRef.current === 'external' && !allowEmbedded) return;
         const epoch = subSourceEpochRef.current;
         const inFlight = subRequestInFlightEpochRef.current;
         // A request from a departed generation never blocks the current one:
