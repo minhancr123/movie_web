@@ -211,17 +211,82 @@ export const subsPath = (...parts) => path.join(SUBS_ROOT, ...parts);
 const SUBS_BATCH_TIMEOUT_MS = 120000;
 
 /** Publish atomically after ffmpeg exits; an existing empty file is not ready. */
+// A subtitle demux pass reads remote bytes, so it runs one batch at a time:
+// N viewers opening a subtitle menu must not run N whole-file ffmpeg scans in
+// parallel with the remux writers serving the same viewers.
+const SUBS_BATCH_CONCURRENCY = 1;
+let subsBatchActive = 0;
+const subsBatchQueue = [];
+const acquireSubsBatch = () =>
+  new Promise((resolve) => {
+    if (subsBatchActive < SUBS_BATCH_CONCURRENCY) {
+      subsBatchActive += 1;
+      resolve();
+      return;
+    }
+    subsBatchQueue.push(resolve);
+  });
+const releaseSubsBatch = () => {
+  const next = subsBatchQueue.shift();
+  if (next) next();
+  else subsBatchActive -= 1;
+};
+
+const VTT_CUE_TIME = /^((?:\d{1,3}:)?\d{2}:\d{2}\.\d{3})\s+-->\s+((?:\d{1,3}:)?\d{2}:\d{2}\.\d{3})/;
+const vttStampSeconds = (stamp) => {
+  let seconds = 0;
+  for (const part of String(stamp).split(':')) seconds = seconds * 60 + Number(part);
+  return Number.isFinite(seconds) ? seconds : NaN;
+};
+
+/**
+ * Drop cues that do not overlap [windowStart, windowEnd], keeping original
+ * timestamps. Input-side seeking (-ss before -i) lands on the containing
+ * Matroska cluster, so a long cluster (or one covering the whole file) still
+ * yields cues from BEFORE the window; -copyts preserves their original
+ * stamps and nothing downstream removes them. The guarantee "a window
+ * sidecar only carries its window" is enforced here, in one place, instead
+ * of depending on demuxer seek granularity.
+ */
+export const filterVttCuesToWindow = (text, windowStart, windowEnd) => {
+  const blocks = String(text).split(/\n\s*\n/);
+  const kept = [];
+  for (const block of blocks) {
+    const trimmed = block.trim();
+    if (!trimmed) continue;
+    if (/^(WEBVTT|NOTE|STYLE|REGION)\b/.test(trimmed)) {
+      kept.push(trimmed);
+      continue;
+    }
+    const lines = trimmed.split('\n');
+    const timingIndex = lines.findIndex((line) => VTT_CUE_TIME.test(line));
+    if (timingIndex === -1) {
+      // Unknown block: keep it verbatim rather than guessing.
+      kept.push(trimmed);
+      continue;
+    }
+    const match = VTT_CUE_TIME.exec(lines[timingIndex]);
+    const cueStart = vttStampSeconds(match[1]);
+    const cueEnd = vttStampSeconds(match[2]);
+    const overlaps = Number.isFinite(cueStart) && Number.isFinite(cueEnd)
+      && cueEnd > windowStart && cueStart < windowEnd;
+    if (overlaps) kept.push(trimmed);
+  }
+  return kept.length ? kept.join('\n\n') + '\n' : 'WEBVTT\n';
+};
+
 export const extractSubtitleTracks = async (inputUrl, jobs, window = {}) => {
   if (!jobs.length) return [];
-  const temporary = jobs.map(job => ({ ...job, temp: `${job.outPath}.partial-${Date.now()}-${Math.random().toString(36).slice(2)}.vtt` }));
-  const start = Math.max(0, Number(window.startAt) || 0);
-  const duration = Math.max(0, Number(window.durationSeconds) || 0);
-  const args = ['-hide_banner', '-loglevel', 'warning', '-nostdin',
-    ...(duration ? ['-copyts', '-ss', String(start)] : []), '-i', inputUrl];
+  await acquireSubsBatch();
+  const temporary = jobs.map(job => ({ ...job, temp: job.outPath + '.partial-' + Date.now() + '-' + Math.random().toString(36).slice(2) + '.vtt' }));
   try {
+    const start = Math.max(0, Number(window.startAt) || 0);
+    const duration = Math.max(0, Number(window.durationSeconds) || 0);
+    const args = ['-hide_banner', '-loglevel', 'warning', '-nostdin',
+      ...(duration ? ['-copyts', '-ss', String(start)] : []), '-i', inputUrl];
     for (const job of temporary) {
       await fs.mkdir(path.dirname(job.outPath), { recursive: true });
-      args.push('-map', `0:${Number(job.streamIndex)}`,
+      args.push('-map', '0:' + Number(job.streamIndex),
         ...(duration ? ['-to', String(start + duration)] : []),
         '-c:s', 'webvtt', '-f', 'webvtt', '-y', job.temp);
     }
@@ -229,11 +294,20 @@ export const extractSubtitleTracks = async (inputUrl, jobs, window = {}) => {
     return await Promise.all(temporary.map(async job => {
       const text = await fs.readFile(job.temp, 'utf8').catch(() => '');
       if (!/^WEBVTT(?:\s|$)/.test(text)) return { ...job, ok: false };
-      await fs.rename(job.temp, job.outPath);
+      // Windowed extractions carry only their window; full extractions pass
+      // through untouched. Written to the final name only after success, so
+      // publication stays atomic: a reader never sees a half-written or
+      // pre-window sidecar, and an empty output is never "ready".
+      const published = duration > 0
+        ? filterVttCuesToWindow(text, start, start + duration)
+        : text;
+      await fs.writeFile(job.outPath, published);
+      await fs.rm(job.temp, { force: true });
       return { ...job, ok: true };
     }));
   } finally {
     await Promise.all(temporary.map(job => fs.rm(job.temp, { force: true }).catch(() => {})));
+    releaseSubsBatch();
   }
 };
 
