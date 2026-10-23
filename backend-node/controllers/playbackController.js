@@ -1439,19 +1439,20 @@ export const resolvePlayback = async (req, res) => {
     const excludedTokens = new Set((Array.isArray(req.body?.excludeSourceTokens) ? req.body.excludeSourceTokens : [])
       .slice(0, 20).filter(t => typeof t === 'string' && SOURCE_TOKEN_PATTERN.test(t.trim())).map(t => t.trim().toLowerCase()));
     let attempts;
+    let playable = [];
     if (sourceToken) {
       const targetCandidate = enriched.find((c) => matchCandidateToken(c, sourceToken));
       if (!targetCandidate) {
         return fail(res, 404, 'Nguồn đã chọn không còn khả dụng, vui lòng tải lại danh sách');
       }
       const videoTranscode = await resolveVideoTranscodeCapability();
-      const { playable, rejected } = rankCandidates([targetCandidate], caps, {
+      const ranked = rankCandidates([targetCandidate], caps, {
         runtimeMinutes,
         contentLanguage: detail?.originalLanguage,
         ...titleExpectation(detail),
         videoTranscode,
       });
-      const picked = [...playable, ...rejected][0];
+      const picked = [...ranked.playable, ...ranked.rejected][0];
       if (!picked) {
         return fail(res, 404, 'Nguồn đã chọn không còn khả dụng, vui lòng tải lại danh sách');
       }
@@ -1466,12 +1467,14 @@ export const resolvePlayback = async (req, res) => {
       attempts = [picked];
     } else {
       const videoTranscode = await resolveVideoTranscodeCapability();
-      const { best, playable, rejected } = rankCandidates(enriched, caps, {
+      const ranked = rankCandidates(enriched, caps, {
         runtimeMinutes,
         contentLanguage: detail?.originalLanguage,
         ...titleExpectation(detail),
         videoTranscode,
       });
+      playable = ranked.playable;
+      const { best, rejected } = ranked;
       if (!best || !playable.length) {
         return fail(res, 422, 'Không có nguồn nào phát được trên thiết bị này', {
           rejected: rejected.slice(0, 5).map(sanitizeCandidateForResponse),
