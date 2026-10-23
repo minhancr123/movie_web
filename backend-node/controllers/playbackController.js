@@ -637,13 +637,13 @@ const REMUX_JOIN_WAIT_MS = Math.max(
  * position compatible with the request (within one bucket of it, or from the
  * start of a freshly-bucketed writer). The newest wins.
  */
-const findAdoptableWriter = async (db, renditionKey, requestedStartAt) => {
+const findAdoptableWriter = async (db, renditionKey, requestedStartAt, excludeSessionId) => {
   const rows = await db.collection('playback_sessions')
     .find({
       renditionKey: String(renditionKey),
       mode: 'remux',
       publishedRenditionId: { $in: [null, ''] },
-      sessionId: { $ne: sessionId },
+      sessionId: { $ne: excludeSessionId },
       expiresAt: { $gt: new Date() },
     })
     .project({ sessionId: 1, startAt: 1, windowSeconds: 1, createdAt: 1, _id: 0 })
@@ -2282,7 +2282,7 @@ export const resolvePlayback = async (req, res) => {
       // the writer ceiling over the edge). Falls through to a normal spawn
       // when the writer dies before it becomes servable.
       if (!switchSignal.aborted) {
-        const adoptable = await findAdoptableWriter(db, renditionKey, requestedStartAt);
+        const adoptable = await findAdoptableWriter(db, renditionKey, requestedStartAt, sessionId);
         if (adoptable) {
           const adoptedId = adoptable.sessionId;
           const adoptedOrigin = Number(adoptable.startAt) || 0;
