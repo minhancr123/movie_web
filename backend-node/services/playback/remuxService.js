@@ -818,7 +818,9 @@ export const isTenBitVideo = (video) =>
   *     playlist wait so it rarely costs wall time. Build-6 sessions carry the
   *     same wrong label as build 5 and are retired too.
   */
-export const REMUX_BUILD = 7;
+// Build 8 preserves HEVC payloads: the generic filter_units rewrite damaged
+// otherwise decodable Main 10 SDR sources on the deployed FFmpeg pipeline.
+export const REMUX_BUILD = 8;
 
 /** VBR targets for codec-transcode rungs (H.264, SDR). */
 export const transcodeKbpsForHeight = (height) => {
@@ -1010,11 +1012,9 @@ export const buildFfmpegArgs = ({ inputUrl, outputDir, audioCopy = false, segmen
   //   that turns those deltas into fatal muxer errors.
   // -max_muxing_queue_size 2048: raise the per-stream mux queue so a burst
   //   of out-of-order packets does not overflow the default 128 entries.
-  // Strip Dolby Vision RPU / EL metadata (types 62-63) on copy mode:
-  // Malformed RPU or Profile 7 FEL from UHD Blu-ray rips causes FFmpeg's
-  // HEVC parser to fail with exit code 255 ("RPU validation failed: 0 <= el_bit_depth_minus8 = 32 <= 8").
-  // Stripping types 62-63 preserves the HDR10 base layer for browsers.
-  ...(videoCopy ? ['-fps_mode:v', 'passthrough', '-bsf:v', 'filter_units=remove_types=62-63'] : []),
+  // Preserve the copied bitstream. Applying filter_units to every copy can
+  // damage HEVC slice data even on SDR files without Dolby Vision metadata.
+  ...(videoCopy ? ['-fps_mode:v', 'passthrough'] : []),
   '-max_interleave_delta', '0',
   '-max_muxing_queue_size', '2048',
   '-c:a',

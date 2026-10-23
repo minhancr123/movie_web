@@ -36,7 +36,8 @@ export const RENDITIONS_ROOT = path.resolve(
 // the old default (/app/tmp/renditions, no volume): COPY surviving complete
 // renditions across, verify bytes + meta.json, and only then remove the old
 // root — never move blindly and never serve from two roots at once.
-export const RENDITION_FORMAT_VERSION = 1;
+// Version 2 excludes cached output from the former HEVC NAL rewrite.
+export const RENDITION_FORMAT_VERSION = 2;
 export const RENDITION_MAX_BYTES = positiveNumber(process.env.RENDITIONS_MAX_GB, 100) * GB;
 export const RENDITION_TTL_MS = positiveNumber(process.env.RENDITIONS_TTL_DAYS, 14) * 24 * 60 * 60 * 1000;
 
