@@ -64,7 +64,8 @@ export const createRequest = async (req, res) => {
  */
 export const getRequests = async (req, res) => {
   try {
-    const { status, page = 1, limit = 20 } = req.query;
+    const { status, page = 1 } = req.query;
+    const limit = Math.min(parseInt(req.query.limit) || 20, 100);
     const db = getDB();
 
     const query = {};
@@ -72,14 +73,15 @@ export const getRequests = async (req, res) => {
       query.status = status;
     }
 
-    const skip = (parseInt(page) - 1) * parseInt(limit);
+    const safePage = Math.max(parseInt(page) || 1, 1);
+    const skip = (safePage - 1) * limit;
     const total = await db.collection('movie_requests').countDocuments(query);
     
     const requests = await db.collection('movie_requests')
       .find(query)
       .sort({ createdAt: -1 })
       .skip(skip)
-      .limit(parseInt(limit))
+      .limit(limit)
       .toArray();
 
     res.json({
@@ -87,9 +89,9 @@ export const getRequests = async (req, res) => {
       data: requests,
       pagination: {
         total,
-        page: parseInt(page),
-        limit: parseInt(limit),
-        pages: Math.ceil(total / parseInt(limit))
+        page: safePage,
+        limit,
+        pages: Math.ceil(total / limit)
       }
     });
   } catch (error) {

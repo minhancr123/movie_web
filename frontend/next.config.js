@@ -1,20 +1,15 @@
 /** @type {import('next').NextConfig} */
 
-const withPWA = require('next-pwa')({
-  dest: 'public',
-  // Temporarily disable service worker in all environments to avoid
-  // stale Workbox precache errors on Vercel app-router deployments.
-  disable: true,
-  register: true,
-  skipWaiting: true,
-});
-
+// next-pwa removed: the wrapper was disabled in every environment while the
+// service worker itself is hand-written (public/sw.js) and registered by
+// ServiceWorkerRegister — the wrapper only added build weight.
 const nextConfig = {
   output: 'standalone',
   reactStrictMode: true, // Recommended for Next.js
   images: {
-    // Avoid Vercel _next/image billing quota errors on Hobby/free usage.
-    unoptimized: true,
+    // Self-hosted standalone (no Vercel image quota): let Next optimize with
+    // sharp — AVIF/WebP and right-sized hero backdrops instead of shipping
+    // raw w500/w1280 TMDB JPEGs to phones.
     remotePatterns: [
       {
         protocol: 'https',
@@ -40,4 +35,4 @@ const nextConfig = {
   },
 };
 
-module.exports = withPWA(nextConfig);
+module.exports = nextConfig;

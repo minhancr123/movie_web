@@ -1,5 +1,3 @@
-import * as Sentry from '@sentry/react';
-
 const REDACT_STRING = '[REDACTED]';
 
 let initializing: Promise<void> | undefined;
@@ -15,6 +13,9 @@ async function configureSentry() {
   const dsn = config.dsn || process.env.NEXT_PUBLIC_SENTRY_DSN;
   if (!dsn) return;
 
+  // Loaded only when a DSN exists: the static import put the whole Sentry SDK
+  // (~40-90KB gz) into the shared chunk of every page for a no-op init.
+  const Sentry = await import('@sentry/react');
   Sentry.init({
     dsn,
     environment: config.environment || 'production',

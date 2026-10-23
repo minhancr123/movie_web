@@ -3,7 +3,7 @@ import Link from 'next/link';
 import Image from 'next/image';
 import { Play, Info, ChevronLeft, ChevronRight } from 'lucide-react';
 import { Movie } from '@/lib/api';
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useRef } from 'react';
 
 // `href` lets the caller supply the canonical URL. The TMDB catalog uses
 // /phim/{type}/{tmdbId}/{slug}, which cannot be derived from a slug alone.
@@ -18,56 +18,53 @@ const HeroSection = ({ movies }: HeroSectionProps) => {
 
   /* Parallax State */
   const [mousePos, setMousePos] = useState({ x: 0, y: 0 });
-  const [progress, setProgress] = useState(0);
+  // rAF throttle: mousemove fires at pointer-scan rate (60-120Hz) and every
+  // unthrottled setState re-rendered the whole carousel including 6 slides.
+  const parallaxFrame = useRef<number | null>(null);
+  const parallaxPending = useRef<React.MouseEvent<HTMLDivElement> | null>(null);
 
   useEffect(() => {
     if (!movies || movies.length === 0) return;
 
-    setProgress(0);
+    // Progress runs as a CSS animation keyed on currentIndex (see the bar at
+    // the bottom): no 10Hz state loop re-rendering the hero while the user
+    // reads. The interval only advances the slide.
     const intervalTime = 6000;
-    const updateFreq = 100;
-
-    // Progress bar update
-    const timer = setInterval(() => {
-      setProgress((prev) => {
-        if (prev >= 100) return 0;
-        return prev + (100 / (intervalTime / updateFreq));
-      });
-    }, updateFreq);
-
-    // Slide change
     const slideInterval = setInterval(() => {
       setCurrentIndex((prev) => (prev + 1) % movies.length);
-      setProgress(0);
     }, intervalTime);
 
-    // Clean up
     return () => {
-      clearInterval(timer);
       clearInterval(slideInterval);
+      if (parallaxFrame.current !== null) cancelAnimationFrame(parallaxFrame.current);
     };
   }, [movies, currentIndex]); // Reset whenever currentIndex changes by manual interaction too? Maybe better to just rely on interval.
   // The current dependency array [movies, currentIndex] effectively resets the timer on every slide change (auto or manual).
   // This is desired behavior: if I click next, I want the timer to restart for full 6 seconds.
 
   const handleMouseMove = (e: React.MouseEvent<HTMLDivElement>) => {
-    const { clientX, clientY, currentTarget } = e;
-    const { width, height, left, top } = currentTarget.getBoundingClientRect();
-    const x = (clientX - left) / width - 0.5;
-    const y = (clientY - top) / height - 0.5;
-    setMousePos({ x, y });
+    parallaxPending.current = e;
+    if (parallaxFrame.current !== null) return;
+    parallaxFrame.current = requestAnimationFrame(() => {
+      parallaxFrame.current = null;
+      const evt = parallaxPending.current;
+      if (!evt || !evt.currentTarget) return;
+      const { clientX, clientY, currentTarget } = evt;
+      const { width, height, left, top } = currentTarget.getBoundingClientRect();
+      const x = (clientX - left) / width - 0.5;
+      const y = (clientY - top) / height - 0.5;
+      setMousePos({ x, y });
+    });
   };
 
   if (!movies || movies.length === 0) return null;
 
   const handlePrev = () => {
     setCurrentIndex((prev) => (prev - 1 + movies.length) % movies.length);
-    setProgress(0);
   };
 
   const handleNext = () => {
     setCurrentIndex((prev) => (prev + 1) % movies.length);
-    setProgress(0);
   };
 
   return (
@@ -90,6 +87,12 @@ const HeroSection = ({ movies }: HeroSectionProps) => {
 
         const backgroundUrl = thumbUrl || posterUrl;
         const isActive = index === currentIndex;
+        // Six stacked full-viewport backdrops all counted as "in viewport":
+        // the browser fetched every w1280 image up front, competing with the
+        // LCP it is actually showing. Render only the shown slide plus the
+        // next one (so the crossfade has bytes to fade INTO); earlier slides
+        // stay mounted once shown.
+        const shouldRenderImage = index <= currentIndex + 1;
 
         return (
           <div
@@ -103,14 +106,17 @@ const HeroSection = ({ movies }: HeroSectionProps) => {
                 transform: isActive ? `scale(1.1) translate(${mousePos.x * -20}px, ${mousePos.y * -20}px)` : 'none'
               }}
             >
-              <Image
-                src={backgroundUrl}
-                alt={movie.name}
-                fill
-                className="object-cover object-center"
-                priority={index === 0}
-                sizes="100vw"
-              />
+              {shouldRenderImage ? (
+                <Image
+                  src={backgroundUrl}
+                  alt={movie.name}
+                  fill
+                  className="object-cover object-center"
+                  priority={index === 0}
+                  loading={index === 0 ? undefined : 'lazy'}
+                  sizes="100vw"
+                />
+              ) : null}
 
               {/* Cinematic Vignette Overlay */}
               <div className="absolute inset-0 hero-vignette" />
@@ -177,11 +183,12 @@ const HeroSection = ({ movies }: HeroSectionProps) => {
         );
       })}
 
-      {/* Progress Bar */}
+      {/* Progress Bar — CSS animation keyed on the slide index: restarting the
+          key restarts the animation, so no state tick is needed at 10Hz. */}
       <div className="absolute bottom-0 left-0 w-full h-1.5 bg-white/5 z-50">
         <div
-          className="h-full bg-amber-primary shadow-[0_0_15px_rgba(245,158,11,0.8)] transition-all duration-100 ease-linear"
-          style={{ width: `${progress}%` }}
+          key={currentIndex}
+          className="h-full bg-amber-primary shadow-[0_0_15px_rgba(245,158,11,0.8)] hero-progress"
         />
       </div>
 
@@ -210,10 +217,7 @@ const HeroSection = ({ movies }: HeroSectionProps) => {
           return (
             <button
               key={idx}
-              onClick={() => {
-                setCurrentIndex(idx);
-                setProgress(0);
-              }}
+              onClick={() => setCurrentIndex(idx)}
               className={`relative overflow-hidden rounded-2xl transition-all duration-500 border group/thumb ${isActive
                 ? 'w-32 h-20 border-amber-primary shadow-amber-glow scale-110 z-10'
                 : 'w-20 h-12 border-white/10 hover:border-amber-primary/50 opacity-50 hover:opacity-100'
@@ -240,10 +244,7 @@ const HeroSection = ({ movies }: HeroSectionProps) => {
         {movies.map((_, idx) => (
           <button
             key={idx}
-            onClick={() => {
-              setCurrentIndex(idx);
-              setProgress(0);
-            }}
+            onClick={() => setCurrentIndex(idx)}
             className={`h-1.5 rounded-full transition-all duration-300 ${idx === currentIndex ? 'bg-amber-primary w-6 shadow-amber-glow' : 'bg-white/30 w-2'
               }`}
           />

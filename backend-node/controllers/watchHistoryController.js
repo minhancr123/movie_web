@@ -24,47 +24,32 @@ export const addWatchHistory = async (req, res) => {
     const userId = req.user.userId;
     const db = getDB();
 
-    // Check if already exists
-    const existing = await db.collection('watch_history').findOne({ 
-      userId: new ObjectId(userId), 
-      movieSlug 
-    });
-
-    if (existing) {
-      // Update existing
-      await db.collection('watch_history').updateOne(
-        { userId: new ObjectId(userId), movieSlug },
-        { 
-          $set: {
-            ...tmdbIdentity(req.body),
-            episode,
-            server,
-            currentTime,
-            watchedAt: new Date()
-          } 
-        }
-      );
-    } else {
-      // Insert new
-      const history = {
-        userId: new ObjectId(userId),
-        movieSlug,
-        ...tmdbIdentity(req.body),
-        movieData: {
-          name: movieData.name,
-          originName: movieData.originName,
-          posterUrl: movieData.posterUrl,
-          thumbUrl: movieData.thumbUrl,
-          year: movieData.year
+    const safeCurrentTime = currentTime || 0;
+    // Single upsert instead of findOne + insert/updateOne: one round-trip on a
+    // path the player calls continuously while watching, and no duplicate-row
+    // race between two concurrent progress saves.
+    const existedBefore = await db.collection('watch_history').updateOne(
+      { userId: new ObjectId(userId), movieSlug },
+      {
+        $set: {
+          ...tmdbIdentity(req.body),
+          episode,
+          server,
+          currentTime: safeCurrentTime,
+          watchedAt: new Date()
         },
-        episode,
-        server,
-        currentTime: currentTime || 0,
-        watchedAt: new Date()
-      };
-
-      await db.collection('watch_history').insertOne(history);
-    }
+        $setOnInsert: {
+          movieData: {
+            name: movieData.name,
+            originName: movieData.originName,
+            posterUrl: movieData.posterUrl,
+            thumbUrl: movieData.thumbUrl,
+            year: movieData.year
+          }
+        }
+      },
+      { upsert: true }
+    );
 
     res.json({
       success: true,
@@ -72,7 +57,7 @@ export const addWatchHistory = async (req, res) => {
     });
 
     enqueueJob(JOBS.WATCH_HISTORY_SYNC, {
-      action: existing ? 'update' : 'insert',
+      action: existedBefore?.upsertedId ? 'insert' : 'update',
       userId,
       movieSlug,
       episode,
@@ -93,7 +78,7 @@ export const addWatchHistory = async (req, res) => {
 export const getWatchHistory = async (req, res) => {
   try {
     const userId = req.user.userId;
-    const limit = parseInt(req.query.limit) || 20;
+    const limit = Math.min(parseInt(req.query.limit) || 20, 100);
     const db = getDB();
 
     const history = await db.collection('watch_history')

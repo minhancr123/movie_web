@@ -25,13 +25,18 @@ export default function ViewCounter({ contentId, initialViews = 0 }: ViewCounter
 
     const run = async () => {
       try {
-        await fetch(`${API_BASE}/analytics/view`, {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ movieSlug: contentId }),
-        });
-
-        const res = await fetch(`${API_BASE}/analytics/views/${encodeURIComponent(contentId)}`);
+        // Fire the count and read the total in parallel: these two calls
+        // were sequential, making every detail page wait two API hops for a
+        // number the POST does not influence (analytics reads the counter
+        // the worker increments asynchronously).
+        const [, res] = await Promise.all([
+          fetch(`${API_BASE}/analytics/view`, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ movieSlug: contentId }),
+          }),
+          fetch(`${API_BASE}/analytics/views/${encodeURIComponent(contentId)}`),
+        ]);
         if (!res.ok || cancelled) return;
 
         const data = await res.json();

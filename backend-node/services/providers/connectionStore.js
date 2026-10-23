@@ -50,9 +50,23 @@ export const getConnectionDoc = async (db, userId, provider) => {
  *   409 NO_CONNECTION  — never connected
  *   401 INVALID_TOKEN   — ciphertext unusable (key rotation lost / tampered)
  */
+// Resolve loops and 2s session polls used to pay a Mongo read + AES unwrap
+// (and possibly a re-wrap write) for the same user's key on every call. The
+// ciphertext only changes through save/remove below, which invalidate here.
+const DECRYPTED_KEY_TTL_MS = 30_000;
+const decryptedKeyCache = new Map();
+
+const invalidateDecryptedKey = (userId, provider) =>
+  decryptedKeyCache.delete(`${String(userId)}:${String(provider || '').toLowerCase()}`);
+
 export const getDecryptedKey = async (db, userId, provider) => {
   const name = String(provider || '').toLowerCase();
   userId = credentialOwner(userId, name);
+  const cacheKey = `${String(userId)}:${name}`;
+  const cached = decryptedKeyCache.get(cacheKey);
+  if (cached && Date.now() - cached.at < DECRYPTED_KEY_TTL_MS) {
+    return { key: cached.key, doc: cached.doc };
+  }
   const doc = await getConnectionDoc(db, userId, name);
   if (!doc) {
     const error = new Error('Chưa kết nối TorBox');
@@ -96,12 +110,17 @@ export const getDecryptedKey = async (db, userId, provider) => {
     }
   }
 
+  decryptedKeyCache.set(cacheKey, { key: plaintext, doc, at: Date.now() });
+  if (decryptedKeyCache.size > 256) {
+    decryptedKeyCache.delete(decryptedKeyCache.keys().next().value);
+  }
   return { key: plaintext, doc };
 };
 
 export const saveConnection = async (db, userId, provider, { plaintextKey, profile = {} }) => {
   const name = String(provider || '').toLowerCase();
   userId = credentialOwner(userId, name);
+  invalidateDecryptedKey(userId, name);
   const userIdStr = String(userId);
   const sealed = encryptToken(plaintextKey, { userId: userIdStr, provider: name });
   const now = new Date();
@@ -136,6 +155,7 @@ export const saveConnection = async (db, userId, provider, { plaintextKey, profi
 export const removeConnection = async (db, userId, provider) => {
   const name = String(provider || '').toLowerCase();
   userId = credentialOwner(userId, name);
+  invalidateDecryptedKey(userId, name);
   const result = await db
     .collection('provider_connections')
     .deleteOne({ userId: toObjectIdOrRaw(userId), provider: name });

@@ -120,9 +120,11 @@ export const getFavorites = async (req, res) => {
     const userId = req.user.userId;
     const db = getDB();
 
+    const limit = Math.min(parseInt(req.query.limit) || 100, 200);
     const favorites = await db.collection('favorites')
       .find({ userId: new ObjectId(userId) })
       .sort({ addedAt: -1 })
+      .limit(limit)
       .toArray();
 
     res.json({

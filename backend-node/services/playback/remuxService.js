@@ -2357,6 +2357,21 @@ export const freeDiskBytes = async ({ now = Date.now(), ttlMs = DISK_PROBE_TTL_M
   return freeBytes;
 };
 
+// Finished session dirs never change, yet the janitor re-stat'd every file
+// in them on every 60s sweep — the majority of stat() calls were on bytes
+// that could not have moved. Cache size per dir keyed by its mtime.
+const directorySizeCache = new Map(); // id -> { dirMtimeMs, sizeBytes }
+const cachedDirectorySize = async (id, dirPath, dirStat) => {
+  const cached = directorySizeCache.get(id);
+  if (cached && cached.dirMtimeMs === dirStat.mtimeMs) return cached.sizeBytes;
+  const sizeBytes = await directorySize(dirPath);
+  directorySizeCache.set(id, { dirMtimeMs: dirStat.mtimeMs, sizeBytes });
+  if (directorySizeCache.size > 512) {
+    directorySizeCache.delete(directorySizeCache.keys().next().value);
+  }
+  return sizeBytes;
+};
+
 const readCacheEntry = async (dirent) => {
   // Playback session ids are 16 random bytes rendered as 32 hex characters.
   // Ignoring every other directory makes recursive removal narrowly scoped.
@@ -2397,7 +2412,7 @@ const readCacheEntry = async (dirent) => {
   return {
     id: dirent.name,
     dirPath,
-    sizeBytes: await directorySize(dirPath),
+    sizeBytes: await cachedDirectorySize(dirent.name, dirPath, dirStat),
     modifiedMs,
     lastAccessMs,
     complete: playlist.includes('#EXT-X-ENDLIST'),
@@ -2429,6 +2444,20 @@ export const cleanupTranscodeCache = async (overrides = {}) => {
     await fs.rm(entry.dirPath, { recursive: true, force: true });
     deletedIds.push(id);
     deletedBytes += entry.sizeBytes;
+    // The dir is gone, so the in-memory entry (child handle, stderr tail,
+    // viewer map) can never serve anything again — without this the map grew
+    // for the process lifetime, one finished session at a time.
+    if (!entry.live) sessions.delete(id);
+    directorySizeCache.delete(id);
+  }
+
+  // Sweep the other half of the leak: entries whose directory vanished
+  // (deleted by an operator, a previous sweep, or a failed rm retry) but
+  // whose map entry never heard about it.
+  for (const id of [...sessions.keys()]) {
+    const session = sessions.get(id);
+    if (!session || session.exitCode === undefined) continue;
+    if (!entries.some((entry) => entry.id === id)) sessions.delete(id);
   }
 
   return {

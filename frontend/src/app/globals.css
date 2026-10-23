@@ -555,3 +555,16 @@ img {
     animation: none;
   }
 }
+
+/* Hero carousel progress bar: 6s linear fill, restarted by remounting the
+   element with a new key on every slide change. */
+@keyframes hero-progress-fill {
+  from { width: 0%; }
+  to { width: 100%; }
+}
+.hero-progress {
+  animation: hero-progress-fill 6s linear forwards;
+}
+@media (prefers-reduced-motion: reduce) {
+  .hero-progress { animation-duration: 60s; }
+}

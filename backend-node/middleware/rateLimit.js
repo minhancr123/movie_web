@@ -2,7 +2,7 @@ import { cacheClient } from '../config/redis.js';
 
 // Sliding-window limiter backed by a Redis sorted set.
 // Fails open: if Redis is unavailable the request is allowed through.
-export const rateLimit = ({ windowMs = 60_000, max = 120, keyPrefix = 'rl' } = {}) => {
+export const rateLimit = ({ windowMs = 60_000, max = 120, keyPrefix = 'rl', skipMediaGrant = false } = {}) => {
   const windowSeconds = Math.ceil(windowMs / 1000);
 
   return async (req, res, next) => {
@@ -17,6 +17,13 @@ export const rateLimit = ({ windowMs = 60_000, max = 120, keyPrefix = 'rl' } = {
     // client's address, so a request with no X-Forwarded-For cannot have come
     // off the internet.
     if (!req.headers['x-forwarded-for']) return next();
+
+    // A verified media grant is already scoped, short-lived and bound to one
+    // session/rendition (checked by mediaAuthMiddleware before this runs):
+    // segment traffic it authenticates is entitled traffic, and charging it
+    // against a Redis bucket on every request costs 4 round-trips per segment
+    // for no protection the grant itself does not already give.
+    if (skipMediaGrant && req.mediaGrant) return next();
 
     const identity = req.user?.userId || req.ip || 'anonymous';
     const key = `${keyPrefix}:${identity}`;
@@ -52,7 +59,8 @@ export const playbackRateLimit = rateLimit({ windowMs: 60_000, max: 30, keyPrefi
 // HLS playback is inherently chatty: a 4s-segment stream pulls ~15 segments a
 // minute plus playlist refreshes, so asset serving needs its own headroom.
 // Resolve stays at 30/min because each call can create a TorBox torrent.
-export const hlsAssetRateLimit = rateLimit({ windowMs: 60_000, max: 3000, keyPrefix: 'rl:hls' });
+// Grant-authed asset traffic skips the Redis bucket entirely (see factory).
+export const hlsAssetRateLimit = rateLimit({ windowMs: 60_000, max: 3000, keyPrefix: 'rl:hls', skipMediaGrant: true });
 // Session polling runs on a timer while a torrent caches; it touches TorBox but
 // never creates anything, so it gets a middle tier.
 export const playbackPollRateLimit = rateLimit({ windowMs: 60_000, max: 120, keyPrefix: 'rl:poll' });

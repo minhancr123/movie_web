@@ -11,6 +11,22 @@ import SpatialShader from '@/components/SpatialShader';
 
 const REMEMBER_KEY = 'cine_remember_email';
 
+// The icon font is only used on this screen: loading it globally put a
+// render-blocking third-party stylesheet (plus ~200KB of variable font) on
+// every pageview of the site for spans that exist only here.
+function MaterialSymbolsFont() {
+  return (
+    <>
+      <link rel="preconnect" href="https://fonts.googleapis.com" />
+      <link rel="preconnect" href="https://fonts.gstatic.com" crossOrigin="anonymous" />
+      <link
+        rel="stylesheet"
+        href="https://fonts.googleapis.com/css2?family=Material+Symbols+Outlined:opsz,wght,FILL,GRAD@20..48,100..700,0..1,-50..200&display=swap"
+      />
+    </>
+  );
+}
+
 export default function AuthPage() {
   const router = useRouter();
   const [isLogin, setIsLogin] = useState(true);
@@ -154,6 +170,7 @@ export default function AuthPage() {
 
   return (
     <div className="relative -mx-4 -mt-20 px-6 pb-12 pt-28 md:-mx-8 lg:px-12">
+      <MaterialSymbolsFont />
       {/* Ambient Full Canvas Aurora & Cosmic Grain (Stitch) + realtime shader */}
       <div className="pointer-events-none fixed inset-0 z-0">
         <SpatialShader opacity={0.8} speed={1.8} />

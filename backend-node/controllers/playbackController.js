@@ -24,7 +24,7 @@ import path from 'path';
 import { getDB } from '../config/database.js';
 import { publicText, publicFileName } from '../services/publicVocabulary.js';
 import { ObjectId } from 'mongodb';
-import { cached, getCache, setCache, CACHE_TTL } from '../config/redis.js';
+import { cached, getCache, setCache, cacheClient, CACHE_TTL } from '../config/redis.js';
 import { isMediaType, buildContentRef } from '../services/contentRef.js';
 import * as tmdb from '../services/tmdb.js';
 import {
@@ -310,15 +310,35 @@ export const isSessionOwner = (session, userId) =>
  * ranker reject those up front, which is what makes retries hit new sources.
  */
 const applyProbeFacts = async (candidates) => {
-  const facts = await Promise.all(
-    candidates.map(async candidate => {
-      const [fact, range] = await Promise.all([getCache(probeFactsKey(candidate.infoHash, candidate.fileIdx)),
-        getCache(`playback:direct-range:v1:${fileIdentity(candidate.infoHash, candidate.fileIdx)}`)]);
-      return fact ? { ...fact, rangeSupported: range?.supported } : null;
-    }),
-  );
+  // Two MGETs total instead of two GETs per candidate: a resolve can carry
+  // 60–150 candidates, so the per-candidate loop was 120–300 sequential Redis
+  // round-trips on the sources path.
+  const factKeys = candidates.map((candidate) => probeFactsKey(candidate.infoHash, candidate.fileIdx));
+  const rangeKeys = candidates.map((candidate) =>
+    `playback:direct-range:v1:${fileIdentity(candidate.infoHash, candidate.fileIdx)}`);
+  const readAll = async (keys) => {
+    if (!keys.length) return [];
+    try {
+      return await cacheClient.mget(...keys);
+    } catch {
+      return keys.map(() => null);
+    }
+  };
+  const [factRaws, rangeRaws] = await Promise.all([readAll(factKeys), readAll(rangeKeys)]);
   return candidates.map((candidate, index) => {
-    const fact = facts[index];
+    let fact = null;
+    try {
+      fact = factRaws[index] ? JSON.parse(factRaws[index]) : null;
+    } catch {
+      fact = null;
+    }
+    let range = null;
+    try {
+      range = rangeRaws[index] ? JSON.parse(rangeRaws[index]) : null;
+    } catch {
+      range = null;
+    }
+    if (fact) fact.rangeSupported = range?.supported;
     if (!fact) return candidate;
   return {
     ...candidate,
@@ -599,6 +619,40 @@ const saveSession = async (db, doc) => {
  * the request — the player starts at the session origin, off by a blink.
  */
 export const REUSE_START_TOLERANCE_SECONDS = 2;
+
+/**
+ * Bounded wait for a same-rendition live writer to publish when the writer
+ * slots are exhausted by duplicate work. Short of full cross-viewer session
+ * adoption (grant model is per-session), this is the cheap 90%: the second
+ * viewer of a brand-new film holds one request instead of 503-ladder retrying
+ * through the whole addon/prepare/probe chain.
+ */
+const REMUX_JOIN_WAIT_MS = Math.max(
+  10_000,
+  Number(process.env.REMUX_JOIN_WAIT_MS) || 60_000,
+);
+
+const hasLiveRenditionWriter = async (db, renditionKey, excludeSessionId) => {
+  const rows = await db.collection('playback_sessions')
+    .find({
+      renditionKey: String(renditionKey),
+      mode: 'remux',
+      sessionId: { $ne: excludeSessionId },
+      expiresAt: { $gt: new Date() },
+    })
+    .project({ sessionId: 1, _id: 0 })
+    .limit(10)
+    .toArray()
+    .catch(() => []);
+  return rows.some((row) => {
+    try {
+      return isRemuxSessionLive(row.sessionId);
+    } catch {
+      return false;
+    }
+  });
+};
+
 const findReusableRemuxSession = async (db, { userId, type, tmdbId, season, episode, infoHash, audioIndex, caps, startAt = 0 }) => {  const requestedStartAt = Number.isFinite(Number(startAt)) && Number(startAt) > 0 ? Math.floor(Number(startAt)) : 0;
   // A measured origin can overshoot a later request by milliseconds (session
   // at 178.178s vs a new seek to 178s): without tolerance every such seek
@@ -624,7 +678,7 @@ const findReusableRemuxSession = async (db, { userId, type, tmdbId, season, epis
       expiresAt: { $gt: new Date() },
     },
     { sort: { startAt: -1, createdAt: -1 } },
-  ).toArray();
+  ).limit(5).toArray();
 
   for (const session of sessions) {
     if (session.windowSeconds > 0 && !caps.windowedRemux) continue;
@@ -1751,7 +1805,8 @@ export const resolvePlayback = async (req, res) => {
       }
       // Record before acting on it: a rejection here is exactly the fact the
       // ranker needs next time so this source stops consuming a retry slot.
-      await rememberProbeFacts(candidate.infoHash, probe, file.fileId);
+      // Fire-and-forget: setCache is best-effort and nothing below reads it.
+      void rememberProbeFacts(candidate.infoHash, probe, file.fileId);
       let windowSeconds = Number(probe.duration) > 0 || runtimeMinutes > 0 ? requestedWindowSeconds : 0;
       // Declared here (loop-body scope) so the rendition key and the remux
       // below share one value.
@@ -1798,18 +1853,23 @@ export const resolvePlayback = async (req, res) => {
 
       // Identify the exact file for subtitle matching. Best-effort: two 64 KiB
       // range requests, and a failure only costs hash-accurate subtitles — the
-      // addon still answers on IMDb id alone.
+      // addon still answers on IMDb id alone. Started here but NOT awaited:
+      // the range check and delivery planning below run while these bytes are
+      // in flight; the value is awaited at the first place it is consumed.
       let fileHash = await getCache(fileHashKey(candidate.infoHash, file.fileId));
+      let fileHashPromise = null;
       if (!fileHash) {
-        try {
-          fileHash = await computeOpenSubtitlesHash(inputUrl, file.size);
-          if (fileHash) {
-            await setCache(fileHashKey(candidate.infoHash, file.fileId), fileHash, PROBE_FACTS_TTL);
-          }
-        } catch (error) {
-          console.warn(`opensubtitles hash bỏ qua infoHash=${candidate.infoHash}: ${error.message}`);
-          fileHash = null;
-        }
+        fileHashPromise = computeOpenSubtitlesHash(inputUrl, file.size)
+          .then(async (hash) => {
+            if (hash) {
+              await setCache(fileHashKey(candidate.infoHash, file.fileId), hash, PROBE_FACTS_TTL);
+            }
+            return hash;
+          })
+          .catch((error) => {
+            console.warn(`opensubtitles hash bỏ qua infoHash=${candidate.infoHash}: ${error.message}`);
+            return null;
+          });
       }
 
       // Decided before admitted, via the shared helper: direct URLs cost the
@@ -2008,6 +2068,11 @@ export const resolvePlayback = async (req, res) => {
         }
       }
 
+      // First consumer of the subtitle hash: the session rows below. Range
+      // check + delivery planning above have overlapped most (often all) of
+      // its two range requests by now.
+      if (fileHashPromise) fileHash = await fileHashPromise;
+
       if (decision.mode === 'direct') {
         await saveSession(db, {
           sessionId,
@@ -2116,8 +2181,7 @@ export const resolvePlayback = async (req, res) => {
       });
       stage('published', attemptTag);
       // Old published tails lack a measured origin and were labelled zero.
-      const published = startAt === 0 ? await findPublishedRendition(db, renditionKey) : null;
-      if (published) {
+      const servePublished = async () => {
         const pubSessionId = buildSessionId();
         // Stable cross-viewer URL (not per-session): every viewer of these
         // exact bytes shares one CDN edge object. The per-user session record
@@ -2174,6 +2238,10 @@ export const resolvePlayback = async (req, res) => {
             sourceToken: resolveSourceToken(candidate),
           },
         });
+      };
+      const published = startAt === 0 ? await findPublishedRendition(db, renditionKey) : null;
+      if (published) {
+        return await servePublished();
       }
 
       // Remux: ffmpeg reads the URL in-process; the URL itself stays in memory.
@@ -2311,8 +2379,25 @@ export const resolvePlayback = async (req, res) => {
         }
         // A full box is not this candidate's fault: every other source would
         // hit the same ceiling, so walking the rest of the list just burns
-        // TorBox calls to arrive at the same answer. Say so and stop.
+        // TorBox calls to arrive at the same answer. Say so and stop — unless
+        // a live writer is ALREADY producing this exact rendition (another
+        // viewer of the same film): waiting for it beats both a duplicate
+        // ffmpeg and a 503, and the bounded wait answers success the moment
+        // the rendition publishes.
         if (error instanceof RemuxBusyError || error?.code === 'REMUX_BUSY') {
+          if (renditionKey && (await hasLiveRenditionWriter(db, renditionKey, sessionId))) {
+            stage('join-writer', attemptTag);
+            const deadline = Date.now() + REMUX_JOIN_WAIT_MS;
+            while (Date.now() < deadline) {
+              throwIfSuperseded();
+              if (await findPublishedRendition(db, renditionKey)) {
+                console.warn(`resolvePlayback join writer thanh cong tmdb=${tmdbId} rendition=${renditionKey.slice(0, 8)}`);
+                return await servePublished();
+              }
+              if (!writerSlotStatus().full) break; // a slot freed: caller retry spawns
+              await new Promise((resolveSleep) => setTimeout(resolveSleep, 2000));
+            }
+          }
           console.warn(`resolvePlayback busy tmdb=${tmdbId} limit=${error.limit ?? '?'}`);
           return fail(res, 503, error.message, { code: 'REMUX_BUSY', retryable: true });
         }
@@ -2735,8 +2820,8 @@ export const preloadPlayback = async (req, res) => {
     }
 
     // Touch base session if provided
-    if (baseSession?.infoHash) {
-      await db.collection('playback_sessions').updateMany(
+    if (baseSession?.infoHash && shouldRenewSessions(req.user.userId, baseSession.infoHash)) {
+      db.collection('playback_sessions').updateMany(
         {
           userIdStr: String(req.user.userId),
           infoHash: baseSession.infoHash,
@@ -3611,6 +3696,25 @@ export const getResolveStage = async (req, res) => {
   return res.json({ success: true, data: entry });
 };
 
+// Poll-path session renewal used to write Mongo on every 2s poll per viewer;
+// the TTL being renewed is hours, so once a minute per (user, media) is more
+// than enough and drops hundreds of no-op writes per viewing hour.
+const sessionRenewalLastRun = new Map();
+const SESSION_RENEWAL_INTERVAL_MS = 60_000;
+const shouldRenewSessions = (userId, infoHash) => {
+  const key = `${userId}:${infoHash}`;
+  const now = Date.now();
+  const last = sessionRenewalLastRun.get(key) || 0;
+  if (now - last < SESSION_RENEWAL_INTERVAL_MS) return false;
+  sessionRenewalLastRun.set(key, now);
+  if (sessionRenewalLastRun.size > 512) {
+    for (const [k, t] of sessionRenewalLastRun) {
+      if (now - t > SESSION_RENEWAL_INTERVAL_MS * 5) sessionRenewalLastRun.delete(k);
+    }
+  }
+  return true;
+};
+
 export const getPlaybackSession = async (req, res) => {
   // Same reason as the resolve-stage endpoint: one identical URL polled every
   // 2s must never be served from heuristic cache (HTTP 304 with a stale body).
@@ -3626,7 +3730,7 @@ export const getPlaybackSession = async (req, res) => {
     }
 
     // Touch nearby sessions for the same media/user so preloaded or adjacent seek buckets don't expire prematurely
-    if (session.infoHash) {
+    if (session.infoHash && shouldRenewSessions(req.user.userId, session.infoHash)) {
       db.collection('playback_sessions')
         .updateMany(
           {
@@ -4057,6 +4161,36 @@ const sessionExpiryMs = (session) => {
 const rowRenditionId = (row) =>
   String(row?.publishedRenditionId || row?.renditionKey || '').toLowerCase();
 
+// Hot session-row cache for the HLS asset path. Every manifest poll and every
+// segment request used to pay a Mongo findOne; the row only changes when the
+// session is revoked/superseded, which is rare compared to serving traffic.
+// Rows are cached for a short window and only when comfortably away from
+// expiry, so revocation propagates within seconds and 410s stay timely;
+// misses are never cached (a session created a moment later must be seen).
+const SESSION_ROW_CACHE_TTL_MS = 10_000;
+const sessionRowCache = new Map();
+const findSessionRowCached = async (sessionId) => {
+  const key = String(sessionId || '').toLowerCase();
+  if (!key) return null;
+  const entry = sessionRowCache.get(key);
+  if (entry && Date.now() - entry.at < SESSION_ROW_CACHE_TTL_MS) return entry.row;
+  const row = await getDB().collection('playback_sessions').findOne({ sessionId: key });
+  if (row?.expiresAt) {
+    const expMs = new Date(row.expiresAt).getTime();
+    if (Number.isFinite(expMs) && expMs - Date.now() > SESSION_ROW_CACHE_TTL_MS + 30_000) {
+      if (sessionRowCache.has(key)) sessionRowCache.delete(key);
+      sessionRowCache.set(key, { row, at: Date.now() });
+      while (sessionRowCache.size > 256) {
+        sessionRowCache.delete(sessionRowCache.keys().next().value);
+      }
+    }
+  }
+  return row;
+};
+
+export const invalidateSessionRowCache = (sessionId) =>
+  sessionRowCache.delete(String(sessionId || '').toLowerCase());
+
 /**
  * Stable session grant for manifest responses (P2-url-stability).
  *
@@ -4088,7 +4222,7 @@ export const serveHlsAsset = async (req, res) => {
     if (!isAllowedAsset(asset)) return fail(res, 404, 'Không tìm thấy tài nguyên');
 
     const db = getDB();
-    const session = await db.collection('playback_sessions').findOne({ sessionId });
+    const session = await findSessionRowCached(sessionId);
     if (!session) return fail(res, 404, 'Không tìm thấy phiên phát');
     // Grant path: the middleware already verified the grant is scoped to this
     // exact sessionId. Still require the session row (revoked/deleted sessions
@@ -4108,7 +4242,9 @@ export const serveHlsAsset = async (req, res) => {
     if (session.expiresAt && new Date(session.expiresAt) < new Date()) {
       return fail(res, 410, 'Phiên phát đã hết hạn');
     }
-    await touchTranscodeSession(sessionId);
+    // Disk touch is throttled internally (30s) and never throws; awaiting it
+    // put a filesystem write on every segment's critical path for nothing.
+    touchTranscodeSession(sessionId).catch(() => {});
     if (session.mode !== 'remux') {
       return fail(res, 404, 'Phiên phát này không có luồng HLS');
     }
@@ -4165,6 +4301,7 @@ export const serveHlsAsset = async (req, res) => {
         // additionally mark the session failed and 410 the player.
         if (writerDead && !isYoungWriter(live)) {
           await stopRemuxSession(sessionId);
+          invalidateSessionRowCache(sessionId);
           // Record why. Without this a failed session carries only a filename,
           // so a source that dies every time is indistinguishable from a
           // one-off and there is nothing to act on.

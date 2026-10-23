@@ -70,15 +70,41 @@ export const setCache = async (key, value, ttlSeconds) => {
 // long-lived stale copy; when the loader throws, the stale copy is served
 // instead of the error — never served while fresh loads succeed. Callers
 // without opts behave exactly as before (no extra writes, no behavior change).
+//
+// In-flight coalescing: concurrent misses on the same key share one loader run
+// (Map of promises). Without it, a popular key expiring under traffic fired one
+// upstream call per concurrent request (dogpile) — the addonClient already did
+// this by hand for discovery; this gives every caller the same protection.
+const inflightLoads = new Map();
+
+// ±10% TTL jitter so keys written together (e.g. a whole home page of TMDB
+// rows cached by one request) don't all expire on the same second.
+const jitterTtl = (ttlSeconds) => {
+  const ttl = Number(ttlSeconds);
+  if (!Number.isFinite(ttl) || ttl <= 1) return ttl;
+  const jitter = ttl * 0.1;
+  return Math.max(1, Math.round(ttl - jitter + Math.random() * jitter * 2));
+};
+
 export const cachedIn = async (store, key, ttlSeconds, loader, opts = {}) => {
   const hit = await store.get(key);
   if (hit !== null) return hit;
 
+  let load = inflightLoads.get(key);
+  const firstFlight = !load;
+  if (firstFlight) {
+    load = loader();
+    inflightLoads.set(key, load);
+    // Never leak a rejected promise entry: settle removes the slot either way.
+    const clear = () => inflightLoads.delete(key);
+    load.then(clear, clear);
+  }
+
   const staleKey = `${key}:stale`;
   try {
-    const value = await loader();
-    if (value !== null && value !== undefined) {
-      await store.set(key, value, ttlSeconds);
+    const value = await load;
+    if (firstFlight && value !== null && value !== undefined) {
+      await store.set(key, value, jitterTtl(ttlSeconds));
       if (opts.staleOnError && Number(opts.staleTtlSeconds) > 0) {
         await store.set(staleKey, value, Number(opts.staleTtlSeconds));
       }
@@ -92,13 +118,15 @@ export const cachedIn = async (store, key, ttlSeconds, loader, opts = {}) => {
       // Backfill the stale copy under the live key with a short TTL so the
       // next minute of traffic is served instantly instead of every request
       // paying a full loader retry chain against a dead upstream.
-      try {
-        const fallbackTtl = Number(opts.staleFallbackTtlSeconds) > 0
-          ? Number(opts.staleFallbackTtlSeconds)
-          : 60;
-        await store.set(key, stale, fallbackTtl);
-      } catch {
-        // best-effort
+      if (firstFlight) {
+        try {
+          const fallbackTtl = Number(opts.staleFallbackTtlSeconds) > 0
+            ? Number(opts.staleFallbackTtlSeconds)
+            : 60;
+          await store.set(key, stale, fallbackTtl);
+        } catch {
+          // best-effort
+        }
       }
       return stale;
     }

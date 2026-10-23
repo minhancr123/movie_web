@@ -26,8 +26,11 @@ const toHeroMovie = (item: CatalogItem): HeroMovie => ({
 export default async function Home() {
   // Builds cannot reach the compose backend. Never publish their empty fallback
   // as the homepage; render against the running API on each incoming request.
+  // `connection()` keeps the route out of build-time prerendering only — the
+  // home rows themselves come from the fetch Data Cache (REVALIDATE.home,
+  // 300s), so a pageview no longer pays the API/TMDB hop on every request.
   await connection();
-  const { trending, popularMovies, popularTv, topRatedMovies } = await getHome({ fresh: true });
+  const { trending, popularMovies, popularTv, topRatedMovies } = await getHome();
 
   const heroItems = trending.filter((item) => item.backdrop).slice(0, 6);
 

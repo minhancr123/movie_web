@@ -74,7 +74,21 @@ export const register = async (req, res) => {
         role: newUser.role
       }
     );
-    const result = await db.collection('users').insertOne(newUser);
+    let result;
+    try {
+      result = await db.collection('users').insertOne(newUser);
+    } catch (error) {
+      // The pre-check above races between two concurrent registrations; the
+      // unique index is the real guard, so translate its verdict instead of
+      // surfacing a 500 for a perfectly ordinary double-submit.
+      if (error?.code === 11000 || error?.message?.includes('E11000')) {
+        return res.status(400).json({
+          success: false,
+          message: 'Email hoặc username đã tồn tại'
+        });
+      }
+      throw error;
+    }
 
     res.status(201).json({
       success: true,

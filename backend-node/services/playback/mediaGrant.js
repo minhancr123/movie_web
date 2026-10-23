@@ -277,6 +277,33 @@ export const clearStableGrants = () => stableGrants.clear();
 export const MANIFEST_CONTENT_TYPE = 'application/vnd.apple.mpegurl';
 export const MANIFEST_CACHE_CONTROL = 'private, no-store';
 
+// Rewritten-manifest body cache. A growing EVENT playlist is polled by every
+// viewer roughly every target duration: without this, each poll re-reads the
+// whole file (a 2h film ends around ~1800 EXTINF lines) and regex-rewrites
+// every child URL. The playlist only changes when ffmpeg appends to it, so the
+// file's mtime is a complete invalidation key — a poll that lands between two
+// writes serves the cached rewrite unchanged.
+const MANIFEST_CACHE_MAX = 128; // entries; worst case a few MB of playlists
+const manifestBodies = new Map(); // `${filePath}:${mtimeMs}:${token}` -> body
+
+const getCachedManifestBody = (key) => {
+  const body = manifestBodies.get(key);
+  if (body === undefined) return undefined;
+  // refresh insertion order so the LRU eviction below evicts cold playlists
+  manifestBodies.delete(key);
+  manifestBodies.set(key, body);
+  return body;
+};
+
+const putCachedManifestBody = (key, body) => {
+  manifestBodies.set(key, body);
+  while (manifestBodies.size > MANIFEST_CACHE_MAX) {
+    manifestBodies.delete(manifestBodies.keys().next().value);
+  }
+};
+
+export const clearManifestBodyCache = () => manifestBodies.clear();
+
 /**
  * Serve a manifest file with child URLs rewritten to the grant, awaited by
  * the controller inside its try/catch (P2-hang: an un-awaited rejection
@@ -285,20 +312,34 @@ export const MANIFEST_CACHE_CONTROL = 'private, no-store';
  * player falls back to recovery instead of hanging.
  */
 export const serveManifestResponse = async (res, filePath, grantToken, { param = MEDIA_GRANT_QUERY } = {}) => {
-  let raw;
+  // mtime is read before the body: a cache entry written for an older mtime
+  // must never survive past the write that produced a newer one.
+  let mtimeMs = null;
   try {
-    raw = await fs.readFile(filePath, 'utf8');
-  } catch (error) {
-    // ENOENT (janitor won the stat→read race) and ENOTDIR (a parent dir went
-    // away mid-read) both mean "no longer servable": 404 so the player falls
-    // back to recovery instead of hanging. Anything else (EACCES, EIO) is a
-    // real server problem and stays a thrown 500 with the error logged.
-    if (error?.code === 'ENOENT' || error?.code === 'ENOTDIR') {
-      return res.status(404).json({ success: false, message: 'Tài nguyên chưa sẵn sàng' });
-    }
-    throw error;
+    mtimeMs = (await fs.stat(filePath)).mtimeMs;
+  } catch {
+    // fall through to the read below, which reports ENOENT properly
   }
-  const body = grantToken ? rewriteManifestWithGrant(raw, grantToken, { param }) : raw;
+  const cacheKey = `${filePath}:${mtimeMs}:${grantToken || ''}`;
+  let body = mtimeMs === null ? undefined : getCachedManifestBody(cacheKey);
+
+  if (body === undefined) {
+    let raw;
+    try {
+      raw = await fs.readFile(filePath, 'utf8');
+    } catch (error) {
+      // ENOENT (janitor won the stat→read race) and ENOTDIR (a parent dir went
+      // away mid-read) both mean "no longer servable": 404 so the player falls
+      // back to recovery instead of hanging. Anything else (EACCES, EIO) is a
+      // real server problem and stays a thrown 500 with the error logged.
+      if (error?.code === 'ENOENT' || error?.code === 'ENOTDIR') {
+        return res.status(404).json({ success: false, message: 'Tài nguyên chưa sẵn sàng' });
+      }
+      throw error;
+    }
+    body = grantToken ? rewriteManifestWithGrant(raw, grantToken, { param }) : raw;
+    if (mtimeMs !== null) putCachedManifestBody(cacheKey, body);
+  }
   res.setHeader('Content-Type', MANIFEST_CONTENT_TYPE);
   res.setHeader('Cache-Control', MANIFEST_CACHE_CONTROL);
   return res.send(body);

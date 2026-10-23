@@ -173,11 +173,16 @@ export const checkCached = async (key, infoHashes) => {
   const result = {};
   const misses = [];
 
-  for (const hash of hashes) {
-    const hit = await cacheClient.get(`torbox:cached:${keyHash}:${hash}`).catch(() => null);
+  // One MGET for every key (a resolve can carry 100+ candidates) instead of a
+  // sequential GET per hash — each await was its own Redis round-trip on the
+  // critical resolve path.
+  const cacheKeys = hashes.map((hash) => `torbox:cached:${keyHash}:${hash}`);
+  const hits = await cacheClient.mget(...cacheKeys).catch(() => cacheKeys.map(() => null));
+  hashes.forEach((hash, index) => {
+    const hit = hits[index];
     if (hit === null) misses.push(hash);
     else result[hash] = hit;
-  }
+  });
 
   if (!misses.length) return result;
 
@@ -194,25 +199,36 @@ export const checkCached = async (key, infoHashes) => {
       batch.forEach((hash) => {
         result[hash] = CACHED_STATUS.UNKNOWN;
       });
-      await Promise.all(batch.map((hash) =>
-        cacheClient.set(`torbox:cached:${keyHash}:${hash}`, CACHED_STATUS.UNKNOWN, 'EX', 30).catch(() => {})
-      ));
+      writeCachedStatuses(keyHash, batch.map((hash) => [hash, CACHED_STATUS.UNKNOWN, 30]));
       continue;
     }
 
     const data = payload?.data || {};
+    const writes = [];
     for (const hash of batch) {
       const isCached = Boolean(data[hash]);
       const status = isCached ? CACHED_STATUS.CACHED : CACHED_STATUS.NOT_CACHED;
       result[hash] = status;
-      const ttl = isCached ? CACHED_CHECK_TTL_SECONDS : 60;
-      await cacheClient
-        .set(`torbox:cached:${keyHash}:${hash}`, status, 'EX', ttl)
-        .catch(() => {});
+      writes.push([hash, status, isCached ? CACHED_CHECK_TTL_SECONDS : 60]);
     }
+    writeCachedStatuses(keyHash, writes);
   }
 
   return result;
+};
+
+// Write status rows back in one pipelined batch instead of one SET per hash.
+const writeCachedStatuses = (keyHash, writes) => {
+  if (!writes.length) return;
+  try {
+    const pipeline = cacheClient.multi();
+    for (const [hash, status, ttl] of writes) {
+      pipeline.set(`torbox:cached:${keyHash}:${hash}`, status, 'EX', ttl);
+    }
+    pipeline.exec().catch(() => {});
+  } catch {
+    // best-effort
+  }
 };
 
 /* ------------------------------------------------------------- add / prepare */

@@ -5,7 +5,18 @@ import Link from 'next/link';
 import Image from 'next/image';
 import { useSession } from 'next-auth/react';
 import { Loader2, AlertCircle, Key, RefreshCw, CheckCircle2, Download, Film, Layers, PictureInPicture2, ChevronLeft, ChevronRight, ListVideo } from 'lucide-react';
-import VideoPlayer from '@/components/VideoPlayer';
+// Loaded on demand: hls.js + the 3k-line player (plus its audio graph) are
+// dead weight during the resolve stage, which can legitimately take tens of
+// seconds on a cold source — the shell renders instantly without them.
+import dynamic from 'next/dynamic';
+const VideoPlayer = dynamic(() => import('@/components/VideoPlayer'), {
+  ssr: false,
+  loading: () => (
+    <div className="flex aspect-video w-full items-center justify-center rounded-2xl bg-black/60">
+      <Loader2 className="animate-spin text-amber-primary" size={36} />
+    </div>
+  ),
+});
 import { nextPlayableEpisode, fallbackPlaybackNotice } from '@/lib/playback-extras';
 import CinemaLayer, { type CinemaMode } from '@/components/CinemaLayer';
 

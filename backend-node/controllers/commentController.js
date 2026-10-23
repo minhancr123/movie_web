@@ -70,32 +70,48 @@ export const getComments = async (req, res) => {
   try {
     const { movieSlug } = req.params;
     const page = parseInt(req.query.page) || 1;
-    const limit = parseInt(req.query.limit) || 10;
+    const limit = Math.min(parseInt(req.query.limit) || 10, 50);
     const skip = (page - 1) * limit;
     const db = getDB();
 
-    // Get top-level comments (no parent)
-    const comments = await db.collection('comments')
-      .find({ movieSlug, parentId: null })
-      .sort({ createdAt: -1 })
-      .skip(skip)
-      .limit(limit)
-      .toArray();
+    // Get top-level comments (no parent) and the total count in parallel.
+    const [comments, total] = await Promise.all([
+      db.collection('comments')
+        .find({ movieSlug, parentId: null })
+        .sort({ createdAt: -1 })
+        .skip(skip)
+        .limit(limit)
+        .toArray(),
+      db.collection('comments').countDocuments({
+        movieSlug,
+        parentId: null
+      })
+    ]);
 
-    // Get total count
-    const total = await db.collection('comments').countDocuments({ 
-      movieSlug, 
-      parentId: null 
-    });
-
-    // Get replies for each comment
-    for (let comment of comments) {
-      if (comment.replies && comment.replies.length > 0) {
-        const replies = await db.collection('comments')
-          .find({ _id: { $in: comment.replies } })
-          .sort({ createdAt: 1 })
-          .toArray();
-        comment.repliesData = replies;
+    // Fetch every reply referenced by this page in ONE query instead of one
+    // round-trip per comment (N+1): a movie page with 10 commented threads
+    // used to cost 12 sequential Mongo calls.
+    const allReplyIds = comments.flatMap((comment) => comment.replies || []);
+    if (allReplyIds.length > 0) {
+      const replies = await db.collection('comments')
+        .find({ _id: { $in: allReplyIds } })
+        .sort({ createdAt: 1 })
+        .toArray();
+      const repliesByParent = new Map();
+      for (const reply of replies) {
+        const parentIdStr = String(reply._id);
+        for (const comment of comments) {
+          if ((comment.replies || []).some((id) => String(id) === parentIdStr)) {
+            if (!repliesByParent.has(comment._id)) repliesByParent.set(comment._id, []);
+            repliesByParent.get(comment._id).push(reply);
+            break;
+          }
+        }
+      }
+      for (const comment of comments) {
+        if (comment.replies && comment.replies.length > 0) {
+          comment.repliesData = repliesByParent.get(comment._id) || [];
+        }
       }
     }
 

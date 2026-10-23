@@ -1019,8 +1019,10 @@ export default function VideoPlayer({ src, playbackStartedAt, movie, episode, au
         const checkTime = () => {
             if (!video.paused && !video.ended) {
                 const now = video.currentTime;
-                // 40ms threshold (~25fps) completely eliminates the 250-350ms delay of timeupdate
-                if (Math.abs(now - currentTimeRef.current) >= 0.04) {
+                // 150ms (~7 updates/s) keeps subtitle alignment within one
+                // comfortable blink while cutting whole-component re-renders
+                // (controls + cue memos) from ~25/s to ~7/s during playback.
+                if (Math.abs(now - currentTimeRef.current) >= 0.15) {
                     currentTimeRef.current = now;
                     setCurrentTime(now);
                     // Same-value sets bail out, so this is free after the
@@ -1278,6 +1280,11 @@ export default function VideoPlayer({ src, playbackStartedAt, movie, episode, au
                 // speed can fluctuate, while retaining only one minute behind.
                 maxBufferLength: 90,
                 maxMaxBufferLength: 180,
+                // Byte ceiling: 180s of a 4K/HDR remux (15-25 Mbps) is
+                // 300-500MB of RAM and evicts mobile tabs outright. hls.js
+                // stops filling at whichever limit (seconds OR bytes) hits
+                // first, so desktop keeps the 90s cushion.
+                maxBufferSize: 60 * 1000 * 1000,
                 backBufferLength: 60,
                 startFragPrefetch: true,
                 manifestLoadingMaxRetry: 4,
@@ -1604,7 +1611,7 @@ export default function VideoPlayer({ src, playbackStartedAt, movie, episode, au
         const video = videoRef.current;
         if (!video) return;
 
-        const saveProgress = async (force = false) => {
+        const saveProgress = async (force = false, syncApi = true) => {
             if (restorePendingRef.current || video.seeking) return;
             // Interval ticks skip paused elements (nothing changed), but
             // pause/pagehide callers pass force=true: the position at the
@@ -1636,7 +1643,9 @@ export default function VideoPlayer({ src, playbackStartedAt, movie, episode, au
                     season: subContext?.season ?? undefined,
                 });
 
-                // API sync (fire and forget to avoid blocking)
+                // API sync (fire and forget to avoid blocking) — every 3rd
+                // tick: local resume precision stays at 10s while the server
+                // round-trip drops to 1 per 30s per viewer.
                 // Ideally we check session here, but VideoPlayer is a client component.
                 // We can pass session status or check it.
                 // Since VideoPlayer doesn't have session prop, let's assume we can fetch it or just try calling API 
@@ -1648,12 +1657,13 @@ export default function VideoPlayer({ src, playbackStartedAt, movie, episode, au
 
                 // For now, let's rely on the fact that if auth cookie/token is there, api call works.
                 // We will import watchHistoryAPI.
+                if (!syncApi) return;
                 try {
                     // We need to valid if we are logged in. 
                     // Checking localStorage 'token' or similar might be enough if we don't want to useSession hook here to avoid re-renders.
                     // But standard way is useSession.
                     // Let's import watchHistoryAPI at top.
-                    await import('@/lib/api').then(({ watchHistoryAPI }) => {
+                    void import('@/lib/api').then(({ watchHistoryAPI }) => {
                         watchHistoryAPI.add({
                             movieSlug: movie.slug,
                             movieData: {
@@ -1673,11 +1683,16 @@ export default function VideoPlayer({ src, playbackStartedAt, movie, episode, au
                 }
             }
         };
-        const interval = setInterval(saveProgress, 10000); // 10s interval for API sync balance
+        let apiTick = 0;
+        const tick = () => {
+            apiTick = (apiTick + 1) % 3;
+            void saveProgress(false, apiTick === 0);
+        };
+        const interval = setInterval(tick, 10000); // 10s local save; API every 3rd tick
         // Pause, backgrounding and tab close must all persist the exact stop
         // point: without these, a dead-then-recovered session resumes from the
         // last 10s tick instead of where the viewer actually stopped.
-        const saveNow = () => { void saveProgress(true); };
+        const saveNow = () => { void saveProgress(true, true); };
         document.addEventListener('visibilitychange', saveNow);
         window.addEventListener('pagehide', saveNow);
         saveProgressRef.current = saveProgress;

@@ -208,37 +208,52 @@ export default function SpatialShader({
       // GL context object: killing it in cleanup leaves the remount with a
       // lost context, so the shader silently never draws.
       let firstFrame = true;
+      // Frame cap: the aurora drifts slowly, so 24fps renders it
+      // indistinguishably while leaving the GPU (and the video decoder it
+      // shares the machine with) ~60% of the frames for free.
+      const MIN_FRAME_MS = 1000 / 24;
+      let lastDraw = 0;
       const render = (t: number) => {
         // Switched off: stop drawing entirely rather than drawing something
         // invisible. This is the whole point of the switch — on a machine
         // without GPU acceleration a full-screen noise shader is the most
         // expensive thing on the page, and hiding it would save nothing.
-        if (!enabledRef.current) {
+        if (!enabledRef.current || document.hidden) {
           raf = 0;
           gl.clear(gl.COLOR_BUFFER_BIT);
           return;
         }
-        if (typeof ResizeObserver === 'undefined') syncSize();
-        gl.viewport(0, 0, canvas.width, canvas.height);
-        if (uTime) gl.uniform1f(uTime, (t * 0.001 * speed) % 3600);
-        if (uRes) gl.uniform2f(uRes, canvas.width, canvas.height);
-        if (uMouse) gl.uniform2f(uMouse, mouse.x, mouse.y);
-        gl.drawArrays(gl.TRIANGLE_STRIP, 0, 4);
-        if (firstFrame) {
-          firstFrame = false;
-          canvas.dataset.shader = 'running';
-          console.info('[SpatialShader] running');
+        if (t - lastDraw >= MIN_FRAME_MS) {
+          lastDraw = t;
+          if (typeof ResizeObserver === 'undefined') syncSize();
+          gl.viewport(0, 0, canvas.width, canvas.height);
+          if (uTime) gl.uniform1f(uTime, (t * 0.001 * speed) % 3600);
+          if (uRes) gl.uniform2f(uRes, canvas.width, canvas.height);
+          if (uMouse) gl.uniform2f(uMouse, mouse.x, mouse.y);
+          gl.drawArrays(gl.TRIANGLE_STRIP, 0, 4);
+          if (firstFrame) {
+            firstFrame = false;
+            canvas.dataset.shader = 'running';
+            console.info('[SpatialShader] running');
+          }
         }
         raf = requestAnimationFrame(render);
       };
       restartRef.current = () => {
         if (!raf) raf = requestAnimationFrame(render);
       };
+      // The loop exits itself when the tab hides; visibility re-entry needs a
+      // kick because no further frame callbacks arrive once it has stopped.
+      const onVisible = () => {
+        if (!document.hidden && enabledRef.current) restartRef.current?.();
+      };
+      document.addEventListener('visibilitychange', onVisible);
       enabledRef.current = readShaderEnabled();
       if (enabledRef.current) raf = requestAnimationFrame(render);
 
       return () => {
         restartRef.current = null;
+        document.removeEventListener('visibilitychange', onVisible);
         cancelAnimationFrame(raf);
         if (interactive) window.removeEventListener('mousemove', onMouseMove);
         ro?.disconnect();
