@@ -1,5 +1,5 @@
-import { cached } from '../../config/redis.js';
-import { getDB } from '../../config/database.js';
+import { cached } from '../config/redis.js';
+import { getDB } from '../config/database.js';
 
 /**
  * Site-wide feature settings (admin-controlled), stored in site_settings and
