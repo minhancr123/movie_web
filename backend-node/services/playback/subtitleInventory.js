@@ -32,3 +32,16 @@ export const isCompletedSubtitle = async file => {
   try { return /^WEBVTT(?:\s|$)/.test(await fs.readFile(file, 'utf8')); }
   catch { return false; }
 };
+
+// Input seeking can rewind to an earlier video keyframe. Keep original cue
+// timestamps, but discard cues entirely outside the requested subtitle slice.
+export const trimSubtitleWindow = (text, window) => {
+  if (!(window.durationSeconds > 0)) return text;
+  const seconds = value => value.split(':').reduce((at, part) => at * 60 + Number(part), 0);
+  const end = window.startAt + window.durationSeconds;
+  return text.replace(/\r\n/g, '\n').split(/\n\s*\n/).filter((block, index) => {
+    if (index === 0) return true;
+    const times = block.match(/([\d:.]+)\s+-->\s+([\d:.]+)/);
+    return times && seconds(times[2]) > window.startAt && seconds(times[1]) < end;
+  }).join('\n\n') + '\n\n';
+};

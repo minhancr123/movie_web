@@ -4,6 +4,7 @@ import os from 'os';
 import { createHash } from 'node:crypto';
 import { spawn } from 'child_process';
 import { planAdmission } from './deliveryPlan.js';
+import { trimSubtitleWindow } from './subtitleInventory.js';
 
 // Must stay absolute: res.sendFile() rejects relative paths, and ffmpeg's
 // -hls_fmp4_init_filename is resolved against the playlist's directory.
@@ -229,6 +230,7 @@ export const extractSubtitleTracks = async (inputUrl, jobs, window = {}) => {
     return await Promise.all(temporary.map(async job => {
       const text = await fs.readFile(job.temp, 'utf8').catch(() => '');
       if (!/^WEBVTT(?:\s|$)/.test(text)) return { ...job, ok: false };
+      if (duration) await fs.writeFile(job.temp, trimSubtitleWindow(text, { startAt: start, durationSeconds: duration }));
       await fs.rename(job.temp, job.outPath);
       return { ...job, ok: true };
     }));
