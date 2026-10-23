@@ -13,7 +13,7 @@
  * @param {number} [opts.deadlineMs=30000] - Maximum time for the entire shutdown sequence
  * @returns {(signal?: string) => Promise<void>} Idempotent shutdown function
  */
-export function createShutdown({ stopAccepting, closeJobs, closeMedia, closeStores, deadlineMs = 30000 }) {
+export function createShutdown({ stopAccepting, closeJobs, closeMedia, closeStores, deadlineMs = 30000, exitProcess = false }) {
   let shutdownPromise = null;
 
   return function shutdown(signal) {
@@ -38,10 +38,20 @@ export function createShutdown({ stopAccepting, closeJobs, closeMedia, closeStor
       deadline,
     ]).then(() => {
       clearTimeout(deadlineTimer);
+      // The sequence depends on the event loop emptying on its own after the
+      // stores close, but one leftover handle — an untracked ffmpeg child a
+      // mid-flight resolve spawned, a straggler timer — leaves a listener-less
+      // zombie that systemd still believes is alive (no restart, port dead).
+      // Callers that own the process (server.js) opt into exiting here.
+      if (exitProcess) {
+        console.log('[lifecycle] exiting');
+        process.exit(process.exitCode || 0);
+      }
     }, err => {
       clearTimeout(deadlineTimer);
       console.error('[lifecycle] shutdown error or deadline:', err.message);
       process.exitCode = 1;
+      if (exitProcess) process.exit(1);
     });
 
     return shutdownPromise;

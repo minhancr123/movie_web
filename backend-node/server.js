@@ -304,6 +304,7 @@ import dbClient from './config/database.js';
 import * as remuxService from './services/playback/remuxService.js';
 
 const shutdown = createShutdown({
+  exitProcess: true,
   stopAccepting: async () => {
     return new Promise((resolve) => {
       io.close(() => {
