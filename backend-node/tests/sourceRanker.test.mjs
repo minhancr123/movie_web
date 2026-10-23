@@ -77,6 +77,14 @@ assert.ok(
 );
 console.log('  OK  MKV 2160p vẫn thắng MP4 1080p');
 
+const bdremux36G = build('Moana.2026.1080p.BDRemux.AVC.DTS-HD.mkv', { sizeBytes: 36e9 });
+const webdl8G = build('Moana.2026.1080p.WEB-DL.h264.aac.mkv', { sizeBytes: 8e9 });
+assert.ok(
+  score(webdl8G) > score(bdremux36G),
+  '1080p WEB-DL vừa phải (8 GB) phải thắng BDRemux 36 GB để tránh đứng hình do bitrate remux quá cao'
+);
+console.log('  OK  1080p vừa phải thắng BDRemux 36 GB (tránh nghẽn remux)');
+
 const mp4Cam = build('Moana.2026.CAM.h264.aac.mp4');
 assert.equal(scoreCandidate(mp4Cam, CAPS, { runtimeMinutes: RUNTIME }).playable, false, 'bản cam vẫn bị loại');
 console.log('  OK  bonus không cứu được bản cam');

@@ -14,3 +14,16 @@ test('switching release resets audio indices; seeking and explicit track choices
  assert.equal(m.audioIndexForSource(undefined,2,'same','same'),2);
  assert.equal(m.audioIndexForSource(1,2,'old','new'),1);
 });
+
+test('isSourceActiveToken matches exact, case-insensitive, and versioned index tags', () => {
+ const hash = 'a'.repeat(40);
+ assert.equal(m.isSourceActiveToken(hash, hash), true);
+ assert.equal(m.isSourceActiveToken(hash.toUpperCase(), hash), true);
+ assert.equal(m.isSourceActiveToken(`${hash}:index:0`, hash), true);
+ assert.equal(m.isSourceActiveToken(hash, `${hash}:index:0`), true);
+ assert.equal(m.isSourceActiveToken(`${hash}:index:1`, `${hash}:index:0`), true);
+ assert.equal(m.isSourceActiveToken('vimo|movie|123', 'vimo|movie|123'), true);
+ assert.equal(m.isSourceActiveToken('vimo|movie|123', 'vimo|movie|456'), false);
+ assert.equal(m.isSourceActiveToken('b'.repeat(40), hash), false);
+ assert.equal(m.isSourceActiveToken(undefined, hash), false);
+});

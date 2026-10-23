@@ -543,6 +543,21 @@ export const scoreCandidate = (candidate, caps, { runtimeMinutes = null, videoTr
     score += Math.min(candidate.sizeBytes / 1e9, 10);
   }
 
+  // Excessive Remux bitrate penalty: High-bitrate 1080p (e.g. 36 GB uncompressed BDRemux at 25-50+ Mbps)
+  // requires continuous high-throughput remuxing and audio transcoding, posing severe
+  // buffer underrun risks on WAN / reverse proxies / tunnels. In auto-selection, prefer
+  // adequate WEB-DL / BluRay rips (4-15 Mbps) or Direct Play sources for smooth playback.
+  if (candidate.container !== 'mp4' || !candidate.audio?.browserFriendly) {
+    if (height && height <= 1080 && bitrate && bitrate > 20) {
+      const excess = bitrate - 20;
+      score -= Math.min(25, 8 + excess * 1.5);
+      reasons.push(`nguy cơ đứng hình do bitrate remux 1080p cao (${bitrate.toFixed(1)} Mbps)`);
+    } else if (candidate.releaseSource === 'remux' && candidate.sizeBytes && candidate.sizeBytes > 20 * 1e9) {
+      score -= 15;
+      reasons.push('file remux dung lượng rất lớn (>20 GB)');
+    }
+  }
+
   // --- audio: lossless tracks must be re-encoded to AAC for fMP4.
   if (candidate.audio?.lossless) {
     score -= 4;

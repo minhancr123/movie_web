@@ -43,7 +43,7 @@ const RETRYABLE_503_CODES = new Set(['REMUX_BUSY', 'REMUX_NO_SPACE', 'SOURCE_PRE
 import { providerAPI, playbackAPI } from '@/lib/api';
 import { detectCapabilities } from '@/lib/capabilities';
 import { groupPlaybackSources } from '@/lib/source-groups';
-import { filterPlaybackSources, pickFallbackSource, audioIndexForSource, type SourceFilter, type DeliveryState } from '@/lib/source-delivery';
+import { filterPlaybackSources, pickFallbackSource, audioIndexForSource, isSourceActiveToken, type SourceFilter, type DeliveryState } from '@/lib/source-delivery';
 import SourceDeliveryFilter, { SourceDeliveryBadge } from '@/components/SourceDeliveryFilter';
 import type { PlayerEpisode } from '@/lib/catalog';
 import { episodeScrollTarget } from '@/lib/episode-list';
@@ -2153,7 +2153,7 @@ export default function PlaybackSection({
                   {group.label} <span className="text-cinema-subtle">({group.sources.length})</span>
                 </h5>,
                 ...group.sources.map((src) => {
-                const isActive = Boolean(src.sourceToken && src.sourceToken === activeToken);
+                const isActive = isSourceActiveToken(src.sourceToken, activeToken);
                 return (
                   <button
                     key={src.sourceToken}
@@ -2164,10 +2164,19 @@ export default function PlaybackSection({
                       startPlaybackResolution(src.sourceToken);
                     }}
                     disabled={src.playable === false}
+                    aria-current={isActive ? 'true' : undefined}
                     className={`flex w-full flex-wrap items-center gap-2 rounded-lg px-3 py-2 text-left text-xs transition disabled:cursor-not-allowed disabled:opacity-50 ${
-                      isActive ? 'bg-amber-primary/20 ring-1 ring-amber-primary/40' : 'bg-white/5 hover:bg-white/10'
+                      isActive
+                        ? 'bg-emerald-950/40 border border-emerald-500/50 ring-1 ring-emerald-500/40 shadow-[0_0_12px_rgba(16,185,129,0.15)]'
+                        : 'bg-white/5 hover:bg-white/10'
                     }`}
                   >
+                    {isActive && (
+                      <span className="flex items-center gap-1.5 rounded bg-emerald-500/20 px-2 py-0.5 text-xs font-bold text-emerald-300 border border-emerald-500/30">
+                        <span className="inline-block h-2 w-2 rounded-full bg-emerald-400 animate-pulse" />
+                        Đang phát
+                      </span>
+                    )}
                     <SourceDeliveryBadge state={src.directPlay} recommended={src.recommended} />
                     {src.resolution && (
                       <span className="rounded bg-amber-primary/20 px-2 py-0.5 font-bold text-amber-gold">
@@ -2563,7 +2572,7 @@ export default function PlaybackSection({
                   {group.label} <span className="text-cinema-subtle">({group.sources.length})</span>
                 </h5>,
                 ...group.sources.map((src) => {
-              const isActive = Boolean(src.sourceToken && src.sourceToken === activeToken);
+              const isActive = isSourceActiveToken(src.sourceToken, activeToken);
               return (
                 <button
                   key={src.sourceToken}
@@ -2575,10 +2584,19 @@ export default function PlaybackSection({
                     startPlaybackResolution(src.sourceToken);
                   }}
                   disabled={src.playable === false}
+                  aria-current={isActive ? 'true' : undefined}
                   className={`flex w-full flex-wrap items-center gap-2 rounded-lg px-3 py-2 text-left text-xs transition disabled:cursor-not-allowed disabled:opacity-50 ${
-                    isActive ? 'bg-primary/20 ring-1 ring-primary/40' : 'bg-white/5 hover:bg-white/10'
+                    isActive
+                      ? 'bg-emerald-950/40 border border-emerald-500/50 ring-1 ring-emerald-500/40 shadow-[0_0_12px_rgba(16,185,129,0.15)]'
+                      : 'bg-white/5 hover:bg-white/10'
                   }`}
                 >
+                  {isActive && (
+                    <span className="flex items-center gap-1.5 rounded bg-emerald-500/20 px-2 py-0.5 text-xs font-bold text-emerald-300 border border-emerald-500/30">
+                      <span className="inline-block h-2 w-2 rounded-full bg-emerald-400 animate-pulse" />
+                      Đang phát
+                    </span>
+                  )}
                   <SourceDeliveryBadge state={src.directPlay} recommended={src.recommended} />
                   {src.resolution && (
                     <span className="rounded bg-primary/20 px-2 py-0.5 font-bold text-primary">

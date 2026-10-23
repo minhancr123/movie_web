@@ -17,6 +17,9 @@ export const budgetedWindowSeconds = (kbps, requested, maxBytes = 1024 ** 3) => 
   const seconds = Math.min(requested, Math.floor(maxBytes * 0.85 * 8 / (kbps * 1000)));
   return seconds >= 60 ? seconds : 0;
 };
-export const completedSessionCovers = (startAt, duration, requestedAt) =>
-  requestedAt >= Math.max(0, (Number(startAt) || 0) - 1)
-  && requestedAt < (Number(startAt) || 0) + duration - 2;
+export const completedSessionCovers = (startAt, duration, requestedAt, minRunwaySeconds = 30) => {
+  const head = (Number(startAt) || 0) + duration;
+  const start = Math.max(0, (Number(startAt) || 0) - 1);
+  const runway = Math.min(minRunwaySeconds, Math.max(2, duration * 0.2));
+  return requestedAt >= start && requestedAt < head - runway;
+};

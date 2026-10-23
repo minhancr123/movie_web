@@ -30,3 +30,12 @@ export function audioIndexForSource(explicit: number | undefined, current: numbe
   if (explicit !== undefined) return explicit;
   return nextToken && nextToken !== previousToken ? null : current;
 }
+
+/** Robust matching for active candidate token across versioned index tags and raw hashes */
+export function isSourceActiveToken(candidateToken?: string, currentToken?: string): boolean {
+  if (!candidateToken || !currentToken) return false;
+  if (candidateToken.toLowerCase() === currentToken.toLowerCase()) return true;
+  const hashA = candidateToken.split(':')[0].toLowerCase();
+  const hashB = currentToken.split(':')[0].toLowerCase();
+  return hashA.length === 40 && hashA === hashB;
+}
