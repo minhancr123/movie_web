@@ -1438,6 +1438,8 @@ export const resolvePlayback = async (req, res) => {
     // candidate so scrubbing does not pay ~1.1s ranking 60+ unused alternatives.
     const excludedTokens = new Set((Array.isArray(req.body?.excludeSourceTokens) ? req.body.excludeSourceTokens : [])
       .slice(0, 20).filter(t => typeof t === 'string' && SOURCE_TOKEN_PATTERN.test(t.trim())).map(t => t.trim().toLowerCase()));
+    // Ranking and the downstream codec/delivery paths must share one policy.
+    const videoTranscode = await resolveVideoTranscodeCapability();
     let attempts;
     let playable = [];
     if (sourceToken) {
@@ -1445,7 +1447,6 @@ export const resolvePlayback = async (req, res) => {
       if (!targetCandidate) {
         return fail(res, 404, 'Nguồn đã chọn không còn khả dụng, vui lòng tải lại danh sách');
       }
-      const videoTranscode = await resolveVideoTranscodeCapability();
       const ranked = rankCandidates([targetCandidate], caps, {
         runtimeMinutes,
         contentLanguage: detail?.originalLanguage,
@@ -1466,7 +1467,6 @@ export const resolvePlayback = async (req, res) => {
       }
       attempts = [picked];
     } else {
-      const videoTranscode = await resolveVideoTranscodeCapability();
       const ranked = rankCandidates(enriched, caps, {
         runtimeMinutes,
         contentLanguage: detail?.originalLanguage,
