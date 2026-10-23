@@ -4423,6 +4423,11 @@ export const serveRenditionAsset = async (req, res) => {
     // vouches for it at resolve time. Manifests fall through to the full
     // auth path below.
     if (asset !== 'index.m3u8' && !asset.endsWith('.m3u8')) {
+      // Error answers must never be negative-cached at an edge: a rendition
+      // re-remux after eviction reuses the SAME content-hash id, so a cached
+      // 404 would outlive the bytes coming back. Success below overwrites
+      // this with the immutable header.
+      res.setHeader('Cache-Control', 'no-store');
       const state = await readRenditionState(renditionId);
       if (!state.exists || !state.ended) return fail(res, 404, 'Bản hoàn chỉnh không còn');
       const segPath = path.resolve(renditionPath(renditionId, asset));
