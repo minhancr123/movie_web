@@ -601,6 +601,18 @@ export default function VideoPlayer({ src, playbackStartedAt, movie, episode, au
     const maybeAutoPickSub = useCallback((tracks: SubTrack[]) => {
         if (!autoSubRef.current) return;
         const currentId = selectedSubRef.current;
+        // The viewer's remembered choice for THIS movie outranks the generic
+        // ranking: they already told us which track fits.
+        const preferredLabel = readSubPref();
+        if (preferredLabel) {
+            const pref = tracks.find((t) => t.label === preferredLabel && isReadyTrack(t));
+            if (pref && currentId !== pref.id) {
+                setSelectedSub(pref.id);
+                void ensureCues(pref);
+                return;
+            }
+            if (pref) return; // already on it — do not let ranking yank it off
+        }
         const best = pickAutoSubtitle(tracks);
         if (!best) return;
         if (currentId === 'off' || currentId === '') {
@@ -894,13 +906,30 @@ export default function VideoPlayer({ src, playbackStartedAt, movie, episode, au
         // eslint-disable-next-line react-hooks/exhaustive-deps
     }, [JSON.stringify(Object.keys(cueCache))]);
 
+    const readSubPref = (): string | null => {
+        try {
+            const map = JSON.parse(localStorage.getItem('cinevn_sub_pref') || '{}');
+            return map[movie.slug] ?? null;
+        } catch { return null; }
+    };
+    const writeSubPref = (label: string) => {
+        try {
+            const map = JSON.parse(localStorage.getItem('cinevn_sub_pref') || '{}');
+            map[movie.slug] = label;
+            localStorage.setItem('cinevn_sub_pref', JSON.stringify(map));
+        } catch { /* best-effort */ }
+    };
+
     const pickSubtitle = (id: string) => {
         // A manual pick always sticks: the auto-upgrade above must not yank
         // the viewer off a track they chose themselves.
         autoSubRef.current = false;
         setSelectedSub(id);
         const track = subTracks.find((t) => t.id === id);
-        if (track) void ensureCues(track);
+        if (track) {
+            void ensureCues(track);
+            if (id !== 'off') writeSubPref(track.label); // remember for next session
+        }
         if (id === 'off') {
             setBilingual(false);
         } else if (bilingual && (id === secondarySub || !secondarySub)) {
