@@ -9,3 +9,15 @@ export function readListenerConfig(env = process.env) {
   if (!/^[0-4]$/.test(rawHops)) throw new Error('TRUST_PROXY_HOPS must be between 0 and 4');
   return { host, trustProxyHops: Number(rawHops) };
 }
+
+/** Turn asynchronous bind failures into startup failures handled by the caller. */
+export function listenHttpServer(server, port, host) {
+  return new Promise((resolve, reject) => {
+    const cleanup = () => { server.off('error', failed); server.off('listening', ready); };
+    const failed = error => { cleanup(); reject(error); };
+    const ready = () => { cleanup(); resolve(); };
+    server.once('error', failed);
+    server.once('listening', ready);
+    try { server.listen(port, host); } catch (error) { failed(error); }
+  });
+}

@@ -1,0 +1,149 @@
+[
+  {
+    "name": "segment env 2",
+    "pass": true,
+    "details": {
+      "actual": 2
+    }
+  },
+  {
+    "name": "segment env 4",
+    "pass": true,
+    "details": {
+      "actual": 4
+    }
+  },
+  {
+    "name": "segment env invalid",
+    "pass": true,
+    "details": {
+      "actual": 4
+    }
+  },
+  {
+    "name": "manual probe cache hit",
+    "pass": true
+  },
+  {
+    "name": "manual probe cache TTL",
+    "pass": true
+  },
+  {
+    "name": "ffprobe itself reuses metadata",
+    "pass": true,
+    "details": {
+      "processInvocations": 1,
+      "cachePopulated": true
+    }
+  },
+  {
+    "name": "Range /good",
+    "pass": true,
+    "details": {
+      "wanted": true,
+      "supported": true,
+      "acceptRanges": null,
+      "contentLength": 8,
+      "status": 206
+    }
+  },
+  {
+    "name": "Range /lying",
+    "pass": true,
+    "details": {
+      "wanted": false,
+      "supported": false,
+      "acceptRanges": "bytes",
+      "contentLength": 8,
+      "status": 200
+    }
+  },
+  {
+    "name": "Range /head405",
+    "pass": true,
+    "details": {
+      "wanted": true,
+      "supported": true,
+      "acceptRanges": null,
+      "contentLength": 8,
+      "status": 206
+    }
+  },
+  {
+    "name": "Range /error",
+    "pass": true,
+    "details": {
+      "wanted": false,
+      "supported": false,
+      "acceptRanges": "bytes",
+      "contentLength": null,
+      "status": 404
+    }
+  },
+  {
+    "name": "Range check actually sends GET",
+    "pass": true,
+    "details": [
+      {
+        "method": "GET",
+        "path": "/good"
+      },
+      {
+        "method": "GET",
+        "path": "/lying"
+      },
+      {
+        "method": "GET",
+        "path": "/head405"
+      },
+      {
+        "method": "GET",
+        "path": "/error"
+      }
+    ]
+  },
+  {
+    "name": "orchestrator rejects all incompatible candidates",
+    "pass": true,
+    "details": {
+      "actual": null
+    }
+  },
+  {
+    "name": "device selection rejects all incompatible candidates",
+    "pass": true,
+    "details": {
+      "actual": null
+    }
+  },
+  {
+    "name": "polling preserves full stage duration",
+    "pass": true,
+    "details": {
+      "resolveId": "test-resolve-001",
+      "currentStage": "prepare",
+      "totalMs": 1000,
+      "stages": [
+        {
+          "stage": "sources",
+          "durationMs": 1000
+        },
+        {
+          "stage": "prepare",
+          "durationMs": 0
+        }
+      ]
+    }
+  },
+  {
+    "name": "Grafana JSON parses",
+    "pass": true,
+    "details": {
+      "panels": 8
+    }
+  },
+  {
+    "name": "metrics dependencies installed",
+    "pass": true
+  }
+]

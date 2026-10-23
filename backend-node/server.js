@@ -6,7 +6,7 @@ import express from 'express';
 import cors from 'cors';
 import helmet from 'helmet';
 import { parseAllowedOrigins } from './config/cors.js';
-import { readListenerConfig } from './config/listener.js';
+import { readListenerConfig, listenHttpServer } from './config/listener.js';
 import compression from 'compression';
 import dotenv from 'dotenv';
 import { createServer } from 'http';
@@ -116,9 +116,9 @@ app.get('/healthz', async (req, res) => {
     }
   });
   if (ready) {
-    res.status(200).json({ ready: true });
+    res.status(200).json({ ready: true, release: process.env.RELEASE_ID ?? 'development' });
   } else {
-    res.status(503).json({ ready: false });
+    res.status(503).json({ ready: false, release: process.env.RELEASE_ID ?? 'development' });
   }
 });
 
@@ -290,10 +290,9 @@ const startServer = async () => {
 
 
     // Start listening
-    httpServer.listen(PORT, listener.host, () => {
-      console.log(`🚀 Server is running on http://localhost:${PORT}`);
-      console.log(`📁 Environment: ${process.env.NODE_ENV}`);
-    });
+    await listenHttpServer(httpServer, PORT, listener.host);
+    console.log(`🚀 Server is running on http://localhost:${PORT}`);
+    console.log(`📁 Environment: ${process.env.NODE_ENV}`);
   } catch (error) {
     console.error('Failed to start server:', error);
     process.exit(1);
