@@ -990,13 +990,19 @@ export default function VideoPlayer({ src, playbackStartedAt, movie, episode, au
     });
     // Secondary subtitle has its own relative offset for fine-tuning in bilingual mode.
     const [syncMapping, setSyncMapping] = useState<{ anchorT: number; slope: number } | null>(null);
+    // When the EXTERNAL track is the one drifted (embedded partner = ground
+    // truth), the remap applies to the primary lookup instead.
+    const [primarySync, setPrimarySync] = useState<{ offset: number; anchorT: number; slope: number } | null>(null);
     const secondaryLookupTime = subLookupTime + secondaryOffset
         + (syncMapping && bilingual ? syncMapping.slope * (subLookupTime - syncMapping.anchorT) : 0);
+    const primaryLookupTime = subLookupTime
+        + (primarySync ? primarySync.offset : 0)
+        + (primarySync && bilingual ? primarySync.slope * (subLookupTime - primarySync.anchorT) : 0);
 
     const primaryCues = React.useMemo(() => {
         if (!selectedSub || selectedSub === 'off') return [];
-        return activeCues(cueCache[selectedSub] || [], subLookupTime);
-    }, [cueCache, selectedSub, subLookupTime]);
+        return activeCues(cueCache[selectedSub] || [], primaryLookupTime);
+    }, [cueCache, selectedSub, primaryLookupTime]);
 
     const secondaryCues = React.useMemo(() => {
         if (!bilingual || !secondarySub || secondarySub === selectedSub) return [];
@@ -1034,11 +1040,18 @@ export default function VideoPlayer({ src, playbackStartedAt, movie, episode, au
             autoOffsetRef.current = null;
             lastMeasureRef.current = null;
             setSyncMapping(null);
+            setPrimarySync(null);
         }
         // User moved the slider away from our last auto value: hands off.
         if (autoOffsetRef.current !== null
             && Math.abs(secondaryOffsetRef.current - autoOffsetRef.current) > 0.2) return;
         const mapping = syncMapping && bilingual ? syncMapping : null;
+        // Ground truth = the embedded track (cut from the file itself). The
+        // EXTERNAL side gets remapped; the embedded side is never dragged.
+        const primarySrc = subTracks.find((t) => t.id === selectedSub)?.source;
+        const secondarySrc = subTracks.find((t) => t.id === secondarySub)?.source;
+        const target: 'primary' | 'secondary' =
+            secondarySrc === 'embedded' && primarySrc !== 'embedded' ? 'primary' : 'secondary';
         const secondaryStarts = secondaryAll.map((c) => c.start).sort((a, b) => a - b);
         const anchorT = mapping ? mapping.anchorT : 0;
         const slope = mapping ? mapping.slope : 0;
@@ -1047,7 +1060,11 @@ export default function VideoPlayer({ src, playbackStartedAt, movie, episode, au
             // Predict where the secondary line SHOULD be (previous mapping
             // applied), then accept only matches near the prediction: keeps
             // lock while drift grows ~12s per 5 minutes (PAL-origin subs).
-            const predicted = cue.start + secondaryOffsetRef.current + slope * (cue.start - anchorT);
+            const baseOffset = target === 'primary'
+                ? (primarySync ? primarySync.offset : 0)
+                : secondaryOffsetRef.current;
+            const baseSlope = target === 'primary' && primarySync ? primarySync.slope : slope;
+            const predicted = cue.start + baseOffset + baseSlope * (cue.start - anchorT);
             let best: number | null = null;
             let bestDist = 10;
             for (const st of secondaryStarts) {
@@ -1068,7 +1085,8 @@ export default function VideoPlayer({ src, playbackStartedAt, movie, episode, au
         const measuredT = primaryAll.reduce((sum, c) => sum + c.start, 0) / primaryAll.length;
         const prev = lastMeasureRef.current;
         lastMeasureRef.current = { t: measuredT, o: median };
-        if (Math.abs(median - secondaryOffsetRef.current) <= 0.2 && !mapping) {
+        const prevOffset = target === 'primary' ? (primarySync?.offset ?? 0) : secondaryOffsetRef.current;
+        if (Math.abs(median - prevOffset) <= 0.2 && !mapping) {
             autoOffsetRef.current = median;
             return;
         }
@@ -1077,16 +1095,18 @@ export default function VideoPlayer({ src, playbackStartedAt, movie, episode, au
         if (prev && Math.abs(measuredT - prev.t) >= 90) {
             const slope = (median - prev.o) / (measuredT - prev.t);
             if (Math.abs(slope) >= 0.002 && Math.abs(slope) <= 0.06) {
-                setSyncMapping({ anchorT: measuredT, slope });
-                setSecondaryOffset(median);
+                if (target === 'primary') setPrimarySync({ offset: median, anchorT: measuredT, slope });
+                else setSyncMapping({ anchorT: measuredT, slope });
+                setSecondaryOffset(target === 'primary' ? 0 : median);
                 autoOffsetRef.current = median;
-                showSyncToast(`Đã canh lệch bản dịch lệch chuẩn ${slope > 0 ? '+' : ''}${(slope * 100).toFixed(1)}%/giờ phát`);
+                showSyncToast(`Đã canh phụ đề lệch chuẩn ${slope > 0 ? '+' : ''}${(slope * 100).toFixed(1)}%/giờ phát`);
                 return;
             }
         }
-        setSecondaryOffset(median);
+        if (target === 'primary') setPrimarySync({ offset: median, anchorT: measuredT, slope: 0 });
+        else setSecondaryOffset(median);
         autoOffsetRef.current = median;
-        showSyncToast(`Đã tự canh lệch song ngữ ${median > 0 ? '+' : ''}${median.toFixed(1)}s`);
+        showSyncToast(`Đã tự canh lệch phụ đề ${median > 0 ? '+' : ''}${median.toFixed(1)}s`);
         // eslint-disable-next-line react-hooks/exhaustive-deps
     }, [bilingual, secondarySub, selectedSub, cueCache]);
 
