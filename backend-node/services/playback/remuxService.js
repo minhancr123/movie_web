@@ -544,7 +544,7 @@ export const decidePlaybackMode = (probe, caps = {}, preferredAudioIdx = null, o
   const containerDirectOk =
     isMp4Container(probe.format)
     || (isWebmContainer(probe.format, codec, audio?.codec) && Boolean(caps.webm));
-  if (opts.upstreamRangeSupported !== false && containerDirectOk && audioCopy && (targetAudioIdx === 0 || audios.length === 1)) {
+  if (caps.directPlay !== false && opts.upstreamRangeSupported !== false && containerDirectOk && audioCopy && (targetAudioIdx === 0 || audios.length === 1)) {
     return {
       mode: 'direct',
       reason: 'Container và codec đã phù hợp browser',

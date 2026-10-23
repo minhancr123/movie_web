@@ -2152,7 +2152,7 @@ export default function PlaybackSection({
                 <h5 key={`group-${group.key}`} className="sticky top-0 z-10 rounded-lg bg-surface-dark px-3 py-2 text-xs font-bold text-white">
                   {group.label} <span className="text-cinema-subtle">({group.sources.length})</span>
                 </h5>,
-                ...group.sources.map((src) => {
+                ...group.sources.map((src, index) => {
                 const isActive = isSourceActiveToken(src.sourceToken, activeToken);
                 return (
                   <button
@@ -2177,6 +2177,17 @@ export default function PlaybackSection({
                         Đang phát
                       </span>
                     )}
+                    <span className={`inline-flex items-center gap-1 rounded px-2 py-0.5 text-xs font-bold ${
+                      index === 0
+                        ? 'bg-amber-400 text-black font-extrabold shadow-sm ring-1 ring-amber-300'
+                        : index === 1
+                        ? 'bg-amber-400/20 text-amber-300 border border-amber-400/30'
+                        : index === 2
+                        ? 'bg-amber-400/10 text-amber-300/80 border border-amber-400/20'
+                        : 'bg-white/10 text-cinema-muted'
+                    }`}>
+                      {index === 0 ? 'VIP 1 ★ Tối ưu' : `VIP ${index + 1}`}
+                    </span>
                     <SourceDeliveryBadge state={src.directPlay} recommended={src.recommended} />
                     {src.resolution && (
                       <span className="rounded bg-amber-primary/20 px-2 py-0.5 font-bold text-amber-gold">
@@ -2224,9 +2235,12 @@ export default function PlaybackSection({
                         {src.reasons?.[0] || 'không khuyến nghị'}
                       </span>
                     )}
+                    <span className="font-semibold text-white/90">
+                      Nguồn VIP {index + 1}
+                    </span>
                     {src.filename && (
-                      <span className="truncate max-w-[240px] text-cinema-subtle text-[11px]">
-                        {src.filename}
+                      <span className="truncate max-w-[260px] text-cinema-subtle text-[11px] font-mono">
+                        ({src.filename})
                       </span>
                     )}
                     {!src.resolution && !src.codec && !src.hdr && !src.releaseSource && !src.origin && !src.cached && !src.filename && (
@@ -2571,7 +2585,7 @@ export default function PlaybackSection({
                 <h5 key={`group-${group.key}`} className="sticky top-0 z-10 rounded-lg bg-surface-dark px-3 py-2 text-xs font-bold text-white">
                   {group.label} <span className="text-cinema-subtle">({group.sources.length})</span>
                 </h5>,
-                ...group.sources.map((src) => {
+                ...group.sources.map((src, index) => {
               const isActive = isSourceActiveToken(src.sourceToken, activeToken);
               return (
                 <button
@@ -2597,6 +2611,17 @@ export default function PlaybackSection({
                       Đang phát
                     </span>
                   )}
+                  <span className={`inline-flex items-center gap-1 rounded px-2 py-0.5 text-xs font-bold ${
+                    index === 0
+                      ? 'bg-amber-400 text-black font-extrabold shadow-sm ring-1 ring-amber-300'
+                      : index === 1
+                      ? 'bg-amber-400/20 text-amber-300 border border-amber-400/30'
+                      : index === 2
+                      ? 'bg-amber-400/10 text-amber-300/80 border border-amber-400/20'
+                      : 'bg-white/10 text-cinema-muted'
+                  }`}>
+                    {index === 0 ? 'VIP 1 ★ Tối ưu' : `VIP ${index + 1}`}
+                  </span>
                   <SourceDeliveryBadge state={src.directPlay} recommended={src.recommended} />
                   {src.resolution && (
                     <span className="rounded bg-primary/20 px-2 py-0.5 font-bold text-primary">
@@ -2644,9 +2669,12 @@ export default function PlaybackSection({
                       {src.reasons?.[0] || 'không khuyến nghị'}
                     </span>
                   )}
+                  <span className="font-semibold text-white/90">
+                    Nguồn VIP {index + 1}
+                  </span>
                   {src.filename && (
-                    <span className="truncate max-w-[240px] text-cinema-subtle text-[11px]">
-                      {src.filename}
+                    <span className="truncate max-w-[260px] text-cinema-subtle text-[11px] font-mono">
+                      ({src.filename})
                     </span>
                   )}
                   {!src.resolution && !src.codec && !src.hdr && !src.releaseSource && !src.origin && !src.cached && !src.filename && (
