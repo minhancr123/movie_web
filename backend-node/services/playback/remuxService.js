@@ -12,6 +12,29 @@ const TRANSCODE_ROOT = path.resolve(
 const FFMPEG_BIN = process.env.FFMPEG_BIN || 'ffmpeg';
 const FFPROBE_BIN = process.env.FFPROBE_BIN || 'ffprobe';
 const PROBE_TIMEOUT_MS = 8000;
+
+/** In-memory ffprobe metadata cache (TTL 7 days). */
+const PROBE_CACHE_TTL_MS = 7 * 24 * 60 * 60 * 1000;
+const probeCache = new Map();
+
+export const getCachedProbe = (inputUrl) => {
+  const entry = probeCache.get(inputUrl);
+  if (!entry) return null;
+  if (Date.now() - entry.cachedAt > PROBE_CACHE_TTL_MS) {
+    probeCache.delete(inputUrl);
+    return null;
+  }
+  return entry.data;
+};
+
+export const setCachedProbe = (inputUrl, data) => {
+  if (probeCache.size >= 1000) {
+    // Evict oldest
+    const oldest = probeCache.keys().next().value;
+    probeCache.delete(oldest);
+  }
+  probeCache.set(inputUrl, { data, cachedAt: Date.now() });
+};
 const PLAYLIST_TIMEOUT_MS = 30000;
 const GB = 1024 ** 3;
 
@@ -51,7 +74,34 @@ const ACCESS_TOUCH_INTERVAL_MS = 30 * 1000;
  */
 export const SEEK_ORIGIN_FILE = 'origin.mp4';
 
-export const REMUX_SEGMENT_SECONDS = 4;
+/**
+ * Check if an upstream URL supports HTTP Range requests (206 Partial Content).
+ * Returns { supported: boolean, acceptRanges: string|null, contentLength: number|null }.
+ * Used for Direct Play decision: if upstream supports Range, the browser can
+ * seek without remuxing through CineVN's FFmpeg.
+ */
+export const checkHttpRange = async (url, timeoutMs = 5000) => {
+  const controller = new AbortController();
+  const timer = setTimeout(() => controller.abort(), timeoutMs);
+  try {
+    const response = await fetch(url, {
+      method: 'HEAD',
+      headers: { Range: 'bytes=0-0' },
+      signal: controller.signal,
+    });
+    const acceptRanges = response.headers.get('accept-ranges');
+    const contentLength = Number(response.headers.get('content-length')) || null;
+    const supported = response.status === 206 || (acceptRanges && acceptRanges !== 'none');
+    return { supported, acceptRanges, contentLength, status: response.status };
+  } catch (error) {
+    return { supported: false, acceptRanges: null, contentLength: null, status: 0, error: error.message };
+  } finally {
+    clearTimeout(timer);
+  }
+};
+
+
+export const REMUX_SEGMENT_SECONDS = positiveNumber(process.env.HLS_SEGMENT_SECONDS, 4);
 const MAX_BROWSER_FRAME_RATE = 60.01;
 
 const sessions = new Map();
