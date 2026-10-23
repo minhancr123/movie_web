@@ -64,3 +64,15 @@ label, then aggregates rates across generations. Zero-valued series for all four
 modes are exposed before observations arrive. This also allows the first real
 observation after an initial scrape to contribute to increases. Dashboard and
 alert selectors migrate together to v3; older samples remain retained.
+
+Final backend release: `a8870d4f137e5522bfc9c5ad4a0c032c2aaa3767`, deployed
+from a Git archive at `/home/minhancr123/cinevn-runtime/a8870d4/backend-node`.
+The initially prepared release worktree disappeared before service startup;
+57fa687 was restored, then the separate runtime was validated and activated.
+The final deployment helper checks the environment file first and rolls back
+on startup errors. Readiness matched a8870d4, restart count was zero, all eight
+initial latency count series carried v3 plus one generation and started at zero.
+The full backend suite passed locally; the ten affected observability/startup
+tests passed again in the final server runtime. Cloud alert was visibly saved
+with v3 selectors and Normal state. Real post-deployment client observations
+are still needed to validate quantiles across later restarts.
