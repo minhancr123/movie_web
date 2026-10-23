@@ -3244,6 +3244,44 @@ const audioInfo = (list) =>
  * instant. Image subs (PGS/DVD) cannot become text without OCR and are
  * reported, not extracted.
  */
+
+/* ---- Subtitle junk detection + source fetcher ---- */
+/** Phrases that identify an error page posing as a subtitle file. */
+const SUB_ERROR_MARKERS = [
+  'limit has been reached', 'download limit', 'daily limit', 'quota exceeded',
+  'too many requests', 'api key', 'not available', 'no subtitles found',
+  'lỗi cấu hình', 'chưa nhập api key', 'không tìm thấy phụ đề',
+];
+const isErrorSubtitleText = (text) => {
+  const head = String(text || '').slice(0, 4096).toLowerCase();
+  return SUB_ERROR_MARKERS.some((marker) => head.includes(marker));
+};
+/** Fetch a sidecar; null = network error (transient), '' = dead link (404/410). */
+const fetchSubtitleSource = async (url) => {
+  try {
+    const controller = new AbortController();
+    const timer = setTimeout(() => controller.abort(), 20_000);
+    const response = await fetch(url, { signal: controller.signal });
+    clearTimeout(timer);
+    if (response.status === 404 || response.status === 410) return '';
+    if (!response.ok) return null;
+    const raw = await response.text();
+    return raw.length > 512 * 1024 ? raw.slice(0, 512 * 1024) : raw;
+  } catch {
+    return null;
+  }
+};
+const readSubtitleBody = async (url) => {
+  if (url.startsWith('/api/')) {
+    const token = url.split('/').pop();
+    const entry = await getCache(`playback:sub:${token}`);
+    if (entry?.body) return String(entry.body);
+    if (entry?.file) return await fs.readFile(entry.file, 'utf8').catch(() => null);
+    return null;
+  }
+  return fetchSubtitleSource(url);
+};
+
 export const getPlaybackSubtitles = async (req, res) => {
   const parsed = parseResolveBody(req.body);
   if (parsed.error) return fail(res, 400, parsed.error);
@@ -3429,6 +3467,25 @@ export const getPlaybackSubtitles = async (req, res) => {
     }
     for (const { track, score } of bestByLang.values()) {
       if (score >= SUGGEST_FLOOR) track.suggested = true;
+    }
+
+    // Upstream addons sometimes answer rate-limit/misconfig pages wrapped as
+    // subtitle files (one bogus cue like "[LỖI CẤU HÌNH]..."). Validate the
+    // Vietnamese sidecars — the language users actually auto-pick — and drop
+    // the impostors so they neither render nor steal the auto-pick.
+    for (let t = externalTracks.length - 1; t >= 0; t -= 1) {
+      const track = externalTracks[t];
+      const isVi = String(track.language || '').toLowerCase().startsWith('vi');
+      if (!isVi || !track.ready || !track.url
+        || !(track.url.startsWith('http') || track.url.startsWith('/api/playback/subtitles/vtt/'))) continue;
+      const validKey = `subsvalid:${crypto.createHash('md5').update(track.url).digest('hex')}`;
+      let verdict = await getCache(validKey);
+      if (!verdict) {
+        const body = await readSubtitleBody(track.url);
+        verdict = body === null ? 'ok' : ((body === '' || isErrorSubtitleText(body.slice(0, 4096))) ? 'junk' : 'ok');
+        await setCache(validKey, verdict, 6 * 60 * 60);
+      }
+      if (verdict === 'junk') externalTracks.splice(t, 1);
     }
 
     const combinedTracks = [...embeddedTracks, ...externalTracks];

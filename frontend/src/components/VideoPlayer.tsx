@@ -1010,6 +1010,20 @@ export default function VideoPlayer({ src, playbackStartedAt, movie, episode, au
         return activeCues(cueCache[secondarySub] || [], secondaryLookupTime);
     }, [cueCache, bilingual, secondarySub, selectedSub, secondaryLookupTime]);
 
+    // Bilingual pairing completes late: when the toggle is ON with no partner
+    // (the English track was still extracting), pair it the moment a ready
+    // partner appears instead of leaving the mode silently empty.
+    useEffect(() => {
+        if (!bilingual || secondarySub) return;
+        const primary = subTracks.find((t) => t.id === selectedSub);
+        const candidate = pickSecondaryFor(primary, subTracks);
+        if (candidate) {
+            setSecondarySub(candidate.id);
+            void ensureCues(candidate);
+        }
+        // eslint-disable-next-line react-hooks/exhaustive-deps
+    }, [bilingual, secondarySub, selectedSub, subTracks]);
+
     // High-frequency RAF loop for smooth frame-accurate subtitle sync
     useEffect(() => {
         const video = videoRef.current;
@@ -3225,12 +3239,25 @@ export default function VideoPlayer({ src, playbackStartedAt, movie, episode, au
                                                                         const next = !bilingual;
                                                                         setBilingual(next);
                                                                         if (next) {
-                                                                            const currentTrack = subTracks.find((t) => t.id === selectedSub);
+                                                                            // No primary yet (subs off)? Pick the best one
+                                                                            // first, otherwise pairing has nothing to attach to
+                                                                            // and the toggle reads as "no effect".
+                                                                            let currentTrack = subTracks.find((t) => t.id === selectedSub);
+                                                                            if (!currentTrack) {
+                                                                                const auto = pickAutoSubtitle(subTracks);
+                                                                                if (auto) {
+                                                                                    setSelectedSub(auto.id);
+                                                                                    void ensureCues(auto);
+                                                                                    currentTrack = auto;
+                                                                                }
+                                                                            }
                                                                             const candidate = pickSecondaryFor(currentTrack, subTracks);
                                                                             if (candidate) {
                                                                                 setSecondarySub(candidate.id);
                                                                                 void ensureCues(candidate);
                                                                             }
+                                                                        } else {
+                                                                            setSecondarySub('');
                                                                         }
                                                                     }}
                                                                     className={`flex h-5 w-9 items-center rounded-full p-0.5 transition-colors disabled:opacity-40 ${bilingual ? 'justify-end bg-amber-primary' : 'justify-start bg-surface-container-highest'}`}
