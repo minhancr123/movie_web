@@ -88,10 +88,14 @@ export const pickBestViTrack = <T extends { language: string; url: string; sourc
   || tracks.find((t) => isReadyTrack(t) && isViTrack(t));
 
 /** Timing confidence first; Vietnamese wins ties, English is the fallback. */
+// Language dominates timing: ANY ready Vietnamese sidecar outranks every
+// English one, embedded included — the audience reads Vietnamese, and the
+// embedded English track (also the bilingual partner) is applied only when
+// the viewer picks it. Timing trust still orders tracks within a language.
 export const autoSubtitleRank = (track: SubTrack | undefined): number => {
   if (!track || !isReadyTrack(track) || (!isViTrack(track) && !isEnTrack(track))) return -1;
   const timing = isEmbeddedTrack(track) ? 3 : track.matched ? 2 : track.suggested ? 1 : 0;
-  return timing * 10 + (isViTrack(track) ? 2 : 1);
+  return (isViTrack(track) ? 10 : 0) + timing;
 };
 
 export const pickAutoSubtitle = (tracks: SubTrack[]): SubTrack | undefined =>
