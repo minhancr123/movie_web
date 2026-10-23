@@ -36,7 +36,50 @@ export function SeekPreview({ at, percent, sessionId }: { at: number; percent: n
   </div>;
 }
 
-export function TimelineSkip({ sessionId, at, duration, onSeek, onNext }: { sessionId?: string; at: number; duration: number; onSeek: (at: number) => void; onNext?: () => void }) {
+/**
+ * Viewer-learned intro/recap marks: the first time someone clicks a skip
+ * button on a title, the mark is remembered locally so every later episode
+ * and rewatch of the SAME title auto-skips the same span. Per-title, device-
+ * local (the server timeline keeps the authoritative marks).
+ */
+const INTRO_MARKS_KEY = 'cinevn_intro_marks';
+
+interface RememberedMark { start: number; end: number; savedAt: number }
+
+const readIntroMarks = (): Record<string, RememberedMark> => {
+  try { return JSON.parse(localStorage.getItem(INTRO_MARKS_KEY) || '{}'); } catch { return {}; }
+};
+
+export const rememberIntroMark = (contentRef: string, mark: { start: number; end: number }) => {
+  if (!(mark.end > 1)) return;
+  try {
+    const marks = readIntroMarks();
+    marks[contentRef] = { start: mark.start, end: mark.end, savedAt: Date.now() };
+    // Cap the map so it cannot grow forever.
+    const entries = Object.entries(marks).sort((a, b) => b[1].savedAt - a[1].savedAt).slice(0, 300);
+    localStorage.setItem(INTRO_MARKS_KEY, JSON.stringify(Object.fromEntries(entries)));
+  } catch { /* best-effort */ }
+};
+
+/**
+ * Auto-seeks past a remembered intro/recap exactly once per pipeline, when
+ * playback is inside (or just entering) the remembered span.
+ */
+export function RememberedIntroSkip({ contentRef, at, onSeek }: { contentRef: string; at: number; onSeek: (t: number) => void }) {
+  const firedRef = useRef(false);
+  useEffect(() => {
+    if (firedRef.current) return;
+    const mark = readIntroMarks()[contentRef];
+    if (!mark || !(mark.end > 1)) return;
+    if (at >= mark.start - 2 && at < mark.end - 0.5) {
+      firedRef.current = true;
+      onSeek(mark.end);
+    }
+  }, [contentRef, at, onSeek]);
+  return null;
+}
+
+export function TimelineSkip({ sessionId, at, duration, onSeek, onNext, contentRef }: { sessionId?: string; at: number; duration: number; onSeek: (at: number) => void; onNext?: () => void; contentRef?: string }) {
   const [inventory, setInventory] = useState<{ sessionId: string; marks: SkipMark[] } | null>(null);
   useEffect(() => {
     if (!sessionId) return;
@@ -50,7 +93,7 @@ export function TimelineSkip({ sessionId, at, duration, onSeek, onNext }: { sess
   if (!mark) return null;
   const reachesEnd = mark.end >= duration - 0.5;
   const label = reachesEnd && onNext ? 'Xem tập tiếp' : mark.kind === 'intro' ? 'Bỏ qua giới thiệu' : mark.kind === 'recap' ? 'Bỏ qua tóm tắt' : 'Bỏ qua phần kết';
-  return <button className="absolute bottom-28 right-4 z-30 rounded-lg border border-white/30 bg-black/80 px-4 py-2.5 text-sm font-semibold text-white shadow-lg hover:bg-white/15" onDoubleClick={event => event.stopPropagation()} onClick={event => { event.stopPropagation(); if (reachesEnd && onNext) onNext(); else onSeek(mark.end); }}>{label}</button>;
+  return <button className="absolute bottom-28 right-4 z-30 rounded-lg border border-white/30 bg-black/80 px-4 py-2.5 text-sm font-semibold text-white shadow-lg hover:bg-white/15" onDoubleClick={event => event.stopPropagation()} onClick={event => { event.stopPropagation(); if (reachesEnd && onNext) onNext(); else { if (contentRef) rememberIntroMark(contentRef, mark); onSeek(mark.end); } }}>{label}</button>;
 }
 
 export function NextEpisodePrompt({ ended, enabled, label, onNext, onCancel }: { ended: boolean; enabled: boolean; label: string; onNext: () => void; onCancel: () => void }) {

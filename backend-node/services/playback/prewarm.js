@@ -46,6 +46,32 @@ async function operatorContext() {
   return { userId, token };
 }
 
+/**
+ * Beyond trending: the first "Xem tiếp" row of active viewers resolves warm,
+ * so the title they will actually press play on tonight is the one ready
+ * first. Movies only (TV needs an episode choice); bounded so the daily run
+ * stays a few minutes of work.
+ */
+async function continueWatchingTitleIds(limit = 2, exclude = new Set()) {
+  const db = getDB();
+  const rows = await db.collection('watch_history')
+    .find({ mediaType: 'movie', tmdbId: { $type: 'int' } })
+    .sort({ watchedAt: -1 })
+    .limit(30)
+    .project({ tmdbId: 1 })
+    .toArray()
+    .catch(() => []);
+  const picks = [];
+  for (const row of rows) {
+    if (picks.length >= limit) break;
+    const id = Number(row.tmdbId);
+    if (!Number.isInteger(id) || id <= 0 || exclude.has(`movie:${id}`)) continue;
+    exclude.add(`movie:${id}`);
+    picks.push({ type: 'movie', tmdbId: id });
+  }
+  return picks;
+}
+
 async function trendingTitleIds() {
   const res = await fetch('http://127.0.0.1:5001/api/catalog/home', {
     headers: { 'x-forwarded-for': '' },
@@ -87,7 +113,10 @@ async function runOnce(reason) {
       log(`bỏ qua (${reason}): chưa có tài khoản đã kết nối TorBox`);
       return;
     }
-    const titles = (await trendingTitleIds()).slice(0, TITLES);
+    const trending = (await trendingTitleIds()).slice(0, TITLES);
+    const exclude = new Set(trending.map((t) => `${t.type}:${t.tmdbId}`));
+    const personal = await continueWatchingTitleIds(2, exclude);
+    const titles = [...personal, ...trending];
     log(`bắt đầu (${reason}): ${titles.length} phim thịnh hành`);
     let warmed = 0;
     let reused = 0;

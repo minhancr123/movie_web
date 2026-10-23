@@ -3,7 +3,7 @@
 import React, { useEffect, useRef, useState, useCallback } from 'react';
 import { createPortal } from 'react-dom';
 import Hls from 'hls.js';
-import { SeekPreview, TimelineSkip, NextEpisodePrompt } from './PlaybackExtras';
+import { SeekPreview, TimelineSkip, NextEpisodePrompt, RememberedIntroSkip } from './PlaybackExtras';
 import SubtitleSyncGuide from './SubtitleSyncGuide';
 import { SUBTITLE_SYNC_STORAGE, subtitleSyncKey, readSubtitleDelay, writeSubtitleDelay, clampSubtitleDelay, subtitleAnchorDelay } from '@/lib/subtitle-sync';
 import { seekPreviewPosition } from '@/lib/playback-extras';
@@ -2413,7 +2413,8 @@ export default function VideoPlayer({ src, playbackStartedAt, movie, episode, au
                     className="pointer-events-none absolute inset-0 h-full w-full object-cover opacity-40"
                 />
             )}
-            {!suspended && !episodeEnded && <TimelineSkip sessionId={subContext?.playbackSessionId} at={displayTime} duration={fullDuration} onSeek={seekToAbsolute} onNext={onNextEpisode} />}
+            {!suspended && !episodeEnded && <TimelineSkip sessionId={subContext?.playbackSessionId} at={displayTime} duration={fullDuration} onSeek={seekToAbsolute} onNext={onNextEpisode} contentRef={movie.slug} />}
+            {!suspended && !episodeEnded && <RememberedIntroSkip contentRef={movie.slug} at={displayTime} onSeek={seekToAbsolute} />}
             {onNextEpisode && <NextEpisodePrompt ended={episodeEnded} enabled={autoNextEnabled} label={nextEpisodeLabel || 'Tập tiếp theo'} onNext={onNextEpisode} onCancel={() => setEpisodeEnded(false)} />}
             <video
                 ref={videoRef}
