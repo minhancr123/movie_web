@@ -789,6 +789,7 @@ export default function PlaybackSection({
         season: season ?? undefined,
         episode: currentEpisode ?? undefined,
         capabilities: detectCapabilities(),
+        sourceToken: activeTokenRef.current || undefined,
       });
       const items = res.data?.data?.sources || [];
       setSources(items);
@@ -2180,7 +2181,9 @@ export default function PlaybackSection({
                       </span>
                     )}
                     <span className={`inline-flex items-center gap-1 rounded px-2 py-0.5 text-xs font-bold ${
-                      index === 0
+                      group.key === 'vietsub'
+                        ? 'bg-emerald-500/20 text-emerald-300 border border-emerald-500/30'
+                        : index === 0
                         ? 'bg-amber-400 text-black font-extrabold shadow-sm ring-1 ring-amber-300'
                         : index === 1
                         ? 'bg-amber-400/20 text-amber-300 border border-amber-400/30'
@@ -2188,11 +2191,17 @@ export default function PlaybackSection({
                         ? 'bg-amber-400/10 text-amber-300/80 border border-amber-400/20'
                         : 'bg-white/10 text-cinema-muted'
                     }`}>
-                      {index === 0 ? 'VIP 1 ★ Tối ưu' : `VIP ${index + 1}`}
+                      {group.key === 'vietsub'
+                        ? `Vietsub VIP ${index + 1}`
+                        : group.key === '4k'
+                        ? (index === 0 ? '4K VIP 1 ★ Tối ưu' : `4K VIP ${index + 1}`)
+                        : index === 0
+                        ? 'VIP 1 ★ Tối ưu'
+                        : `VIP ${index + 1}`}
                     </span>
                     <SourceDeliveryBadge state={src.directPlay} recommended={src.recommended} />
                     {src.resolution && (
-                      <span className="rounded bg-amber-primary/20 px-2 py-0.5 font-bold text-amber-gold">
+                      <span className="rounded bg-primary/20 px-2 py-0.5 font-bold text-primary">
                         {resolutionLabel(src.resolution)}
                       </span>
                     )}
@@ -2238,7 +2247,13 @@ export default function PlaybackSection({
                       </span>
                     )}
                     <span className="font-semibold text-white/90">
-                      Nguồn VIP {index + 1}
+                      {group.key === 'vietsub'
+                        ? `Nguồn VIP ${index + 1} Vietsub`
+                        : group.key === '4k'
+                        ? `Nguồn VIP ${index + 1} • 4K`
+                        : group.key === '1080p'
+                        ? `Nguồn VIP ${index + 1} • 1080p`
+                        : `Nguồn VIP ${index + 1} • ${group.key}`}
                     </span>
                     {src.filename && (
                       <span className="truncate max-w-[260px] text-cinema-subtle text-[11px] font-mono">
@@ -2276,6 +2291,27 @@ export default function PlaybackSection({
     };
 
     const is4K = Number(candidate?.resolution) >= 2160;
+
+    const activeSource = sources.find((s) => isSourceActiveToken(s.sourceToken, activeToken)) || null;
+
+    const currentSourceDisplayName = (() => {
+      if (activeSource) {
+        const groupKey = activeSource.qualityGroup || '1080p';
+        const groupSources = sources.filter((s) => (s.qualityGroup || '1080p') === groupKey && s.playable !== false);
+        const idx = groupSources.findIndex((s) => isSourceActiveToken(s.sourceToken, activeToken));
+        const vipNum = idx >= 0 ? idx + 1 : 1;
+        if (groupKey === 'vietsub' || activeSource.origin === 'vimo' || activeSource.origin === 'yastream') {
+          return `Vietsub VIP ${vipNum}`;
+        }
+        const resBadge = activeSource.resolution ? resolutionLabel(activeSource.resolution) : (groupKey === '4k' ? '4K' : '1080p');
+        return `Nguồn VIP ${vipNum} • ${resBadge}`;
+      }
+      if (activeToken.startsWith('vimo|') || activeToken.startsWith('yastream:')) {
+        return 'Vietsub VIP 1';
+      }
+      const resBadge = candidate?.resolution ? resolutionLabel(candidate.resolution) : (is4K ? '4K' : '1080p');
+      return `Nguồn VIP 1 • ${resBadge}`;
+    })();
 
     return (
       <div className="w-full space-y-2">
@@ -2372,6 +2408,11 @@ export default function PlaybackSection({
         </div>
         {/* Telemetry strip: every pill is real source data (Stitch pro style) */}
         <div className="flex flex-wrap items-center gap-2 px-1 font-mono text-[11px]">
+          <span className="inline-flex items-center gap-1.5 rounded-full bg-emerald-500/20 px-2.5 py-0.5 text-xs font-bold text-emerald-300 border border-emerald-500/30 shadow-[0_0_10px_rgba(16,185,129,0.2)]">
+            <span className="inline-block h-2 w-2 rounded-full bg-emerald-400 animate-pulse" />
+            <span>Đang phát:</span>
+            <span className="text-white font-semibold">{currentSourceDisplayName}</span>
+          </span>
           {candidate?.resolution && (
             <span className="rounded bg-amber-primary/20 px-2 py-0.5 font-bold text-amber-gold ring-1 ring-amber-primary/30">
               {resolutionLabel(candidate.resolution)}
@@ -2581,6 +2622,27 @@ export default function PlaybackSection({
             {sources.length === 0 && (
               <p className="p-3 text-xs text-cinema-subtle">Không có nguồn nào.</p>
             )}
+            {activeSource && (
+              <div className="flex items-center justify-between rounded-lg bg-emerald-950/60 border border-emerald-500/50 p-2.5 px-3 text-xs ring-1 ring-emerald-500/30 shadow-[0_0_12px_rgba(16,185,129,0.15)] mb-2">
+                <div className="flex items-center gap-2 flex-wrap">
+                  <span className="flex items-center gap-1.5 rounded bg-emerald-500/25 px-2 py-0.5 text-xs font-bold text-emerald-300 border border-emerald-500/30">
+                    <span className="inline-block h-2 w-2 rounded-full bg-emerald-400 animate-pulse" />
+                    ĐANG PHÁT HIỆN TẠI
+                  </span>
+                  <span className="font-bold text-amber-300">
+                    {currentSourceDisplayName}
+                  </span>
+                  {activeSource.filename && (
+                    <span className="truncate max-w-[280px] text-cinema-subtle text-[11px] font-mono">
+                      ({activeSource.filename})
+                    </span>
+                  )}
+                </div>
+                <span className="text-[11px] font-semibold text-emerald-400 shrink-0">
+                  ✓ Đang kết nối
+                </span>
+              </div>
+            )}
             <SourceDeliveryFilter value={sourceFilter} onChange={setSourceFilter} />
             {filterPlaybackSources(sources, sourceFilter).length === 0 && <p className="p-3 text-xs text-cinema-subtle">Chưa có nguồn phù hợp bộ lọc này. Chọn Tất cả để xem nguồn khác.</p>}
             {groupPlaybackSources(filterPlaybackSources(sources, sourceFilter)).flatMap((group) => [
@@ -2614,7 +2676,9 @@ export default function PlaybackSection({
                     </span>
                   )}
                   <span className={`inline-flex items-center gap-1 rounded px-2 py-0.5 text-xs font-bold ${
-                    index === 0
+                    group.key === 'vietsub'
+                      ? 'bg-emerald-500/20 text-emerald-300 border border-emerald-500/30'
+                      : index === 0
                       ? 'bg-amber-400 text-black font-extrabold shadow-sm ring-1 ring-amber-300'
                       : index === 1
                       ? 'bg-amber-400/20 text-amber-300 border border-amber-400/30'
@@ -2622,7 +2686,13 @@ export default function PlaybackSection({
                       ? 'bg-amber-400/10 text-amber-300/80 border border-amber-400/20'
                       : 'bg-white/10 text-cinema-muted'
                   }`}>
-                    {index === 0 ? 'VIP 1 ★ Tối ưu' : `VIP ${index + 1}`}
+                    {group.key === 'vietsub'
+                      ? `Vietsub VIP ${index + 1}`
+                      : group.key === '4k'
+                      ? (index === 0 ? '4K VIP 1 ★ Tối ưu' : `4K VIP ${index + 1}`)
+                      : index === 0
+                      ? 'VIP 1 ★ Tối ưu'
+                      : `VIP ${index + 1}`}
                   </span>
                   <SourceDeliveryBadge state={src.directPlay} recommended={src.recommended} />
                   {src.resolution && (
@@ -2672,7 +2742,13 @@ export default function PlaybackSection({
                     </span>
                   )}
                   <span className="font-semibold text-white/90">
-                    Nguồn VIP {index + 1}
+                    {group.key === 'vietsub'
+                      ? `Nguồn VIP ${index + 1} Vietsub`
+                      : group.key === '4k'
+                      ? `Nguồn VIP ${index + 1} • 4K`
+                      : group.key === '1080p'
+                      ? `Nguồn VIP ${index + 1} • 1080p`
+                      : `Nguồn VIP ${index + 1} • ${group.key}`}
                   </span>
                   {src.filename && (
                     <span className="truncate max-w-[260px] text-cinema-subtle text-[11px] font-mono">

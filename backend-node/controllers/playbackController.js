@@ -2786,7 +2786,7 @@ export const listPlaybackSources = async (req, res) => {
   const parsed = parseResolveBody(req.body);
   if (parsed.error) return fail(res, 400, parsed.error);
 
-  const { type, tmdbId, season, episode, capabilities } = parsed;
+  const { type, tmdbId, season, episode, capabilities, sourceToken } = parsed;
   const caps = normalizeCapabilities(capabilities);
   const db = getDB();
 
@@ -2962,7 +2962,7 @@ export const listPlaybackSources = async (req, res) => {
       success: true,
       data: {
         caps,
-        sources: selectDiverseSources(allSources, 30),
+        sources: selectDiverseSources(allSources, 50, sourceToken),
       },
     });
   } catch (error) {

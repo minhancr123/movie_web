@@ -34,8 +34,15 @@ export function audioIndexForSource(explicit: number | undefined, current: numbe
 /** Robust matching for active candidate token across versioned index tags and raw hashes */
 export function isSourceActiveToken(candidateToken?: string, currentToken?: string): boolean {
   if (!candidateToken || !currentToken) return false;
-  if (candidateToken.toLowerCase() === currentToken.toLowerCase()) return true;
-  const hashA = candidateToken.split(':')[0].toLowerCase();
-  const hashB = currentToken.split(':')[0].toLowerCase();
+  const a = candidateToken.toLowerCase();
+  const b = currentToken.toLowerCase();
+  if (a === b) return true;
+  if (a.startsWith('vimo|') && b.startsWith('vimo|')) {
+    const idA = a.split('|')[2]?.split(':')[0];
+    const idB = b.split('|')[2]?.split(':')[0];
+    if (idA && idB && idA === idB) return true;
+  }
+  const hashA = a.split(':')[0];
+  const hashB = b.split(':')[0];
   return hashA.length === 40 && hashA === hashB;
 }

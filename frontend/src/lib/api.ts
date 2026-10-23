@@ -214,6 +214,7 @@ export const playbackAPI = {
     season?: number;
     episode?: number;
     capabilities: any;
+    sourceToken?: string;
   }) => enhancePlaybackPayload(data).then(payload => authClient.post('/playback/sources', payload)),
   getSession: (sessionId: string) => authClient.get(`/playback/session/${sessionId}`),
   heartbeat: (sessionId: string, viewerId: string) =>

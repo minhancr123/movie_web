@@ -47,26 +47,48 @@ const sourceGroup = (source) => {
  * Input is already ranked; round-robin preserves that order within each group.
  * Auto selection uses rankCandidates, not this presentation-only selection.
  */
-export const selectDiverseSources = (sources, limit = 15) => {
+export const selectDiverseSources = (sources, limit = 15, activeToken = null) => {
   const budget = Number.isFinite(limit) ? Math.max(0, Math.floor(limit)) : 15;
   const groups = new Map(GROUP_ORDER.map(key => [key, []]));
   const seen = new Set();
+  let pinnedActiveSource = null;
+
   for (const source of sources || []) {
     if (!source || source.playable === false) continue;
     const token = source.sourceToken || source.infoHash;
     if (token && seen.has(token)) continue;
     if (token) seen.add(token);
     const qualityGroup = sourceGroup(source);
-    groups.get(qualityGroup).push({ ...source, qualityGroup });
+    const item = { ...source, qualityGroup };
+    const matchesActive = activeToken && token && (
+      token.toLowerCase() === String(activeToken).toLowerCase()
+      || (token.split(':')[0] && String(activeToken).split(':')[0] && token.split(':')[0].toLowerCase() === String(activeToken).split(':')[0].toLowerCase())
+    );
+    if (matchesActive) {
+      pinnedActiveSource = item;
+      // Guarantee active source sits at top of its group
+      groups.get(qualityGroup).unshift(item);
+    } else {
+      groups.get(qualityGroup).push(item);
+    }
   }
   const selected = [];
+  if (pinnedActiveSource) {
+    selected.push(pinnedActiveSource);
+  }
+  const selectedSet = new Set(selected.map(s => s.sourceToken || s.infoHash));
+
   for (let round = 0; selected.length < budget; round += 1) {
     let added = false;
     for (const key of GROUP_ORDER) {
       const source = groups.get(key)[round];
       if (source && selected.length < budget) {
-        selected.push(source);
-        added = true;
+        const id = source.sourceToken || source.infoHash;
+        if (!selectedSet.has(id)) {
+          selected.push(source);
+          selectedSet.add(id);
+          added = true;
+        }
       }
     }
     if (!added) break;
