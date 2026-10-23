@@ -1403,7 +1403,8 @@ export const resolvePlayback = async (req, res) => {
     const enriched = await applyProbeFacts(
       candidates.map((c) => ({
         ...c,
-        cached: Boolean(cachedMap[String(c.infoHash).toLowerCase()]),
+        cached: cachedMap[String(c.infoHash).toLowerCase()] === 'cached',
+        cachedStatus: cachedMap[String(c.infoHash).toLowerCase()] || 'unknown',
       })),
     );
 
@@ -2586,7 +2587,8 @@ export const prewarmPlayback = async (req, res) => {
     const enriched = await applyProbeFacts(
       candidates.map((c) => ({
         ...c,
-        cached: Boolean(cachedMap[String(c.infoHash).toLowerCase()]),
+        cached: cachedMap[String(c.infoHash).toLowerCase()] === 'cached',
+        cachedStatus: cachedMap[String(c.infoHash).toLowerCase()] || 'unknown',
       })),
     );
     const runtimeMinutes = Number(detail.runtime) > 0 ? Number(detail.runtime) : null;
@@ -2795,7 +2797,8 @@ export const listPlaybackSources = async (req, res) => {
       const enriched = await applyProbeFacts(
         candidates.map((c) => ({
           ...c,
-          cached: Boolean(cachedMap[String(c.infoHash).toLowerCase()]),
+          cached: cachedMap[String(c.infoHash).toLowerCase()] === 'cached',
+        cachedStatus: cachedMap[String(c.infoHash).toLowerCase()] || 'unknown',
         })),
       );
 

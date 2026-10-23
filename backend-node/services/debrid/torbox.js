@@ -11,6 +11,7 @@
  */
 
 import { cacheClient } from '../../config/redis.js';
+import crypto from 'node:crypto';
 
 const BASE_URL = (process.env.TORBOX_BASE_URL || 'https://api.torbox.app/v1/api').replace(/\/+$/, '');
 const REQUEST_TIMEOUT_MS = 15000;
@@ -157,22 +158,29 @@ export const verifyKey = async (key) => {
  * Cache key is hashed per key-holder so one user's answer is never served to
  * another (entitlements differ per account).
  */
+export const CACHED_STATUS = { CACHED: 'cached', NOT_CACHED: 'not_cached', UNKNOWN: 'unknown' };
+
+/** Hash the API key for use in cache keys (never store the raw key). */
+const hashKey = (key) => {
+  return crypto.createHash('sha256').update(key || '').digest('hex').slice(0, 16);
+};
+
 export const checkCached = async (key, infoHashes) => {
   const hashes = [...new Set((infoHashes || []).map((h) => String(h).toLowerCase()).filter(Boolean))];
   if (!hashes.length) return {};
 
+  const keyHash = hashKey(key);
   const result = {};
   const misses = [];
 
   for (const hash of hashes) {
-    const hit = await cacheClient.get(`torbox:cached:${hash}`).catch(() => null);
+    const hit = await cacheClient.get(`torbox:cached:${keyHash}:${hash}`).catch(() => null);
     if (hit === null) misses.push(hash);
-    else result[hash] = hit === '1';
+    else result[hash] = hit;
   }
 
   if (!misses.length) return result;
 
-  // TorBox caps the query string, so ask in batches.
   const BATCH = 40;
   for (let i = 0; i < misses.length; i += BATCH) {
     const batch = misses.slice(i, i + BATCH);
@@ -182,20 +190,24 @@ export const checkCached = async (key, infoHashes) => {
         params: { hash: batch.join(','), format: 'object', list_files: 'false' },
       });
     } catch (error) {
-      // A cache probe failing must not kill playback: treat as "not cached".
       if (error.code === 'invalid_token') throw error;
       batch.forEach((hash) => {
-        result[hash] = false;
+        result[hash] = CACHED_STATUS.UNKNOWN;
       });
+      await Promise.all(batch.map((hash) =>
+        cacheClient.set(`torbox:cached:${keyHash}:${hash}`, CACHED_STATUS.UNKNOWN, 'EX', 30).catch(() => {})
+      ));
       continue;
     }
 
     const data = payload?.data || {};
     for (const hash of batch) {
       const isCached = Boolean(data[hash]);
-      result[hash] = isCached;
+      const status = isCached ? CACHED_STATUS.CACHED : CACHED_STATUS.NOT_CACHED;
+      result[hash] = status;
+      const ttl = isCached ? CACHED_CHECK_TTL_SECONDS : 60;
       await cacheClient
-        .set(`torbox:cached:${hash}`, isCached ? '1' : '0', 'EX', CACHED_CHECK_TTL_SECONDS)
+        .set(`torbox:cached:${keyHash}:${hash}`, status, 'EX', ttl)
         .catch(() => {});
     }
   }
