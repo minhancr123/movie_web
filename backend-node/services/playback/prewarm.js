@@ -53,8 +53,9 @@ async function trendingTitleIds() {
   if (!res || !res.ok) return [];
   const body = await res.json().catch(() => null);
   const trending = body?.data?.trending || [];
-  // Prefer titles with a backdrop (real popular entries, not stubs).
-  const picks = trending.filter((item) => item && item.tmdbId);
+  // Movies only: TV needs a season/episode choice the scheduler cannot make
+  // (and resolving s01e01 warms a slice most viewers never reach).
+  const picks = trending.filter((item) => item && item.tmdbId && item.mediaType === 'movie');
   return picks.map((item) => ({ type: item.mediaType || 'movie', tmdbId: item.tmdbId }));
 }
 
