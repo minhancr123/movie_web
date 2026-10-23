@@ -105,7 +105,7 @@ export default function CatalogCard({ item, priority = false }: CatalogCardProps
       onTouchMove={handleTouchMove}
       onTouchStart={() => setHovered(true)}
       onTouchEnd={handleMouseLeave}
-      onMouseEnter={() => setHovered(true)}
+      onMouseEnter={() => { setHovered(true); maybeStartTrailer(); }}
       onMouseLeave={handleMouseLeave}
       style={{
         transform: hovered
