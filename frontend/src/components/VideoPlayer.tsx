@@ -997,6 +997,11 @@ export default function VideoPlayer({ src, playbackStartedAt, movie, episode, au
     // When the EXTERNAL track is the one drifted (embedded partner = ground
     // truth), the remap applies to the primary lookup instead.
     const [primarySync, setPrimarySync] = useState<{ offset: number; anchorT: number; slope: number } | null>(null);
+    // Measurement report surfaced in the subtitle menu: which track is in
+    // sync and by how many seconds it hears early/late vs the film.
+    const [syncReport, setSyncReport] = useState<{
+        trackId: string; offset: number; slope: number | null; corrected: boolean;
+    } | null>(null);
     const secondaryLookupTime = subLookupTime + secondaryOffset
         + (syncMapping && bilingual ? syncMapping.slope * (subLookupTime - syncMapping.anchorT) : 0);
     const primaryLookupTime = subLookupTime
@@ -1103,6 +1108,7 @@ export default function VideoPlayer({ src, playbackStartedAt, movie, episode, au
         const prevOffset = target === 'primary' ? (primarySync?.offset ?? 0) : secondaryOffsetRef.current;
         if (Math.abs(median - prevOffset) <= 0.2 && !mapping) {
             autoOffsetRef.current = median;
+            setSyncReport({ trackId: selectedSub, offset: median, slope: null, corrected: Math.abs(median) >= 0.2 });
             return;
         }
         // Two anchors >=90s apart and a consistent slope => fps-scale remap
@@ -1114,6 +1120,7 @@ export default function VideoPlayer({ src, playbackStartedAt, movie, episode, au
                 else setSyncMapping({ anchorT: measuredT, slope });
                 setSecondaryOffset(target === 'primary' ? 0 : median);
                 autoOffsetRef.current = median;
+                setSyncReport({ trackId: selectedSub, offset: median, slope, corrected: true });
                 showSyncToast(`Đã canh phụ đề lệch chuẩn ${slope > 0 ? '+' : ''}${(slope * 100).toFixed(1)}%/giờ phát`);
                 return;
             }
@@ -1121,6 +1128,7 @@ export default function VideoPlayer({ src, playbackStartedAt, movie, episode, au
         if (target === 'primary') setPrimarySync({ offset: median, anchorT: measuredT, slope: 0 });
         else setSecondaryOffset(median);
         autoOffsetRef.current = median;
+        setSyncReport({ trackId: selectedSub, offset: median, slope: null, corrected: true });
         showSyncToast(`Đã tự canh lệch phụ đề ${median > 0 ? '+' : ''}${median.toFixed(1)}s`);
         // eslint-disable-next-line react-hooks/exhaustive-deps
     }, [bilingual, secondarySub, selectedSub, cueCache]);
@@ -3266,9 +3274,24 @@ export default function VideoPlayer({ src, playbackStartedAt, movie, episode, au
                                                         >
                                                             Tắt
                                                         </button>
+                                                        {syncReport && (() => {
+                                                            const abs = Math.abs(syncReport.offset);
+                                                            const dir = syncReport.offset > 0 ? 'trễ' : 'sớm';
+                                                            return (
+                                                                <div className="mb-1.5 rounded-lg border border-white/10 bg-white/5 px-2.5 py-1.5 text-[11px] leading-snug text-cinema-muted">
+                                                                    {abs < 0.2 ? (
+                                                                        <>✓ <b className="text-emerald-400">Bản đang chọn khớp phim</b> (lệch dưới 0.2s, đối chiếu phụ đề nhúng gốc).</>
+                                                                    ) : (
+                                                                        <>⏱ Bản đang chọn <b className="text-amber-gold">{dir} {abs.toFixed(1)}s</b> so với thoại{syncReport.slope ? ` và trôi chuẩn ${syncReport.slope > 0 ? '+' : ''}${(syncReport.slope * 100).toFixed(1)}%/giờ` : ''} — đã tự canh. Muốn bản chuẩn hơn: thử từng track, chỉ số này đo ngay khi chọn.</>
+                                                                    )}
+                                                                </div>
+                                                            );
+                                        })()}
                                                         {subTracks.map((t) => {
                                                             const pending = t.ready === false;
                                                             const verified = !pending && (isEmbeddedTrack(t) || t.matched === true);
+                                                            const report = syncReport?.trackId === t.id ? syncReport : null;
+                                                            const absOff = report ? Math.abs(report.offset) : 0;
                                                             return (
                                                                 <button
                                                                     key={t.id}
