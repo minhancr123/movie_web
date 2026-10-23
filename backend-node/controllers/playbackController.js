@@ -1,3 +1,4 @@
+import { SEEK_BUCKET_SECONDS, bucketSeekStart, seekBufferFloor, startupTarget, sessionStartupTarget, hasPlayableBuffer } from '../services/playback/startupPolicy.js';
 import { isRecommendedDirectSource } from '../services/playback/directPlayVerdict.js';
 /**
  * Playback resolution + HLS asset serving.
@@ -391,19 +392,9 @@ const SEEK_STARTUP_BUFFER_SECONDS = Math.max(
   4,
   Number(process.env.PLAYBACK_SEEK_STARTUP_BUFFER_SECONDS) || 4,
 );
-// At a paced 2x writer, a five-minute bucket could make a cold resume wait
-// almost 150 seconds. Keep shared seek buckets within a short startup window.
-export const SEEK_BUCKET_SECONDS = 30;
-export const bucketStartAt = (sec = 0) => {
-  const val = Number(sec);
-  if (!Number.isFinite(val) || val <= 0) return 0;
-  // Small offsets stay exact: bucketing them to 0 silently turns every early
-  // resume/seek (< 1 bucket) into a from-start session — a duplicate remux,
-  // a supersede of the playing session, and a lost position. Buckets only
-  // pay off at/above the bucket size (shared mid-film seeks).
-  if (val < SEEK_BUCKET_SECONDS) return Math.floor(val);
-  return Math.floor(val / SEEK_BUCKET_SECONDS) * SEEK_BUCKET_SECONDS;
-};
+// Existing windows are still reused; cold windows begin near the requested frame.
+export { SEEK_BUCKET_SECONDS };
+export const bucketStartAt = bucketSeekStart;
 
 /**
  * How long resolve itself will wait before handing the session over.
@@ -444,7 +435,7 @@ const readPlaylistState = async (sessionId) => {
 
 const playlistHasEnoughBuffer = async (sessionId, seconds = 120) => {
   const state = await readPlaylistState(sessionId);
-  return state.exists && state.duration >= seconds;
+  return hasPlayableBuffer(state, seconds);
 };
 
 const waitForInitialBuffer = async (sessionId, seconds = 120, timeoutMs = 15000, signal = null) => {
@@ -452,7 +443,7 @@ const waitForInitialBuffer = async (sessionId, seconds = 120, timeoutMs = 15000,
   while (Date.now() - start < timeoutMs) {
     if (signal?.aborted) throw resolveSupersededError();
     if (await playlistHasEnoughBuffer(sessionId, seconds)) return true;
-    await new Promise((resolve) => setTimeout(resolve, 1000));
+    await new Promise((resolve) => setTimeout(resolve, 250));
   }
   return false;
 };
@@ -2186,6 +2177,7 @@ export const resolvePlayback = async (req, res) => {
 
       // Remux: ffmpeg reads the URL in-process; the URL itself stays in memory.
       let warmingUp = false;
+      let startupTargetSeconds = startupBufferForStartAt(startAt);
       try {
         stage('remux', attemptTag);
         // Last gate before a writer exists: a superseded resolve must not
@@ -2250,28 +2242,26 @@ export const resolvePlayback = async (req, res) => {
         stage('buffer', attemptTag);
         const playlistMinSeconds = playlistMinForStartAt(startAt);
         
-        // Use a faster check first for production speed
-        const servable = await waitForInitialBuffer(sessionId, 2, 8000, switchSignal);
-        if (!servable) {
-            // Fallback to longer wait if 2s not ready
-            const finalServable = await waitForInitialBuffer(sessionId, playlistMinSeconds, 12000, switchSignal);
-            if (!finalServable) {
-                throw new Error(`Nguồn remux quá chậm, không tạo nổi buffer trong 20 giây`);
-            }
-        }
-
-        // Past the floor, the head start is worth having but not worth blocking
-        // for: the client polls for the rest and shows real progress instead of
-        // a frozen caption. Seek-started sessions only need one segment before
-        // handoff: the viewer asked for a jump, so latency matters more than a
-        // long head start.
+        const initialBuffer = await readPlaylistState(sessionId);
+        const bufferMeasuredAt = Date.now();
+        const seeking = requestedStartAt > 0;
+        const minimumSeconds = seeking
+          ? seekBufferFloor({ requestedAt: requestedStartAt, origin: seekOrigin, segmentSeconds: SEEK_STARTUP_BUFFER_SECONDS })
+          : playlistMinSeconds;
+        // Never advertise a playlist below the endpoint's floor, or a seek
+        // whose requested frame has not been produced yet.
+        const servable = await waitForInitialBuffer(sessionId, minimumSeconds, 20000, switchSignal);
+        if (!servable) throw new Error('Nguồn remux quá chậm, chưa tạo đủ đoạn cần phát');
+        const measuredBuffer = await readPlaylistState(sessionId);
+        startupTargetSeconds = startupTarget({
+          configuredSeconds: startupBufferForStartAt(startAt), minimumSeconds,
+          initialDuration: initialBuffer.duration, bufferedSeconds: measuredBuffer.duration,
+          elapsedMs: Date.now() - bufferMeasuredAt, seeking,
+        });
         stage('warm', attemptTag);
-        const startupBufferSeconds = startupBufferForStartAt(startAt);
         warmingUp = !(await waitForInitialBuffer(
-          sessionId,
-          startupBufferSeconds,
-          startAt > 0 ? 1000 : RESOLVE_BUFFER_WAIT_MS,
-          switchSignal,
+          sessionId, startupTargetSeconds,
+          seeking ? 1000 : RESOLVE_BUFFER_WAIT_MS, switchSignal,
         ));
         if (warmingUp) {
           // Slow-writer failover: handing over a producer below realtime
@@ -2403,6 +2393,7 @@ export const resolvePlayback = async (req, res) => {
           videoHeight: probe.video?.height || null,
           videoFrameRate: probe.video?.frameRate || null,
           mode: 'remux',
+          startupTargetSeconds,
           videoAction,
           audioAction,
           renditionKey,
@@ -2446,7 +2437,7 @@ export const resolvePlayback = async (req, res) => {
           // Still filling: the client polls the session and shows real progress
           // rather than guessing how long a frozen caption has left to run.
           warmingUp,
-          startupTargetSeconds: STARTUP_BUFFER_SECONDS,
+          startupTargetSeconds,
           candidate: sanitizeCandidateForResponse(candidate),
         },
       });
@@ -3660,7 +3651,7 @@ export const getPlaybackSession = async (req, res) => {
             mode: 'remux',
             bufferedSeconds: total,
             windowSeconds: session.windowSeconds || 0,
-            startupTargetSeconds: startupBufferForStartAt(session.startAt),
+            startupTargetSeconds: sessionStartupTarget(session, startupBufferForStartAt(session.startAt)),
             ready: true,
             writerAlive: true,
             progress: 100,
@@ -3707,12 +3698,12 @@ export const getPlaybackSession = async (req, res) => {
           mode: 'remux',
           bufferedSeconds: buffered,
           windowSeconds: session.windowSeconds || 0,
-          startupTargetSeconds: startupBufferForStartAt(session.startAt),
-          ready: state.ended || buffered >= startupBufferForStartAt(session.startAt),
+          startupTargetSeconds: sessionStartupTarget(session, startupBufferForStartAt(session.startAt)),
+          ready: state.ended || buffered >= sessionStartupTarget(session, startupBufferForStartAt(session.startAt)),
           // Process existence is insufficient: a wedged ffmpeg process remains
           // alive while its playlist never changes.
           writerAlive: writerHealthy,
-          progress: Math.min(100, Math.round((buffered / startupBufferForStartAt(session.startAt)) * 100)),
+          progress: Math.min(100, Math.round((buffered / sessionStartupTarget(session, startupBufferForStartAt(session.startAt))) * 100)),
         },
       });
     }
@@ -4141,7 +4132,7 @@ export const serveHlsAsset = async (req, res) => {
     }
     if (asset === 'index.m3u8') {
       const state = await readPlaylistState(sessionId);
-      if (!state.exists || state.duration < playlistMinForStartAt(session.startAt)) {
+      if (!hasPlayableBuffer(state, playlistMinForStartAt(session.startAt))) {
         return fail(res, 409, 'Video vẫn đang được chuẩn bị');
       }
       if (!state.ended) {

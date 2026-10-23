@@ -1,0 +1,36 @@
+import test from 'node:test';
+import assert from 'node:assert/strict';
+import { bucketSeekStart, seekBufferFloor, startupTarget, sessionStartupTarget, hasPlayableBuffer } from '../services/playback/startupPolicy.js';
+
+test('a cold seek never asks the writer to prepare a long unused prefix', () => {
+  for (const at of [0, 1, 3, 29, 30, 299, 402, 1798, 7201.5]) {
+    const origin = bucketSeekStart(at);
+    assert.ok(origin <= at && at - origin < 4);
+    const measuredOrigin = Math.max(0, origin - 1.5);
+    const needed = seekBufferFloor({ requestedAt: at, origin: measuredOrigin });
+    assert.ok(measuredOrigin + needed >= at + 4, 'target frame and segment are available');
+    assert.ok(needed < 10, 'no half-minute head start for cold seeks');
+  }
+  assert.equal(bucketSeekStart(NaN), 0);
+  assert.equal(bucketSeekStart(-10), 0);
+});
+const base = { configuredSeconds: 12, minimumSeconds: 8, initialDuration: 4, bufferedSeconds: 8, elapsedMs: 2000 };
+test('fast sources can start with two segments; slow or unmeasured writers retain the larger buffer', () => {
+  assert.equal(startupTarget(base), 8);
+  assert.equal(startupTarget({ ...base, elapsedMs: 6000 }), 12);
+  assert.equal(startupTarget({ ...base, elapsedMs: 100 }), 12, 'a cached read alone is not a speed sample');
+  assert.equal(startupTarget({ ...base, initialDuration: 8 }), 12);
+  assert.equal(startupTarget({ ...base, seeking: true, minimumSeconds: 7 }), 7, 'seek target coverage is never reduced');
+});
+test('polling restores the exact session buffer target rather than the old global threshold', () => {
+  assert.equal(sessionStartupTarget({startupTargetSeconds:8},12),8);
+  assert.equal(sessionStartupTarget({startupTargetSeconds:7},4),7);
+  for (const value of [undefined, NaN, 0, -1]) assert.equal(sessionStartupTarget({startupTargetSeconds:value},12),12);
+});
+
+test('a complete short tail is playable, while an incomplete or empty playlist is held', () => {
+  assert.equal(hasPlayableBuffer({exists:true,duration:3,ended:true},8),true);
+  assert.equal(hasPlayableBuffer({exists:true,duration:3,ended:false},8),false);
+  assert.equal(hasPlayableBuffer({exists:true,duration:0,ended:true},8),false);
+  assert.equal(hasPlayableBuffer({exists:false,duration:10,ended:false},8),false);
+});
