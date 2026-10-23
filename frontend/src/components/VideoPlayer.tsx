@@ -989,7 +989,9 @@ export default function VideoPlayer({ src, playbackStartedAt, movie, episode, au
         presentationShiftMs,
     });
     // Secondary subtitle has its own relative offset for fine-tuning in bilingual mode.
-    const secondaryLookupTime = subLookupTime + secondaryOffset;
+    const [syncMapping, setSyncMapping] = useState<{ anchorT: number; slope: number } | null>(null);
+    const secondaryLookupTime = subLookupTime + secondaryOffset
+        + (syncMapping && bilingual ? syncMapping.slope * (subLookupTime - syncMapping.anchorT) : 0);
 
     const primaryCues = React.useMemo(() => {
         if (!selectedSub || selectedSub === 'off') return [];
@@ -1018,6 +1020,7 @@ export default function VideoPlayer({ src, playbackStartedAt, movie, episode, au
     // slider still overrides afterwards.
     const autoSyncedPairRef = useRef<string>('');
     const autoOffsetRef = useRef<number | null>(null);
+    const lastMeasureRef = useRef<{ t: number; o: number } | null>(null);
     const secondaryOffsetRef = useRef(0);
     useEffect(() => { secondaryOffsetRef.current = secondaryOffset; }, [secondaryOffset]);
     useEffect(() => {
@@ -1029,17 +1032,26 @@ export default function VideoPlayer({ src, playbackStartedAt, movie, episode, au
         if (autoSyncedPairRef.current !== pairKey) {
             autoSyncedPairRef.current = pairKey;
             autoOffsetRef.current = null;
+            lastMeasureRef.current = null;
+            setSyncMapping(null);
         }
         // User moved the slider away from our last auto value: hands off.
         if (autoOffsetRef.current !== null
             && Math.abs(secondaryOffsetRef.current - autoOffsetRef.current) > 0.2) return;
+        const mapping = syncMapping && bilingual ? syncMapping : null;
         const secondaryStarts = secondaryAll.map((c) => c.start).sort((a, b) => a - b);
+        const anchorT = mapping ? mapping.anchorT : 0;
+        const slope = mapping ? mapping.slope : 0;
         const deltas: number[] = [];
         for (const cue of primaryAll) {
+            // Predict where the secondary line SHOULD be (previous mapping
+            // applied), then accept only matches near the prediction: keeps
+            // lock while drift grows ~12s per 5 minutes (PAL-origin subs).
+            const predicted = cue.start + secondaryOffsetRef.current + slope * (cue.start - anchorT);
             let best: number | null = null;
             let bestDist = 10;
             for (const st of secondaryStarts) {
-                const dist = Math.abs(st - cue.start);
+                const dist = Math.abs(st - predicted);
                 if (dist < bestDist) { bestDist = dist; best = st - cue.start; }
             }
             if (best !== null) deltas.push(best);
@@ -1051,9 +1063,26 @@ export default function VideoPlayer({ src, playbackStartedAt, movie, episode, au
         // Progressive drift (different fps/cut): the measured offset moves
         // over the film, so re-apply on EVERY window measurement instead of
         // once per pair. Quiet when the value is unchanged.
-        if (Math.abs(median - secondaryOffsetRef.current) <= 0.2) {
+        // Median sits at the mean primary cue time of this window — the
+        // anchor for both the offset and the slope update.
+        const measuredT = primaryAll.reduce((sum, c) => sum + c.start, 0) / primaryAll.length;
+        const prev = lastMeasureRef.current;
+        lastMeasureRef.current = { t: measuredT, o: median };
+        if (Math.abs(median - secondaryOffsetRef.current) <= 0.2 && !mapping) {
             autoOffsetRef.current = median;
             return;
+        }
+        // Two anchors >=90s apart and a consistent slope => fps-scale remap
+        // (PAL 25fps vs 23.976 film is slope ~-0.041).
+        if (prev && Math.abs(measuredT - prev.t) >= 90) {
+            const slope = (median - prev.o) / (measuredT - prev.t);
+            if (Math.abs(slope) >= 0.002 && Math.abs(slope) <= 0.06) {
+                setSyncMapping({ anchorT: measuredT, slope });
+                setSecondaryOffset(median);
+                autoOffsetRef.current = median;
+                showSyncToast(`Đã canh lệch bản dịch lệch chuẩn ${slope > 0 ? '+' : ''}${(slope * 100).toFixed(1)}%/giờ phát`);
+                return;
+            }
         }
         setSecondaryOffset(median);
         autoOffsetRef.current = median;
