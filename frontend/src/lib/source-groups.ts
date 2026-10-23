@@ -3,6 +3,9 @@ export interface GroupableSource {
   origin?: string | null;
   resolution?: number | string | null;
   playable?: boolean;
+  /** A Vietnamese subtitle release matches this source's release name. */
+  hasViSub?: boolean;
+  viSubRelease?: string;
   /** Bucket assigned by the backend (services/playback/sourcePicker.js). */
   qualityGroup?: string | null;
 }
@@ -56,6 +59,13 @@ export function groupPlaybackSources<T extends GroupableSource>(sources: T[]) {
       : deriveGroup(source);
     buckets.get(key)!.push(source);
   }
-  return GROUPS.map(([key, label]) => ({ key, label, sources: buckets.get(key)! }))
-    .filter(group => group.sources.length > 0);
+  // Within a group, sources with a hash-grade Vietnamese subtitle come first:
+  // a perfectly synced experience outranks a marginal quality difference.
+  return GROUPS.map(([key, label]) => ({
+    key,
+    label,
+    sources: [...buckets.get(key)!].sort(
+      (a, b) => Number(b.hasViSub === true) - Number(a.hasViSub === true),
+    ),
+  })).filter(group => group.sources.length > 0);
 }

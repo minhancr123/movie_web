@@ -2221,6 +2221,11 @@ export default function PlaybackSection({
                         : `VIP ${index + 1}`}
                     </span>
                     <SourceDeliveryBadge state={src.directPlay} recommended={src.recommended} />
+                    {src.hasViSub && (
+                      <span className="rounded bg-emerald-500/15 px-2 py-0.5 font-bold text-emerald-400" title={`Bản phụ đề Việt khớp release: ${src.viSubRelease ?? ''}`}>
+                        🇻🇳 Sub khớp
+                      </span>
+                    )}
                     {src.resolution && (
                       <span className="rounded bg-primary/20 px-2 py-0.5 font-bold text-primary">
                         {resolutionLabel(src.resolution)}

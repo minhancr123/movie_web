@@ -3145,6 +3145,42 @@ export const listPlaybackSources = async (req, res) => {
       ...(vimoEntry ? [vimoEntry] : []),
     ];
 
+    // "Chọn nguồn theo phụ đề": flag sources whose release name matches a
+    // Vietnamese subtitle release — same release means the same cut, so that
+    // subtitle is hash-grade synced. One OpenSubtitles round-trip per movie,
+    // cached; strict name matching (a TELESYNC sub must never flag a WEB-DL
+    // source — that mismatch is exactly the drift viewers report).
+    let viSubNames = [];
+    try {
+      const viRes = await cached(
+        `playback:visubs:${type}:${tmdbId}:${season ?? ''}:${episode ?? ''}`,
+        12 * 60 * 60,
+        async () => {
+          const res = await getSubtitleCandidates({
+            imdbId: detail.imdbId,
+            mediaType: type,
+            season,
+            episode,
+          }).catch(() => ({ subtitles: [] }));
+          return (res.subtitles || [])
+            .filter((sub) => String(sub.language || '').toLowerCase().startsWith('vi'))
+            .map((sub) => ({ id: sub.id, name: sub.name || '' }));
+        },
+      );
+      viSubNames = Array.isArray(viRes) ? viRes : [];
+    } catch { /* flagging is best-effort */ }
+    const viMatchFor = (filename) => {
+      if (!filename || !viSubNames.length) return null;
+      for (const sub of viSubNames) {
+        if (releaseNamesMatch(String(filename), sub.name)) return sub.name;
+      }
+      return null;
+    };
+    const flagged = allSources.map((src) => {
+      const viSubRelease = viMatchFor(src.filename || src.releaseSource || '');
+      return viSubRelease ? { ...src, hasViSub: true, viSubRelease } : src;
+    });
+
     if (allSources.length === 0) {
       if (debridError && candidates.length > 0) {
         return fail(res, debridError.status || 500, debridError.message, debridError.code ? { code: debridError.code } : {});
@@ -3158,7 +3194,7 @@ export const listPlaybackSources = async (req, res) => {
       success: true,
       data: {
         caps,
-        sources: selectDiverseSources(allSources, 50, sourceToken),
+        sources: selectDiverseSources(flagged, 50, sourceToken),
       },
     });
   } catch (error) {
