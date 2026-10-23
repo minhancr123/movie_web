@@ -148,10 +148,16 @@ export default function CatalogCard({ item, priority = false }: CatalogCardProps
         {/* Muted trailer preview replaces the poster while hovered */}
         {hovered && trailerKey && (
           <iframe
-            src={`https://www.youtube-nocookie.com/embed/${trailerKey}?autoplay=1&mute=1&controls=0&rel=0&modestbranding=1&playsinline=1&loop=1&playlist=${trailerKey}`}
+            src={`https://www.youtube-nocookie.com/embed/${trailerKey}?autoplay=1&mute=1&controls=0&disablekb=1&fs=0&iv_load_policy=3&rel=0&playsinline=1&loop=1&playlist=${trailerKey}`}
             title="Trailer"
             allow="autoplay; encrypted-media"
-            className="absolute inset-0 z-[1] h-full w-full border-0"
+            // 140% and centered: YouTube's logo (bottom-right), title chip and
+            // control chrome all sit in the outer 20% band of the player, so
+            // the crop hides them — the card shows only the moving picture.
+            // pointer-events=none keeps hover OFF the player, so no overlay
+            // UI (or "Watch on YouTube") can ever appear.
+            className="pointer-events-none absolute left-1/2 top-1/2 z-[1] h-[140%] w-[140%] -translate-x-1/2 -translate-y-1/2 border-0"
+            tabIndex={-1}
             loading="lazy"
           />
         )}
