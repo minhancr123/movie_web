@@ -1017,14 +1017,22 @@ export default function VideoPlayer({ src, playbackStartedAt, movie, episode, au
     // cue start (±10s) and apply it as the secondary offset; the manual
     // slider still overrides afterwards.
     const autoSyncedPairRef = useRef<string>('');
+    const autoOffsetRef = useRef<number | null>(null);
+    const secondaryOffsetRef = useRef(0);
+    useEffect(() => { secondaryOffsetRef.current = secondaryOffset; }, [secondaryOffset]);
     useEffect(() => {
         if (!bilingual || !secondarySub || secondarySub === selectedSub) return;
         const primaryAll = cueCache[selectedSub];
         const secondaryAll = cueCache[secondarySub];
         if (!primaryAll?.length || !secondaryAll?.length) return;
         const pairKey = `${selectedSub}|${secondarySub}`;
-        if (autoSyncedPairRef.current === pairKey) return;
-        autoSyncedPairRef.current = pairKey;
+        if (autoSyncedPairRef.current !== pairKey) {
+            autoSyncedPairRef.current = pairKey;
+            autoOffsetRef.current = null;
+        }
+        // User moved the slider away from our last auto value: hands off.
+        if (autoOffsetRef.current !== null
+            && Math.abs(secondaryOffsetRef.current - autoOffsetRef.current) > 0.2) return;
         const secondaryStarts = secondaryAll.map((c) => c.start).sort((a, b) => a - b);
         const deltas: number[] = [];
         for (const cue of primaryAll) {
@@ -1038,10 +1046,18 @@ export default function VideoPlayer({ src, playbackStartedAt, movie, episode, au
         }
         if (deltas.length < 3) return; // not enough evidence to auto-shift
         deltas.sort((a, b) => a - b);
-        const median = deltas[Math.floor(deltas.length / 2)];
+        const median = Math.round(deltas[Math.floor(deltas.length / 2)] * 20) / 20;
         if (Math.abs(median) < 0.2 || Math.abs(median) > 10) return;
-        setSecondaryOffset(Math.round(median * 20) / 20);
-        showSyncToast(`Đã tự canh lệch song ngữ ${median > 0 ? '+' : ''}${(Math.round(median * 20) / 20).toFixed(1)}s`);
+        // Progressive drift (different fps/cut): the measured offset moves
+        // over the film, so re-apply on EVERY window measurement instead of
+        // once per pair. Quiet when the value is unchanged.
+        if (Math.abs(median - secondaryOffsetRef.current) <= 0.2) {
+            autoOffsetRef.current = median;
+            return;
+        }
+        setSecondaryOffset(median);
+        autoOffsetRef.current = median;
+        showSyncToast(`Đã tự canh lệch song ngữ ${median > 0 ? '+' : ''}${median.toFixed(1)}s`);
         // eslint-disable-next-line react-hooks/exhaustive-deps
     }, [bilingual, secondarySub, selectedSub, cueCache]);
 
