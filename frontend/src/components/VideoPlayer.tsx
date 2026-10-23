@@ -1010,6 +1010,41 @@ export default function VideoPlayer({ src, playbackStartedAt, movie, episode, au
         return activeCues(cueCache[secondarySub] || [], secondaryLookupTime);
     }, [cueCache, bilingual, secondarySub, selectedSub, secondaryLookupTime]);
 
+    // Auto-sync (Netflix-style): the paired tracks often come from different
+    // releases, so their cue grids drift by a constant offset and the two
+    // lines alternate instead of stacking. Once per pairing, measure the
+    // median delta between each primary cue start and the NEAREST secondary
+    // cue start (±10s) and apply it as the secondary offset; the manual
+    // slider still overrides afterwards.
+    const autoSyncedPairRef = useRef<string>('');
+    useEffect(() => {
+        if (!bilingual || !secondarySub || secondarySub === selectedSub) return;
+        const primaryAll = cueCache[selectedSub];
+        const secondaryAll = cueCache[secondarySub];
+        if (!primaryAll?.length || !secondaryAll?.length) return;
+        const pairKey = `${selectedSub}|${secondarySub}`;
+        if (autoSyncedPairRef.current === pairKey) return;
+        autoSyncedPairRef.current = pairKey;
+        const secondaryStarts = secondaryAll.map((c) => c.start).sort((a, b) => a - b);
+        const deltas: number[] = [];
+        for (const cue of primaryAll) {
+            let best: number | null = null;
+            let bestDist = 10;
+            for (const st of secondaryStarts) {
+                const dist = Math.abs(st - cue.start);
+                if (dist < bestDist) { bestDist = dist; best = st - cue.start; }
+            }
+            if (best !== null) deltas.push(best);
+        }
+        if (deltas.length < 3) return; // not enough evidence to auto-shift
+        deltas.sort((a, b) => a - b);
+        const median = deltas[Math.floor(deltas.length / 2)];
+        if (Math.abs(median) < 0.2 || Math.abs(median) > 10) return;
+        setSecondaryOffset(Math.round(median * 20) / 20);
+        showSyncToast(`Đã tự canh lệch song ngữ ${median > 0 ? '+' : ''}${(Math.round(median * 20) / 20).toFixed(1)}s`);
+        // eslint-disable-next-line react-hooks/exhaustive-deps
+    }, [bilingual, secondarySub, selectedSub, cueCache]);
+
     // Bilingual pairing completes late: when the toggle is ON with no partner
     // (the English track was still extracting), pair it the moment a ready
     // partner appears instead of leaving the mode silently empty.
