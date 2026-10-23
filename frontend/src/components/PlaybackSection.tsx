@@ -43,6 +43,8 @@ const RETRYABLE_503_CODES = new Set(['REMUX_BUSY', 'REMUX_NO_SPACE', 'SOURCE_PRE
 import { providerAPI, playbackAPI } from '@/lib/api';
 import { detectCapabilities } from '@/lib/capabilities';
 import { groupPlaybackSources } from '@/lib/source-groups';
+import { filterPlaybackSources, pickFallbackSource, type SourceFilter, type DeliveryState } from '@/lib/source-delivery';
+import SourceDeliveryFilter, { SourceDeliveryBadge } from '@/components/SourceDeliveryFilter';
 import type { PlayerEpisode } from '@/lib/catalog';
 import { episodeScrollTarget } from '@/lib/episode-list';
 import { useWatchHistory } from '../hooks/useLocalStorage';
@@ -68,6 +70,7 @@ interface PlaybackSectionProps {
 }
 
 interface SourceCandidate {
+  directPlay?: DeliveryState;
   sourceToken?: string;
   filename?: string;
   playable?: boolean;
@@ -435,6 +438,7 @@ export default function PlaybackSection({
     },
     []
   );
+  const [sourceFilter, setSourceFilter] = useState<SourceFilter>('all');
   const [torboxKeyInput, setTorboxKeyInput] = useState<string>('');
   const playbackRequestAtRef = useRef<number | null>(null);
   const [providerAccess, setProviderAccess] = useState<{ mode?: string; canManage?: boolean }>({});
@@ -736,9 +740,8 @@ export default function PlaybackSection({
           list = [];
         }
       }
-      const next = list.find(
-        (s) => s.playable !== false && s.sourceToken && !failed.has(s.sourceToken),
-      );
+      const current = list.find(s => s.sourceToken === activeTokenRef.current);
+      const next = pickFallbackSource(list, failed, Number(current?.resolution) || 0);
       decodeFailoverCountRef.current += 1;
       if (!next?.sourceToken || decodeFailoverCountRef.current > MAX_DECODE_FAILOVERS) {
         setPlaybackStatus('error');
@@ -1466,6 +1469,7 @@ export default function PlaybackSection({
         season: season ?? undefined,
         episode: currentEpisode ?? undefined,
         capabilities: caps,
+        excludeSourceTokens: [...decodeFailedTokensRef.current].slice(-20),
         resolveId,
         ...(resolvedSourceToken ? { sourceToken: resolvedSourceToken } : {}),
         ...(resolvedAudioIndex !== null && resolvedAudioIndex !== undefined
@@ -2141,7 +2145,9 @@ export default function PlaybackSection({
             )}
 
             <div className="max-h-80 space-y-1.5 overflow-y-auto">
-              {groupPlaybackSources(sources).flatMap((group) => [
+              <SourceDeliveryFilter value={sourceFilter} onChange={setSourceFilter} />
+              {filterPlaybackSources(sources, sourceFilter).length === 0 && <p className="p-3 text-xs text-cinema-subtle">Chưa có nguồn phù hợp bộ lọc này. Chọn Tất cả để xem nguồn khác.</p>}
+              {groupPlaybackSources(filterPlaybackSources(sources, sourceFilter)).flatMap((group) => [
                 <h5 key={`group-${group.key}`} className="sticky top-0 z-10 rounded-lg bg-surface-dark px-3 py-2 text-xs font-bold text-white">
                   {group.label} <span className="text-cinema-subtle">({group.sources.length})</span>
                 </h5>,
@@ -2161,6 +2167,7 @@ export default function PlaybackSection({
                       isActive ? 'bg-amber-primary/20 ring-1 ring-amber-primary/40' : 'bg-white/5 hover:bg-white/10'
                     }`}
                   >
+                    <SourceDeliveryBadge state={src.directPlay} />
                     {src.resolution && (
                       <span className="rounded bg-amber-primary/20 px-2 py-0.5 font-bold text-amber-gold">
                         {resolutionLabel(src.resolution)}
@@ -2548,7 +2555,9 @@ export default function PlaybackSection({
             {sources.length === 0 && (
               <p className="p-3 text-xs text-cinema-subtle">Không có nguồn nào.</p>
             )}
-            {groupPlaybackSources(sources).flatMap((group) => [
+            <SourceDeliveryFilter value={sourceFilter} onChange={setSourceFilter} />
+            {filterPlaybackSources(sources, sourceFilter).length === 0 && <p className="p-3 text-xs text-cinema-subtle">Chưa có nguồn phù hợp bộ lọc này. Chọn Tất cả để xem nguồn khác.</p>}
+            {groupPlaybackSources(filterPlaybackSources(sources, sourceFilter)).flatMap((group) => [
                 <h5 key={`group-${group.key}`} className="sticky top-0 z-10 rounded-lg bg-surface-dark px-3 py-2 text-xs font-bold text-white">
                   {group.label} <span className="text-cinema-subtle">({group.sources.length})</span>
                 </h5>,
@@ -2569,6 +2578,7 @@ export default function PlaybackSection({
                     isActive ? 'bg-primary/20 ring-1 ring-primary/40' : 'bg-white/5 hover:bg-white/10'
                   }`}
                 >
+                  <SourceDeliveryBadge state={src.directPlay} />
                   {src.resolution && (
                     <span className="rounded bg-primary/20 px-2 py-0.5 font-bold text-primary">
                       {resolutionLabel(src.resolution)}

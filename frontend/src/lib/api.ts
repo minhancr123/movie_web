@@ -197,6 +197,7 @@ export const playbackAPI = {
     capabilities: any;
     sourceToken?: string;
     audioIndex?: number;
+    excludeSourceTokens?: string[];
     resolveId?: string;
     startAt?: number;
   }, signal?: AbortSignal) => enhancePlaybackPayload(data).then(payload => authClient.post('/playback/resolve', payload, { timeout: 120_000, ...(signal ? { signal } : {}) })),

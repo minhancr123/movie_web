@@ -12,7 +12,7 @@
  */
 
 import crypto from 'node:crypto';
-import { cached, CACHE_TTL, setCache } from '../config/redis.js';
+import { cached, CACHE_TTL, setCache, getCache } from '../config/redis.js';
 import { safeFetchJson, safeFetchText, assertUrlShape } from './security/safeFetch.js';
 import { normalizeAddonSubtitle } from './playback/userSubtitles.js';
 import { parseContentRef } from './contentRef.js';
@@ -22,6 +22,14 @@ const REQUEST_TIMEOUT_MS = 4000;
 const STREAM_CACHE_TTL = 600; // addon answers churn as torrents die
 const MAX_STREAMS_PER_ADDON = 60;
 const aioRetryAfter = new Map();
+const discoveryFlights = new Map();
+const shareDiscovery = (key, load) => {
+  if (discoveryFlights.has(key)) return discoveryFlights.get(key);
+  if (discoveryFlights.size >= 256) return Promise.resolve({ candidates: [], errors: ['Source discovery busy'] });
+  const promise = Promise.resolve().then(load).finally(() => discoveryFlights.delete(key));
+  discoveryFlights.set(key, promise);
+  return promise;
+};
 const SUBTITLE_REQUEST_TIMEOUT_MS = 5000;
 const SUBTITLE_CACHE_TTL = 6 * 60 * 60;
 const MAX_SUBTITLES = 24;
@@ -595,9 +603,10 @@ const fetchFromAddon = async (addon, type, id) => {
   const payload = await safeFetchJson(url, { timeoutMs: REQUEST_TIMEOUT_MS });
 
   return (payload?.streams || [])
-    .slice(0, MAX_STREAMS_PER_ADDON)
+    .slice(0, 300)
     .map((stream) => normalizeStream(stream, host))
-    .filter(Boolean);
+    .filter(Boolean)
+    .slice(0, MAX_STREAMS_PER_ADDON);
 };
 
 /**
@@ -607,31 +616,60 @@ const fetchFromAddon = async (addon, type, id) => {
  * rather than thrown. Duplicate infohashes across addons collapse into one
  * candidate, keeping the entry that carried more metadata.
  */
-export const getStreamCandidates = async ({ imdbId, mediaType, season, episode, debridKey }) => {
-  const aioScope = aiostreamsCacheScope(JSON.stringify([process.env.AIOSTREAMS_USER_DATA || '', debridKey || '']));
-  if (process.env.STREAM_SOURCE_PROVIDER === 'aiostreams' && Date.now() >= (aioRetryAfter.get(aioScope) || 0)) {
-    const media = toStremioId({ imdbId, mediaType, season, episode });
-    if (media) {
-      try {
-        const userData = aiostreamsUserDataForKey(debridKey);
-        const result = await cached(`aio:streams:v1:${aioScope}:${media.type}:${media.id}`, STREAM_CACHE_TTL, async () => {
-          const rows = await fetchAioStreams(media, { env: { ...process.env, AIOSTREAMS_USER_DATA: userData } });
-          const byHash = new Map();
-          for (const row of rows) {
-            const candidate = normalizeStream(row, 'AIOStreams');
-            if (candidate && !byHash.has(candidate.infoHash)) byHash.set(candidate.infoHash, candidate);
-          }
-          if (!byHash.size) throw new Error('AIOStreams returned no usable torrents');
-          return { candidates: [...byHash.values()], errors: [] };
-        });
-        aioRetryAfter.delete(aioScope);
-        return result;
-      } catch {
-        aioRetryAfter.set(aioScope, Date.now() + 30000);
-        console.warn('[sources] AIOStreams unavailable; using configured Stremio fallback');
-      }
-    }
+export const mergeStreamCandidates = results => {
+  const byHash = new Map();
+  for (const result of results) for (const source of result.candidates || []) {
+    const existing = byHash.get(source.infoHash);
+    if (!existing) { byHash.set(source.infoHash, { ...source }); continue; }
+    // Never combine file metadata from two different files in a season pack.
+    if (existing.fileIdx !== source.fileIdx) continue;
+    if (!existing.filename && source.filename) existing.filename = source.filename;
+    if (!existing.sizeBytes && source.sizeBytes) existing.sizeBytes = source.sizeBytes;
+    if ((source.label || '').length > (existing.label || '').length) existing.label = source.label;
   }
+  return { candidates: [...byHash.values()], errors: results.flatMap(r => r.errors || []) };
+};
+
+/** Return useful results promptly; slower feeds continue filling their own cache.
+ * All feed promises are handled and have their own request timeout. */
+export async function collectDiscovery(feeds, graceMs = 350) {
+  const ready = [];
+  let useful;
+  const firstUseful = new Promise(resolve => { useful = resolve; });
+  const jobs = feeds.map(async feed => {
+    try { const result = await feed(); ready.push(result); if (result.candidates?.length) useful(); }
+    catch { ready.push({ candidates: [], errors: ['Source discovery unavailable'] }); }
+  });
+  let timer;
+  try {
+    await Promise.race([Promise.all(jobs), firstUseful.then(() => new Promise(resolve => { timer = setTimeout(resolve, graceMs); }))]);
+    return mergeStreamCandidates(ready);
+  } finally { clearTimeout(timer); }
+}
+
+const fetchAioCandidates = async ({ imdbId, mediaType, season, episode, debridKey }) => {
+  const aioScope = aiostreamsCacheScope(JSON.stringify([process.env.AIOSTREAMS_USER_DATA || '', debridKey || '']));
+  if (Date.now() < (aioRetryAfter.get(aioScope) || 0)) return { candidates: [], errors: [] };
+  const media = toStremioId({ imdbId, mediaType, season, episode });
+  if (!media) return { candidates: [], errors: [] };
+  try {
+    const userData = aiostreamsUserDataForKey(debridKey);
+    const result = await cached(`aio:streams:v2:${aioScope}:${media.type}:${media.id}`, STREAM_CACHE_TTL, async () => {
+      const rows = await fetchAioStreams(media, { env: { ...process.env, AIOSTREAMS_USER_DATA: userData } });
+      const candidates = rows.map(row => normalizeStream(row, 'AIOStreams')).filter(Boolean);
+      if (!candidates.length) throw new Error('No usable metadata');
+      return mergeStreamCandidates([{ candidates }]);
+    });
+    aioRetryAfter.delete(aioScope);
+    return result;
+  } catch {
+    if (aioRetryAfter.size >= 500) aioRetryAfter.delete(aioRetryAfter.keys().next().value);
+    aioRetryAfter.set(aioScope, Date.now() + 30000);
+    console.warn('[sources] AIOStreams unavailable; using configured Stremio fallback');
+    return { candidates: [], errors: [] };
+  }
+};
+const fetchNativeCandidates = async ({ imdbId, mediaType, season, episode }) => {
   const addons = configuredAddons();
   if (!addons.length) return { candidates: [], errors: ['Chưa cấu hình STREMIO_ADDONS'] };
 
@@ -640,9 +678,11 @@ export const getStreamCandidates = async ({ imdbId, mediaType, season, episode, 
     return { candidates: [], errors: ['Nội dung này thiếu IMDb ID nên không tra được nguồn'] };
   }
 
-  const cacheKey = `addon:streams:${stremio.type}:${stremio.id}`;
+  const cacheKey = `addon:streams:v2:${aiostreamsCacheScope(addons.join(','))}:${stremio.type}:${stremio.id}`;
 
-  return cached(cacheKey, STREAM_CACHE_TTL, async () => {
+  const hit = await getCache(cacheKey);
+  if (hit) return hit;
+  {
     const settled = await Promise.allSettled(
       addons.map((addon) => fetchFromAddon(addon, stremio.type, stremio.id))
     );
@@ -670,14 +710,32 @@ export const getStreamCandidates = async ({ imdbId, mediaType, season, episode, 
           continue;
         }
         // Same torrent from two addons: keep whichever knows the size/filename.
+        if (existing.fileIdx !== candidate.fileIdx) continue;
         if (!existing.sizeBytes && candidate.sizeBytes) existing.sizeBytes = candidate.sizeBytes;
         if (!existing.filename && candidate.filename) existing.filename = candidate.filename;
         if (candidate.label.length > existing.label.length) existing.label = candidate.label;
       }
     });
 
-    return { candidates: [...byHash.values()], errors };
-  });
+    const result = { candidates: [...byHash.values()], errors };
+    await setCache(cacheKey, result, result.candidates.length ? STREAM_CACHE_TTL : 20);
+    return result;
+  }
+};
+
+const getAioCandidates = params => shareDiscovery(`aio:${aiostreamsCacheScope(JSON.stringify([
+  process.env.AIOSTREAMS_USER_DATA || '', params.debridKey || '', toStremioId(params)]))}`, () => fetchAioCandidates(params));
+const getNativeCandidates = params => shareDiscovery(`native:${aiostreamsCacheScope(JSON.stringify([
+  configuredAddons(), toStremioId(params)]))}`, () => fetchNativeCandidates(params));
+
+export const getStreamCandidates = async params => {
+  const provider = process.env.STREAM_SOURCE_PROVIDER;
+  if (provider === 'hybrid') return collectDiscovery([() => getNativeCandidates(params), () => getAioCandidates(params)]);
+  if (provider === 'aiostreams') {
+    const aio = await getAioCandidates(params);
+    if (aio.candidates.length) return aio;
+  }
+  return getNativeCandidates(params);
 };
 
 export default {

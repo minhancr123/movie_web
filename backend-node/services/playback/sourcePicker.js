@@ -88,3 +88,29 @@ export const selectReuseCandidates = (attempts, preferredMaxHeight = 0, manual =
   }
   return attempts.filter((s) => isPreferredAutoSource(s, cap) || !hasKnownHeight(s));
 };
+
+/** Bound cold attempts while reserving alternatives with different delivery needs.
+ * Quality of the first choice stays intact; alternatives only run on failure. */
+export function selectFallbackAttempts(sources, limit = 5, excluded = []) {
+  const budget = Math.max(0, Math.min(10, Math.floor(limit) || 0));
+  const blocked = new Set(excluded);
+  const seen = new Set();
+  const eligible = (sources || []).filter(s => {
+    const id = s.infoHash || s.sourceToken;
+    if (s.playable === false || blocked.has(id) || seen.has(id)) return false;
+    if (id) seen.add(id);
+    return true;
+  });
+  if (eligible.length <= budget) return eligible;
+  const core = eligible.slice(0, Math.max(1, budget - 2));
+  const first = core[0];
+  const rest = eligible.filter(s => !core.includes(s));
+  const alternate = rest.find(s => s.cached && s.codec !== first.codec
+    && Number(s.resolution) <= Number(first.resolution));
+  if (alternate && core.length < budget) core.push(alternate);
+  const lighter = rest.find(s => !core.includes(s) && s.cached && Number(s.resolution) > 0
+    && Number(s.resolution) < Number(first.resolution));
+  if (lighter && core.length < budget) core.push(lighter);
+  for (const source of rest) if (!core.includes(source) && core.length < budget) core.push(source);
+  return core.slice(0, budget);
+}

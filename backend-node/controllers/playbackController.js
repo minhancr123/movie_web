@@ -36,7 +36,7 @@ import * as torbox from '../services/debrid/torbox.js';
 import { DebridError } from '../services/debrid/torbox.js';
 import { normalizeCapabilities } from '../services/playback/sourceRanker.js';
 import { getStreamCandidates, rankPlaybackCandidates as rankCandidates } from '../services/playback/orchestrator.js';
-import { selectDiverseSources, selectReuseCandidates, prioritizeDiskFitSources } from '../services/playback/sourcePicker.js';
+import { selectDiverseSources, selectReuseCandidates, prioritizeDiskFitSources, selectFallbackAttempts } from '../services/playback/sourcePicker.js';
 import {
   ffprobe,
   checkHttpRange,
@@ -307,7 +307,11 @@ export const isSessionOwner = (session, userId) =>
  */
 const applyProbeFacts = async (candidates) => {
   const facts = await Promise.all(
-    candidates.map((candidate) => getCache(probeFactsKey(candidate.infoHash, candidate.fileIdx))),
+    candidates.map(async candidate => {
+      const [fact, range] = await Promise.all([getCache(probeFactsKey(candidate.infoHash, candidate.fileIdx)),
+        getCache(`playback:direct-range:v1:${fileIdentity(candidate.infoHash, candidate.fileIdx)}`)]);
+      return fact ? { ...fact, rangeSupported: range?.supported } : null;
+    }),
   );
   return candidates.map((candidate, index) => {
     const fact = facts[index];
@@ -318,6 +322,9 @@ const applyProbeFacts = async (candidates) => {
     // fallback since ffprobe only sees the one file we happened to pick.
     codec: fact.codec || candidate.codec,
     probedCodec: fact.codec || null,
+    probedFormat: fact.format || null,
+    probedBitrate: fact.bitrate || null,
+    rangeSupported: fact.rangeSupported,
     probedProfile: fact.profile || null,
     probedPixFmt: fact.pixFmt || null,
     probedHeight: fact.height || null,
@@ -334,6 +341,8 @@ const rememberProbeFacts = (infoHash, probe, fileId) =>
     probeFactsKey(infoHash, fileId),
     {
       codec: probe?.video?.codec || null,
+      format: probe?.format || null,
+      bitrate: probe?.bitrate || null,
       height: probe?.video?.height || null,
       frameRate: probe?.video?.frameRate || null,
       // Carried so the ranker can tell HEVC Main 10 from Main profile on
@@ -347,6 +356,7 @@ const rememberProbeFacts = (infoHash, probe, fileId) =>
         language: a.language || '',
         title: a.title || '',
         codec: a.codec || '',
+        profile: a.profile || '',
         channels: a.channels || null,
       })),
       subtitles: (probe?.subtitles || []).map((s) => ({
@@ -460,6 +470,7 @@ export const sanitizeCandidateForResponse = (candidate) => ({
   // production it is one devtools tab away from every viewer.
   resolution: candidate.resolution || null,
   codec: PUBLIC_MODE ? null : (candidate.codec || null),
+  directPlay: candidate.directPlay || 'unknown',
   hdr: candidate.hdr || null,
   releaseSource: PUBLIC_MODE ? null : (candidate.releaseSource || null),
   sizeBytes: PUBLIC_MODE ? null : (candidate.sizeBytes || null),
@@ -1416,12 +1427,15 @@ export const resolvePlayback = async (req, res) => {
     const videoTranscode = await resolveVideoTranscodeCapability();
     const { best, playable, rejected } = rankCandidates(enriched, caps, {
       runtimeMinutes,
+      contentLanguage: detail?.originalLanguage,
       ...titleExpectation(detail),
       videoTranscode,
     });
 
     // 5b. Manual pick wins over the ranker: the user saw the badge list and
     // asked for that exact release, so try only it (still probed like any other).
+    const excludedTokens = new Set((Array.isArray(req.body?.excludeSourceTokens) ? req.body.excludeSourceTokens : [])
+      .slice(0, 20).filter(t => typeof t === 'string' && /^[a-f0-9]{40}$/i.test(t)).map(t => t.toLowerCase()));
     let attempts;
     if (sourceToken) {
       const picked = [...playable, ...rejected].find(
@@ -1445,7 +1459,7 @@ export const resolvePlayback = async (req, res) => {
           rejected: rejected.slice(0, 5).map(sanitizeCandidateForResponse),
         });
       }
-      attempts = playable.slice(0, MAX_ATTEMPTS);
+      attempts = selectFallbackAttempts(playable, MAX_ATTEMPTS, [...excludedTokens]);
     }
 
     const reuseAttempts = selectReuseCandidates(attempts, caps.preferredMaxHeight, Boolean(sourceToken));
@@ -1576,9 +1590,9 @@ export const resolvePlayback = async (req, res) => {
     if (!sourceToken && !requestedWindowSeconds) {
       const freeBytes = await freeDiskBytes();
       const reservedBytes = pendingReservationBytes();
-      attempts = prioritizeDiskFitSources(playable, (needBytes) => admitRemuxDisk({
+      attempts = selectFallbackAttempts(prioritizeDiskFitSources(playable, (needBytes) => admitRemuxDisk({
         freeBytes, reservedBytes, needBytes,
-      }).admitted).slice(0, MAX_ATTEMPTS);
+      }).admitted), MAX_ATTEMPTS, [...excludedTokens]);
     }
 
     // 6. Try the top candidates until one yields a playable file.
@@ -1803,6 +1817,8 @@ export const resolvePlayback = async (req, res) => {
           await setCache(rangeKey, { supported: range.supported }, range.supported ? 3600 : 30);
         }
         upstreamRangeSupported = range.supported === true;
+        // Store file metadata, not expiring URLs. Range evidence is short-lived.
+        await setCache(`playback:direct-range:v1:${fileIdentity(candidate.infoHash, file.fileId)}`, { supported: upstreamRangeSupported }, upstreamRangeSupported ? 1800 : 30);
       }
       const lan = isLanClient(req);
       const { decision, delivery, rejected } = planCandidateDelivery({
@@ -1821,6 +1837,7 @@ export const resolvePlayback = async (req, res) => {
         continue;
       }
 
+      candidate.directPlay = decision.mode === 'direct' ? 'verified' : 'remux';
       const sessionId = buildSessionId();
 
       // Direct play hands the client the upstream URL and never touches ffmpeg,
@@ -2610,6 +2627,7 @@ export const prewarmPlayback = async (req, res) => {
     const videoTranscode = await resolveVideoTranscodeCapability();
     const { best, playable } = rankCandidates(enriched, caps, {
       runtimeMinutes,
+      contentLanguage: detail?.originalLanguage,
       ...titleExpectation(detail),
       videoTranscode,
     });
@@ -2819,6 +2837,7 @@ export const listPlaybackSources = async (req, res) => {
 
       const ranked = rankCandidates(enriched, caps, {
         runtimeMinutes,
+        contentLanguage: detail?.originalLanguage,
         ...titleExpectation(detail),
         videoTranscode: await resolveVideoTranscodeCapability(),
       });
@@ -2922,7 +2941,7 @@ export const listPlaybackSources = async (req, res) => {
       success: true,
       data: {
         caps,
-        sources: selectDiverseSources(allSources, 15),
+        sources: selectDiverseSources(allSources, 30),
       },
     });
   } catch (error) {
@@ -3293,6 +3312,7 @@ export const getPlaybackSubtitles = async (req, res) => {
     const runtimeMinutes = Number(detail.runtime) > 0 ? Number(detail.runtime) : null;
     const { best, playable, rejected } = rankCandidates(candidates, normalizeCapabilities(capabilities), {
       runtimeMinutes,
+      contentLanguage: detail?.originalLanguage,
       ...titleExpectation(detail),
     });
     // Bind extraction to the owned playing file, even if auto-ranking changed.

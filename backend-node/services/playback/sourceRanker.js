@@ -20,6 +20,7 @@
  * waste bandwidth for no visible gain on a consumer display.
  */
 
+import { directPlayVerdict, directPlayPriority } from './directPlayVerdict.js';
 import { isHevcMain10 } from './remuxService.js';
 
 /* ---------------------------------------------------------- label parsing */
@@ -124,7 +125,8 @@ const parseAudio = (label) => {
 const parseContainer = (label) => {
   if (/\.mkv\b|\bmatroska\b/i.test(label)) return 'mkv';
   if (/\.(mp4|m4v)\b/i.test(label)) return 'mp4';
-  if (/\.(avi|ts|m2ts|mov|webm)\b/i.test(label)) return 'other';
+  if (/\.webm\b/i.test(label)) return 'webm';
+  if (/\.(avi|ts|m2ts|mov)\b/i.test(label)) return 'other';
   return null;
 };
 
@@ -229,11 +231,11 @@ export const parseCandidate = (candidate, { expectedTitles = [], expectedYear = 
 
   return {
     ...candidate,
-    resolution: parseResolution(text),
+    resolution: Number(candidate.probedHeight) > 0 ? Number(candidate.probedHeight) : parseResolution(text),
     // A codec ffprobe actually saw beats anything the release name claims.
     codec: candidate.probedCodec || parseCodec(text),
     hdr: parseHdr(text),
-    container: parseContainer(text),
+    container: candidate.probedFormat ? (/mp4|mov/.test(candidate.probedFormat) ? 'mp4' : /webm/.test(candidate.probedFormat) && !/matroska/.test(candidate.probedFormat) ? 'webm' : parseContainer(text)) : parseContainer(text),
     releaseSource: parseSource(text),
     audio: parseAudio(text),
     sizeBytes,
@@ -496,7 +498,7 @@ export const scoreCandidate = (candidate, caps, { runtimeMinutes = null, videoTr
   }
 
   // --- bitrate: the single best predictor of both quality and stall risk.
-  const bitrate = estimateBitrateMbps(candidate.sizeBytes, runtimeMinutes);
+  const bitrate = Number(candidate.probedBitrate) > 0 ? Number(candidate.probedBitrate) / 1e6 : estimateBitrateMbps(candidate.sizeBytes, runtimeMinutes);
   if (bitrate && height) {
     const target = BITRATE_TARGET[height] || BITRATE_TARGET[1080];
     if (bitrate < target.min) {
@@ -560,12 +562,11 @@ export const scoreCandidate = (candidate, caps, { runtimeMinutes = null, videoTr
 // Reorder only equal quality/readiness slots. This avoids a direct-play hint
 // trading a cached 1080p release for 720p, HDR for SDR, or ready for downloading.
 // Labels are hints, not permission to bypass resolve's full codec/audio probe.
-export const prioritizeDirectCandidates = (ranked) => {
+export const prioritizeDirectCandidates = (ranked, caps = {}, options = {}) => {
   const groups = new Map();
-  const likelyDirect = (source) => source.cached && source.container === 'mp4'
-    && source.codec === 'h264' && source.audio?.browserFriendly;
+  const priority = source => source.cached ? directPlayPriority(directPlayVerdict(source, caps, options)) : 0;
   const keyFor = (source) => JSON.stringify([
-    source.playable, source.resolution, Boolean(source.cached), source.hdr,
+    source.playable, source.resolution, Boolean(source.cached), source.hdr, source.qualityRisk || null,
   ]);
   for (const source of ranked) {
     const key = keyFor(source);
@@ -574,7 +575,7 @@ export const prioritizeDirectCandidates = (ranked) => {
   }
   for (const group of groups.values()) {
     group.sort((a, b) => {
-      const direct = Number(Boolean(likelyDirect(b))) - Number(Boolean(likelyDirect(a)));
+      const direct = priority(b) - priority(a);
       if (direct) return direct;
       // Preserve AIO/QuackStart's release-group ranking inside equal quality
       // slots, after the browser direct-play preference. Native addon rows
@@ -595,7 +596,7 @@ export const prioritizeDirectCandidates = (ranked) => {
 export const rankCandidates = (
   candidates,
   rawCaps,
-  { runtimeMinutes = null, expectedTitles = [], expectedYear = null, videoTranscode = null } = {},
+  { runtimeMinutes = null, expectedTitles = [], expectedYear = null, videoTranscode = null, contentLanguage = null, audioIndex = null } = {},
 ) => {
   const caps = normalizeCapabilities(rawCaps);
 
@@ -603,7 +604,12 @@ export const rankCandidates = (
     .map((candidate) => {
       const parsed = parseCandidate(candidate, { expectedTitles, expectedYear });
       const { score, playable, reasons } = scoreCandidate(parsed, caps, { runtimeMinutes, videoTranscode, expectedTitles });
-      return { ...parsed, score, playable, reasons };
+      const directPlay = directPlayVerdict({ ...parsed, playable }, caps, { contentLanguage, audioIndex });
+      const bitrate = Number(parsed.probedBitrate) > 0 ? Number(parsed.probedBitrate) / 1e6 : estimateBitrateMbps(parsed.sizeBytes, runtimeMinutes);
+      const target = BITRATE_TARGET[parsed.resolution] || BITRATE_TARGET[1080];
+      const qualityRisk = bitrate && parsed.resolution && bitrate < target.min ? 'low_bitrate'
+        : bitrate && caps.maxBitrateMbps && bitrate > caps.maxBitrateMbps ? 'network' : null;
+      return { ...parsed, score, playable, reasons, directPlay, qualityRisk };
     })
     .sort((a, b) => {
       if (a.playable !== b.playable) return a.playable ? -1 : 1;
@@ -618,12 +624,14 @@ export const rankCandidates = (
         if (aPreferred && a.resolution !== b.resolution) return b.resolution - a.resolution;
         if (Boolean(a.cached) !== Boolean(b.cached)) return a.cached ? -1 : 1;
       }
+      if (Boolean(a.cached) !== Boolean(b.cached)) return a.cached ? -1 : 1;
+      if (a.resolution === b.resolution && Boolean(a.qualityRisk) !== Boolean(b.qualityRisk)) return a.qualityRisk ? 1 : -1;
       return b.score - a.score;
     });
 
   // Resolve, prewarm and the picker share the same order, so prewarming never
   // spends a TorBox/probe round trip on a different release than Auto opens.
-  const ordered = prioritizeDirectCandidates(ranked);
+  const ordered = prioritizeDirectCandidates(ranked, caps, { contentLanguage, audioIndex });
   return {
     caps,
     best: ordered.find((candidate) => candidate.playable) || null,

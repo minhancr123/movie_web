@@ -1,0 +1,17 @@
+services:
+  aiostreams:
+    image: ghcr.io/viren070/aiostreams@sha256:83893d1c37eaaaf9ad1e9286bd857220a6b8f042a4f1eac3fa7356017aa2b184
+    user: "${CINEVN_AIO_UID:-1000}:${CINEVN_AIO_GID:-1000}"
+    container_name: cinevn-aiostreams
+    restart: unless-stopped
+    env_file: ['${CINEVN_AIO_STATE:?Set private state directory}/.env']
+    ports: ['127.0.0.1:3100:3000']
+    volumes: ['${CINEVN_AIO_STATE:?Set private state directory}/data:/app/data']
+    mem_limit: 768m
+    cpus: 1.0
+    pids_limit: 128
+    security_opt: ['no-new-privileges:true']
+    cap_drop: ['ALL']
+    logging:
+      driver: json-file
+      options: {max-size: '5m', max-file: '2'}
