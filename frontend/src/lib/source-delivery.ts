@@ -23,3 +23,10 @@ export function pickFallbackSource<T extends Source>(sources: T[], failed: Set<s
       return priority(b.source)-priority(a.source) || a.index-b.index;
     })[0]?.source;
 }
+
+/** Audio indices identify tracks in one file, not a language across releases. */
+export function audioIndexForSource(explicit: number | undefined, current: number | null,
+  previousToken: string, nextToken: string): number | null {
+  if (explicit !== undefined) return explicit;
+  return nextToken && nextToken !== previousToken ? null : current;
+}

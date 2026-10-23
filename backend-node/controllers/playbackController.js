@@ -1377,6 +1377,7 @@ export const resolvePlayback = async (req, res) => {
     const { candidates, errors: addonErrors } = detail.imdbId 
       ? await getStreamCandidates({
           debridKey,
+          sourceToken,
           imdbId: detail.imdbId,
           mediaType: type,
           season,

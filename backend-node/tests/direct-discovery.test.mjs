@@ -60,4 +60,10 @@ test('hybrid discovery merges fast feeds but returns before a slow addon finishe
  assert.equal(finished,false);assert.equal(result.candidates.length,1);release();
  await new Promise(r=>setTimeout(r,0));assert.equal(finished,true);
 });
+test('a pinned source waits for the feed that contains it instead of reporting a false 404',async()=>{
+ let release;const pending=new Promise(resolve=>{release=resolve;});let done=false;
+ const job=collectDiscovery([async()=>({candidates:[{infoHash:'other'}]}),async()=>{await pending;return{candidates:[{infoHash:'pinned'}]};}],1,'pinned').then(r=>{done=true;return r;});
+ await new Promise(r=>setTimeout(r,10));assert.equal(done,false);release();
+ assert((await job).candidates.some(s=>s.infoHash==='pinned'));
+});
 test.after(()=>cacheClient.disconnect());

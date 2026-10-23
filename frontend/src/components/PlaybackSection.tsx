@@ -43,7 +43,7 @@ const RETRYABLE_503_CODES = new Set(['REMUX_BUSY', 'REMUX_NO_SPACE', 'SOURCE_PRE
 import { providerAPI, playbackAPI } from '@/lib/api';
 import { detectCapabilities } from '@/lib/capabilities';
 import { groupPlaybackSources } from '@/lib/source-groups';
-import { filterPlaybackSources, pickFallbackSource, type SourceFilter, type DeliveryState } from '@/lib/source-delivery';
+import { filterPlaybackSources, pickFallbackSource, audioIndexForSource, type SourceFilter, type DeliveryState } from '@/lib/source-delivery';
 import SourceDeliveryFilter, { SourceDeliveryBadge } from '@/components/SourceDeliveryFilter';
 import type { PlayerEpisode } from '@/lib/catalog';
 import { episodeScrollTarget } from '@/lib/episode-list';
@@ -763,7 +763,7 @@ export default function PlaybackSection({
       });
       const epoch = ++seekEpochRef.current;
       void startPlaybackResolutionRef
-        .current(next.sourceToken, activeAudioIndexRef.current ?? undefined, {
+        .current(next.sourceToken, undefined, {
           ...(failoverAt > 0 ? { startAt: failoverAt } : {}),
           seekEpoch: epoch,
         })
@@ -1225,8 +1225,8 @@ export default function PlaybackSection({
     // the playing token differs from the asked one, and only poisoning both
     // stops a re-ask loop (torrent asked → Vimo served → fail → ask torrent).
     requestedTokenRef.current = resolvedSourceToken;
-    const resolvedAudioIndex =
-      audioIndex !== undefined ? audioIndex : activeAudioIndexRef.current;
+    const resolvedAudioIndex = audioIndexForSource(audioIndex, activeAudioIndexRef.current,
+      activeTokenRef.current, resolvedSourceToken);
     const resolvedStartAt =
       options?.startAt && options.startAt > 0 ? Math.floor(options.startAt) : 0;
     // Pre-bucket request target, mirrored for handleResolveResponse: the

@@ -632,17 +632,21 @@ export const mergeStreamCandidates = results => {
 
 /** Return useful results promptly; slower feeds continue filling their own cache.
  * All feed promises are handled and have their own request timeout. */
-export async function collectDiscovery(feeds, graceMs = 350) {
+export async function collectDiscovery(feeds, graceMs = 350, preferredHash = null) {
   const ready = [];
+  let found;
+  const preferred = new Promise(resolve => { found = resolve; });
   let useful;
   const firstUseful = new Promise(resolve => { useful = resolve; });
   const jobs = feeds.map(async feed => {
-    try { const result = await feed(); ready.push(result); if (result.candidates?.length) useful(); }
+    try { const result = await feed(); ready.push(result); if (result.candidates?.length) useful();
+      if (preferredHash && result.candidates?.some(s => s.infoHash === preferredHash)) found();
+    }
     catch { ready.push({ candidates: [], errors: ['Source discovery unavailable'] }); }
   });
   let timer;
   try {
-    await Promise.race([Promise.all(jobs), firstUseful.then(() => new Promise(resolve => { timer = setTimeout(resolve, graceMs); }))]);
+    await Promise.race([Promise.all(jobs), preferredHash ? preferred : firstUseful.then(() => new Promise(resolve => { timer = setTimeout(resolve, graceMs); }))]);
     return mergeStreamCandidates(ready);
   } finally { clearTimeout(timer); }
 }
@@ -730,7 +734,7 @@ const getNativeCandidates = params => shareDiscovery(`native:${aiostreamsCacheSc
 
 export const getStreamCandidates = async params => {
   const provider = process.env.STREAM_SOURCE_PROVIDER;
-  if (provider === 'hybrid') return collectDiscovery([() => getNativeCandidates(params), () => getAioCandidates(params)]);
+  if (provider === 'hybrid') return collectDiscovery([() => getNativeCandidates(params), () => getAioCandidates(params)], 350, params.sourceToken || null);
   if (provider === 'aiostreams') {
     const aio = await getAioCandidates(params);
     if (aio.candidates.length) return aio;
