@@ -3,7 +3,8 @@ import {directPlayVerdict,isRecommendedDirectSource} from '../services/playback/
 import {rankCandidates} from '../services/playback/sourceRanker.js';
 import {selectFallbackAttempts} from '../services/playback/sourcePicker.js';
 process.env.REDIS_CACHE_URL='redis://127.0.0.1:1';
-const {mergeStreamCandidates,collectDiscovery}=await import('../services/addonClient.js');
+const { mergeStreamCandidates, collectDiscovery, candidateIdentity, matchCandidateToken } = await import('../services/addonClient.js');
+const { parseCandidate, scoreCandidate } = await import('../services/playback/sourceRanker.js');
 const {cacheClient}=await import('../config/redis.js');
 const base={playable:true,container:'mp4',codec:'hevc',audio:{browserFriendly:true},cached:true};
 test('direct hints respect HEVC/Main10/AV1/WebM client capabilities',()=>{
@@ -48,9 +49,57 @@ test('fallback budget reserves a different codec and lighter cached file, exclud
  assert(selected.some(s=>s.infoHash==='avc'));assert(selected.some(s=>s.infoHash==='lighter'));assert(!selected.some(s=>s.infoHash==='h0'));
  assert.deepEqual(selectFallbackAttempts(sources,0),[]);
 });
-test('dedup enriches the same file but never mixes metadata of different pack indices',()=>{
- const out=mergeStreamCandidates([{candidates:[{infoHash:'h',fileIdx:1,label:'short',filename:'episode1'}]},{candidates:[{infoHash:'h',fileIdx:2,label:'much longer but wrong episode',sizeBytes:999},{infoHash:'h',fileIdx:1,label:'longer',sizeBytes:10}]}]);
- assert.equal(out.candidates.length,1);assert.equal(out.candidates[0].filename,'episode1');assert.equal(out.candidates[0].sizeBytes,10);assert.equal(out.candidates[0].label,'longer');
+test('dedup enriches the same file but preserves separate pack indices', () => {
+ const out = mergeStreamCandidates([
+   { candidates: [{ infoHash: 'h', fileIdx: 1, label: 'short', filename: 'episode1' }] },
+   { candidates: [
+     { infoHash: 'h', fileIdx: 2, label: 'much longer but wrong episode', sizeBytes: 999 },
+     { infoHash: 'h', fileIdx: 1, label: 'longer', sizeBytes: 10 }
+   ] }
+ ]);
+ assert.equal(out.candidates.length, 2);
+ const ep1 = out.candidates.find(c => c.fileIdx === 1);
+ const ep2 = out.candidates.find(c => c.fileIdx === 2);
+ assert(ep1 && ep2);
+ assert.equal(ep1.filename, 'episode1');
+ assert.equal(ep1.sizeBytes, 10);
+ assert.equal(ep1.label, 'longer');
+ assert.equal(ep2.label, 'much longer but wrong episode');
+});
+
+test('candidate identity and token matching preserve versioned file index', () => {
+ const c1 = { infoHash: 'a'.repeat(40), fileIdx: 2, filename: 's01e02.mkv' };
+ const id = candidateIdentity(c1);
+ assert.equal(id, `${'a'.repeat(40)}:index:2`);
+ assert.equal(matchCandidateToken(c1, 'a'.repeat(40)), true);
+ assert.equal(matchCandidateToken(c1, id), true);
+ assert.equal(matchCandidateToken(c1, `${'a'.repeat(40)}:2`), true);
+ assert.equal(matchCandidateToken(c1, `${'a'.repeat(40)}:index:1`), false);
+});
+
+test('probed audio facts outrank missing filename codec in ranking', () => {
+ const unprobed = parseCandidate({
+   filename: 'Interstellar.2014.1080p.BluRay.x264.YIFY.mp4',
+   container: 'mp4',
+   codec: 'h264',
+ });
+ assert.equal(unprobed.audio?.browserFriendly, false);
+
+ const probedAac = parseCandidate({
+   filename: 'Interstellar.2014.1080p.BluRay.x264.YIFY.mp4',
+   container: 'mp4',
+   codec: 'h264',
+   audioTracks: [{ codec: 'aac', profile: 'LC', channels: 2 }],
+ });
+ assert.equal(probedAac.audio?.browserFriendly, true);
+
+ const probedDts = parseCandidate({
+   filename: 'Interstellar.2014.1080p.BluRay.x264.YIFY.mp4',
+   container: 'mp4',
+   codec: 'h264',
+   audioTracks: [{ codec: 'dts', channels: 6 }],
+ });
+ assert.equal(probedDts.audio?.browserFriendly, false);
 });
 test('hybrid discovery merges fast feeds but returns before a slow addon finishes',async()=>{
  const good=id=>({candidates:[{infoHash:id}],errors:[]});

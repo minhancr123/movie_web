@@ -31,6 +31,8 @@ import {
   subtitleVariantLabel,
   releaseNamesMatch,
   releaseSimilarity,
+  candidateIdentity,
+  matchCandidateToken,
 } from '../services/addonClient.js';
 import { toVttDocument, UPLOAD_MAX_PER_TITLE } from '../services/playback/userSubtitles.js';
 import * as torbox from '../services/debrid/torbox.js';
@@ -484,24 +486,33 @@ export const sanitizeCandidateForResponse = (candidate) => ({
   subtitleTracks: Array.isArray(candidate.subtitleTracks) ? candidate.subtitleTracks : [],
 });
 
+export const SOURCE_TOKEN_PATTERN = /^[a-f0-9]{40}(?::(?:index:\d+|unknown:[^|\s]+|\d+))?$/i;
+
 /**
- * The infohash the client echoes back as `sourceToken` to pin a release.
+ * The token the client echoes back as `sourceToken` to pin a release.
  * Every resolve success payload must carry it: without it the client
  * re-picks freely on each resume/recovery and can land on a different cut
  * of the same title (subs mistimed, different audio mix). The magnet still
  * never leaves the server.
  */
-export const resolveSourceToken = (candidate) => String(candidate?.infoHash || '').toLowerCase();
+export const resolveSourceToken = (candidate) => {
+  if (candidate?.sourceToken && typeof candidate.sourceToken === 'string' && (candidate.sourceToken.startsWith('vimo|') || candidate.sourceToken.startsWith('yastream:'))) {
+    return candidate.sourceToken;
+  }
+  return candidateIdentity(candidate);
+};
 
 /**
- * Same shape as above plus the infohash, which the client sends back as
+ * Same shape as above plus the sourceToken, which the client sends back as
  * `sourceToken` to force a specific release. The magnet still never leaves
  * the server. `origin` survives so the picker can badge non-torrent rows
  * (e.g. Vimo direct HLS).
  */
 const sanitizeCandidateForPicker = (candidate) => ({
   ...sanitizeCandidateForResponse(candidate),
-  sourceToken: String(candidate.infoHash || '').toLowerCase(),
+  sourceToken: (candidate.sourceToken && (candidate.sourceToken.startsWith('vimo|') || candidate.sourceToken.startsWith('yastream:')))
+    ? candidate.sourceToken
+    : candidateIdentity(candidate),
   filename: candidate.filename || '',
   playable: candidate.playable !== false,
   origin: candidate.origin || null,
@@ -533,9 +544,9 @@ export const parseResolveBody = (body = {}) => {
         : body.caps && typeof body.caps === 'object'
           ? body.caps
           : {},
-    // Manual pick: an infohash the user chose from GET /playback/sources.
+    // Manual pick: an infohash or candidate identity the user chose from GET /playback/sources.
     sourceToken:
-      typeof body.sourceToken === 'string' && /^[a-f0-9]{40}$/i.test(body.sourceToken.trim())
+      typeof body.sourceToken === 'string' && SOURCE_TOKEN_PATTERN.test(body.sourceToken.trim())
         ? body.sourceToken.trim().toLowerCase()
         : null,
     // Manual Vimo pick: `vimo|<movie|series>|<vimoId>[:s:e]` from the picker.
@@ -1438,11 +1449,11 @@ export const resolvePlayback = async (req, res) => {
     // 5b. Manual pick wins over the ranker: the user saw the badge list and
     // asked for that exact release, so try only it (still probed like any other).
     const excludedTokens = new Set((Array.isArray(req.body?.excludeSourceTokens) ? req.body.excludeSourceTokens : [])
-      .slice(0, 20).filter(t => typeof t === 'string' && /^[a-f0-9]{40}$/i.test(t)).map(t => t.toLowerCase()));
+      .slice(0, 20).filter(t => typeof t === 'string' && SOURCE_TOKEN_PATTERN.test(t.trim())).map(t => t.trim().toLowerCase()));
     let attempts;
     if (sourceToken) {
       const picked = [...playable, ...rejected].find(
-        (c) => String(c.infoHash).toLowerCase() === sourceToken,
+        (c) => matchCandidateToken(c, sourceToken),
       );
       if (!picked) {
         return fail(res, 404, 'Nguồn đã chọn không còn khả dụng, vui lòng tải lại danh sách');

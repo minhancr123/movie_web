@@ -220,6 +220,25 @@ const isJunk = (label) =>
   /\b(sample|trailer)\b/i.test(label) ||
   /\b(hc|hardcoded)\s*sub/i.test(label);
 
+export const audioFromProbedTracks = (tracks, selectedIndex = null) => {
+  if (!Array.isArray(tracks) || !tracks.length) return null;
+  const target = (Number.isInteger(selectedIndex) && tracks[selectedIndex]) ? tracks[selectedIndex] : tracks[0];
+  const codec = String(target?.codec || '').toLowerCase();
+  const channels = Number.isInteger(target?.channels) ? target.channels : null;
+  const lossless = /truehd|dts|flac|atmos|pcm/i.test(codec);
+  const eac3 = /eac3|ec-3|ddp/i.test(codec);
+  const isLc = !target?.profile || String(target.profile).toUpperCase().includes('LC');
+  const browserFriendly = (codec === 'aac' && isLc && (!channels || channels <= 2))
+    || codec === 'mp3'
+    || codec === 'opus';
+  return {
+    channels,
+    lossless,
+    eac3,
+    browserFriendly: Boolean(browserFriendly && (tracks.length === 1 || selectedIndex === 0 || selectedIndex == null)),
+  };
+};
+
 /** Pull every usable signal out of a free-form addon label. */
 export const parseCandidate = (candidate, { expectedTitles = [], expectedYear = null } = {}) => {
   const label = String(candidate.label || '');
@@ -228,6 +247,7 @@ export const parseCandidate = (candidate, { expectedTitles = [], expectedYear = 
 
   const sizeBytes = candidate.sizeBytes || parseSizeFromLabel(text);
   const title = matchesTitle(text, expectedTitles, expectedYear);
+  const probedAudio = audioFromProbedTracks(candidate.audioTracks, candidate.audioIndex);
 
   return {
     ...candidate,
@@ -237,7 +257,7 @@ export const parseCandidate = (candidate, { expectedTitles = [], expectedYear = 
     hdr: parseHdr(text),
     container: candidate.probedFormat ? (/mp4|mov/.test(candidate.probedFormat) ? 'mp4' : /webm/.test(candidate.probedFormat) && !/matroska/.test(candidate.probedFormat) ? 'webm' : parseContainer(text)) : parseContainer(text),
     releaseSource: parseSource(text),
-    audio: parseAudio(text),
+    audio: probedAudio || parseAudio(text),
     sizeBytes,
     seeds: candidate.seeds ?? parseSeeds(text),
     junk: isJunk(text),
