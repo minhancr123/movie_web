@@ -282,8 +282,18 @@ export const extractSubtitleTracks = async (inputUrl, jobs, window = {}) => {
   try {
     const start = Math.max(0, Number(window.startAt) || 0);
     const duration = Math.max(0, Number(window.durationSeconds) || 0);
+    // The TorBox CDN occasionally accepts a connection and then never feeds
+    // it (observed live: ESTAB socket, zero bytes, until the 120s batch
+    // timeout). rw_timeout turns that into a fast error and reconnect resumes
+    // from the current offset via a fresh Range request, which the CDN does
+    // serve. File inputs skip the flags (protocol options, http(s) only).
+    const httpInput = /^https?:/i.test(String(inputUrl));
+    const resilient = httpInput
+      ? ['-rw_timeout', '20000000', '-reconnect', '1', '-reconnect_streamed', '1',
+         '-reconnect_on_network_error', '1']
+      : [];
     const args = ['-hide_banner', '-loglevel', 'warning', '-nostdin',
-      ...(duration ? ['-copyts', '-ss', String(start)] : []), '-i', inputUrl];
+      ...(duration ? ['-copyts', '-ss', String(start)] : []), ...resilient, '-i', inputUrl];
     for (const job of temporary) {
       await fs.mkdir(path.dirname(job.outPath), { recursive: true });
       args.push('-map', '0:' + Number(job.streamIndex),

@@ -117,7 +117,7 @@ import {
 import { planAdmission } from '../services/playback/deliveryPlan.js';
 import { getDecryptedKey } from '../services/providers/connectionStore.js';
 import { computeOpenSubtitlesHash } from '../services/playback/opensubtitlesHash.js';
-import { selectEmbeddedSubtitleTracks, needsEmbeddedInventory, subtitleWindowAt, subtitleSidecarName, isCompletedSubtitle } from '../services/playback/subtitleInventory.js';
+import { selectEmbeddedSubtitleTracks, needsEmbeddedInventory, subtitleWindowAt, subtitleSidecarName, isCompletedSubtitle, trySliceWindowFromCoverage } from '../services/playback/subtitleInventory.js';
 import * as opensubtitles from '../services/playback/opensubtitles.js';
 import { resolveVimoSource, getVimoStreams, verifyVimoStream } from '../services/playback/vimoClient.js';
 import { resolveYaStreamSource } from '../services/playback/yastreamClient.js';
@@ -3217,7 +3217,14 @@ export const getPlaybackSubtitles = async (req, res) => {
           if (!(await isCompletedSubtitle(file))) throw new Error("Not ready");
           ready = true;
         } catch {
-          ready = false;
+          // A neighbouring window already holds these cues: slice them into
+          // place instead of reporting the track as not-ready (the viewer
+          // seeking a bucket forward used to lose subtitles for a full
+          // extraction round-trip).
+          const sliced = await trySliceWindowFromCoverage(
+            subsPath(), fileIdentity(infoHash, ownedSession.fileId), i, subtitleWindow,
+          );
+          ready = sliced.sliced;
         }
         if (ready) {
           const token = crypto.randomBytes(32).toString('hex');
@@ -3504,17 +3511,27 @@ export const getPlaybackSubtitles = async (req, res) => {
     }
     const minted = [];
     const pending = [];
+    const refills = [];
     for (const s of textSubs) {
       const i = s.inventoryIndex;
       const file = subsPath(subtitleSidecarName(pickedScope, i, subtitleWindow));
       let ready = false;
       let url = '';
+      let refill = false;
       try {
         if (!(await isCompletedSubtitle(file))) throw new Error("Not ready");
         ready = true;
       } catch {
-        ready = false;
+        const sliced = await trySliceWindowFromCoverage(subsPath(), pickedScope, i, subtitleWindow);
+        if (sliced.sliced) {
+          ready = true;
+          // The current bucket is served from existing coverage, but the rest
+          // of the 300s span is missing: refill in the background so forward
+          // playback keeps its head start.
+          refill = !sliced.fullCoverage;
+        }
       }
+      if (refill) refills.push({ s, i, file });
       if (ready) {
         const token = crypto.randomBytes(32).toString('hex');
         await setCache(subTokenKey(token), { file }, SUB_TOKEN_TTL);
@@ -3544,6 +3561,22 @@ export const getPlaybackSubtitles = async (req, res) => {
         { done: true, tracks: tracks.filter((t) => t.ready), probe: probeSummary },
         SUB_INVENTORY_TTL
       );
+      // Everything answered instantly, but some windows were sliced from
+      // partial coverage: top them up in the background. The response stays
+      // ready-only — the player never sees a spinner for this.
+      if (refills.length > 0) {
+        const refillJobId = crypto.randomBytes(16).toString('hex');
+        await setCache(subJobKey(refillJobId), { done: false, ready: {}, worker: SUB_WORKER_ID }, SUB_JOB_TTL);
+        void runSubtitleExtractionJob({
+          jobId: refillJobId,
+          inventoryKey,
+          pickedHash: pickedScope,
+          inputUrl,
+          probeSummary,
+          window: subtitleWindow,
+          pending: refills.map(({ s, i, file }) => ({ streamIndex: s.streamIndex, outPath: file, trackId: `${pickedScope}:${i}` })),
+        });
+      }
       return res.json({ success: true, data: { audio, tracks, note, jobId: null, probe: probeSummary } });
     }
 
