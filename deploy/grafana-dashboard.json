@@ -71,7 +71,7 @@
       "type": "stat",
       "targets": [
         {
-          "expr": "histogram_quantile(0.5, sum by (le) (rate(playback_time_to_first_frame_seconds_bucket{schema=\"latency-v2\"}[5m])))",
+          "expr": "histogram_quantile(0.5, sum by (le) (rate(playback_time_to_first_frame_seconds_bucket{schema=\"latency-v3\"}[5m])))",
           "legendFormat": "p50",
           "refId": "A",
           "datasource": {
@@ -112,7 +112,7 @@
         "type": "prometheus",
         "uid": "${DS_PROMETHEUS}"
       },
-      "description": "Chỉ dùng schema latency-v2. Phân vị là ước lượng từ histogram; chưa có mẫu mới thì chưa có dữ liệu. Cần xem số mẫu trước khi kết luận."
+      "description": "Chỉ dùng schema latency-v3. Phân vị là ước lượng từ histogram; chưa có mẫu mới thì chưa có dữ liệu. Cần xem số mẫu trước khi kết luận."
     },
     {
       "id": 2,
@@ -120,7 +120,7 @@
       "type": "stat",
       "targets": [
         {
-          "expr": "histogram_quantile(0.95, sum by (le) (rate(playback_seek_latency_seconds_bucket{schema=\"latency-v2\"}[5m])))",
+          "expr": "histogram_quantile(0.95, sum by (le) (rate(playback_seek_latency_seconds_bucket{schema=\"latency-v3\"}[5m])))",
           "legendFormat": "p95",
           "refId": "A",
           "datasource": {
@@ -161,7 +161,7 @@
         "type": "prometheus",
         "uid": "${DS_PROMETHEUS}"
       },
-      "description": "Chỉ dùng schema latency-v2. Phân vị là ước lượng từ histogram; chưa có mẫu mới thì chưa có dữ liệu. Cần xem số mẫu trước khi kết luận."
+      "description": "Chỉ dùng schema latency-v3. Phân vị là ước lượng từ histogram; chưa có mẫu mới thì chưa có dữ liệu. Cần xem số mẫu trước khi kết luận."
     },
     {
       "id": 3,
@@ -327,7 +327,7 @@
       "type": "timeseries",
       "targets": [
         {
-          "expr": "sum by (method) (rate(playback_seek_latency_seconds_sum{schema=\"latency-v2\"}[5m])) / sum by (method) (rate(playback_seek_latency_seconds_count{schema=\"latency-v2\"}[5m]))",
+          "expr": "sum by (method) (rate(playback_seek_latency_seconds_sum{schema=\"latency-v3\"}[5m])) / sum by (method) (rate(playback_seek_latency_seconds_count{schema=\"latency-v3\"}[5m]))",
           "legendFormat": "{{method}}",
           "refId": "A",
           "datasource": {
@@ -417,7 +417,7 @@
       },
       "targets": [
         {
-          "expr": "sum(increase(playback_time_to_first_frame_seconds_count{schema=\"latency-v2\"}[10m]))",
+          "expr": "sum(increase(playback_time_to_first_frame_seconds_count{schema=\"latency-v3\"}[10m]))",
           "refId": "A",
           "instant": true,
           "datasource": {
@@ -449,7 +449,7 @@
       },
       "targets": [
         {
-          "expr": "sum(increase(playback_seek_latency_seconds_count{schema=\"latency-v2\"}[10m]))",
+          "expr": "sum(increase(playback_seek_latency_seconds_count{schema=\"latency-v3\"}[10m]))",
           "refId": "A",
           "instant": true,
           "datasource": {

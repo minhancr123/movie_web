@@ -19,15 +19,18 @@ export const playbackResolveDuration = metric(promClient.Histogram, {
 });
 // Bump the schema whenever boundaries change; old workers/retained series must
 // never be summed into the same quantile as a different bucket layout.
-export const LATENCY_SCHEMA = 'latency-v2';
+export const LATENCY_SCHEMA = 'latency-v3';
+// A bucket can remain nonzero across a restart while its neighbours reset.
+// Separate process lifetimes before rate() so these partial resets cannot mix.
+export const METRICS_GENERATION = `${Date.now()}:${process.pid}`;
 const latencyBuckets = [0.1, 0.25, 0.5, 1, 2, 3, 4, 5, 6, 8, 10, 12, 15, 20, 25, 30, 45, 60, 90, 120, 180, 300];
 export const playbackFirstFrame = metric(promClient.Histogram, {
   name: 'playback_time_to_first_frame_seconds', help: 'Client request to first rendered video frame',
-  labelNames: ['source_type', 'schema'], buckets: latencyBuckets,
+  labelNames: ['source_type', 'schema', 'generation'], buckets: latencyBuckets,
 });
 export const playbackSeekLatency = metric(promClient.Histogram, {
   name: 'playback_seek_latency_seconds', help: 'Client seek intent to rendered frame',
-  labelNames: ['method', 'schema'], buckets: latencyBuckets,
+  labelNames: ['method', 'schema', 'generation'], buckets: latencyBuckets,
 });
 export const playbackSuccessTotal = metric(promClient.Counter, {
   name: 'playback_success_total', help: 'Client playback starts reaching a rendered frame', labelNames: ['source_type'],
@@ -45,7 +48,11 @@ export const playbackPlayedSeconds = metric(promClient.Counter, {
 export const playbackRebufferSeconds = metric(promClient.Counter, {
   name: 'playback_rebuffer_seconds_total', help: 'Client seconds stalled after first frame; excludes seeking and pausing',
 });
-for (const mode of ['direct', 'remux', 'downloading', 'other']) playbackSuccessTotal.inc({ source_type: mode }, 0);
+for (const mode of ['direct', 'remux', 'downloading', 'other']) {
+  playbackSuccessTotal.inc({ source_type: mode }, 0);
+  playbackFirstFrame.zero({ source_type: mode, schema: LATENCY_SCHEMA, generation: METRICS_GENERATION });
+  playbackSeekLatency.zero({ method: mode, schema: LATENCY_SCHEMA, generation: METRICS_GENERATION });
+}
 for (const code of ['resolve_error', 'client_media_error']) playbackFailureTotal.inc({ error_code: code }, 0);
 const sourceType = mode => ['direct', 'remux', 'downloading'].includes(mode) ? mode : 'other';
 const stageNames = new Set(['waiting_writer', 'detail', 'vietsub-lookup', 'yastream', 'vimo', 'sources', 'rank', 'reuse', 'prepare', 'link', 'probe', 'published', 'remux', 'buffer', 'warm', 'ready', 'error']);
@@ -87,9 +94,9 @@ export function metricsMiddleware(app) {
 export const recordPlaybackEvent = (session, event) => {
   const mode = sourceType(session.mode);
   if (event.type === 'first_frame') {
-    playbackFirstFrame.observe({ source_type: mode, schema: LATENCY_SCHEMA }, event.seconds);
+    playbackFirstFrame.observe({ source_type: mode, schema: LATENCY_SCHEMA, generation: METRICS_GENERATION }, event.seconds);
     playbackSuccessTotal.inc({ source_type: mode });
-  } else if (event.type === 'seek') playbackSeekLatency.observe({ method: mode, schema: LATENCY_SCHEMA }, event.seconds);
+  } else if (event.type === 'seek') playbackSeekLatency.observe({ method: mode, schema: LATENCY_SCHEMA, generation: METRICS_GENERATION }, event.seconds);
   else if (event.type === 'summary') {
     playbackPlayedSeconds.inc(event.playedSeconds);
     playbackRebufferSeconds.inc(event.stalledSeconds);

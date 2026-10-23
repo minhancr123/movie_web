@@ -2,12 +2,12 @@ groups:
   - name: cinevn-playback
     rules:
       - alert: CineVNFirstFrameSlow
-        expr: histogram_quantile(0.5, sum by (le) (rate(playback_time_to_first_frame_seconds_bucket{schema="latency-v2"}[10m]))) > 3 and sum(increase(playback_time_to_first_frame_seconds_count{schema="latency-v2"}[10m])) >= 10
+        expr: histogram_quantile(0.5, sum by (le) (rate(playback_time_to_first_frame_seconds_bucket{schema="latency-v3"}[10m]))) > 3 and sum(increase(playback_time_to_first_frame_seconds_count{schema="latency-v3"}[10m])) >= 10
         for: 10m
         labels: {severity: warning}
         annotations: {summary: "CineVN median first frame exceeds 3 seconds"}
       - alert: CineVNSeekSlow
-        expr: histogram_quantile(0.95, sum by (le) (rate(playback_seek_latency_seconds_bucket{schema="latency-v2"}[10m]))) > 8 and sum(increase(playback_seek_latency_seconds_count{schema="latency-v2"}[10m])) >= 10
+        expr: histogram_quantile(0.95, sum by (le) (rate(playback_seek_latency_seconds_bucket{schema="latency-v3"}[10m]))) > 8 and sum(increase(playback_seek_latency_seconds_count{schema="latency-v3"}[10m])) >= 10
         for: 10m
         labels: {severity: warning}
         annotations: {summary: "CineVN seek p95 exceeds 8 seconds"}

@@ -80,14 +80,14 @@ test('client metrics count measured frames, seek and rebuffer with event validat
   metrics.recordPlaybackEvent({mode:'direct'},{type:'seek',seconds:1});
   metrics.recordPlaybackEvent({mode:'direct'},{type:'summary',playedSeconds:20,stalledSeconds:2});
   const text=await metrics.register.metrics();
-  assert.match(text,/playback_time_to_first_frame_seconds_sum\{source_type="direct",schema="latency-v2"\} 2/);
-  assert.match(text,/playback_seek_latency_seconds_sum\{method="direct",schema="latency-v2"\} 1/);
+  assert.match(text,/playback_time_to_first_frame_seconds_sum\{source_type="direct",schema="latency-v3",generation="[0-9:]+"\} 2/);
+  assert.match(text,/playback_seek_latency_seconds_sum\{method="direct",schema="latency-v3",generation="[0-9:]+"\} 1/);
   assert.match(text,/playback_rebuffer_seconds_total 2/);
   const dashboard=JSON.parse(await fs.readFile(new URL('../../deploy/grafana-dashboard.json',import.meta.url),'utf8'));
   const queries = dashboard.panels.flatMap(panel => panel.targets || []).map(target => target.expr);
   assert.ok(queries.some(expr => /playback_time_to_first_frame_seconds_bucket/.test(expr)));
   for (const expr of queries.filter(expr => /playback_(time_to_first_frame|seek_latency)_seconds_/.test(expr))) {
-    assert.match(expr, /schema="latency-v2"/, 'never merge old histogram bucket schemas');
+    assert.match(expr, /schema="latency-v3"/, 'never merge old histogram bucket schemas');
   }
   const jsonMetrics = await metrics.register.getMetricsAsJSON();
   for (const name of ['playback_time_to_first_frame_seconds', 'playback_seek_latency_seconds']) {
@@ -95,7 +95,12 @@ test('client metrics count measured frames, seek and rebuffer with event validat
     const buckets = histogram.values.filter(value => value.metricName === name + '_bucket');
     assert.ok(buckets.length > 0);
     assert.ok(buckets.every(value => value.labels.schema === metrics.LATENCY_SCHEMA));
-    for (let i = 1; i < buckets.length; i++) assert.ok(buckets[i].value >= buckets[i - 1].value, 'cumulative buckets stay monotonic');
+    assert.ok(buckets.every(value => value.labels.generation === metrics.METRICS_GENERATION));
+    const groups = Map.groupBy(buckets, value => value.labels.source_type || value.labels.method);
+    for (const group of groups.values()) {
+      for (let i = 1; i < group.length; i++) assert.ok(group[i].value >= group[i - 1].value, 'cumulative buckets stay monotonic within a worker/mode');
+    }
+    assert.equal(groups.size, 4, 'zero series are exposed before the first client frame');
   }
 
   assert.ok(queries.some(expr => /up\{job="cinevn",site="lan"\}/.test(expr)), 'show ingestion health separately from absent viewing events');

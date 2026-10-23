@@ -55,3 +55,12 @@ initialization fragment. One existing cache copy was repaired and the session
 was preserved. No matching published copy was present. Diagnostic scripts and
 failed temporary repair artifacts were removed. Do not reuse a live FFmpeg
 argument vector without redirecting **every** output into an isolated folder.
+
+## Histogram follow-up
+
+The Cloud warning returned when two process lifetimes occurred within one rate
+window, even with identical bucket boundaries. Schema v3 adds a process-generation
+label, then aggregates rates across generations. Zero-valued series for all four
+modes are exposed before observations arrive. This also allows the first real
+observation after an initial scrape to contribute to increases. Dashboard and
+alert selectors migrate together to v3; older samples remain retained.
