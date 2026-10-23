@@ -632,6 +632,38 @@ const REMUX_JOIN_WAIT_MS = Math.max(
   Number(process.env.REMUX_JOIN_WAIT_MS) || 60_000,
 );
 
+/**
+ * A live writer already producing THIS rendition for ANY viewer, at a start
+ * position compatible with the request (within one bucket of it, or from the
+ * start of a freshly-bucketed writer). The newest wins.
+ */
+const findAdoptableWriter = async (db, renditionKey, requestedStartAt) => {
+  const rows = await db.collection('playback_sessions')
+    .find({
+      renditionKey: String(renditionKey),
+      mode: 'remux',
+      publishedRenditionId: { $in: [null, ''] },
+      sessionId: { $ne: sessionId },
+      expiresAt: { $gt: new Date() },
+    })
+    .project({ sessionId: 1, startAt: 1, windowSeconds: 1, createdAt: 1, _id: 0 })
+    .sort({ createdAt: -1 })
+    .limit(10)
+    .toArray()
+    .catch(() => []);
+  for (const row of rows) {
+    const origin = Number(row.startAt) || 0;
+    const compatible = requestedStartAt === 0
+      ? origin <= 120
+      : Math.abs(origin - requestedStartAt) <= 120;
+    if (!compatible) continue;
+    try {
+      if (isRemuxSessionLive(row.sessionId)) return row;
+    } catch { /* not live in this process */ }
+  }
+  return null;
+};
+
 const hasLiveRenditionWriter = async (db, renditionKey, excludeSessionId) => {
   const rows = await db.collection('playback_sessions')
     .find({
@@ -2244,6 +2276,93 @@ export const resolvePlayback = async (req, res) => {
         return await servePublished();
       }
 
+      // Cross-viewer adoption: another viewer's writer is already producing
+      // these exact bytes. Join it instead of spawning a duplicate ffmpeg
+      // (2x CPU/disk/upstream on the box, and the second writer used to push
+      // the writer ceiling over the edge). Falls through to a normal spawn
+      // when the writer dies before it becomes servable.
+      if (!switchSignal.aborted) {
+        const adoptable = await findAdoptableWriter(db, renditionKey, requestedStartAt);
+        if (adoptable) {
+          const adoptedId = adoptable.sessionId;
+          const adoptedOrigin = Number(adoptable.startAt) || 0;
+          const adoptedWindow = Number(adoptable.windowSeconds) || 0;
+          stage('adopt-writer', attemptTag);
+          const adoptDeadline = Date.now() + 30_000;
+          let servable = false;
+          while (Date.now() < adoptDeadline) {
+            throwIfSuperseded();
+            if (await findPublishedRendition(db, renditionKey)) {
+              return await servePublished();
+            }
+            if (!isRemuxSessionLive(adoptedId)) break;
+            const adoptState = await readPlaylistState(adoptedId);
+            if (hasPlayableBuffer(adoptState, playlistMinForStartAt(startAt))) { servable = true; break; }
+            await new Promise((resolveSleep) => setTimeout(resolveSleep, 500));
+          }
+          if (servable) {
+            registerAdoptedViewer(adoptedId, String(req.user.userId));
+            await saveSession(db, {
+              sessionId,
+              userId: toObjectIdOrRaw(req.user.userId),
+              userIdStr: String(req.user.userId),
+              provider: PROVIDER,
+              contentRef: detail.contentRef,
+              mediaType: type,
+              tmdbId,
+              season,
+              episode,
+              imdbId: detail.imdbId,
+              infoHash: String(candidate.infoHash).toLowerCase(),
+              torrentId: prepared.torrentId,
+              fileId: file.fileId,
+              sourceFileName: file.name || '',
+              fileName: publicFileName(file.name || ''),
+              videoHash: fileHash?.videoHash ?? null,
+              videoSize: fileHash?.videoSize ?? null,
+              runtimeMinutes,
+              durationSeconds: fullDurationSeconds,
+              videoCodec: probe.video?.codec || null,
+              mode: 'remux',
+              adoptedFromSessionId: adoptedId,
+              renditionKey,
+              remuxBuild: REMUX_BUILD,
+              presentationShiftMs: shiftMs,
+              audioIndex: decision.audioIndex ?? 0,
+              progress: 100,
+              startAt: adoptedOrigin,
+              windowSeconds: adoptedWindow,
+              playlistUrl: `/api/playback/hls/${adoptedId}/index.m3u8`,
+              candidate: sanitizeCandidateForResponse(candidate),
+            });
+            console.warn(`resolvePlayback adopted writer session=${sessionId} from=${adoptedId} tmdb=${tmdbId}`);
+            return res.json({
+              success: true,
+              data: {
+                mode: 'remux',
+                videoAction,
+                audioAction,
+                sessionId,
+                playlistUrl: `/api/playback/hls/${adoptedId}/index.m3u8`,
+                durationSeconds: fullDurationSeconds,
+                reason: publicText('Đang phát chung bản đang tạo', 'Đang phát'),
+                fileName: publicFileName(file.name || ''),
+                audioIndex: decision.audioIndex ?? 0,
+                startOffset: adoptedOrigin,
+                windowSeconds: adoptedWindow,
+                requestedPositionSeconds: requestedStartAt,
+                seekStartSupported: seekStartEnabled(),
+                presentationShiftMs: shiftMs,
+                sourceToken: resolveSourceToken(candidate),
+                warmingUp: false,
+                startupTargetSeconds: startupBufferForStartAt(startAt),
+                candidate: sanitizeCandidateForResponse(candidate),
+              },
+            });
+          }
+        }
+      }
+
       // Remux: ffmpeg reads the URL in-process; the URL itself stays in memory.
       let warmingUp = false;
       let startupTargetSeconds = startupBufferForStartAt(startAt);
@@ -3779,6 +3898,22 @@ export const getPlaybackSession = async (req, res) => {
     // A remux still filling its head start reports how far along it is, so the
     // client can show progress that means something instead of a spinner.
     if (session.mode === 'remux') {
+      // Flip to the stable shared rendition as soon as it publishes —
+      // adopted sessions included; from then on B's own row vouches for
+      // the r-URL like any normal session.
+      if (!session.publishedRenditionId && session.renditionKey) {
+        const pubNow = await findPublishedRendition(db, session.renditionKey);
+        if (pubNow) {
+          await db.collection('playback_sessions').updateOne(
+            { _id: session._id },
+            { $set: { publishedRenditionId: session.renditionKey, updatedAt: new Date() } },
+          ).catch(() => {});
+          session.publishedRenditionId = session.renditionKey;
+        }
+      }
+      // Adopted sessions read writer/playlist state from the session whose
+      // bytes they share, while keeping their own identity in responses.
+      const effectiveSessionId = session.adoptedFromSessionId || session.sessionId;
       // Published sessions point at immutable finished bytes: always ready,
       // no writer to health-check. If the bytes were evicted since resolve,
       // say so plainly and the client's stall recovery starts a fresh remux.
@@ -3805,13 +3940,13 @@ export const getPlaybackSession = async (req, res) => {
           },
         });
       }
-      const state = await readPlaylistState(session.sessionId);
+      const state = await readPlaylistState(effectiveSessionId);
       const buffered = Math.round(state.duration || 0);
-      const live = getRemuxSession(session.sessionId);
+      const live = getRemuxSession(effectiveSessionId);
       let ageMs = Number.POSITIVE_INFINITY;
       if (state.exists) {
         try {
-          ageMs = Date.now() - (await fs.stat(sessionPath(session.sessionId, 'index.m3u8'))).mtimeMs;
+          ageMs = Date.now() - (await fs.stat(sessionPath(effectiveSessionId, 'index.m3u8'))).mtimeMs;
         } catch {
           ageMs = Number.POSITIVE_INFINITY;
         }
@@ -3836,7 +3971,7 @@ export const getPlaybackSession = async (req, res) => {
         // An ffmpeg child may stay alive after its upstream socket wedges.
         // Killing it here ensures the client's automatic re-resolve can create
         // a genuinely new writer instead of reconnecting to frozen bytes.
-        await stopRemuxSession(session.sessionId);
+        await stopRemuxSession(effectiveSessionId);
       }
       return res.json({
         success: true,
@@ -3965,6 +4100,7 @@ export const heartbeatPlaybackSession = async (req, res) => {
       return fail(res, 403, 'Không có quyền truy cập phiên phát này');
     }
     registerSessionViewer(sessionId, viewerId);
+    if (session?.adoptedFromSessionId) registerSessionViewer(playbackSession.adoptedFromSessionId, viewerId);
     // A published session serves shared immutable bytes: pin its rendition
     // with the same lease so budget eviction cannot delete what is playing.
     // Live remux rows carry renditionKey (not publishedRenditionId), so fall
@@ -4001,6 +4137,7 @@ export const leavePlaybackSession = async (req, res) => {
       return fail(res, 403, 'Không có quyền truy cập phiên phát này');
     }
     const remaining = removeSessionViewer(sessionId, viewerId);
+    if (session?.adoptedFromSessionId) removeSessionViewer(playbackSession.adoptedFromSessionId, viewerId);
     const leaveRenditionId = session.publishedRenditionId || session.renditionKey;
     if (leaveRenditionId) unpinRenditionViewer(leaveRenditionId, viewerId);
     return res.json({ success: true, data: { ok: true, remaining } });
@@ -4224,6 +4361,35 @@ const findSessionRowCached = async (sessionId) => {
 export const invalidateSessionRowCache = (sessionId) =>
   sessionRowCache.delete(String(sessionId || '').toLowerCase());
 
+// Cross-viewer remux adoption registry: viewer B resolved while viewer A's
+// writer was mid-flight for the SAME rendition, so B is entitled to A's
+// segment bytes (same content, access was authenticated at resolve). keyed
+// by the adopted session id; expires with the session TTL. A backend restart
+// empties it — writers die on restart anyway, so adopted players recover by
+// re-resolving, which re-adopts or spawns.
+const adoptedViewers = new Map();
+const ADOPTION_TTL_MS = 6 * 60 * 60 * 1000;
+const registerAdoptedViewer = (adoptedSessionId, userIdStr) => {
+  const key = String(adoptedSessionId || '').toLowerCase();
+  if (!key || !userIdStr) return;
+  let set = adoptedViewers.get(key);
+  if (!set) { set = new Map(); adoptedViewers.set(key, set); }
+  set.set(String(userIdStr), Date.now() + ADOPTION_TTL_MS);
+  if (adoptedViewers.size > 512) {
+    for (const [k, v] of adoptedViewers) {
+      if (![...v.values()].some((exp) => exp > Date.now())) adoptedViewers.delete(k);
+    }
+  }
+};
+const hasAdoptedViewer = (sessionId, userIdStr) => {
+  const set = adoptedViewers.get(String(sessionId || '').toLowerCase());
+  if (!set) return false;
+  const exp = set.get(String(userIdStr));
+  if (!exp) return false;
+  if (exp < Date.now()) { set.delete(String(userIdStr)); return false; }
+  return true;
+};
+
 /**
  * Stable session grant for manifest responses (P2-url-stability).
  *
@@ -4265,7 +4431,8 @@ export const serveHlsAsset = async (req, res) => {
       if (req.mediaGrant.sessionId !== sessionId.toLowerCase()) {
         return fail(res, 403, 'Không có quyền truy cập phiên phát này');
       }
-    } else if (!req.user || !isSessionOwner(session, req.user.userId)) {
+    } else if (!req.user || (!isSessionOwner(session, req.user.userId)
+        && !hasAdoptedViewer(sessionId, req.user.userId))) {
       return fail(res, 403, 'Không có quyền truy cập phiên phát này');
     }
     // Expiry is checked BEFORE the published-rendition shortcut below: an

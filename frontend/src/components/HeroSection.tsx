@@ -107,8 +107,15 @@ const HeroSection = ({ movies }: HeroSectionProps) => {
               }}
             >
               {shouldRenderImage ? (
-                <Image
-                  src={backgroundUrl}
+                <>
+                  <img
+                    src={backgroundUrl.replace('w1280', 'w300').replace('w780', 'w300').replace('original', 'w300')}
+                    alt=""
+                    aria-hidden="true"
+                    className="absolute inset-0 h-full w-full scale-110 object-cover blur-xl"
+                  />
+                  <Image
+                    src={backgroundUrl}
                   alt={movie.name}
                   fill
                   className="object-cover object-center"
@@ -116,6 +123,7 @@ const HeroSection = ({ movies }: HeroSectionProps) => {
                   loading={index === 0 ? undefined : 'lazy'}
                   sizes="100vw"
                 />
+                </>
               ) : null}
 
               {/* Cinematic Vignette Overlay */}

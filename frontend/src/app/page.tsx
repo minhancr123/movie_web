@@ -7,6 +7,7 @@ import ContinueWatchingRow from '@/components/ContinueWatchingRow';
 import HeroSection from '@/components/HeroSection';
 import RecommendationsRow from '@/components/RecommendationsRow';
 import SpatialShader from '@/components/SpatialShader';
+import SurpriseMe from '@/components/SurpriseMe';
 
 /**
  * HeroSection still speaks the legacy Movie shape. Rather than rewrite its
@@ -61,13 +62,14 @@ export default async function Home() {
           <RecommendationsRow />
         </div>
 
-      <div className="mt-8 mb-6 flex items-end justify-between gap-4">
+      <div className="mt-8 mb-6 flex flex-wrap items-end justify-between gap-4">
         <div className="border-l-4 border-amber-primary pl-3">
           <span className="font-mono text-label-md uppercase text-amber-gold">Tuyển chọn hôm nay</span>
           <h1 className="font-syne text-headline-md md:text-headline-xl text-white">
             Thịnh hành tuần này
           </h1>
         </div>
+        <SurpriseMe items={[...trending, ...popularMovies, ...popularTv]} />
       </div>
 
       <div className="grid grid-cols-2 md:grid-cols-4 lg:grid-cols-5 gap-4 md:gap-6">

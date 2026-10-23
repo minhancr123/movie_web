@@ -123,6 +123,13 @@ export default function CatalogCard({ item, priority = false }: CatalogCardProps
     >
       <div className="relative aspect-[2/3] w-full bg-surface-container">
         {item.poster ? (
+          <>
+          <img
+            src={item.poster.replace('/w500/', '/w92/')}
+            alt=""
+            aria-hidden="true"
+            className="absolute inset-0 h-full w-full scale-110 object-cover blur-xl"
+          />
           <Image
             src={item.poster}
             alt={item.title}
@@ -131,6 +138,7 @@ export default function CatalogCard({ item, priority = false }: CatalogCardProps
             sizes="(max-width: 768px) 45vw, (max-width: 1200px) 22vw, 260px"
             className="poster-img object-cover transition-transform duration-500"
           />
+          </>
         ) : (
           <div className="flex h-full w-full items-center justify-center px-3 text-center text-body-sm text-cinema-subtle">
             {item.title}
