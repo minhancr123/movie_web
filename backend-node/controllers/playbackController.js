@@ -26,7 +26,6 @@ import { cached, getCache, setCache, CACHE_TTL } from '../config/redis.js';
 import { isMediaType, buildContentRef } from '../services/contentRef.js';
 import * as tmdb from '../services/tmdb.js';
 import {
-  getStreamCandidates,
   getSubtitleCandidates,
   subtitleVariantLabel,
   releaseNamesMatch,
@@ -35,10 +34,12 @@ import {
 import { toVttDocument, UPLOAD_MAX_PER_TITLE } from '../services/playback/userSubtitles.js';
 import * as torbox from '../services/debrid/torbox.js';
 import { DebridError } from '../services/debrid/torbox.js';
-import { rankCandidates, normalizeCapabilities } from '../services/playback/sourceRanker.js';
+import { normalizeCapabilities } from '../services/playback/sourceRanker.js';
+import { getStreamCandidates, rankPlaybackCandidates as rankCandidates } from '../services/playback/orchestrator.js';
 import { selectDiverseSources, selectReuseCandidates, prioritizeDiskFitSources } from '../services/playback/sourcePicker.js';
 import {
   ffprobe,
+  checkHttpRange,
   decidePlaybackMode,
   preferredAudioIndex,
   presentationShiftMs,
@@ -1790,8 +1791,22 @@ export const resolvePlayback = async (req, res) => {
       // reject keeps its type (422 + code) instead of flattening to a plain
       // error. One coordination point for resolve/seek/recovery/audio-switch
       // (they all loop here) and for the unit test below.
+      // Only direct candidates need this extra request. Cache by immutable
+      // file + CDN origin; signed URLs are never stored in this key or value.
+      let upstreamRangeSupported;
+      if (decidePlaybackMode(probe, caps, audioIdx, { videoTranscode, contentLanguage: detail?.originalLanguage }).mode === 'direct') {
+        const originScope = crypto.createHash('sha256').update(new URL(inputUrl).origin).digest('hex').slice(0, 16);
+        const rangeKey = `playback:range:v1:${fileIdentity(candidate.infoHash, file.fileId)}:${originScope}`;
+        let range = await getCache(rangeKey);
+        if (!range) {
+          range = await checkHttpRange(inputUrl);
+          await setCache(rangeKey, { supported: range.supported }, range.supported ? 3600 : 30);
+        }
+        upstreamRangeSupported = range.supported === true;
+      }
       const lan = isLanClient(req);
       const { decision, delivery, rejected } = planCandidateDelivery({
+        upstreamRangeSupported,
         probe,
         caps,
         audioIdx,

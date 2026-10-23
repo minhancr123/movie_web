@@ -1,4 +1,6 @@
 import express from 'express';
+import { observePlaybackResolve } from '../services/observability/metrics.js';
+import { playbackTelemetry } from '../controllers/playbackTelemetryController.js';
 import { getPlaybackTimeline, getPlaybackThumbnail } from '../controllers/playbackExtrasController.js';
 import { rateLimit } from '../middleware/rateLimit.js';
 import {
@@ -52,7 +54,8 @@ router.use(authMiddleware);
 router.get('/session/:sessionId/timeline', playbackPollRateLimit, getPlaybackTimeline);
 router.get('/session/:sessionId/thumbnail', rateLimit({ max: 45, keyPrefix: 'rl:seek-thumbnail' }), getPlaybackThumbnail);
 
-router.post('/resolve', playbackRateLimit, resolvePlayback);
+router.post('/resolve', playbackRateLimit, observePlaybackResolve, resolvePlayback);
+router.post('/session/:sessionId/telemetry', rateLimit({ max: 30, keyPrefix: 'rl:telemetry' }), playbackTelemetry);
 router.post('/prewarm', playbackRateLimit, prewarmPlayback);
 router.post('/preload', playbackRateLimit, preloadPlayback);
 router.post('/sources', playbackRateLimit, listPlaybackSources);

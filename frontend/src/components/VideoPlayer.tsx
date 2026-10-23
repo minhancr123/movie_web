@@ -12,6 +12,7 @@ import {
 import { useWatchHistory } from '../hooks/useLocalStorage';
 import { playbackAPI, apiUrl } from '@/lib/api';
 import { detectCapabilities } from '@/lib/capabilities';
+import { PlaybackClock, sendPlaybackEvent } from '@/lib/playback-telemetry';
 import {
     fetchCues, activeCues,
     isEmbeddedTrack, trackSource, isViTrack, isEnTrack, isReadyTrack,
@@ -41,6 +42,7 @@ const subLangName = (code: string) => SUB_LANG_NAMES[code.toLowerCase()] || `Phá
 
 interface VideoPlayerProps {
     src: string;
+    playbackStartedAt?: number | null;
     /**
      * Bearer token for backend-hosted HLS assets (/api/playback/hls/...).
      * The backend re-checks session ownership on every segment, so the player
@@ -164,7 +166,7 @@ interface VideoPlayerProps {
     fullscreenTargetRef?: React.RefObject<HTMLDivElement | null>;
 }
 
-export default function VideoPlayer({ src, movie, episode, authToken, durationSeconds, onNextEpisode, nextEpisodeLabel, suspended = false, subContext, onPickAudio, activeAudioIndex, pendingAudioIndex = null, onPlaybackFailure, onUnplayableSource, reloadKey = 0, onPlaybackProgress, presentationShiftMs = 0, seekStartSupported = true, sessionReused = false, onDecodeOverload, onCinemaChange, onVideoReady, fullscreenTargetRef, startAt = 0, targetAt = null, onSeekToPosition, onCancelSeek, seekProgress = null, windowSeconds = 0, onPrepareWindow }: VideoPlayerProps) {
+export default function VideoPlayer({ src, playbackStartedAt, movie, episode, authToken, durationSeconds, onNextEpisode, nextEpisodeLabel, suspended = false, subContext, onPickAudio, activeAudioIndex, pendingAudioIndex = null, onPlaybackFailure, onUnplayableSource, reloadKey = 0, onPlaybackProgress, presentationShiftMs = 0, seekStartSupported = true, sessionReused = false, onDecodeOverload, onCinemaChange, onVideoReady, fullscreenTargetRef, startAt = 0, targetAt = null, onSeekToPosition, onCancelSeek, seekProgress = null, windowSeconds = 0, onPrepareWindow }: VideoPlayerProps) {
     const videoRef = useRef<HTMLVideoElement>(null);
     const containerRef = useRef<HTMLDivElement>(null);
 
@@ -416,6 +418,8 @@ export default function VideoPlayer({ src, movie, episode, authToken, durationSe
     // In-flight far-seek target (display seconds). Declared up here because
     // togglePlay (below) reads it; the debounced fire effect lives further
     // down next to handleSeek.
+    const telemetrySeekAt = useRef<number | null>(null);
+    const telemetryClock = useRef<PlaybackClock | null>(null);
     const [seekTarget, setSeekTarget] = useState<number | null>(null);
     const seekTargetRef = useRef<number | null>(null);
     const seekResumeIntentRef = useRef(false);
@@ -424,6 +428,8 @@ export default function VideoPlayer({ src, movie, episode, authToken, durationSe
     const preparedWindowRef = useRef<string>('');
     const beginSeekLock = (at: number, resume?: boolean) => {
         if (suspended) return;
+        telemetrySeekAt.current ??= performance.now();
+        telemetryClock.current?.seek();
         setEpisodeEnded(false);
         if (seekTargetRef.current === null) seekResumeIntentRef.current = resume ?? !videoRef.current?.paused;
         seekIntentSerialRef.current += 1;
@@ -467,23 +473,46 @@ export default function VideoPlayer({ src, movie, episode, authToken, durationSe
      * compared against this instead of re-guessed. Re-arms on every src change
      * because a recovery replaces the stream under the same element.
      */
-    const firstFrameAtRef = useRef<number | null>(null);
     useEffect(() => {
-        firstFrameAtRef.current =
-            typeof performance !== 'undefined' ? performance.now() : null;
-    }, [src, reloadKey]);
-    const reportTimeToFirstFrame = (video: HTMLVideoElement) => {
-        const startedAt = firstFrameAtRef.current;
-        if (startedAt === null || firstFrameAtRef.current === undefined) return;
-        // One report per source.
-        firstFrameAtRef.current = null;
-        const seconds = (performance.now() - startedAt) / 1000;
-        console.info(
-            `[ttff] ${seconds.toFixed(2)}s readyState=${video.readyState} ` +
-            `buffered=${video.buffered.length ? video.buffered.end(0).toFixed(1) : '0'}s ` +
-            `src=${String(src).slice(0, 120)}`
-        );
-    };
+        const video = videoRef.current;
+        const sessionId = subContext?.playbackSessionId;
+        if (!video || !sessionId || !authToken) return;
+        const url = apiUrl(`/api/playback/session/${encodeURIComponent(sessionId)}/telemetry`);
+        const clock = new PlaybackClock(() => performance.now(), event => sendPlaybackEvent(url, authToken, event),
+            playbackStartedAt ?? performance.now(), telemetrySeekAt.current);
+        telemetryClock.current = clock;
+        let callback: number | null = null;
+        const frame = () => {
+            if (callback !== null) return;
+            const done = () => {
+                callback = null;
+                if (video.seeking) return; // seeked/playing will request the destination frame.
+                clock.frame(video.paused); telemetrySeekAt.current = null;
+            };
+            if (typeof video.requestVideoFrameCallback === 'function') callback = video.requestVideoFrameCallback(done);
+            else if (video.readyState >= 2) done();
+        };
+        const play = () => clock.resume();
+        const pause = () => clock.pause();
+        const waiting = () => { if (!video.paused) clock.wait(); };
+        const seeking = () => { if (telemetrySeekAt.current !== null) clock.seek(); };
+        const error = () => clock.error();
+        const events: Array<[string, () => void]> = [['play', play], ['pause', pause], ['waiting', waiting],
+            ['playing', frame], ['loadeddata', frame], ['seeked', frame], ['seeking', seeking], ['error', error]];
+        events.forEach(([event, fn]) => video.addEventListener(event, fn));
+        const timer = setInterval(() => clock.flush(), 30_000);
+        const flush = () => clock.flush();
+        window.addEventListener('pagehide', flush);
+        return () => {
+            clearInterval(timer); window.removeEventListener('pagehide', flush);
+            events.forEach(([event, fn]) => video.removeEventListener(event, fn));
+            if (callback !== null) video.cancelVideoFrameCallback?.(callback);
+            clock.flush(); if (telemetryClock.current === clock) telemetryClock.current = null;
+        };
+        // A pending resolve may change its timestamp while the previous source
+        // still plays. Re-arm only when that source/session actually changes.
+        // eslint-disable-next-line react-hooks/exhaustive-deps
+    }, [src, reloadKey, subContext?.playbackSessionId, authToken]);
 
     /** Restart hls.js once before replacing the server-side remux. The two
         deadlines still total 20s, but a recoverable loader stall gets nudged
@@ -1723,7 +1752,6 @@ export default function VideoPlayer({ src, movie, episode, authToken, durationSe
                 loadingTimeoutRef.current = undefined;
             }
             setIsLoading(false);
-            reportTimeToFirstFrame(video);
         };
         const handleCanPlay = () => {
             armStallTimer();
@@ -1997,6 +2025,8 @@ export default function VideoPlayer({ src, movie, episode, authToken, durationSe
 
     const seekToAbsolute = (raw: number) => {
         if (suspended) return;
+        telemetrySeekAt.current = performance.now();
+        telemetryClock.current?.seek();
         setEpisodeEnded(false);
         const video = videoRef.current;
         if (!video) return;

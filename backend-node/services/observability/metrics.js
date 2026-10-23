@@ -1,85 +1,94 @@
 import promClient from 'prom-client';
+import { getResolveTimings, finishResolveStages } from '../playback/resolveProgress.js';
+import { writerSlotStatus } from '../playback/remuxService.js';
 
-const Registry = promClient.Registry;
-const register = new Registry();
-
+export const register = new promClient.Registry();
 promClient.collectDefaultMetrics({ register });
-
-export const httpDuration = new promClient.Histogram({
-  name: 'http_request_duration_seconds',
-  help: 'Duration of HTTP requests in seconds',
-  labelNames: ['method', 'route', 'status_code'],
-  buckets: [0.1, 0.5, 1, 2, 5],
+const metric = (Class, options) => new Class({ ...options, registers: [register] });
+export const httpDuration = metric(promClient.Histogram, {
+  name: 'http_request_duration_seconds', help: 'HTTP request duration; route templates only',
+  labelNames: ['method', 'route', 'status_code'], buckets: [0.1, 0.5, 1, 2, 5, 15, 60, 120],
 });
-register.registerMetric(httpDuration);
-
-export const queueDepth = new promClient.Gauge({
-  name: 'job_queue_depth',
-  help: 'Number of jobs currently in the queue',
+export const remuxActiveCount = metric(promClient.Gauge, {
+  name: 'remux_active_count', help: 'Active remux writers',
+  collect() { this.set(writerSlotStatus().active ?? 0); },
 });
-register.registerMetric(queueDepth);
-
-export const remuxActiveCount = new promClient.Gauge({
-  name: 'remux_active_count',
-  help: 'Number of active remux processes',
+export const playbackResolveDuration = metric(promClient.Histogram, {
+  name: 'playback_resolve_duration_seconds', help: 'Server resolve duration, not client first frame',
+  labelNames: ['status', 'source_type'], buckets: [0.5, 1, 2, 3, 5, 8, 15, 30, 60, 120],
 });
-register.registerMetric(remuxActiveCount);
-
-// --- Playback observability metrics ---
-
-export const playbackResolveDuration = new promClient.Histogram({
-  name: 'playback_resolve_duration_seconds',
-  help: 'Duration of playback resolve in seconds',
-  labelNames: ['status', 'source_type'],
-  buckets: [1, 2, 5, 10, 30, 60, 120],
+const latencyBuckets = [0.1, 0.25, 0.5, 1, 2, 3, 4, 5, 8, 15, 30, 60, 120, 300];
+export const playbackFirstFrame = metric(promClient.Histogram, {
+  name: 'playback_time_to_first_frame_seconds', help: 'Client request to first rendered video frame',
+  labelNames: ['source_type'], buckets: latencyBuckets,
 });
-register.registerMetric(playbackResolveDuration);
-
-export const playbackSeekLatency = new promClient.Histogram({
-  name: 'playback_seek_latency_seconds',
-  help: 'Latency of seek operations in seconds',
-  labelNames: ['method'], // 'direct' | 'remux' | 'hls_fallback'
-  buckets: [0.5, 1, 2, 4, 8, 15, 30],
+export const playbackSeekLatency = metric(promClient.Histogram, {
+  name: 'playback_seek_latency_seconds', help: 'Client seek intent to rendered frame',
+  labelNames: ['method'], buckets: latencyBuckets,
 });
-register.registerMetric(playbackSeekLatency);
-
-export const playbackSuccessTotal = new promClient.Counter({
-  name: 'playback_success_total',
-  help: 'Total successful playback sessions',
-  labelNames: ['source_type'],
+export const playbackSuccessTotal = metric(promClient.Counter, {
+  name: 'playback_success_total', help: 'Client playback starts reaching a rendered frame', labelNames: ['source_type'],
 });
-register.registerMetric(playbackSuccessTotal);
-
-export const playbackFailureTotal = new promClient.Counter({
-  name: 'playback_failure_total',
-  help: 'Total failed playback sessions',
-  labelNames: ['error_code'],
+export const playbackFailureTotal = metric(promClient.Counter, {
+  name: 'playback_failure_total', help: 'Failed resolve or client playback', labelNames: ['error_code'],
 });
-register.registerMetric(playbackFailureTotal);
-
-export const playbackStageDuration = new promClient.Histogram({
-  name: 'playback_stage_duration_seconds',
-  help: 'Duration of individual resolve stages in seconds',
-  labelNames: ['stage'],
-  buckets: [0.1, 0.5, 1, 2, 5, 10, 30],
+export const playbackStageDuration = metric(promClient.Histogram, {
+  name: 'playback_stage_duration_seconds', help: 'Completed server resolve stages',
+  labelNames: ['stage'], buckets: [0.1, 0.5, 1, 2, 5, 10, 30, 60, 120],
 });
-register.registerMetric(playbackStageDuration);
-
-export const playbackRebufferRatio = new promClient.Gauge({
-  name: 'playback_rebuffer_ratio',
-  help: 'Current rebuffer ratio across active sessions',
+export const playbackPlayedSeconds = metric(promClient.Counter, {
+  name: 'playback_played_seconds_total', help: 'Client wall-clock seconds actively playing',
 });
-register.registerMetric(playbackRebufferRatio);
-
-export function metricsMiddleware(app) {
-  app.get('/metrics', async (req, res) => {
-    try {
-      res.set('Content-Type', register.contentType);
-      res.end(await register.metrics());
-    } catch (ex) {
-      res.status(500).end(ex);
+export const playbackRebufferSeconds = metric(promClient.Counter, {
+  name: 'playback_rebuffer_seconds_total', help: 'Client seconds stalled after first frame; excludes seeking and pausing',
+});
+for (const mode of ['direct', 'remux', 'downloading', 'other']) playbackSuccessTotal.inc({ source_type: mode }, 0);
+for (const code of ['resolve_error', 'client_media_error']) playbackFailureTotal.inc({ error_code: code }, 0);
+const sourceType = mode => ['direct', 'remux', 'downloading'].includes(mode) ? mode : 'other';
+const stageNames = new Set(['waiting_writer', 'detail', 'vietsub-lookup', 'yastream', 'vimo', 'sources', 'rank', 'reuse', 'prepare', 'link', 'probe', 'published', 'remux', 'buffer', 'ready', 'error']);
+export const observePlaybackResolve = (req, res, next) => {
+  const started = performance.now();
+  let mode = 'other';
+  const json = res.json;
+  res.json = function(body) { mode = sourceType(body?.data?.mode); return json.call(this, body); };
+  res.once('finish', () => {
+    const status = res.statusCode >= 400 ? 'error' : res.statusCode === 202 ? 'pending' : 'success';
+    playbackResolveDuration.observe({ status, source_type: mode }, Math.max(0, performance.now() - started) / 1000);
+    if (status === 'error') playbackFailureTotal.inc({ error_code: 'resolve_error' });
+    if (finishResolveStages(req.body?.resolveId)) {
+      for (const timing of getResolveTimings(req.body.resolveId)?.stages || []) {
+        playbackStageDuration.observe({ stage: stageNames.has(timing.stage) ? timing.stage : 'other' }, timing.durationMs / 1000);
+      }
     }
   });
+  next();
+};
+export const observeHttp = (req, res, next) => {
+  const started = performance.now();
+  res.once('finish', () => httpDuration.observe({
+    method: ['GET', 'POST', 'PUT', 'PATCH', 'DELETE', 'HEAD', 'OPTIONS'].includes(req.method) ? req.method : 'OTHER',
+    route: req.route?.path || 'unmatched', status_code: String(res.statusCode),
+  }, Math.max(0, performance.now() - started) / 1000));
+  next();
+};
+export function metricsMiddleware(app) {
+  app.get('/metrics', async (req, res, next) => {
+    // req.ip honors only the configured trusted proxy hop. Public Nginx also
+    // blocks this path; Prometheus on the host scrapes loopback directly.
+    if (!['127.0.0.1', '::1', '::ffff:127.0.0.1'].includes(req.ip)) return res.sendStatus(404);
+    res.set('Cache-Control', 'no-store');
+    res.set('Content-Type', register.contentType);
+    try { res.end(await register.metrics()); } catch (error) { next(error); }
+  });
 }
-
-export { register };
+export const recordPlaybackEvent = (session, event) => {
+  const mode = sourceType(session.mode);
+  if (event.type === 'first_frame') {
+    playbackFirstFrame.observe({ source_type: mode }, event.seconds);
+    playbackSuccessTotal.inc({ source_type: mode });
+  } else if (event.type === 'seek') playbackSeekLatency.observe({ method: mode }, event.seconds);
+  else if (event.type === 'summary') {
+    playbackPlayedSeconds.inc(event.playedSeconds);
+    playbackRebufferSeconds.inc(event.stalledSeconds);
+  } else if (event.type === 'error') playbackFailureTotal.inc({ error_code: 'client_media_error' });
+};

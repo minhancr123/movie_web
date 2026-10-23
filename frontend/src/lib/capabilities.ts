@@ -41,14 +41,14 @@ export async function probeDecodingInfo(
   bitrate: number,
   framerate: number = 30,
 ): Promise<DecodingProbeResult> {
-  const fallback: DecodingProbeResult = { supported: true, smooth: true, powerEfficient: true };
+  const fallback: DecodingProbeResult = { supported: false, smooth: false, powerEfficient: false };
 
   if (typeof window === 'undefined' || !('mediaCapabilities' in navigator)) {
     return fallback;
   }
 
   try {
-    const result = await (navigator as any).mediaCapabilities.decodingInfo({
+    const result = await Promise.race([(navigator as any).mediaCapabilities.decodingInfo({
       type: 'media-source',
       video: {
         contentType,
@@ -57,12 +57,12 @@ export async function probeDecodingInfo(
         bitrate,
         framerate,
       },
-    });
-
+    }), new Promise<null>(resolve => setTimeout(() => resolve(null), 250))]);
+    if (!result) return fallback;
     return {
-      supported: result.supported ?? true,
-      smooth: result.smooth ?? true,
-      powerEfficient: result.powerEfficient ?? true,
+      supported: result.supported === true,
+      smooth: result.smooth === true,
+      powerEfficient: result.powerEfficient === true,
     };
   } catch {
     return fallback;
@@ -77,7 +77,7 @@ export async function probeSmoothMaxHeight(
   bitratePerHeight: Record<number, number> = { 1080: 5_000_000, 1440: 8_000_000, 2160: 15_000_000 },
 ): Promise<number> {
   if (typeof window === 'undefined' || !('mediaCapabilities' in navigator)) {
-    return 1080;
+    return 0;
   }
 
   const heights = [2160, 1440, 1080].sort((a, b) => b - a);
@@ -89,7 +89,7 @@ export async function probeSmoothMaxHeight(
       return h;
     }
   }
-  return 720;
+  return 0; // No confirmed smooth resolution: retain the existing safe ranking.
 }
 
 export function detectCapabilities(): ClientCapabilities {
@@ -104,9 +104,9 @@ export function detectCapabilities(): ClientCapabilities {
       maxBitrateMbps: 0,
       eac3: false,
       webm: false,
-      decodingSmooth: true,
-      powerEfficient: true,
-      smoothMaxHeight: 1080,
+      decodingSmooth: false,
+      powerEfficient: false,
+      smoothMaxHeight: 0,
     };
   }
 
@@ -166,8 +166,29 @@ export function detectCapabilities(): ClientCapabilities {
     maxBitrateMbps,
     eac3,
     webm,
-    decodingSmooth: true,
-    powerEfficient: true,
-    smoothMaxHeight: maxHeight,
+    decodingSmooth: false,
+    powerEfficient: false,
+    smoothMaxHeight: 0,
   };
+}
+
+let deviceProbe: Promise<Partial<ClientCapabilities>> | null = null;
+/** Resolve once per page; never hold playback for a hanging platform API. */
+export async function getDevicePlaybackCapabilities(): Promise<Partial<ClientCapabilities>> {
+  if (typeof window === 'undefined' || !navigator.mediaCapabilities) return {};
+  if (!deviceProbe) {
+    deviceProbe = (async () => {
+      const base = detectCapabilities();
+      const codec = base.hevcMain10 ? 'hvc1.2.4.L153.B0' : base.hevc ? 'hvc1.1.6.L153.B0' : 'avc1.640033';
+      const height = Math.min(await probeSmoothMaxHeight(codec), base.maxHeight);
+      if (!height) return {};
+      const result = await probeDecodingInfo(`video/mp4; codecs="${codec}"`, Math.round(height * 16 / 9), height, 5_000_000);
+      return { smoothMaxHeight: height, decodingSmooth: result.smooth, powerEfficient: result.powerEfficient };
+    })().catch(() => ({}));
+  }
+  let timer: ReturnType<typeof setTimeout>;
+  const timeout = new Promise<Partial<ClientCapabilities>>(resolve => { timer = setTimeout(() => resolve({}), 900); });
+  const result = await Promise.race([deviceProbe, timeout]);
+  clearTimeout(timer!);
+  return result;
 }

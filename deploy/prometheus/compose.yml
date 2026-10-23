@@ -1,0 +1,25 @@
+# Host networking is required to scrape backend bound to 127.0.0.1 on Linux.
+services:
+  prometheus:
+    image: prom/prometheus:v3.5.0@sha256:63805ebb8d2b3920190daf1cb14a60871b16fd38bed42b857a3182bc621f4996
+    container_name: cinevn-prometheus
+    network_mode: host
+    restart: unless-stopped
+    cpus: 0.5
+    mem_limit: 384m
+    pids_limit: 64
+    read_only: true
+    security_opt: ['no-new-privileges:true']
+    cap_drop: ['ALL']
+    command:
+      - --config.file=/etc/prometheus/prometheus.yml
+      - --web.listen-address=127.0.0.1:9091
+      - --storage.tsdb.path=/prometheus
+      - --storage.tsdb.retention.time=7d
+      - --storage.tsdb.retention.size=1GB
+    volumes:
+      - ./prometheus.yml:/etc/prometheus/prometheus.yml:ro
+      - ./playback-alerts.yml:/etc/prometheus/playback-alerts.yml:ro
+      - prometheus-data:/prometheus
+volumes:
+  prometheus-data:

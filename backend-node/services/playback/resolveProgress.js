@@ -32,7 +32,7 @@ export const setResolveStage = (resolveId, stage, detail = '') => {
   // Observability: track timing for each stage
   const timings = prev?.timings || [];
   const lastTiming = timings.length ? timings[timings.length - 1] : null;
-  if (lastTiming && !lastTiming.end) {
+  if (lastTiming && lastTiming.end === null) {
     lastTiming.end = Date.now();
     lastTiming.durationMs = lastTiming.end - lastTiming.start;
   }
@@ -43,6 +43,8 @@ export const setResolveStage = (resolveId, stage, detail = '') => {
     stage,
     detail: String(detail ?? ''),
     updatedAt: Date.now(),
+    startedAt: prev?.startedAt ?? timings[0].start,
+    finishedAt: null,
     history,
     timings,
   });
@@ -57,31 +59,27 @@ export const getResolveStage = (resolveId, now = Date.now()) => {
     stages.delete(resolveId);
     return null;
   }
-  // Close any open timing
-  const timings = entry.timings || [];
-  const last = timings.length ? timings[timings.length - 1] : null;
-  if (last && !last.end) {
-    last.end = now;
-    last.durationMs = last.end - last.start;
-  }
   return entry;
 };
 
-/** Get timing summary for a resolve (for observability dashboard). */
-export const getResolveTimings = (resolveId) => {
-  const entry = getResolveStage(resolveId);
-  if (!entry) return null;
-  return {
-    resolveId,
-    currentStage: entry.stage,
-    totalMs: entry.timings.length
-      ? entry.timings[entry.timings.length - 1].end - entry.timings[0].start
-      : 0,
-    stages: entry.timings.map((t) => ({
-      stage: t.stage,
-      durationMs: t.durationMs || 0,
-    })),
-  };
+/** Closing is a write operation, called only when the request completes. */
+export const finishResolveStages = (resolveId, now = Date.now()) => {
+  const entry = getResolveStage(resolveId, now);
+  if (!entry || entry.finishedAt !== null) return false;
+  const last = entry.timings.at(-1);
+  if (last && last.end === null) { last.end = now; last.durationMs = Math.max(0, now - last.start); }
+  entry.finishedAt = now;
+  return true;
+};
+const summarize = (resolveId, entry, now) => ({
+  resolveId, currentStage: entry.stage,
+  totalMs: Math.max(0, (entry.finishedAt ?? now) - entry.startedAt),
+  stages: entry.timings.map(t => ({ stage: t.stage,
+    durationMs: t.end === null ? Math.max(0, now - t.start) : t.durationMs })),
+});
+export const getResolveTimings = (resolveId, now = Date.now()) => {
+  const entry = getResolveStage(resolveId, now);
+  return entry ? summarize(resolveId, entry, now) : null;
 };
 
 export const clearResolveStages = () => {
@@ -89,21 +87,11 @@ export const clearResolveStages = () => {
 };
 
 /** Export all active resolve timings for dashboard aggregation. */
-export const getAllResolveTimings = () => {
+export const getAllResolveTimings = (now = Date.now()) => {
   const result = [];
-  for (const [id, entry] of stages) {
-    const timings = entry.timings || [];
-    if (timings.length === 0) continue;
-    const last = timings[timings.length - 1];
-    result.push({
-      resolveId: id,
-      currentStage: entry.stage,
-      totalMs: last.end ? last.end - timings[0].start : Date.now() - timings[0].start,
-      stages: timings.map((t) => ({
-        stage: t.stage,
-        durationMs: t.durationMs || (t.end ? t.end - t.start : Date.now() - t.start),
-      })),
-    });
+  for (const id of stages.keys()) {
+    const entry = getResolveStage(id, now);
+    if (entry) result.push(summarize(id, entry, now));
   }
   return result;
 };

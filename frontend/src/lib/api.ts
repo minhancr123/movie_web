@@ -1,4 +1,5 @@
 import axios from 'axios';
+import { getDevicePlaybackCapabilities } from './capabilities';
 import { getSession } from 'next-auth/react';
 
 // Auth / favourites / history / comments / premiere client.
@@ -181,6 +182,10 @@ export const providerAPI = {
   disconnectTorbox: () => authClient.post('/providers/torbox/disconnect'),
 };
 
+const enhancePlaybackPayload = async <T extends { capabilities: any }>(data: T): Promise<T> => ({
+  ...data, capabilities: { ...data.capabilities, ...await getDevicePlaybackCapabilities() },
+});
+
 export const playbackAPI = {
   timeline: (sessionId: string, signal?: AbortSignal) => authClient.get(`/playback/session/${encodeURIComponent(sessionId)}/timeline`, { signal, timeout: 6000 }),
   thumbnail: (sessionId: string, at: number, signal?: AbortSignal) => authClient.get(`/playback/session/${encodeURIComponent(sessionId)}/thumbnail`, { params: { at }, responseType: 'blob', signal, timeout: 10_000 }),
@@ -194,21 +199,21 @@ export const playbackAPI = {
     audioIndex?: number;
     resolveId?: string;
     startAt?: number;
-  }, signal?: AbortSignal) => authClient.post('/playback/resolve', data, { timeout: 120_000, ...(signal ? { signal } : {}) }),
+  }, signal?: AbortSignal) => enhancePlaybackPayload(data).then(payload => authClient.post('/playback/resolve', payload, { timeout: 120_000, ...(signal ? { signal } : {}) })),
   prewarm: (data: {
     type: string;
     tmdbId: number;
     season?: number;
     episode?: number;
     capabilities: any;
-  }) => authClient.post('/playback/prewarm', data),
+  }) => enhancePlaybackPayload(data).then(payload => authClient.post('/playback/prewarm', payload)),
   listSources: (data: {
     type: string;
     tmdbId: number;
     season?: number;
     episode?: number;
     capabilities: any;
-  }) => authClient.post('/playback/sources', data),
+  }) => enhancePlaybackPayload(data).then(payload => authClient.post('/playback/sources', payload)),
   getSession: (sessionId: string) => authClient.get(`/playback/session/${sessionId}`),
   heartbeat: (sessionId: string, viewerId: string) =>
     authClient.post(`/playback/session/${encodeURIComponent(sessionId)}/heartbeat`, { viewerId }),

@@ -1,6 +1,7 @@
 import fs from 'fs/promises';
 import path from 'path';
 import os from 'os';
+import { createHash } from 'node:crypto';
 import { spawn } from 'child_process';
 import { planAdmission } from './deliveryPlan.js';
 
@@ -13,27 +14,24 @@ const FFMPEG_BIN = process.env.FFMPEG_BIN || 'ffmpeg';
 const FFPROBE_BIN = process.env.FFPROBE_BIN || 'ffprobe';
 const PROBE_TIMEOUT_MS = 8000;
 
-/** In-memory ffprobe metadata cache (TTL 7 days). */
+/** Bounded metadata only: signed upstream URLs are hashed, never retained as keys. */
 const PROBE_CACHE_TTL_MS = 7 * 24 * 60 * 60 * 1000;
 const probeCache = new Map();
-
-export const getCachedProbe = (inputUrl) => {
-  const entry = probeCache.get(inputUrl);
+const probeFlights = new Map();
+const probeKey = inputUrl => createHash('sha256').update(String(inputUrl)).digest('hex');
+export const getCachedProbe = inputUrl => {
+  const key = probeKey(inputUrl);
+  const entry = probeCache.get(key);
   if (!entry) return null;
-  if (Date.now() - entry.cachedAt > PROBE_CACHE_TTL_MS) {
-    probeCache.delete(inputUrl);
-    return null;
-  }
-  return entry.data;
+  if (Date.now() - entry.cachedAt >= PROBE_CACHE_TTL_MS) { probeCache.delete(key); return null; }
+  probeCache.delete(key); probeCache.set(key, entry);
+  return structuredClone(entry.data);
 };
-
 export const setCachedProbe = (inputUrl, data) => {
-  if (probeCache.size >= 1000) {
-    // Evict oldest
-    const oldest = probeCache.keys().next().value;
-    probeCache.delete(oldest);
-  }
-  probeCache.set(inputUrl, { data, cachedAt: Date.now() });
+  const key = probeKey(inputUrl);
+  probeCache.delete(key);
+  if (probeCache.size >= 1000) probeCache.delete(probeCache.keys().next().value);
+  probeCache.set(key, { data: structuredClone(data), cachedAt: Date.now() });
 };
 const PLAYLIST_TIMEOUT_MS = 30000;
 const GB = 1024 ** 3;
@@ -83,23 +81,29 @@ export const SEEK_ORIGIN_FILE = 'origin.mp4';
 export const checkHttpRange = async (url, timeoutMs = 5000) => {
   const controller = new AbortController();
   const timer = setTimeout(() => controller.abort(), timeoutMs);
+  let response;
   try {
-    const response = await fetch(url, {
-      method: 'HEAD',
-      headers: { Range: 'bytes=0-0' },
+    response = await fetch(url, {
+      method: 'GET', headers: { Range: 'bytes=0-0', 'Accept-Encoding': 'identity' },
       signal: controller.signal,
     });
     const acceptRanges = response.headers.get('accept-ranges');
-    const contentLength = Number(response.headers.get('content-length')) || null;
-    const supported = response.status === 206 || (acceptRanges && acceptRanges !== 'none');
-    return { supported, acceptRanges, contentLength, status: response.status };
+    const range = /^bytes 0-0\/(\d+|\*)$/i.exec(response.headers.get('content-range') || '');
+    const length = response.headers.get('content-length');
+    const supported = response.status === 206 && Boolean(range)
+      && (range[1] === '*' || Number(range[1]) > 0) && (length === null || Number(length) === 1);
+    return { supported, acceptRanges,
+      contentLength: range && range[1] !== '*' ? Number(range[1]) : (Number(length) || null),
+      status: response.status };
   } catch (error) {
-    return { supported: false, acceptRanges: null, contentLength: null, status: 0, error: error.message };
+    return { supported: false, acceptRanges: null, contentLength: null, status: 0,
+      error: error.name === 'AbortError' ? 'timeout' : 'network_error' };
   } finally {
+    // A server ignoring Range may offer the entire film. Never download it.
+    if (response?.body) await response.body.cancel().catch(() => {});
     clearTimeout(timer);
   }
 };
-
 
 export const REMUX_SEGMENT_SECONDS = positiveNumber(process.env.HLS_SEGMENT_SECONDS, 4);
 const MAX_BROWSER_FRAME_RATE = 60.01;
@@ -262,7 +266,7 @@ export const extractSubtitleTracks = async (inputUrl, jobs) => {
   );
 };
 
-export const ffprobe = async (inputUrl) => {
+const probeFile = async (inputUrl) => {
   const { stdout } = await run(
     FFPROBE_BIN,
     [
@@ -326,6 +330,18 @@ export const ffprobe = async (inputUrl) => {
       language: stream.tags?.language || '',
     })),
   };
+};
+
+export const ffprobe = async inputUrl => {
+  const hit = getCachedProbe(inputUrl);
+  if (hit) return hit;
+  const key = probeKey(inputUrl);
+  if (!probeFlights.has(key)) {
+    probeFlights.set(key, probeFile(inputUrl).then(data => {
+      setCachedProbe(inputUrl, data); return data;
+    }).finally(() => probeFlights.delete(key)));
+  }
+  return structuredClone(await probeFlights.get(key));
 };
 
 const isBrowserVideoCodec = (codec) => ['h264', 'hevc', 'av1', 'vp9'].includes(String(codec || '').toLowerCase());
@@ -528,7 +544,7 @@ export const decidePlaybackMode = (probe, caps = {}, preferredAudioIdx = null, o
   const containerDirectOk =
     isMp4Container(probe.format)
     || (isWebmContainer(probe.format, codec, audio?.codec) && Boolean(caps.webm));
-  if (containerDirectOk && audioCopy && (targetAudioIdx === 0 || audios.length === 1)) {
+  if (opts.upstreamRangeSupported !== false && containerDirectOk && audioCopy && (targetAudioIdx === 0 || audios.length === 1)) {
     return {
       mode: 'direct',
       reason: 'Container và codec đã phù hợp browser',
@@ -575,11 +591,12 @@ export const planCandidateDelivery = ({
   audioIdx = null,
   videoTranscode = { allowed: false, hardware: false },
   contentLanguage = null,
+  upstreamRangeSupported,
   lan = false,
   activeKbps = 0,
   budgetKbps,
 } = {}) => {
-  const decision = decidePlaybackMode(probe, caps, audioIdx, { videoTranscode, contentLanguage });
+  const decision = decidePlaybackMode(probe, caps, audioIdx, { videoTranscode, contentLanguage, upstreamRangeSupported });
   if (decision.mode === 'reject') {
     return {
       rejected: decision.policyBlocked

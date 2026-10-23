@@ -1,6 +1,7 @@
 import './services/observability/instrument.js';
 import * as Sentry from '@sentry/node';
 import { observeHttpFailures } from './services/observability/sentry.js';
+import { metricsMiddleware, observeHttp } from './services/observability/metrics.js';
 import express from 'express';
 import cors from 'cors';
 import helmet from 'helmet';
@@ -67,6 +68,8 @@ app.use(cors({
   origin: allowedOrigins,
   credentials: true
 }));
+app.use(observeHttp);
+metricsMiddleware(app);
 app.use(express.json());
 app.use(express.urlencoded({ extended: true }));
 

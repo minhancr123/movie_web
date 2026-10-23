@@ -436,6 +436,7 @@ export default function PlaybackSection({
     []
   );
   const [torboxKeyInput, setTorboxKeyInput] = useState<string>('');
+  const playbackRequestAtRef = useRef<number | null>(null);
   const [providerAccess, setProviderAccess] = useState<{ mode?: string; canManage?: boolean }>({});
   const [isSubmittingKey, setIsSubmittingKey] = useState<boolean>(false);
   const [keyError, setKeyError] = useState<string>('');
@@ -1207,6 +1208,7 @@ export default function PlaybackSection({
       serverRetry?: boolean;
     },
   ) => {
+    playbackRequestAtRef.current = performance.now();
     // Storage can throw when blocked: never let it reject the resolve.
     let rememberedToken = '';
     try {
@@ -2261,6 +2263,7 @@ export default function PlaybackSection({
             <CinemaLayer mode={cinemaMode} video={videoEl} />
             <div className="ambient-fullscreen-frame relative aspect-video w-full rounded-xl overflow-hidden shadow-2xl bg-black border border-white/5">
           <VideoPlayer
+            playbackStartedAt={playbackRequestAtRef.current}
             suspended={episodeTransition}
             onNextEpisode={nextEpisode && !episodeTransition ? advanceEpisode : undefined}
             nextEpisodeLabel={nextEpisode ? `Tập ${nextEpisode.episodeNumber} · ${nextEpisode.name}` : undefined}

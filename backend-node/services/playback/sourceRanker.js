@@ -254,6 +254,7 @@ export const parseCandidate = (candidate, { expectedTitles = [], expectedYear = 
  */
 export const normalizeCapabilities = (caps = {}) => ({
   windowedRemux: caps.windowedRemux === true,
+  smoothMaxHeight: [720, 1080, 1440, 2160].includes(Number(caps.smoothMaxHeight)) ? Number(caps.smoothMaxHeight) : 0,
   hevc: Boolean(caps.hevc),
   // Old clients predate the Main 10 probe and send no hevcMain10: inherit
   // `hevc` so their behaviour is exactly what shipped before (a capable
@@ -266,7 +267,7 @@ export const normalizeCapabilities = (caps = {}) => ({
   maxHeight: Number(caps.maxHeight) > 0 ? Number(caps.maxHeight) : 1080,
   // This affects Auto ordering, not codec support or manual source selection.
   preferredMaxHeight: Number.isFinite(Number(caps.preferredMaxHeight)) && Number(caps.preferredMaxHeight) > 0
-    ? Math.min(2160, Number(caps.preferredMaxHeight)) : 0,
+    ? Math.min(2160, Number(caps.preferredMaxHeight)) : ([720, 1080, 1440, 2160].includes(Number(caps.smoothMaxHeight)) ? Math.min(Number(caps.smoothMaxHeight), Number(caps.maxHeight) || 1080) : 0),
   // Mbps the client says it can sustain; 0 means "unknown, do not filter".
   maxBitrateMbps: Number(caps.maxBitrateMbps) > 0 ? Number(caps.maxBitrateMbps) : 0,
   eac3: Boolean(caps.eac3),
