@@ -387,7 +387,6 @@ const normalizeDetail = (data, mediaType, fallbackOverview = '', englishTitle = 
     })
     .map((video) => video.key)
     .filter((key) => KEY_RE.test(key)))].slice(0, 4);
-  if (!trailerKey && trailerKeys.length) trailerKeys.shift();
   return {
     contentRef: buildContentRef({ mediaType, tmdbId: data.id }),
     tmdbId: data.id,
