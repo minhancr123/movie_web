@@ -4,6 +4,8 @@ import React, { useEffect, useRef, useState, useCallback } from 'react';
 import { createPortal } from 'react-dom';
 import Hls from 'hls.js';
 import { SeekPreview, TimelineSkip, NextEpisodePrompt } from './PlaybackExtras';
+import SubtitleSyncGuide from './SubtitleSyncGuide';
+import { SUBTITLE_SYNC_STORAGE, subtitleSyncKey, readSubtitleDelay, writeSubtitleDelay, clampSubtitleDelay, subtitleAnchorDelay } from '@/lib/subtitle-sync';
 import { seekPreviewPosition } from '@/lib/playback-extras';
 import {
     Play, Pause, Maximize, Minimize, Volume2, Volume1, VolumeX,
@@ -173,6 +175,8 @@ export default function VideoPlayer({ src, playbackStartedAt, movie, episode, au
     const [isPlaying, setIsPlaying] = useState(false);
     const [episodeEnded, setEpisodeEnded] = useState(false);
     const [autoNextEnabled, setAutoNextEnabled] = useState(true);
+    const seekDragRef = useRef<number | null>(null);
+    const [dragPreview, setDragPreview] = useState<{ at: number; percent: number } | null>(null);
     const [hoverPreview, setHoverPreview] = useState<{ at: number; percent: number } | null>(null);
     useEffect(() => {
         try { setAutoNextEnabled(localStorage.getItem('cine_player_auto_next') !== 'false'); } catch {}
@@ -324,15 +328,7 @@ export default function VideoPlayer({ src, playbackStartedAt, movie, episode, au
         } catch {}
     };
 
-    const readDelayMap = (): Record<string, number> => {
-        try {
-            const raw = localStorage.getItem('cine_sub_delay_map');
-            const parsed = raw ? JSON.parse(raw) : {};
-            return parsed && typeof parsed === 'object' ? parsed : {};
-        } catch {
-            return {};
-        }
-    };
+    const syncKeyRef = useRef<string | null>(null);
     const subDelayRef = useRef(subDelay);
     useEffect(() => { subDelayRef.current = subDelay; }, [subDelay]);
     const selectedSubRef = useRef<string>('off');
@@ -357,26 +353,19 @@ export default function VideoPlayer({ src, playbackStartedAt, movie, episode, au
     // embedded one; anything else never moves on its own.
     const autoSubSourceRef = useRef<string | null>(null);
 
-    const adjustSubDelay = useCallback((delta: number) => {
-        // Tenths, not halves. The pipeline's own timing is exact now, so what
-        // is left to dial out is a sidecar written for a different release —
-        // typically a few hundred milliseconds, which a 0.5s step can only
-        // overshoot. Key repeat still covers a large offset quickly.
-        const next = Math.min(30, Math.max(-30, Math.round((subDelayRef.current + delta) * 10) / 10));
+    const saveSubtitleDelay = useCallback((value: number) => {
+        const next = clampSubtitleDelay(value);
         subDelayRef.current = next;
         setSubDelay(next);
-        patchPrefs({ subDelay: next });
-        const sign = next > 0 ? `+${next.toFixed(1)}` : `${next.toFixed(1)}`;
-        showSyncToast(`Đồng bộ phụ đề: ${sign}s ${delta > 0 ? '(sớm hơn)' : delta < 0 ? '(trễ hơn)' : ''}`);
-        const trackId = selectedSubRef.current;
-        if (trackId && trackId !== 'off') {
-            try {
-                const map = readDelayMap();
-                map[trackId] = next;
-                localStorage.setItem('cine_sub_delay_map', JSON.stringify(map));
-            } catch {}
-        }
-    }, [showSyncToast]);
+        const key = syncKeyRef.current;
+        if (key) try {
+            localStorage.setItem(SUBTITLE_SYNC_STORAGE, writeSubtitleDelay(localStorage.getItem(SUBTITLE_SYNC_STORAGE), key, next));
+        } catch { /* Private browsing may disable local storage. */ }
+    }, []);
+    const adjustSubDelay = useCallback((delta: number) => {
+        saveSubtitleDelay(subDelayRef.current + delta);
+        showSyncToast(`Phụ đề ${delta > 0 ? 'hiện sớm hơn' : 'hiện muộn hơn'} ${Math.abs(delta).toFixed(1)}s`);
+    }, [showSyncToast, saveSubtitleDelay]);
 
     const adjustSecondaryOffset = useCallback((delta: number) => {
         setSecondaryOffset((prev) => {
@@ -950,19 +939,17 @@ export default function VideoPlayer({ src, playbackStartedAt, movie, episode, au
         }
     };
 
-    // Restore delay memory when subtitle track is picked (per-track delay)
+    const syncKey = React.useMemo(() => subtitleSyncKey(subContext, selectedSub, cueCache[selectedSub] || []),
+        [subContext?.type, subContext?.tmdbId, subContext?.season, subContext?.episode, subContext?.sourceToken, selectedSub, cueCache]);
+    // Restore only the exact film/release/track/cue content, never a reused embedded index.
     useEffect(() => {
         selectedSubRef.current = selectedSub;
-        if (!selectedSub || selectedSub === 'off') {
-            subDelayRef.current = 0;
-            setSubDelay(0);
-            return;
-        }
-        const stored = readDelayMap()[selectedSub];
-        const delay = Number.isFinite(stored) ? stored : 0;
-        subDelayRef.current = delay;
-        setSubDelay(delay);
-    }, [selectedSub]);
+        syncKeyRef.current = syncKey;
+        let stored = 0;
+        try { stored = readSubtitleDelay(localStorage.getItem(SUBTITLE_SYNC_STORAGE), syncKey); } catch {}
+        subDelayRef.current = stored;
+        setSubDelay(stored);
+    }, [selectedSub, syncKey]);
 
     // Display timeline: the element plays truncated 0-based bytes while the
     // viewer sees positions offset by the session's start (0 = from the start).
@@ -2561,7 +2548,7 @@ export default function VideoPlayer({ src, playbackStartedAt, movie, episode, au
                         const rect = event.currentTarget.getBoundingClientRect();
                         setHoverPreview(seekPreviewPosition(event.clientX, rect.left, rect.width, fullDuration));
                     }}
-                    onPointerLeave={() => setHoverPreview(null)}>
+                    onPointerLeave={() => { if (seekDragRef.current === null) setHoverPreview(null); }}>
                     {hoverPreview && <SeekPreview at={hoverPreview.at} percent={hoverPreview.percent} sessionId={subContext?.playbackSessionId} />}
                     <div className="absolute left-0 right-0 top-1/2 -translate-y-1/2 h-1.5 rounded-full group-hover/progress:h-3 group-active/progress:h-3 transition-all duration-200">
                         <div className="absolute top-0 left-0 h-full w-full bg-white/20 rounded-full overflow-hidden">
@@ -2572,21 +2559,49 @@ export default function VideoPlayer({ src, playbackStartedAt, movie, episode, au
                         </div>
                     <div
                         className="absolute top-0 left-0 h-full liquid-track-played rounded-full transition-all duration-200"
-                        style={{ width: `${fullDuration > 0 ? (displayTime / fullDuration) * 100 : 0}%` }}
+                        style={{ width: `${fullDuration > 0 ? ((dragPreview?.at ?? displayTime) / fullDuration) * 100 : 0}%` }}
                     />
                     </div>
                     {/* Draggable Knob */}
                     <div
                         className="absolute top-1/2 -translate-y-1/2 w-4 h-4 liquid-knob rounded-full scale-[0.55] group-hover/progress:scale-110 group-active/progress:scale-110 transition-all duration-200 pointer-events-none"
-                        style={{ left: `calc(${fullDuration > 0 ? (displayTime / fullDuration) * 100 : 0}% - 8px)` }}
+                        style={{ left: `calc(${fullDuration > 0 ? ((dragPreview?.at ?? displayTime) / fullDuration) * 100 : 0}% - 8px)` }}
                     />
                     <input
                         type="range"
                         min={0}
                         max={fullDuration || 100}
                         step="0.1"
-                        value={displayTime}
+                        value={dragPreview?.at ?? displayTime}
                         onChange={handleSeek}
+                        onPointerDown={(event) => {
+                            if (suspended || event.button !== 0) return;
+                            event.preventDefault();
+                            event.currentTarget.focus({ preventScroll: true });
+                            event.currentTarget.setPointerCapture(event.pointerId);
+                            seekDragRef.current = event.pointerId;
+                            const rect = event.currentTarget.getBoundingClientRect();
+                            const position = seekPreviewPosition(event.clientX, rect.left, rect.width, fullDuration);
+                            setDragPreview(position); setHoverPreview(position);
+                        }}
+                        onPointerMove={(event) => {
+                            if (seekDragRef.current !== event.pointerId) return;
+                            const rect = event.currentTarget.getBoundingClientRect();
+                            const position = seekPreviewPosition(event.clientX, rect.left, rect.width, fullDuration);
+                            setDragPreview(position); setHoverPreview(position);
+                        }}
+                        onPointerUp={(event) => {
+                            if (seekDragRef.current !== event.pointerId) return;
+                            event.preventDefault();
+                            const rect = event.currentTarget.getBoundingClientRect();
+                            const position = seekPreviewPosition(event.clientX, rect.left, rect.width, fullDuration);
+                            seekDragRef.current = null; setDragPreview(null); setHoverPreview(null);
+                            event.currentTarget.releasePointerCapture(event.pointerId);
+                            if (position) seekToAbsolute(position.at);
+                        }}
+                        onPointerCancel={() => { seekDragRef.current = null; setDragPreview(null); setHoverPreview(null); }}
+                        onLostPointerCapture={() => { seekDragRef.current = null; setDragPreview(null); }}
+                        style={{ touchAction: 'none', margin: 0 }}
                         aria-label="Tua video"
                         className="absolute inset-0 w-full h-full opacity-0 cursor-pointer"
                     />
@@ -3288,6 +3303,11 @@ export default function VideoPlayer({ src, playbackStartedAt, movie, episode, au
                                                                     {subDelay > 0 ? `+${subDelay.toFixed(1)}s` : `${subDelay.toFixed(1)}s`}
                                                                 </span>
                                                             </div>
+                                                            <p className="text-[11px] leading-relaxed text-white/65">Phụ đề hiện trước lời thoại: chọn “Hiện muộn hơn”. Hiện sau lời thoại: chọn “Hiện sớm hơn”.</p>
+                                                            <div className="grid grid-cols-2 gap-1.5">
+                                                                <button type="button" onClick={() => adjustSubDelay(-0.5)} className="rounded border border-white/15 p-2 text-[11px] hover:bg-white/10">Hiện muộn hơn 0.5s</button>
+                                                                <button type="button" onClick={() => adjustSubDelay(0.5)} className="rounded border border-white/15 p-2 text-[11px] hover:bg-white/10">Hiện sớm hơn 0.5s</button>
+                                                            </div>
                                                             <div className="grid grid-cols-3 gap-1.5">
                                                                 <button
                                                                     type="button"
@@ -3299,16 +3319,8 @@ export default function VideoPlayer({ src, playbackStartedAt, movie, episode, au
                                                                 <button
                                                                     type="button"
                                                                     onClick={() => {
-                                                                        subDelayRef.current = 0;
-                                                                        setSubDelay(0);
-                                                                        patchPrefs({ subDelay: 0 });
+                                                                        saveSubtitleDelay(0);
                                                                         showSyncToast('Đã đặt lại đồng bộ phụ đề về 0s');
-                                                                        const trackId = selectedSubRef.current;
-                                                                        if (trackId && trackId !== 'off') {
-                                                                            const map = readDelayMap();
-                                                                            delete map[trackId];
-                                                                            try { localStorage.setItem('cine_sub_delay_map', JSON.stringify(map)); } catch {}
-                                                                        }
                                                                     }}
                                                                     className="px-2 py-1.5 rounded-md text-[10px] font-bold transition-all border bg-surface-container text-cinema-subtle border-white/10 hover:text-white"
                                                                 >
@@ -3325,6 +3337,14 @@ export default function VideoPlayer({ src, playbackStartedAt, movie, episode, au
                                                             <p className="text-[9px] text-cinema-subtle italic text-center">
                                                                  Phím tắt: G (trễ lại 0.1s) · H (sớm hơn 0.1s)
                                                             </p>
+                                                            <SubtitleSyncGuide cues={cueCache[selectedSub] || []} lookupTime={subLookupTime} onAnchor={(cueStart) => {
+                                                                const clock = subtitleLookupTime({ sessionStart: sessionStartAt, elementTime: videoRef.current?.currentTime ?? currentTime, delay: 0, presentationShiftMs });
+                                                                const offset = subtitleAnchorDelay(cueStart, clock);
+                                                                if (offset === null) { showSyncToast('Câu này quá xa vị trí đang xem. Hãy chọn phụ đề khớp bản phim.'); return; }
+                                                                saveSubtitleDelay(offset);
+                                                                showSyncToast('Đã căn theo câu thoại. Có thể tinh chỉnh bằng ±0.1s.');
+                                                            }} />
+                                                            <p className="text-[9px] text-white/45">{syncKey ? 'Tự ghi nhớ riêng cho nguồn phim và phụ đề này trên trình duyệt.' : 'Độ chỉnh chỉ dùng trong phiên này vì chưa xác định được nguồn/phụ đề.'}</p>
                                                         </div>
                                                     )}
                                                 </div>

@@ -71,6 +71,7 @@ interface PlaybackSectionProps {
 
 interface SourceCandidate {
   directPlay?: DeliveryState;
+  recommended?: boolean;
   sourceToken?: string;
   filename?: string;
   playable?: boolean;
@@ -2167,7 +2168,7 @@ export default function PlaybackSection({
                       isActive ? 'bg-amber-primary/20 ring-1 ring-amber-primary/40' : 'bg-white/5 hover:bg-white/10'
                     }`}
                   >
-                    <SourceDeliveryBadge state={src.directPlay} />
+                    <SourceDeliveryBadge state={src.directPlay} recommended={src.recommended} />
                     {src.resolution && (
                       <span className="rounded bg-amber-primary/20 px-2 py-0.5 font-bold text-amber-gold">
                         {resolutionLabel(src.resolution)}
@@ -2578,7 +2579,7 @@ export default function PlaybackSection({
                     isActive ? 'bg-primary/20 ring-1 ring-primary/40' : 'bg-white/5 hover:bg-white/10'
                   }`}
                 >
-                  <SourceDeliveryBadge state={src.directPlay} />
+                  <SourceDeliveryBadge state={src.directPlay} recommended={src.recommended} />
                   {src.resolution && (
                     <span className="rounded bg-primary/20 px-2 py-0.5 font-bold text-primary">
                       {resolutionLabel(src.resolution)}

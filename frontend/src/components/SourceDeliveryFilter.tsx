@@ -1,10 +1,10 @@
 import type { DeliveryState, SourceFilter } from '@/lib/source-delivery';
-export function SourceDeliveryBadge({ state }: { state?: DeliveryState }) {
+export function SourceDeliveryBadge({ state, recommended = false }: { state?: DeliveryState; recommended?: boolean }) {
   if (!state || !['verified','likely','remux'].includes(state)) return null;
-  return <span className="rounded bg-sky-500/10 px-2 py-0.5 text-sky-300"
+  return <>{recommended && <span className="rounded bg-amber-400/15 px-2 py-0.5 font-semibold text-amber-300" title="Nguồn đã sẵn sàng, ưu tiên phát trực tiếp trên thiết bị hiện tại. Khả năng phát được xác nhận khi mở nguồn.">Đề xuất</span>}<span className="rounded bg-sky-500/10 px-2 py-0.5 text-sky-300"
     title={state === 'verified' ? 'Server đã kiểm tra codec, âm thanh và khả năng tua; kết quả còn tùy trình duyệt và mạng.' : undefined}>
     {state === 'verified' ? 'Phát thẳng · đã kiểm tra' : state === 'likely' ? 'Có thể phát thẳng' : 'Cần xử lý'}
-  </span>;
+  </span></>;
 }
 export default function SourceDeliveryFilter({ value, onChange }: { value: SourceFilter; onChange: (value: SourceFilter) => void }) {
   return <div className="flex flex-wrap gap-2" role="group" aria-label="Lọc cách phát">

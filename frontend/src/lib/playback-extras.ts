@@ -13,7 +13,7 @@ export const activeSkipMark = (marks: SkipMark[], at: number, duration: number, 
 export const seekPreviewPosition = (x: number, left: number, width: number, duration: number) => {
   if (![x, left, width, duration].every(Number.isFinite) || width <= 0 || duration <= 0) return null;
   const fraction = Math.max(0, Math.min(1, (x - left) / width));
-  return { at: Math.min(Math.max(0, duration - 0.1), fraction * duration), percent: fraction * 100 };
+  return { at: Math.min(Math.max(0, duration - 0.1), Math.round(fraction * duration * 10) / 10), percent: fraction * 100 };
 };
 
 export const fallbackPlaybackNotice = (code?: string | null): string => code === 'REMUX_NO_SPACE'

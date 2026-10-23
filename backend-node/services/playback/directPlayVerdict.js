@@ -24,3 +24,6 @@ export function directPlayVerdict(source, caps = {}, { audioIndex = null, conten
   return source.container && source.codec ? 'remux' : 'unknown';
 }
 export const directPlayPriority = state => ({verified:3,likely:2,unknown:0,remux:0,unavailable:-1}[state] ?? 0);
+
+export const isRecommendedDirectSource = source => ['verified', 'likely'].includes(source.directPlay)
+  && Boolean(source.cached) && source.playable !== false && !source.qualityRisk;

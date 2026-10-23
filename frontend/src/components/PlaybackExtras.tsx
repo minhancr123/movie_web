@@ -6,7 +6,7 @@ import { activeSkipMark, type SkipMark } from '@/lib/playback-extras';
 const timeLabel = (at: number) => `${Math.floor(at / 60)}:${String(Math.floor(at % 60)).padStart(2, '0')}`;
 
 export function SeekPreview({ at, percent, sessionId }: { at: number; percent: number; sessionId?: string }) {
-  const bucket = Math.floor(at / 10) * 10;
+  const bucket = Math.floor(at);
   const [frame, setFrame] = useState<{ key: string; url: string } | null>(null);
   const key = `${sessionId}:${bucket}`;
   useEffect(() => {

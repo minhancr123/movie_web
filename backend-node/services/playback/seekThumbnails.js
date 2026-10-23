@@ -3,7 +3,7 @@ import { fileIdentity } from './fileSelection.js';
 
 export const thumbnailBucket = (at, duration) => {
   if (!Number.isFinite(at) || at < 0 || !Number.isFinite(duration) || duration <= 0 || at >= duration) return null;
-  return Math.floor(at / 10) * 10;
+  return Math.floor(at);
 };
 
 /** Single-frame jobs, one at a time; bounded RAM, no growing disk cache. */

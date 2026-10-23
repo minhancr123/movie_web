@@ -42,3 +42,12 @@ test('fallback wording identifies disk exhaustion without claiming that seeking 
   assert.doesNotMatch(fallbackPlaybackNotice('VIDEO_TRANSCODE_FORBIDDEN'), /tải quá chậm|tua lại/);
   assert.doesNotMatch(fallbackPlaybackNotice(), /tải quá chậm|tua lại/);
 });
+
+test('pointer hover and release share a tenth-second target even on long films and narrow bars', () => {
+  for (const x of [100, 101, 118.33, 270, 499.9, 500]) {
+    const preview = seekPreviewPosition(x, 100, 400, 10800);
+    const committed = seekPreviewPosition(x, 100, 400, 10800);
+    assert.equal(preview.at, committed.at);
+    assert.ok(Math.abs(preview.at * 10 - Math.round(preview.at * 10)) < 0.00001);
+  }
+});

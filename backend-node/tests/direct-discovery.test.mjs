@@ -1,5 +1,5 @@
 import test from 'node:test';import assert from 'node:assert/strict';
-import {directPlayVerdict} from '../services/playback/directPlayVerdict.js';
+import {directPlayVerdict,isRecommendedDirectSource} from '../services/playback/directPlayVerdict.js';
 import {rankCandidates} from '../services/playback/sourceRanker.js';
 import {selectFallbackAttempts} from '../services/playback/sourcePicker.js';
 process.env.REDIS_CACHE_URL='redis://127.0.0.1:1';
@@ -67,3 +67,13 @@ test('a pinned source waits for the feed that contains it instead of reporting a
  assert((await job).candidates.some(s=>s.infoHash==='pinned'));
 });
 test.after(()=>cacheClient.disconnect());
+
+test('recommendation requires ready compatible direct sources without picture/network quality risks', () => {
+ for (const directPlay of ['verified', 'likely']) {
+  assert.equal(isRecommendedDirectSource({ directPlay, cached: true }), true);
+  for (const patch of [{ cached: false }, { qualityRisk: 'low_bitrate' }, { qualityRisk: 'network' }, { playable: false }]) {
+   assert.equal(isRecommendedDirectSource({ directPlay, cached: true, ...patch }), false);
+  }
+ }
+ for (const directPlay of ['remux', 'unknown', 'unavailable']) assert.equal(isRecommendedDirectSource({ directPlay, cached: true }), false);
+});

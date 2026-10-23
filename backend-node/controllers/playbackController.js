@@ -1,3 +1,4 @@
+import { isRecommendedDirectSource } from '../services/playback/directPlayVerdict.js';
 /**
  * Playback resolution + HLS asset serving.
  *
@@ -471,6 +472,7 @@ export const sanitizeCandidateForResponse = (candidate) => ({
   resolution: candidate.resolution || null,
   codec: PUBLIC_MODE ? null : (candidate.codec || null),
   directPlay: candidate.directPlay || 'unknown',
+  recommended: isRecommendedDirectSource(candidate),
   hdr: candidate.hdr || null,
   releaseSource: PUBLIC_MODE ? null : (candidate.releaseSource || null),
   sizeBytes: PUBLIC_MODE ? null : (candidate.sizeBytes || null),

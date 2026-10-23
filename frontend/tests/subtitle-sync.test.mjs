@@ -1,0 +1,41 @@
+import test from 'node:test';
+import assert from 'node:assert/strict';
+import fs from 'node:fs';
+import vm from 'node:vm';
+import ts from 'typescript';
+const ctx = { exports: {} };
+vm.runInNewContext(ts.transpileModule(fs.readFileSync(new URL('../src/lib/subtitle-sync.ts', import.meta.url), 'utf8'), { compilerOptions: { module: ts.ModuleKind.CommonJS, target: ts.ScriptTarget.ES2020 } }).outputText, ctx);
+const m = ctx.exports;
+const film = { type: 'tv', tmdbId: 1, season: 1, episode: 1, sourceToken: 'release-a' };
+const cues = [{ start: 10, end: 12, text: 'Hello' }];
+test('sync memory follows the exact film, episode, release and subtitle content, not a temporary session', () => {
+ const key = m.subtitleSyncKey(film, 'embedded:0', cues);
+ assert.equal(m.subtitleSyncKey({ ...film, playbackSessionId: 'new-seek-session' }, 'embedded:0', cues), key);
+ for (const patch of [{ tmdbId: 2 }, { episode: 2 }, { sourceToken: 'release-b' }]) assert.notEqual(m.subtitleSyncKey({ ...film, ...patch }, 'embedded:0', cues), key);
+ assert.notEqual(m.subtitleSyncKey(film, 'embedded:0', [{ ...cues[0], start: 11 }]), key);
+ assert.notEqual(m.subtitleSyncKey(film, 'embedded:0', [{ ...cues[0], text: 'Replacement' }]), key);
+ assert.equal(m.subtitleSyncKey({ ...film, sourceToken: undefined }, 'embedded:0', cues), null);
+ assert.equal(m.subtitleSyncKey(film, 'off', cues), null);
+ assert.equal(m.subtitleSyncKey(film, 'embedded:0', []), null);
+});
+test('early cues need a negative offset; late cues need a positive offset on the full source clock', () => {
+ assert.equal(m.subtitleAnchorDelay(10, 12), -2);
+ assert.equal(m.subtitleAnchorDelay(12, 10), 2);
+ assert.equal(m.subtitleAnchorDelay(1620.5, 1621), -0.5, 'seek-started session uses absolute time');
+ assert.equal(m.subtitleAnchorDelay(1000, 10), null, 'reject likely different cut / unrelated sentence');
+ assert.equal(m.subtitleAnchorDelay(NaN, 10), null);
+});
+test('storage validates values, bounds size and resets only the chosen release', () => {
+ let raw = m.writeSubtitleDelay('{bad', 'first', -2);
+ raw = m.writeSubtitleDelay(raw, 'second', 1.5);
+ raw = m.writeSubtitleDelay(raw, 'first', 0);
+ assert.equal(m.readSubtitleDelay(raw, 'first'), 0);
+ assert.equal(m.readSubtitleDelay(raw, 'second'), 1.5);
+ assert.equal(m.readSubtitleDelay('{"first":"5"}', 'first'), 0);
+ assert.equal(m.readSubtitleDelay('{bad', 'first'), 0);
+ assert.equal(m.readSubtitleDelay('{"first":9000}', 'first'), 300);
+ for (let i = 0; i < 205; i++) raw = m.writeSubtitleDelay(raw, `key-${i}`, i / 10);
+ assert.equal(Object.keys(JSON.parse(raw)).length, 200);
+ assert.equal(m.readSubtitleDelay(raw, 'first'), 0);
+ assert.equal(m.readSubtitleDelay(raw, 'key-204'), 20.4);
+});
