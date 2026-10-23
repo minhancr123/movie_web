@@ -28,6 +28,7 @@ import catalogRoutes from './routes/catalog.js';
 import providerRoutes from './routes/providers.js';
 import playbackRoutes from './routes/playback.js';
 import movieRequestRoutes from './routes/movieRequests.js';
+import notificationsRoutes from './routes/notifications.js';
 import { catalogRateLimit } from './middleware/rateLimit.js';
 import { redactMediaGrant } from './services/playback/mediaGrant.js';
 
@@ -134,6 +135,7 @@ app.use('/api/catalog', catalogRateLimit, catalogRoutes);
 app.use('/api/providers', providerRoutes);
 app.use('/api/playback', playbackRoutes);
 app.use('/api/movie-requests', movieRequestRoutes);
+app.use('/api/notifications', notificationsRoutes);
 
 // Socket.IO Logic
 const premiereViewers = new Map(); // Track viewers per premiere
@@ -287,6 +289,10 @@ const startServer = async () => {
     // renditions ready before the first viewer asks. Env-gated, best-effort.
     const { startPrewarmScheduler } = await import('./services/playback/prewarm.js');
     startPrewarmScheduler();
+
+    // Followed-series new-episode monitor (node-cron, in-process).
+    const { startSeriesMonitor } = await import('./services/notifications/seriesMonitor.js');
+    startSeriesMonitor();
 
     // Warm the video-encoder detection so the first playback resolve already
     // knows whether the codec-transcode fallback (HEVC/AV1 -> AVC) is viable.

@@ -4,12 +4,12 @@ import { useState, useEffect, useRef } from 'react';
 import Link from 'next/link';
 import Image from 'next/image';
 import { Bell, Clock, Calendar, Film, Loader2 } from 'lucide-react';
-import { premiereAPI } from '@/lib/api';
+import { premiereAPI, API_URL, authClient } from '@/lib/api';
 import { getHome, catalogHref } from '@/lib/catalog';
 
 interface Notification {
     id: string;
-    type: 'premiere' | 'new_movie';
+    type: 'premiere' | 'new_movie' | 'new_episode';
     title: string;
     message: string;
     time: string;
@@ -49,6 +49,26 @@ export default function NotificationMenu() {
                 const latestMovies = home.trending.slice(0, 3);
 
                 const newNotifications: Notification[] = [];
+                // 3. Server-side alerts (new episodes of followed series).
+                // Best-effort: guests simply get none of this section.
+                try {
+                    const notifRes = await authClient.get('/notifications', { timeout: 6000 });
+                    for (const n of notifRes.data?.data?.notifications || []) {
+                        newNotifications.push({
+                            id: `srv-${n._id}`,
+                            type: n.type === 'new_episode' ? 'new_episode' : 'new_movie',
+                            title: n.title,
+                            message: n.message,
+                            time: n.createdAt,
+                            image: '',
+                            link: n.movieSlug ? `/phim/${n.movieSlug}` : '/',
+                            isRead: Boolean(n.isRead),
+                        });
+                    }
+                } catch {
+                    // 401 for guests — the bell still shows premieres/trending.
+                }
+
 
                 // Map Premieres
                 premieres.forEach((p: any) => {

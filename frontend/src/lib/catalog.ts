@@ -50,6 +50,8 @@ export interface CatalogDetail extends CatalogItem {
   cast: { id: number | null; name: string; character: string; profile: string }[];
   directors: string[];
   trailerKey: string | null;
+  /** Fallback keys for deleted/embed-disabled YouTube trailers. */
+  trailerKeys?: string[];
   seasons?: CatalogSeasonSummary[];
 }
 

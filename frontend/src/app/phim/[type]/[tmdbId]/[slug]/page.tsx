@@ -11,6 +11,7 @@ import {
   type MediaType,
 } from '@/lib/catalog';
 import SaveButton from '@/components/SaveButton';
+import { TrailerButton } from '@/components/TrailerModal';
 import PrewarmWatchLink from '@/components/PrewarmWatchLink';
 import ViewCounter from '@/components/ViewCounter';
 import CommentsSection from '@/components/CommentsSection';
@@ -181,6 +182,12 @@ export default async function CatalogDetailPage({ params, searchParams }: PagePa
               </div>
               Xem ngay
             </PrewarmWatchLink>
+            <TrailerButton
+              type={type === 'tv' ? 'tv' : 'movie'}
+              tmdbId={detail.tmdbId}
+              title={detail.title}
+              keys={detail.trailerKeys?.length ? detail.trailerKeys : [detail.trailerKey]}
+            />
             <SaveButton movie={legacyMovie} item={detail} />
             <ViewCounter contentId={detail.contentRef} />
           </div>

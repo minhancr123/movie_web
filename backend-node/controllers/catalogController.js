@@ -111,7 +111,7 @@ export const getDetail = async (req, res) => {
     // added to it, or entries cached before the deploy keep serving the old
     // shape for a day and the new field reads as undefined (see the same key
     // in playbackController, where that cost a show its own audio language).
-    const data = await cached(`catalog:detail:${type}:${tmdbId}:v3`, CACHE_TTL.DETAIL, () =>
+    const data = await cached(`catalog:detail:${type}:${tmdbId}:v4`, CACHE_TTL.DETAIL, () =>
       tmdb.getDetail(type, tmdbId), tmdb.STALE_OPTS
     );
 
@@ -136,6 +136,30 @@ export const getPerson = async (req, res) => {
     return res.json({ success: true, data });
   } catch (error) {
     return handleError(res, 'getPerson', error);
+  }
+};
+
+/**
+ * GET /api/catalog/videos/:type/:tmdbId — fresh trailer keys, bypassing the
+ * long-lived detail cache. The player calls this only after a cached key
+ * failed on YouTube, so latency is a non-goal; freshness is the point.
+ */
+export const getCatalogVideos = async (req, res) => {
+  try {
+    const { type, tmdbId } = req.params;
+    if (!['movie', 'tv'].includes(type)) return fail(res, 400, 'Loại nội dung không hợp lệ');
+    const id = Number(tmdbId);
+    if (!Number.isInteger(id) || id <= 0) return fail(res, 400, 'ID không hợp lệ');
+    const keys = await cached(
+      `catalog:videos:${type}:${id}`,
+      300,
+      () => tmdb.getVideos(type, id),
+      { staleOnError: true, staleTtlSeconds: 3600 },
+    );
+    return res.json({ success: true, data: { trailerKeys: keys || [] } });
+  } catch (error) {
+    console.error(`getCatalogVideos error:`, error.message);
+    return fail(res, error.status || 500, error.message || 'Lỗi server');
   }
 };
 

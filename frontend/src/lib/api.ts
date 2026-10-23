@@ -10,7 +10,7 @@ import { getSession } from 'next-auth/react';
 // until premiere is rebuilt.
 import { resolveApiBase } from './apiBase';
 
-const API_URL = resolveApiBase({
+export const API_URL = resolveApiBase({
   isServer: typeof window === 'undefined',
   internal: process.env.INTERNAL_API_URL,
   publicUrl: process.env.NEXT_PUBLIC_BACKEND_API_URL || process.env.NEXT_PUBLIC_API_URL,
@@ -273,7 +273,7 @@ export const apiUrl = (path: string) => {
 // ==================== NEW: Auth & User APIs ====================
 const AUTH_API_URL = API_URL;
 
-const authClient = axios.create({
+export const authClient = axios.create({
   baseURL: AUTH_API_URL,
   headers: {
     'Content-Type': 'application/json',

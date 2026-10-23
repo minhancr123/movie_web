@@ -7,6 +7,7 @@ import {
   getDetail,
   getSeason,
   getPerson,
+  getCatalogVideos,
   getRecommendations,
 } from '../controllers/catalogController.js';
 import { optionalAuth } from '../middleware/auth.js';
@@ -20,6 +21,7 @@ router.get('/search', searchCatalog);
 router.get('/discover', discoverCatalog);
 router.get('/genres/:type', getGenres);
 router.get('/tv/:tmdbId/season/:season', getSeason);
+router.get('/videos/:type/:tmdbId', getCatalogVideos);
 router.get('/person/:personId', getPerson);
 router.get('/:type/:tmdbId', getDetail);
 

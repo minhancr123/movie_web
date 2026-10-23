@@ -1099,11 +1099,15 @@ export default function VideoPlayer({ src, playbackStartedAt, movie, episode, au
         // timeupdate at 0 first, and that 0 must never overwrite the parent's
         // last-good playhead.
         const savedForTarget = history.find(h => h.slug === movie.slug);
-        const historyResume = (savedForTarget && savedForTarget.currentEpisode === episode.slug)
-            ? computeResumeAt(
-                savedForTarget.progress,
-                durationSeconds || (Number.isFinite(video.duration) ? video.duration : 0),
-            )
+        // Per-episode saved position first (manual episode switches); the flat
+        // pair only ever belongs to the last-watched episode, so it stays a
+        // fallback for rows written before the map existed.
+        const perEpisode = savedForTarget?.episodeProgress?.[episode.slug];
+        const resumeDuration = durationSeconds || (Number.isFinite(video.duration) ? video.duration : 0);
+        const historyResume = perEpisode
+            ? computeResumeAt(perEpisode.progress, perEpisode.duration || resumeDuration)
+            : (savedForTarget && savedForTarget.currentEpisode === episode.slug)
+            ? computeResumeAt(savedForTarget.progress, resumeDuration)
             : null;
         // A grant-expiry rebuild stashed the live position just before
         // tearing down (see the 401 handler): it outranks the resolve-time
@@ -1625,7 +1629,8 @@ export default function VideoPlayer({ src, playbackStartedAt, movie, episode, au
             const currentTime = duration > 0 ? Math.min(displayNow, Math.max(duration - 5, 0)) : displayNow;
 
             if (currentTime > 5) {
-                // Local save
+                // Local save — flat pair (continue-watching) + per-episode map
+                // (resume when switching back to this episode later).
                 addToHistory({
                     id: movie.slug,
                     slug: movie.slug,
@@ -1637,6 +1642,9 @@ export default function VideoPlayer({ src, playbackStartedAt, movie, episode, au
                     currentEpisode: episode.slug,
                     progress: currentTime,
                     duration,
+                    episodeProgress: {
+                        [episode.slug]: { progress: currentTime, duration, timeSaved: Date.now() },
+                    },
                     // Lets the Continue Watching row warm this resolve on hover.
                     mediaType: subContext?.type,
                     tmdbId: subContext?.tmdbId,
@@ -1675,6 +1683,7 @@ export default function VideoPlayer({ src, playbackStartedAt, movie, episode, au
                             },
                             episode: episode.slug,
                             server: 'Vip', // Default or pass prop
+                            duration,
                             currentTime
                         }).catch(() => { }); // Ignore errors silently
                     });
@@ -1796,7 +1805,10 @@ export default function VideoPlayer({ src, playbackStartedAt, movie, episode, au
             }
             setIsPlaying(false);
             const expectedEnd = Number(durationSeconds) > 0 ? Number(durationSeconds) : sessionStartAt + video.duration;
-            setEpisodeEnded(Number.isFinite(expectedEnd) && expectedEnd > 0 && sessionStartAt + video.currentTime >= expectedEnd - 2);
+            // 20s early when an auto-next exists so the countdown overlay has
+            // time to run; otherwise the last-2s edge keeps its old behaviour.
+            const endLead = onNextEpisode ? 20 : 2;
+            setEpisodeEnded(Number.isFinite(expectedEnd) && expectedEnd > 0 && sessionStartAt + video.currentTime >= expectedEnd - endLead);
         };
 
         video.addEventListener('timeupdate', handleTimeUpdate);

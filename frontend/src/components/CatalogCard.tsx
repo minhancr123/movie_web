@@ -1,10 +1,11 @@
 'use client';
 
-import { useRef, useState } from 'react';
+import { useCallback, useEffect, useRef, useState } from 'react';
 import Link from 'next/link';
 import Image from 'next/image';
 import { PlayCircle, Star } from 'lucide-react';
 import { CatalogItem, catalogHref } from '@/lib/catalog';
+import { API_URL } from '@/lib/api';
 
 interface CatalogCardProps {
   item: CatalogItem;
@@ -14,9 +15,10 @@ interface CatalogCardProps {
 /**
  * Card for a TMDB catalog entry.
  *
- * Deliberately has no hover video preview: the old MovieCard streamed a phimapi
- * m3u8 on hover, and TMDB has no playable source. Previews can come back in
- * Phase 2 once a debrid session can be opened cheaply.
+ * Hover preview = the TMDB TRAILER (muted YouTube embed), fetched lazily on
+ * first hover and served from the catalog's 24h cache. Deliberately NOT the
+ * old MovieCard behaviour of streaming a phimapi m3u8 — that cost real
+ * bandwidth per hover and is what the note below was about.
  *
  * Spatial 3D: the card tilts toward the cursor (rotateX/rotateY) with a
  * self-contained perspective() transform, so the effect works in every grid
@@ -27,6 +29,40 @@ export default function CatalogCard({ item, priority = false }: CatalogCardProps
   const cardRef = useRef<HTMLAnchorElement>(null);
   const [tilt, setTilt] = useState({ x: 0, y: 0, px: 0.5, py: 0.5 });
   const [hovered, setHovered] = useState(false);
+  const [trailerKey, setTrailerKey] = useState<string | null>(null);
+  const trailerTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const trailerLoadingRef = useRef(false);
+
+  // Muted trailer after ~900ms of hover: long enough to prove intent, short
+  // enough to feel alive. One fetch per card per session (the detail endpoint
+  // is cached server-side); iframe unmounts on leave so audio/GPU go with it.
+  const maybeStartTrailer = useCallback(() => {
+    if (trailerKey || trailerLoadingRef.current) return;
+    const match = /^tmdb:(movie|tv):(\d+)/.exec(item.contentRef || '');
+    if (!match) return;
+    trailerTimerRef.current = setTimeout(async () => {
+      trailerLoadingRef.current = true;
+      try {
+        const res = await fetch(`${API_URL}/catalog/${match[1]}/${match[2]}`);
+        const body = await res.json();
+        const keys: string[] = body?.data?.trailerKeys || [];
+        const single = body?.data?.trailerKey;
+        const key = keys.find((k) => typeof k === 'string' && /^[A-Za-z0-9_-]{6,20}$/.test(k))
+          || (typeof single === 'string' && /^[A-Za-z0-9_-]{6,20}$/.test(single) ? single : null);
+        if (key) setTrailerKey(key);
+      } catch {
+        // stay a poster card silently
+      } finally {
+        trailerLoadingRef.current = false;
+      }
+    }, 900);
+  }, [item.contentRef, trailerKey]);
+
+  const stopTrailerTimer = useCallback(() => {
+    if (trailerTimerRef.current) { clearTimeout(trailerTimerRef.current); trailerTimerRef.current = null; }
+  }, []);
+
+  useEffect(() => () => stopTrailerTimer(), [stopTrailerTimer]);
 
   const rating = item.voteAverage ? item.voteAverage.toFixed(1) : null;
 
@@ -57,6 +93,8 @@ export default function CatalogCard({ item, priority = false }: CatalogCardProps
   const handleMouseLeave = () => {
     setTilt({ x: 0, y: 0, px: 0.5, py: 0.5 });
     setHovered(false);
+    setTrailerKey(null); // unmount the iframe: no hidden audio/GPU left behind
+    stopTrailerTimer();
   };
 
   return (
@@ -99,6 +137,16 @@ export default function CatalogCard({ item, priority = false }: CatalogCardProps
           </div>
         )}
 
+        {/* Muted trailer preview replaces the poster while hovered */}
+        {hovered && trailerKey && (
+          <iframe
+            src={`https://www.youtube-nocookie.com/embed/${trailerKey}?autoplay=1&mute=1&controls=0&rel=0&modestbranding=1&playsinline=1&loop=1&playlist=${trailerKey}`}
+            title="Trailer"
+            allow="autoplay; encrypted-media"
+            className="absolute inset-0 z-[1] h-full w-full border-0"
+            loading="lazy"
+          />
+        )}
         <div className="absolute inset-0 bg-gradient-to-t from-[#0d0e11] via-[#0d0e11]/25 to-transparent opacity-85 transition-opacity duration-300 group-hover/card:opacity-100" />
         <div className="spatial-sheen" />
         {/* Cursor-tracking glare: the most visible spatial cue */}

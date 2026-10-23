@@ -25,6 +25,14 @@ export const addWatchHistory = async (req, res) => {
     const db = getDB();
 
     const safeCurrentTime = currentTime || 0;
+    // Per-episode progress map: the flat pair only covers continue-watching;
+    // resuming a DIFFERENT episode needs the position of that episode. Keys
+    // are the client's s{season}e{n} slugs; dots are stripped because Mongo
+    // treats them as paths.
+    const episodeKey = String(episode || '').replace(/\./g, '_');
+    const episodeProgressSet = episodeKey
+      ? { [`episodeProgress.${episodeKey}`]: { progress: safeCurrentTime, duration: Number(req.body.duration) || null, watchedAt: new Date() } }
+      : {};
     // Single upsert instead of findOne + insert/updateOne: one round-trip on a
     // path the player calls continuously while watching, and no duplicate-row
     // race between two concurrent progress saves.
@@ -36,6 +44,7 @@ export const addWatchHistory = async (req, res) => {
           episode,
           server,
           currentTime: safeCurrentTime,
+          ...episodeProgressSet,
           watchedAt: new Date()
         },
         $setOnInsert: {

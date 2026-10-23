@@ -24,6 +24,13 @@ interface SavedMovie {
   mediaType?: string;
   tmdbId?: number;
   season?: number;
+  /**
+   * Saved position per EPISODE, keyed by the s{season}e{n} slug. The flat
+   * currentEpisode/progress pair only ever belongs to the last-watched
+   * episode, which made every manual episode switch resume from 0 — the
+   * per-episode map is what "tiếp tục đúng chỗ của tập đang chọn" reads.
+   */
+  episodeProgress?: Record<string, { progress: number; duration?: number; timeSaved: number }>;
 }
 
 export function useLocalStorage<T>(key: string, initialValue: T) {
@@ -85,9 +92,16 @@ export const useWatchHistory = () => {
 
   const addToHistory = useCallback((movie: SavedMovie) => {
     setHistory((prevHistory) => {
+      // Merge the per-episode map with the entry being replaced: the flat
+      // pair moves to the newly-watched episode, but positions of every
+      // other episode must survive so switching back resumes correctly.
+      const old = prevHistory.find(h => h.slug === movie.slug);
+      const episodeProgress = (old?.episodeProgress || movie.episodeProgress)
+        ? { ...(old?.episodeProgress || {}), ...(movie.episodeProgress || {}) }
+        : undefined;
       // Remove old entry if exists to push new one to top
       const others = prevHistory.filter(h => h.slug !== movie.slug);
-      return [movie, ...others].slice(0, 20); // Keep last 20 items
+      return [{ ...movie, episodeProgress }, ...others].slice(0, 20); // Keep last 20 items
     });
   }, [setHistory]);
 

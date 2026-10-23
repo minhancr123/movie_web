@@ -108,6 +108,10 @@ const createIndexes = async () => {
       ['published_renditions', { renditionKey: 1 }],
       // User subtitle listing per episode.
       ['user_subtitles', { userIdStr: 1, tmdbId: 1, season: 1, episode: 1 }],
+      // Series monitor: snapshots are addressed by id, notifications listed
+      // per user newest-first.
+      ['series_snapshots', { userIdStr: 1, tmdbId: 1 }],
+      ['notifications', { userId: 1, isRead: 1, createdAt: -1 }],
     ];
     const results = await Promise.allSettled(
       specs.map(([name, keys, options]) => db.collection(name).createIndex(keys, options)),

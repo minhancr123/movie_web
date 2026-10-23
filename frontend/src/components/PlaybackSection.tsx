@@ -547,8 +547,17 @@ export default function PlaybackSection({
     if (freshEpisodeRef.current === `${contentRef}:${season}:${currentEpisode}`) return 0;
     try {
       const saved = history.find((h) => h.slug === contentRef);
-      if (!saved || saved.currentEpisode !== episodeSlug) return 0;
+      if (!saved) return 0;
       const duration = runtimeMinutes && runtimeMinutes > 0 ? runtimeMinutes * 60 : 0;
+      // Per-episode position first: the flat pair only belongs to the
+      // last-watched episode, which is why every manual episode switch used
+      // to restart from 0.
+      const perEpisode = saved.episodeProgress?.[episodeSlug];
+      if (perEpisode) {
+        const at = computeResumeAt(perEpisode.progress, perEpisode.duration || duration);
+        return at !== null && at > 0 ? Math.floor(at) : 0;
+      }
+      if (saved.currentEpisode !== episodeSlug) return 0;
       const at = computeResumeAt(saved.progress, duration);
       return at !== null && at > 0 ? Math.floor(at) : 0;
     } catch {

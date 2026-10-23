@@ -374,6 +374,20 @@ const normalizeDetail = (data, mediaType, fallbackOverview = '', englishTitle = 
     pickVideo('Trailer') ||
     pickVideo('Teaser');
 
+  // Multiple candidate keys: a single key gets deleted or embed-disabled on
+  // YouTube while every cache layer still serves it (24h Redis + 7d stale +
+  // 24h Next). The player walks this list before declaring failure.
+  const KEY_RE = /^[A-Za-z0-9_-]{6,20}$/;
+  const trailerKeys = [...new Set(videos
+    .filter((video) => video.type === 'Trailer' || video.type === 'Teaser')
+    .sort((a, b) => {
+      const score = (v) => (v.type === 'Trailer' ? 2 : 1)
+        + (v.iso_639_1 === 'vi' ? 2 : v.iso_639_1 === 'en' ? 1 : 0);
+      return score(b) - score(a);
+    })
+    .map((video) => video.key)
+    .filter((key) => KEY_RE.test(key)))].slice(0, 4);
+  if (!trailerKey && trailerKeys.length) trailerKeys.shift();
   return {
     contentRef: buildContentRef({ mediaType, tmdbId: data.id }),
     tmdbId: data.id,
@@ -412,6 +426,7 @@ const normalizeDetail = (data, mediaType, fallbackOverview = '', englishTitle = 
       .filter((person) => person.job === 'Director')
       .map((person) => person.name),
     trailerKey: trailer?.key || null,
+    trailerKeys,
     seasons:
       mediaType === 'tv'
         ? (data.seasons || [])
@@ -587,6 +602,30 @@ export const getPerson = async (personId) => {
     knownFor: translateDepartment(data.known_for_department),
     filmography,
   };
+};
+
+/**
+ * Fresh video lookup for the player's stale-key fallback: deliberately NOT
+ * the cached detail path (24h Redis + 7d stale would return the same dead
+ * key that just failed). Short 5-minute cache so a title spammed across
+ * viewers still costs one TMDB call.
+ */
+export const getVideos = async (mediaType, tmdbId) => {
+  const type = mediaType === 'tv' ? 'tv' : 'movie';
+  const data = await request(`/${type}/${tmdbId}/videos`, {
+    language: LANGUAGE,
+    include_video_language: 'vi,en,null',
+  });
+  const KEY_RE = /^[A-Za-z0-9_-]{6,20}$/;
+  return ((data?.results || []))
+    .filter((video) => video.site === 'YouTube' && KEY_RE.test(video.key || ''))
+    .sort((a, b) => {
+      const score = (v) => (v.type === 'Trailer' ? 2 : 1)
+        + (v.iso_639_1 === 'vi' ? 2 : v.iso_639_1 === 'en' ? 1 : 0);
+      return score(b) - score(a);
+    })
+    .map((video) => video.key)
+    .slice(0, 4);
 };
 
 export const getSeason = async (tmdbId, seasonNumber) => {
