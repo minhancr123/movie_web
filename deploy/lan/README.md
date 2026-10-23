@@ -24,6 +24,9 @@ Do not merge the deployment environments or reuse their runtime secrets.
    `REMUX_MAX_WRITERS=2`, `PLAYBACK_REMUX_WINDOW_SECONDS=300`,
    `REMUX_READ_RATE=2`, `VIDEO_TRANSCODE_FALLBACK=never`.
    This is a conservative starting point, not an assertion of viewer capacity.
+   On FFmpeg >=6.1, `REMUX_INITIAL_BURST_SECONDS=8` lets copied video fill
+   its initial buffer before the 2x pace applies. It is opt-in, capped at 12
+   media seconds, and never applies to video transcoding; use 0 to disable.
 8. Add resource limits and point service working directories/environment files
    to the new worktree. Restart and verify readiness, release SHA, NextAuth
    session JSON, home page and an unauthenticated playback denial.

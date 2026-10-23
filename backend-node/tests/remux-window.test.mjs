@@ -26,6 +26,15 @@ assert.equal(args[args.indexOf('-t') + 1], '600');
 assert(args.indexOf('-t') > args.indexOf('-i'), 'limit is on the output, after input seek');
 assert.equal(args[args.indexOf('-hls_playlist_type') + 1], 'event', 'fixed timeline, no live edge drift');
 assert(!args.includes('delete_segments'));
+const burstBase = { inputUrl: 'source', outputDir: '/tmp/window-fixture', readRate: 2, initialBurstSeconds: 8 };
+const burstArgs = buildFfmpegArgs(burstBase);
+assert.equal(burstArgs[burstArgs.indexOf('-readrate_initial_burst') + 1], '8');
+assert(burstArgs.indexOf('-readrate_initial_burst') < burstArgs.indexOf('-i'), 'burst is an input option');
+const cappedBurst = buildFfmpegArgs({ ...burstBase, initialBurstSeconds: 999 });
+assert.equal(cappedBurst[cappedBurst.indexOf('-readrate_initial_burst') + 1], '12', 'burst has a bounded media allowance');
+for (const overrides of [{ initialBurstSeconds: 0 }, { readRate: 0 }, { video: { mode: 'transcode', startAt: 0 } }]) {
+  assert(!buildFfmpegArgs({ ...burstBase, ...overrides }).includes('-readrate_initial_burst'), 'opt-out, unpaced and transcode paths do not burst');
+}
 const id = 'f4'.repeat(16);
 const marker = sessionPath(id, '.windowed');
 await fs.mkdir(sessionPath(id, '.'), { recursive: true });

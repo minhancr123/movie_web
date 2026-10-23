@@ -953,7 +953,7 @@ export const buildVideoArgs = (video, encoder) => {
   };
 };
 
-export const buildFfmpegArgs = ({ inputUrl, outputDir, audioCopy = false, segmentSeconds = REMUX_SEGMENT_SECONDS, audioStreamIndex = null, audioChannels = null, audioDelayMs = 0, video = null, encoder = null, readRate = process.env.REMUX_READ_RATE, windowSeconds = 0 }) => {
+export const buildFfmpegArgs = ({ inputUrl, outputDir, audioCopy = false, segmentSeconds = REMUX_SEGMENT_SECONDS, audioStreamIndex = null, audioChannels = null, audioDelayMs = 0, video = null, encoder = null, readRate = process.env.REMUX_READ_RATE, initialBurstSeconds = process.env.REMUX_INITIAL_BURST_SECONDS, windowSeconds = 0 }) => {
   // Explicit output-side audio delay, chained onto any existing audio filter
   // before the stereo fold. Byte-identical to the old command when 0, which is
   // what every caller passes: a container mux offset is NOT a defect to correct
@@ -969,6 +969,10 @@ export const buildFfmpegArgs = ({ inputUrl, outputDir, audioCopy = false, segmen
   ].join(',');
   const videoArgs = buildVideoArgs(video, encoder);
   const videoCopy = !video || video.mode !== 'transcode';
+  // Opt in on hosts with FFmpeg >= 6.1. Only burst copied video, and cap the
+  // media allowance: expensive video encodes retain their existing pacing.
+  const burstSeconds = videoCopy && Number(readRate) > 0
+    ? Math.min(12, Math.max(0, Number(initialBurstSeconds) || 0)) : 0;
   return [
   '-hide_banner',
   '-loglevel',
@@ -981,6 +985,7 @@ export const buildFfmpegArgs = ({ inputUrl, outputDir, audioCopy = false, segmen
   // Pace background processing on small VPSes. Two times playback still
   // builds a buffer while leaving CPU for API requests and other viewers.
   ...(Number(readRate) > 0 ? ['-readrate', String(Number(readRate))] : []),
+  ...(burstSeconds > 0 ? ['-readrate_initial_burst', String(burstSeconds)] : []),
   '-i',
   inputUrl,
   ...(windowSeconds > 0 ? ['-t', String(windowSeconds)] : []),
