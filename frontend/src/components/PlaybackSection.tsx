@@ -91,8 +91,10 @@ interface SourceCandidate {
 const resolutionLabel = (value: number | string) => {
   const height = Number(value);
   if (!Number.isFinite(height)) return String(value);
-  if (height >= 2160) return `4K (${height}p)`;
-  if (height >= 1440) return `2K (${height}p)`;
+  if (height >= 1600) return '4K';
+  if (height >= 1200) return '2K';
+  if (height >= 768) return '1080p';
+  if (height >= 480) return '720p';
   return `${height}p`;
 };
 

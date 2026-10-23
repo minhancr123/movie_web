@@ -36,9 +36,10 @@ const sourceGroup = (source) => {
     || /^(yastream:|vimo\|)/.test(source.sourceToken || '')) return 'vietsub';
   const height = Number(source.resolution);
   if (!Number.isFinite(height) || height <= 0) return 'other';
-  if (height >= 2160) return '4k';
-  if (height >= 1440) return '1440p';
-  if (height >= 1080) return '1080p';
+  // Widescreen / Cinemascope cropped video heights (e.g. 1920x800 is 1080p, 3840x1600 is 4K)
+  if (height >= 1600) return '4k';
+  if (height >= 1200) return '1440p';
+  if (height >= 768) return '1080p';
   return '720p';
 };
 

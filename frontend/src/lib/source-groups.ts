@@ -30,9 +30,14 @@ function deriveGroup(source: GroupableSource): GroupKey {
     || /^(yastream:|vimo\|)/.test(source.sourceToken || '')) return 'vietsub';
   const height = Number(source.resolution);
   if (!Number.isFinite(height) || height <= 0) return 'other';
-  if (height >= 2160) return '4k';
-  if (height >= 1440) return '1440p';
-  if (height >= 1080) return '1080p';
+  // Widescreen / Cinemascope cropped video heights:
+  // 4K (2160p) cropped 2.40:1 is ~1600p
+  // 1440p (2K) cropped 2.40:1 is ~1200p
+  // 1080p (Full HD) cropped 2.40:1 is ~800p
+  // 720p (HD) cropped 2.40:1 is ~534p
+  if (height >= 1600) return '4k';
+  if (height >= 1200) return '1440p';
+  if (height >= 768) return '1080p';
   return '720p';
 }
 
