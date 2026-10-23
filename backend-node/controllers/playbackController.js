@@ -3143,7 +3143,7 @@ export const getPlaybackSubtitles = async (req, res) => {
             label: `${subLabel(s.language)} (Gốc nhúng)`,
             url: `/api/playback/subtitles/vtt/${token}`,
             ready: true,
-            source: 'embedded', windowStart: subtitleWindow.startAt, windowSeconds: subtitleWindow.durationSeconds,
+            source: 'embedded', streamIndex: s.streamIndex, windowStart: subtitleWindow.startAt, windowSeconds: subtitleWindow.durationSeconds,
           });
         }
       }
@@ -3434,7 +3434,7 @@ export const getPlaybackSubtitles = async (req, res) => {
         const token = crypto.randomBytes(32).toString('hex');
         await setCache(subTokenKey(token), { file }, SUB_TOKEN_TTL);
         url = `/api/playback/subtitles/vtt/${token}`;
-        minted.push({ id: `${pickedScope}:${i}`, language: s.language || '', label: `${subLabel(s.language)} (Gốc nhúng)`, url, ready: true, source: 'embedded', windowStart: subtitleWindow.startAt, windowSeconds: subtitleWindow.durationSeconds });
+        minted.push({ id: `${pickedScope}:${i}`, language: s.language || '', label: `${subLabel(s.language)} (Gốc nhúng)`, url, ready: true, source: 'embedded', streamIndex: s.streamIndex, windowStart: subtitleWindow.startAt, windowSeconds: subtitleWindow.durationSeconds });
       } else {
         pending.push({ s, i, file });
       }
@@ -3448,7 +3448,7 @@ export const getPlaybackSubtitles = async (req, res) => {
         label: `${subLabel(s.language)} (Gốc nhúng)`,
         url: '',
         ready: false,
-        source: 'embedded', windowStart: subtitleWindow.startAt, windowSeconds: subtitleWindow.durationSeconds,
+        source: 'embedded', streamIndex: s.streamIndex, windowStart: subtitleWindow.startAt, windowSeconds: subtitleWindow.durationSeconds,
       })),
       ...externalTracks,
     ];
@@ -3477,7 +3477,7 @@ export const getPlaybackSubtitles = async (req, res) => {
       pickedHash: pickedScope,
       inputUrl,
       probeSummary,
-      window: subtitleWindow,
+      window: { ...subtitleWindow, sessionId: ownedSession?.sessionId || null },
       pending: pending.map(({ s, i, file }) => ({ streamIndex: s.streamIndex, outPath: file, trackId: `${pickedScope}:${i}` })),
     });
     return res.json({
@@ -3501,6 +3501,15 @@ async function runSubtitleExtractionJob({ jobId, inventoryKey, pickedHash, input
   const ready = {};
   const minted = [];
   const publish = async (trackId, outPath) => {
+    const text = await fs.readFile(outPath, 'utf8');
+    const first = text.match(/([\d:.]+)\s+-->\s+[\d:.]+/);
+    const cueStart = first ? first[1].split(':').reduce((at, part) => at * 60 + Number(part), 0) : null;
+    console.info('[subtitle-extraction-sync]', JSON.stringify({
+      sessionId: window?.sessionId ?? null,
+      subtitleStreamIndex: pending.find(p => p.trackId === trackId)?.streamIndex ?? null,
+      windowStart: window?.startAt ?? null, windowSeconds: window?.durationSeconds ?? null,
+      subtitleCueStart: cueStart, cueCount: (text.match(/-->/g) || []).length,
+    }));
     const token = crypto.randomBytes(32).toString('hex');
     await setCache(subTokenKey(token), { file: outPath }, SUB_TOKEN_TTL);
     ready[trackId] = `/api/playback/subtitles/vtt/${token}`;

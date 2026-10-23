@@ -13,6 +13,7 @@ export interface SubTrack {
   url: string;
   /** False while the background extraction job is still running. */
   ready?: boolean;
+  streamIndex?: number;
   windowStart?: number;
   windowSeconds?: number;
   /**

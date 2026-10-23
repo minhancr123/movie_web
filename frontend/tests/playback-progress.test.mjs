@@ -328,3 +328,15 @@ test('pickFailoverStartAt resumes a mid-film codec failover where the viewer was
     assert.equal(pickFailoverStartAt({ playhead: -5 }), 0, 'negatives clamp, never negative');
     assert.equal(pickFailoverStartAt({ pendingSeek: 0, playhead: 2700 }), 0, 'explicit seek-to-zero beats the old playhead');
 });
+
+test('English source cues keep the absolute clock at zero, seek 197 and reused sessions', () => {
+ for (const origin of [0, 194.5]) {
+  const sourceCue = origin === 0 ? 2 : 199;
+  const mediaTime = sourceCue - origin + 0.083;
+  assert.equal(subtitleLookupTime({ sessionStart: origin, elementTime: mediaTime, delay: 0, presentationShiftMs: 83 }), sourceCue);
+  const again = { sessionStart: origin, elementTime: mediaTime, delay: 0, presentationShiftMs: 83 };
+  assert.equal(subtitleLookupTime(again), sourceCue, 'reuse must not substitute requested start 197 for measured origin');
+ }
+ assert.equal(toLocalSeekTarget(197, 194.5), 2.5);
+ assert.equal(subtitleLookupTime({ sessionStart: 0, elementTime: 199, delay: 0, presentationShiftMs: 0 }), 199, 'direct play has no mux correction');
+});
