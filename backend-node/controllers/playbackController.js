@@ -4413,6 +4413,30 @@ export const serveRenditionAsset = async (req, res) => {
 
     if (!isAllowedAsset(asset)) return fail(res, 404, 'Không tìm thấy tài nguyên');
 
+    // Published-rendition SEGMENTS are immutable content addressed by an
+    // unguessable content-hash path, byte-identical for every entitled
+    // viewer, and sent `Cache-Control: immutable` precisely so a CDN can
+    // share one edge object across viewers. Authenticating every segment
+    // with a per-viewer grant in the query forced a per-viewer cache key,
+    // defeating that sharing — the manifest stays session-bound and
+    // no-store, and a rendition is only reachable while some live session
+    // vouches for it at resolve time. Manifests fall through to the full
+    // auth path below.
+    if (asset !== 'index.m3u8' && !asset.endsWith('.m3u8')) {
+      const state = await readRenditionState(renditionId);
+      if (!state.exists || !state.ended) return fail(res, 404, 'Bản hoàn chỉnh không còn');
+      const segPath = path.resolve(renditionPath(renditionId, asset));
+      try {
+        await fs.stat(segPath);
+      } catch {
+        return fail(res, 404, 'Tài nguyên chưa sẵn sàng');
+      }
+      const segExt = asset.endsWith('.m4s') ? '.m4s' : '.mp4';
+      res.setHeader('Content-Type', ASSET_CONTENT_TYPES[segExt]);
+      res.setHeader('Cache-Control', 'public, max-age=31536000, immutable');
+      return res.sendFile(segPath);
+    }
+
     // P1: rendition access is bound to the session that authorized it — a
     // bare rid bearer with no live session behind it opens nothing. Pre-fix
     // rid-only grants (no sid) are refused with a refresh code so the player
@@ -4488,16 +4512,14 @@ export const serveRenditionAsset = async (req, res) => {
           }
         }
       }
-      return await serveManifestResponse(res, filePath, token);
+      // Children are served WITHOUT an embedded grant (segments above are
+      // public-immutable), so the manifest body is the raw playlist: every
+      // viewer's player fetches byte-identical segment URLs, which is what
+      // lets a CDN share one edge object per segment across viewers.
+      void token;
+      return await serveManifestResponse(res, filePath, null);
     }
-
-    const ext = asset.endsWith('.m3u8') ? '.m3u8' : asset.endsWith('.m4s') ? '.m4s' : '.mp4';
-    res.setHeader('Content-Type', ASSET_CONTENT_TYPES[ext]);
-    res.setHeader(
-      'Cache-Control',
-      ext === '.m3u8' ? MANIFEST_CACHE_CONTROL : 'public, max-age=31536000, immutable',
-    );
-    return res.sendFile(filePath);
+    return fail(res, 404, 'Tài nguyên chưa sẵn sàng');
   } catch (error) {
     console.error('serveRenditionAsset error:', error.message);
     return fail(res, 500, 'Lỗi server');

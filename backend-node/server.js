@@ -283,6 +283,11 @@ const startServer = async () => {
       `[transcode-cache] scanned=${cacheCleanup.scanned} removed=${cacheCleanup.deletedIds.length} retainedMB=${Math.round(cacheCleanup.retainedBytes / 1024 / 1024)}`,
     );
 
+    // Daily trending prewarm (and once shortly after boot): published
+    // renditions ready before the first viewer asks. Env-gated, best-effort.
+    const { startPrewarmScheduler } = await import('./services/playback/prewarm.js');
+    startPrewarmScheduler();
+
     // Warm the video-encoder detection so the first playback resolve already
     // knows whether the codec-transcode fallback (HEVC/AV1 -> AVC) is viable.
     // Fire-and-forget: detection degrades to software on failure, never fatal.
