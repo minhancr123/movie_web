@@ -1,0 +1,181 @@
+{
+  "dashboard": {
+    "title": "CineVN Playback Observability",
+    "tags": ["cinevn", "playback"],
+    "timezone": "browser",
+    "panels": [
+      {
+        "id": 1,
+        "title": "Time to First Frame (p50)",
+        "type": "stat",
+        "targets": [
+          {
+            "expr": "histogram_quantile(0.5, rate(playback_resolve_duration_seconds_bucket[5m]))",
+            "legendFormat": "p50"
+          }
+        ],
+        "fieldConfig": {
+          "defaults": {
+            "unit": "s",
+            "thresholds": {
+              "mode": "absolute",
+              "steps": [
+                { "color": "green", "value": null },
+                { "color": "yellow", "value": 3 },
+                { "color": "red", "value": 8 }
+              ]
+            }
+          }
+        },
+        "gridPos": { "h": 4, "w": 6, "x": 0, "y": 0 }
+      },
+      {
+        "id": 2,
+        "title": "Seek Latency (p95)",
+        "type": "stat",
+        "targets": [
+          {
+            "expr": "histogram_quantile(0.95, rate(playback_seek_latency_seconds_bucket[5m]))",
+            "legendFormat": "p95"
+          }
+        ],
+        "fieldConfig": {
+          "defaults": {
+            "unit": "s",
+            "thresholds": {
+              "mode": "absolute",
+              "steps": [
+                { "color": "green", "value": null },
+                { "color": "yellow", "value": 4 },
+                { "color": "red", "value": 8 }
+              ]
+            }
+          }
+        },
+        "gridPos": { "h": 4, "w": 6, "x": 6, "y": 0 }
+      },
+      {
+        "id": 3,
+        "title": "Playback Success Rate",
+        "type": "stat",
+        "targets": [
+          {
+            "expr": "sum(rate(playback_success_total[5m])) / (sum(rate(playback_success_total[5m])) + sum(rate(playback_failure_total[5m]))) * 100",
+            "legendFormat": "Success %"
+          }
+        ],
+        "fieldConfig": {
+          "defaults": {
+            "unit": "percent",
+            "thresholds": {
+              "mode": "absolute",
+              "steps": [
+                { "color": "red", "value": null },
+                { "color": "yellow", "value": 95 },
+                { "color": "green", "value": 99 }
+              ]
+            }
+          }
+        },
+        "gridPos": { "h": 4, "w": 6, "x": 12, "y": 0 }
+      },
+      {
+        "id": 4,
+        "title": "Rebuffer Ratio",
+        "type": "gauge",
+        "targets": [
+          {
+            "expr": "playback_rebuffer_ratio",
+            "legendFormat": "Rebuffer %"
+          }
+        ],
+        "fieldConfig": {
+          "defaults": {
+            "unit": "percentunit",
+            "max": 0.05,
+            "thresholds": {
+              "mode": "absolute",
+              "steps": [
+                { "color": "green", "value": null },
+                { "color": "yellow", "value": 0.01 },
+                { "color": "red", "value": 0.03 }
+              ]
+            }
+          }
+        },
+        "gridPos": { "h": 4, "w": 6, "x": 18, "y": 0 }
+      },
+      {
+        "id": 5,
+        "title": "Resolve Duration by Stage",
+        "type": "timeseries",
+        "targets": [
+          {
+            "expr": "rate(playback_stage_duration_seconds_sum[5m]) / rate(playback_stage_duration_seconds_count[5m])",
+            "legendFormat": "{{stage}}"
+          }
+        ],
+        "fieldConfig": {
+          "defaults": {
+            "unit": "s"
+          }
+        },
+        "gridPos": { "h": 8, "w": 12, "x": 0, "y": 4 }
+      },
+      {
+        "id": 6,
+        "title": "Resolve Duration Distribution",
+        "type": "histogram",
+        "targets": [
+          {
+            "expr": "playback_resolve_duration_seconds_bucket",
+            "legendFormat": "{{le}}"
+          }
+        ],
+        "gridPos": { "h": 8, "w": 12, "x": 12, "y": 4 }
+      },
+      {
+        "id": 7,
+        "title": "Seek Latency by Method",
+        "type": "timeseries",
+        "targets": [
+          {
+            "expr": "rate(playback_seek_latency_seconds_sum[5m]) / rate(playback_seek_latency_seconds_count[5m])",
+            "legendFormat": "{{method}}"
+          }
+        ],
+        "fieldConfig": {
+          "defaults": {
+            "unit": "s"
+          }
+        },
+        "gridPos": { "h": 8, "w": 12, "x": 0, "y": 12 }
+      },
+      {
+        "id": 8,
+        "title": "Playback Success vs Failure",
+        "type": "timeseries",
+        "targets": [
+          {
+            "expr": "rate(playback_success_total[5m])",
+            "legendFormat": "Success"
+          },
+          {
+            "expr": "rate(playback_failure_total[5m])",
+            "legendFormat": "Failure"
+          }
+        ],
+        "fieldConfig": {
+          "defaults": {
+            "unit": "ops"
+          }
+        },
+        "gridPos": { "h": 8, "w": 12, "x": 12, "y": 12 }
+      }
+    ],
+    "schemaVersion": 38,
+    "version": 1
+  }
+}
+PYEOF
+echo "dashboard written"
