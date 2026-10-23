@@ -1434,27 +1434,24 @@ export const resolvePlayback = async (req, res) => {
       })),
     );
 
-    // 5. Rank for this client. The codec-transcode capability is resolved once
-    // (encoder detection caches after the first call): when the server can
-    // re-encode, HEVC/AV1 the browser cannot decode stays playable instead of
-    // being rejected outright.
-    const videoTranscode = await resolveVideoTranscodeCapability();
-    const { best, playable, rejected } = rankCandidates(enriched, caps, {
-      runtimeMinutes,
-      contentLanguage: detail?.originalLanguage,
-      ...titleExpectation(detail),
-      videoTranscode,
-    });
-
-    // 5b. Manual pick wins over the ranker: the user saw the badge list and
-    // asked for that exact release, so try only it (still probed like any other).
+    // 5. Rank for this client. When a manual pick or seek is pinned, rank only that
+    // candidate so scrubbing does not pay ~1.1s ranking 60+ unused alternatives.
     const excludedTokens = new Set((Array.isArray(req.body?.excludeSourceTokens) ? req.body.excludeSourceTokens : [])
       .slice(0, 20).filter(t => typeof t === 'string' && SOURCE_TOKEN_PATTERN.test(t.trim())).map(t => t.trim().toLowerCase()));
     let attempts;
     if (sourceToken) {
-      const picked = [...playable, ...rejected].find(
-        (c) => matchCandidateToken(c, sourceToken),
-      );
+      const targetCandidate = enriched.find((c) => matchCandidateToken(c, sourceToken));
+      if (!targetCandidate) {
+        return fail(res, 404, 'Nguồn đã chọn không còn khả dụng, vui lòng tải lại danh sách');
+      }
+      const videoTranscode = await resolveVideoTranscodeCapability();
+      const { playable, rejected } = rankCandidates([targetCandidate], caps, {
+        runtimeMinutes,
+        contentLanguage: detail?.originalLanguage,
+        ...titleExpectation(detail),
+        videoTranscode,
+      });
+      const picked = [...playable, ...rejected][0];
       if (!picked) {
         return fail(res, 404, 'Nguồn đã chọn không còn khả dụng, vui lòng tải lại danh sách');
       }
@@ -1468,6 +1465,13 @@ export const resolvePlayback = async (req, res) => {
       }
       attempts = [picked];
     } else {
+      const videoTranscode = await resolveVideoTranscodeCapability();
+      const { best, playable, rejected } = rankCandidates(enriched, caps, {
+        runtimeMinutes,
+        contentLanguage: detail?.originalLanguage,
+        ...titleExpectation(detail),
+        videoTranscode,
+      });
       if (!best || !playable.length) {
         return fail(res, 422, 'Không có nguồn nào phát được trên thiết bị này', {
           rejected: rejected.slice(0, 5).map(sanitizeCandidateForResponse),
