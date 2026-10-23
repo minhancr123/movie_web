@@ -156,10 +156,15 @@ export default function CatalogCard({ item, priority = false }: CatalogCardProps
             // the crop hides them — the card shows only the moving picture.
             // pointer-events=none keeps hover OFF the player, so no overlay
             // UI (or "Watch on YouTube") can ever appear.
-            className="pointer-events-none absolute left-1/2 top-1/2 z-[1] h-[140%] w-[140%] -translate-x-1/2 -translate-y-1/2 border-0"
+            className="pointer-events-none absolute left-1/2 top-1/2 z-[1] h-[175%] w-[175%] -translate-x-1/2 -translate-y-1/2 border-0"
             tabIndex={-1}
             loading="lazy"
           />
+        )}
+        {/* Corner mask: the YouTube watermark zone sinks into darkness even
+            if a logo frame slips through the crop. */}
+        {hovered && trailerKey && (
+          <div className="pointer-events-none absolute inset-0 z-[2] bg-[radial-gradient(ellipse_at_center,transparent_45%,rgba(0,0,0,0.75)_100%)]" />
         )}
         <div className="absolute inset-0 bg-gradient-to-t from-[#0d0e11] via-[#0d0e11]/25 to-transparent opacity-85 transition-opacity duration-300 group-hover/card:opacity-100" />
         <div className="spatial-sheen" />
