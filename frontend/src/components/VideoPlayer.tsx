@@ -1029,8 +1029,11 @@ export default function VideoPlayer({ src, playbackStartedAt, movie, episode, au
     // Measurement report surfaced in the subtitle menu: which track is in
     // sync and by how many seconds it hears early/late vs the film.
     const [syncReport, setSyncReport] = useState<{
-        trackId: string; offset: number; slope: number | null; corrected: boolean;
+        trackId: string; offset: number; slope: number | null; corrected: boolean; matchRate?: number;
     } | null>(null);
+    // Quality score per external track (vs the embedded fingerprint): 1.0 =
+    // same cut, ~0 = timed for a different release (unfixable by offsets).
+    const [subScores, setSubScores] = useState<Record<string, { matchRate: number; offset: number }>>({});
     const secondaryLookupTime = subLookupTime + secondaryOffset
         + (syncMapping && bilingual ? syncMapping.slope * (subLookupTime - syncMapping.anchorT) : 0);
     const primaryLookupTime = subLookupTime
@@ -1123,6 +1126,12 @@ export default function VideoPlayer({ src, playbackStartedAt, movie, episode, au
             if (best !== null) deltas.push(best);
         }
         if (deltas.length < 3) return; // not enough evidence to auto-shift
+        const matchRate = deltas.length / primaryAll.length;
+        if (matchRate < 0.5) {
+            // Timed for a DIFFERENT cut: no offset can fix scattered matches.
+            setSyncReport({ trackId: selectedSub, offset: 0, slope: null, corrected: false, matchRate });
+            return;
+        }
         deltas.sort((a, b) => a - b);
         const median = Math.round(deltas[Math.floor(deltas.length / 2)] * 20) / 20;
         if (Math.abs(median) < 0.2 || Math.abs(median) > 10) return;
@@ -1161,6 +1170,73 @@ export default function VideoPlayer({ src, playbackStartedAt, movie, episode, au
         showSyncToast(`Đã tự canh lệch phụ đề ${median > 0 ? '+' : ''}${median.toFixed(1)}s`);
         // eslint-disable-next-line react-hooks/exhaustive-deps
     }, [bilingual, secondarySub, selectedSub, cueCache]);
+
+    // One-shot per movie/source: score every ready external Vietnamese track
+    // against the embedded English fingerprint. The good cut matches ~90% of
+    // cue starts within ±2.5s; a different cut (TELESYNC vs WEB-DL) scatters.
+    const probedKeyRef = useRef<string>('');
+    useEffect(() => {
+        const viTracks = subTracks.filter((t) =>
+            t.ready !== false && t.url && t.id !== selectedSub
+            && !isEmbeddedTrack(t)
+            && t.language?.toLowerCase().startsWith('vi'));
+        if (viTracks.length === 0) return;
+        const refTrack = subTracks.find((t) => t.source === 'embedded' && t.ready !== false
+            && t.language?.toLowerCase().startsWith('en'));
+        if (!refTrack) return;
+        const key = `${movie.slug}|${refTrack.id}|${viTracks.map((t) => t.id).join(',')}`;
+        if (probedKeyRef.current === key) return;
+        probedKeyRef.current = key;
+        let cancelled = false;
+        void (async () => {
+            if (!cueCache[refTrack.id]) await ensureCues(refTrack);
+            const refCues = cueCache[refTrack.id];
+            if (cancelled || !refCues?.length) return;
+            const refStarts = refCues.map((c) => c.start).sort((a, b) => a - b);
+            const scores: Record<string, { matchRate: number; offset: number }> = {};
+            for (const track of viTracks) {
+                let cues = cueCache[track.id];
+                if (!cues) { await ensureCues(track); cues = cueCache[track.id]; }
+                if (cancelled || !cues?.length) continue;
+                let matched = 0; const deltas: number[] = [];
+                for (const cue of cues) {
+                    let best: number | null = null; let bestDist = 2.5;
+                    for (const st of refStarts) {
+                        const d = Math.abs(st - cue.start);
+                        if (d < bestDist) { bestDist = d; best = st - cue.start; }
+                    }
+                    if (best !== null) { matched += 1; deltas.push(best); }
+                }
+                const matchRate = cues.length ? matched / cues.length : 0;
+                const offset = deltas.length
+                    ? [...deltas].sort((a, b) => Math.abs(a) - Math.abs(b))[Math.floor(deltas.length / 2)]
+                    : 0;
+                scores[track.id] = { matchRate, offset };
+                setSubScores((prev) => ({ ...prev, ...scores }));
+            }
+            if (cancelled) return;
+            // Auto-switch only while the viewer has not made a manual choice
+            // and the remembered preference is absent: the current external
+            // track is from another cut and a clearly better one exists.
+            if (!autoSubRef.current || readSubPref()) return;
+            const current = subTracks.find((t) => t.id === selectedSub);
+            if (!current || isEmbeddedTrack(current)) return;
+            const currentScore = scores[current.id];
+            if (currentScore && currentScore.matchRate >= 0.5) return;
+            const bestId = Object.entries(scores)
+                .filter(([, sc]) => sc.matchRate >= 0.7)
+                .sort((a, b) => b[1].matchRate - a[1].matchRate)[0]?.[0];
+            if (bestId && bestId !== current.id) {
+                const bestTrack = subTracks.find((t) => t.id === bestId);
+                if (bestTrack) {
+                    showSyncToast(`Đã đổi sang bản Việt khớp phim (${bestTrack.label.replace(/^Tiếng Việt · /, '')})`);
+                    pickSubtitle(bestId);
+                }
+            }
+        })();
+        return () => { cancelled = true; };
+        // eslint-disable-next-line react-hooks/exhaustive-deps
+    }, [subTracks, selectedSub, movie.slug]);
 
     // Bilingual pairing completes late: when the toggle is ON with no partner
     // (the English track was still extracting), pair it the moment a ready
@@ -3308,7 +3384,9 @@ export default function VideoPlayer({ src, playbackStartedAt, movie, episode, au
                                                             const dir = syncReport.offset > 0 ? 'trễ' : 'sớm';
                                                             return (
                                                                 <div className="mb-1.5 rounded-lg border border-white/10 bg-white/5 px-2.5 py-1.5 text-[11px] leading-snug text-cinema-muted">
-                                                                    {abs < 0.2 ? (
+                                                                    {(syncReport.matchRate !== undefined && syncReport.matchRate < 0.5) ? (
+                                                                        <>⚠ Bản đang chọn làm cho <b className="text-amber-gold">bản phát khác</b> (chỉ {Math.round((syncReport.matchRate || 0) * 100)}% câu khớp) — <b>không thể canh tự động</b>, hãy thử track Việt khác.</>
+                                                                    ) : abs < 0.2 ? (
                                                                         <>✓ <b className="text-emerald-400">Bản đang chọn khớp phim</b> (lệch dưới 0.2s, đối chiếu phụ đề nhúng gốc).</>
                                                                     ) : (
                                                                         <>⏱ Bản đang chọn <b className="text-amber-gold">{dir} {abs.toFixed(1)}s</b> so với thoại{syncReport.slope ? ` và trôi chuẩn ${syncReport.slope > 0 ? '+' : ''}${(syncReport.slope * 100).toFixed(1)}%/giờ` : ''} — đã tự canh. Muốn bản chuẩn hơn: thử từng track, chỉ số này đo ngay khi chọn.</>
