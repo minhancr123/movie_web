@@ -846,7 +846,11 @@ export default function VideoPlayer({ src, playbackStartedAt, movie, episode, au
     // (it needs a url). Watch the selected track and fire it the moment
     // a URL appears so subtitles appear as soon as the file is readable.
     useEffect(() => {
-        for (const id of [selectedSub, ...(bilingual ? [secondarySub] : [])]) {
+        const silentRef = !bilingual
+            ? subTracks.find((t) => t.source === 'embedded' && t.ready !== false && t.url
+                && t.language?.toLowerCase().startsWith('en') && t.id !== selectedSub)
+            : undefined;
+        for (const id of [selectedSub, ...(bilingual ? [secondarySub] : []), ...(silentRef ? [silentRef.id] : [])]) {
             const track = subTracks.find(t => t.id === id);
             if (track?.url && (!cueCache[track.id] || cueWindowRef.current[track.id] !== track.windowStart)) void ensureCues(track);
         }
@@ -1030,9 +1034,20 @@ export default function VideoPlayer({ src, playbackStartedAt, movie, episode, au
     const secondaryOffsetRef = useRef(0);
     useEffect(() => { secondaryOffsetRef.current = secondaryOffset; }, [secondaryOffset]);
     useEffect(() => {
-        if (!bilingual || !secondarySub || secondarySub === selectedSub) return;
+        const silentRef = !bilingual
+            ? subTracks.find((t) => t.source === 'embedded' && t.ready !== false && t.url
+                && t.language?.toLowerCase().startsWith('en') && t.id !== selectedSub)
+            : undefined;
+        const refTrack = bilingual
+            ? subTracks.find((t) => t.id === secondarySub)
+            : silentRef;
+        const refId = refTrack?.id;
+        if (!refId || refId === selectedSub) return;
+        // Silent reference: fetch its cues once — the refresher above keeps
+        // new windows coming, which is what gives the slope its anchors.
+        if (!bilingual && !cueCache[refId]) { void ensureCues(refTrack!); return; }
         const primaryAll = cueCache[selectedSub];
-        const secondaryAll = cueCache[secondarySub];
+        const secondaryAll = cueCache[refId];
         if (!primaryAll?.length || !secondaryAll?.length) return;
         const pairKey = `${selectedSub}|${secondarySub}`;
         if (autoSyncedPairRef.current !== pairKey) {
@@ -1049,7 +1064,7 @@ export default function VideoPlayer({ src, playbackStartedAt, movie, episode, au
         // Ground truth = the embedded track (cut from the file itself). The
         // EXTERNAL side gets remapped; the embedded side is never dragged.
         const primarySrc = subTracks.find((t) => t.id === selectedSub)?.source;
-        const secondarySrc = subTracks.find((t) => t.id === secondarySub)?.source;
+        const secondarySrc = refTrack?.source;
         const target: 'primary' | 'secondary' =
             secondarySrc === 'embedded' && primarySrc !== 'embedded' ? 'primary' : 'secondary';
         const secondaryStarts = secondaryAll.map((c) => c.start).sort((a, b) => a - b);
