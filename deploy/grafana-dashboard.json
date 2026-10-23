@@ -7,6 +7,65 @@
   "timezone": "browser",
   "panels": [
     {
+      "id": 9,
+      "title": "CineVN LAN · kết nối giám sát",
+      "type": "stat",
+      "datasource": {
+        "type": "prometheus",
+        "uid": "${DS_PROMETHEUS}"
+      },
+      "targets": [
+        {
+          "expr": "min(up{job=\"cinevn\",site=\"lan\"})",
+          "refId": "A",
+          "instant": true,
+          "datasource": {
+            "type": "prometheus",
+            "uid": "${DS_PROMETHEUS}"
+          }
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "noValue": "Chưa nhận dữ liệu",
+          "mappings": [
+            {
+              "type": "value",
+              "options": {
+                "0": {
+                  "text": "Mất kết nối",
+                  "color": "red"
+                },
+                "1": {
+                  "text": "Đang hoạt động",
+                  "color": "green"
+                }
+              }
+            }
+          ],
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              {
+                "color": "red",
+                "value": null
+              },
+              {
+                "color": "green",
+                "value": 1
+              }
+            ]
+          }
+        }
+      },
+      "gridPos": {
+        "h": 3,
+        "w": 24,
+        "x": 0,
+        "y": 0
+      }
+    },
+    {
       "id": 1,
       "title": "Time to First Frame (p50)",
       "type": "stat",
@@ -47,7 +106,7 @@
         "h": 4,
         "w": 6,
         "x": 0,
-        "y": 0
+        "y": 3
       },
       "datasource": {
         "type": "prometheus",
@@ -95,7 +154,7 @@
         "h": 4,
         "w": 6,
         "x": 6,
-        "y": 0
+        "y": 3
       },
       "datasource": {
         "type": "prometheus",
@@ -108,7 +167,7 @@
       "type": "stat",
       "targets": [
         {
-          "expr": "100 * sum(rate(playback_success_total[5m])) / clamp_min(sum(rate(playback_success_total[5m])) + (sum(rate(playback_failure_total[5m])) or vector(0)), 0.000001)",
+          "expr": "(100 * sum(rate(playback_success_total[5m])) / clamp_min(sum(rate(playback_success_total[5m])) + (sum(rate(playback_failure_total[5m])) or vector(0)), 0.000001)) and ((sum(increase(playback_success_total[5m])) or vector(0)) + (sum(increase(playback_failure_total[5m])) or vector(0)) > 0)",
           "legendFormat": "Success %",
           "refId": "A",
           "datasource": {
@@ -143,7 +202,7 @@
         "h": 4,
         "w": 6,
         "x": 12,
-        "y": 0
+        "y": 3
       },
       "datasource": {
         "type": "prometheus",
@@ -156,7 +215,7 @@
       "type": "gauge",
       "targets": [
         {
-          "expr": "sum(rate(playback_rebuffer_seconds_total[5m])) / clamp_min(sum(rate(playback_played_seconds_total[5m])) + sum(rate(playback_rebuffer_seconds_total[5m])), 0.000001)",
+          "expr": "(sum(rate(playback_rebuffer_seconds_total[5m])) / clamp_min(sum(rate(playback_played_seconds_total[5m])) + sum(rate(playback_rebuffer_seconds_total[5m])), 0.000001)) and sum(increase(playback_played_seconds_total[5m])) > 0",
           "legendFormat": "Rebuffer %",
           "refId": "A",
           "datasource": {
@@ -192,7 +251,7 @@
         "h": 4,
         "w": 6,
         "x": 18,
-        "y": 0
+        "y": 3
       },
       "datasource": {
         "type": "prometheus",
@@ -223,7 +282,7 @@
         "h": 8,
         "w": 12,
         "x": 0,
-        "y": 4
+        "y": 7
       },
       "datasource": {
         "type": "prometheus",
@@ -250,7 +309,7 @@
         "h": 8,
         "w": 12,
         "x": 12,
-        "y": 4
+        "y": 7
       },
       "datasource": {
         "type": "prometheus",
@@ -284,7 +343,7 @@
         "h": 8,
         "w": 12,
         "x": 0,
-        "y": 12
+        "y": 15
       },
       "datasource": {
         "type": "prometheus",
@@ -324,11 +383,26 @@
         "h": 8,
         "w": 12,
         "x": 12,
-        "y": 12
+        "y": 15
       },
       "datasource": {
         "type": "prometheus",
         "uid": "${DS_PROMETHEUS}"
+      }
+    },
+    {
+      "id": 10,
+      "title": "Cách đọc số liệu",
+      "type": "text",
+      "options": {
+        "mode": "markdown",
+        "content": "Các chỉ số mở phim, tua và giật chỉ xuất hiện khi trình phát thực tế gửi sự kiện; **No data không có nghĩa là 0 lỗi**.\n\nKiểm tra sau khi xem và tua vài lần, chờ 1–2 phút. Dữ liệu thử nghiệm cục bộ không được tính là phiên xem thật. 4K cần đánh giá theo codec, bitrate và đường truyền của thiết bị; dashboard này chưa chứng minh khả năng phục vụ 100 người."
+      },
+      "gridPos": {
+        "h": 5,
+        "w": 24,
+        "x": 0,
+        "y": 23
       }
     }
   ],

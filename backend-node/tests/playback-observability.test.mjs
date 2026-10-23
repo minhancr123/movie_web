@@ -84,7 +84,9 @@ test('client metrics count measured frames, seek and rebuffer with event validat
   assert.match(text,/playback_seek_latency_seconds_sum\{method="direct"\} 1/);
   assert.match(text,/playback_rebuffer_seconds_total 2/);
   const dashboard=JSON.parse(await fs.readFile(new URL('../../deploy/grafana-dashboard.json',import.meta.url),'utf8'));
-  assert.equal(dashboard.panels.length,8);assert.match(dashboard.panels[0].targets[0].expr,/time_to_first_frame/);
+  const queries = dashboard.panels.flatMap(panel => panel.targets || []).map(target => target.expr);
+  assert.ok(queries.some(expr => /playback_time_to_first_frame_seconds_bucket/.test(expr)));
+  assert.ok(queries.some(expr => /up\{job="cinevn",site="lan"\}/.test(expr)), 'show ingestion health separately from absent viewing events');
 });
 test('metrics endpoint is private even when the trusted proxy supplies a public client IP', async () => {
   const {default:express}=await import('express');

@@ -35,3 +35,31 @@ Keep `HLS_SEGMENT_SECONDS=4` by default. Changing it to 2 requests shorter
 segments, but copy-mode boundaries still follow source keyframes. Compare
 first-frame, seek p95 and rebuffer ratios for equivalent sources and devices
 before choosing a new default. No real-user A/B improvement is claimed.
+
+## LAN → Grafana Cloud (2026-10-23)
+
+The LAN deployment runs from `~/cinevn-state/monitoring/compose.json`, independent
+of application release directories. `prometheus-cloud.example.yml` is the applied
+remote-write template. Keep the token outside Git, bind-mounted read-only as
+`/run/secrets/grafana-token`; host file owner 1000, group 65534, mode 0640, inside
+an owner-only directory. Grafana accepted the email contact-point test notification. The token belongs to `cinevn-lan-metrics` and has only
+`metrics:write` for the `dapperunicycle1362` stack. It expires after 90 days;
+renew before expiry. Do not expose port 9091 or the backend `/metrics` publicly.
+
+Dashboard: https://dapperunicycle1362.grafana.net/d/cinevn-playback/cinevn-playback-observability
+
+Cloud rule `eg12lk3nay134d` (`CineVN LAN health and playback`) replaces queries
+for the previous VPS `cineon_*` metrics with LAN backend health, missing telemetry,
+first-frame, seek, failure and rebuffer checks. It evaluates every minute and
+requires a violation for five minutes; client latency checks require >=10 events
+in ten minutes, failure checks >=3 failures, and rebuffer checks >300 played seconds.
+It routes to the existing `CineVN email` contact point. This rule does **not**
+monitor disk, backups or host CPU/RAM: those old VPS series are unavailable on LAN.
+The local four playback rules remain active locally but have no local Alertmanager.
+
+Verification: local `up{job="cinevn"}=1`, remote-write failed samples=0 and pending=0;
+Cloud preview returned `{check="backend-down"}=0`. Client panels may show **No data**
+until real viewers send events; that is not proof of zero stalls or 4K capacity.
+Before claiming 4K concurrency, test representative bitrate/codec files and actual
+outbound throughput. The current remux egress budget is 25 Mbps, with two writers
+and video transcoding disabled; direct play bypasses that VPS remux path.
