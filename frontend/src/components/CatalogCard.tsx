@@ -5,7 +5,19 @@ import Link from 'next/link';
 import Image from 'next/image';
 import { PlayCircle, Star } from 'lucide-react';
 import { CatalogItem, catalogHref } from '@/lib/catalog';
-import { API_URL } from '@/lib/api';
+import { API_URL, authClient } from '@/lib/api';
+
+// Resolved once per session; defaults to OFF (the admin panel turns it on).
+let hoverPreviewFlag: Promise<boolean> | null = null;
+const hoverPreviewEnabled = (): Promise<boolean> => {
+  if (!hoverPreviewFlag) {
+    hoverPreviewFlag = authClient
+      .get('/admin/site-settings/hover-trailer', { timeout: 4000 })
+      .then((res: any) => Boolean(res?.data?.data?.enabled))
+      .catch(() => false);
+  }
+  return hoverPreviewFlag;
+};
 
 interface CatalogCardProps {
   item: CatalogItem;
@@ -36,8 +48,10 @@ export default function CatalogCard({ item, priority = false }: CatalogCardProps
   // Muted trailer after ~900ms of hover: long enough to prove intent, short
   // enough to feel alive. One fetch per card per session (the detail endpoint
   // is cached server-side); iframe unmounts on leave so audio/GPU go with it.
-  const maybeStartTrailer = useCallback(() => {
+  const maybeStartTrailer = useCallback(async () => {
     if (trailerKey || trailerLoadingRef.current) return;
+    // Site-wide, admin-controlled: OFF by default until enabled in /admin.
+    if (!(await hoverPreviewEnabled())) return;
     const match = /^tmdb:(movie|tv):(\d+)/.exec(item.contentRef || '');
     if (!match) return;
     trailerTimerRef.current = setTimeout(async () => {

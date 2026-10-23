@@ -5,6 +5,7 @@ import { useSession } from 'next-auth/react';
 import { useRouter } from 'next/navigation';
 import { Loader2, Users, Activity, Eye, Server, RefreshCw, Film } from 'lucide-react';
 import MovieRequestsManager from '@/components/admin/MovieRequestsManager';
+import { authClient } from '@/lib/api';
 
 export default function AdminDashboard() {
     const { data: session, status } = useSession();
@@ -13,6 +14,25 @@ export default function AdminDashboard() {
     // States for dashboard data
     const [activeTab, setActiveTab] = useState<'overview' | 'requests'>('overview');
     const [rateLimit, setRateLimit] = useState<number>(0);
+    const [hoverTrailer, setHoverTrailer] = useState<boolean>(false);
+    const [hoverSaving, setHoverSaving] = useState(false);
+
+    useEffect(() => {
+        authClient.get('/admin/site-settings/hover-trailer', { timeout: 5000 })
+            .then((res) => setHoverTrailer(Boolean(res.data?.data?.enabled)))
+            .catch(() => {});
+    }, []);
+
+    const toggleHoverTrailer = async () => {
+        setHoverSaving(true);
+        try {
+            const next = !hoverTrailer;
+            await authClient.post('/admin/site-settings/hover-trailer', { enabled: next }, { timeout: 5000 });
+            setHoverTrailer(next);
+        } catch { /* keep old state */ } finally {
+            setHoverSaving(false);
+        }
+    };
     const [newRateLimit, setNewRateLimit] = useState<number>(0);
     const [stats, setStats] = useState<{ activeUsers: number, requestRate: number, totalViews: number }>({ activeUsers: 0, requestRate: 0, totalViews: 0 });
     const [isLoading, setIsLoading] = useState(true);
@@ -115,6 +135,23 @@ export default function AdminDashboard() {
 
                 {activeTab === 'overview' && (
                     <div className="animate-in fade-in slide-in-from-bottom-4 duration-500">
+                        {/* Site experience settings */}
+                        <div className="mb-10 flex items-center justify-between rounded-2xl border border-white/10 bg-surface-light p-6">
+                            <div>
+                                <h3 className="font-bold text-white">Xem trước trailer khi rê chuột</h3>
+                                <p className="mt-1 text-sm text-cinema-subtle">
+                                    Bật để card phim tự chạy trailer im lặng khi người dùng rê chuột giữ ~1 giây. Mặc định tắt.
+                                </p>
+                            </div>
+                            <button
+                                onClick={toggleHoverTrailer}
+                                disabled={hoverSaving}
+                                className={`relative h-8 w-14 shrink-0 rounded-full transition-colors ${hoverTrailer ? 'bg-emerald-500' : 'bg-white/15'} disabled:opacity-50`}
+                                aria-pressed={hoverTrailer}
+                            >
+                                <span className={`absolute top-1 h-6 w-6 rounded-full bg-white transition-all ${hoverTrailer ? 'left-7' : 'left-1'}`} />
+                            </button>
+                        </div>
                         {/* Grid Stats */}
                         <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6 mb-10">
                     {/* Active Users */}
