@@ -42,7 +42,7 @@ const formatResolveStage = (stage: string, detail: string): string => {
 const RETRYABLE_503_CODES = new Set(['REMUX_BUSY', 'REMUX_NO_SPACE', 'SOURCE_PREPARE_TIMEOUT']);
 import { providerAPI, playbackAPI } from '@/lib/api';
 import { detectCapabilities } from '@/lib/capabilities';
-import { groupPlaybackSources } from '@/lib/source-groups';
+import { groupPlaybackSources, type GroupableSource } from '@/lib/source-groups';
 import { filterPlaybackSources, pickFallbackSource, audioIndexForSource, isSourceActiveToken, type SourceFilter, type DeliveryState } from '@/lib/source-delivery';
 import SourceDeliveryFilter, { SourceDeliveryBadge } from '@/components/SourceDeliveryFilter';
 import type { PlayerEpisode } from '@/lib/catalog';
@@ -69,13 +69,14 @@ interface PlaybackSectionProps {
   runtimeMinutes?: number | null;
 }
 
-interface SourceCandidate {
+interface SourceCandidate extends GroupableSource {
   directPlay?: DeliveryState;
   recommended?: boolean;
   sourceToken?: string;
   filename?: string;
   playable?: boolean;
   resolution?: number | string | null;
+  qualityGroup?: string | null;
   codec?: string | null;
   hdr?: string | null;
   releaseSource?: string | null;

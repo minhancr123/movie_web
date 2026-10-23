@@ -1,10 +1,10 @@
-interface GroupableSource {
+export interface GroupableSource {
   sourceToken?: string;
   origin?: string | null;
   resolution?: number | string | null;
   playable?: boolean;
   /** Bucket assigned by the backend (services/playback/sourcePicker.js). */
-  qualityGroup?: string;
+  qualityGroup?: string | null;
 }
 
 const GROUPS = [
