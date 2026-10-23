@@ -13,6 +13,8 @@ export interface SubTrack {
   url: string;
   /** False while the background extraction job is still running. */
   ready?: boolean;
+  windowStart?: number;
+  windowSeconds?: number;
   /**
    * Where the track came from. 'embedded' tracks are extracted from the
    * playing file itself, so their timing is exact; anything else is an
@@ -156,3 +158,9 @@ export function activeCues(cues: SubCue[], time: number): SubCue[] {
   return cues.filter((c) => time >= c.start && time <= c.end);
 }
 
+
+/** Refresh overlapping embedded slices before their current coverage ends. */
+export const subtitleWindowNeedsRefresh = (track: SubTrack | undefined, position: number) =>
+  track?.source === 'embedded' && typeof track.windowStart === 'number'
+    && typeof track.windowSeconds === 'number' && Number.isFinite(position)
+    && (position < track.windowStart || position >= track.windowStart + Math.min(120, track.windowSeconds / 2));

@@ -18,7 +18,7 @@ import { PlaybackClock, sendPlaybackEvent } from '@/lib/playback-telemetry';
 import {
     fetchCues, activeCues,
     isEmbeddedTrack, trackSource, isViTrack, isEnTrack, isReadyTrack,
-    pickAutoSubtitle, autoSubtitleRank,
+    pickAutoSubtitle, autoSubtitleRank, subtitleWindowNeedsRefresh,
     type SubCue, type SubTrack,
 } from '@/lib/subtitles';
 import { computeResumeAt, pickDisplayDuration, decideSeekTarget, nextRemuxWindowAt, planResume, shouldDowngradeForDropped, subtitleLookupTime, classifyStartAt, toLocalSeekTarget } from '@/lib/playback-progress';
@@ -566,10 +566,13 @@ export default function VideoPlayer({ src, playbackStartedAt, movie, episode, au
     const [subMatch, setSubMatch] = useState<{ checked: boolean; languages: Record<string, { matched: boolean; release: string; count: number }> }>({ checked: false, languages: {} });
     const [subNote, setSubNote] = useState('');
     const [subError, setSubError] = useState('');
+    const sessionStartAt = typeof startAt === 'number' && Number.isFinite(startAt) && startAt > 0 ? startAt : 0;
     const [selectedSub, setSelectedSub] = useState<string>('off');
     const [bilingual, setBilingual] = useState(false);
     const [secondarySub, setSecondarySub] = useState<string>('');
     const [cueCache, setCueCache] = useState<Record<string, SubCue[]>>({});
+    const cueWindowRef = useRef<Record<string, number | undefined>>({});
+    const cueRequestsRef = useRef<Record<string, { window?: number; epoch: number }>>({});
     const [cuesLoading, setCuesLoading] = useState(false);
     const [subJobId, setSubJobId] = useState<string | null>(null);
     // Viewer upload (.srt): file read as text and POSTed as JSON. Kept local
@@ -675,6 +678,8 @@ export default function VideoPlayer({ src, playbackStartedAt, movie, episode, au
                 ...(subContext.sourceToken ? { sourceToken: subContext.sourceToken } : {}),
                 ...(subContext.playbackSessionId ? { playbackSessionId: subContext.playbackSessionId } : {}),
                 externalOnly: !allowEmbedded,
+                positionSeconds: restorePendingRef.current && typeof targetAt === 'number'
+                    ? targetAt : sessionStartAt + (videoRef.current?.currentTime || 0),
             });
             // Source changed while this request was in flight: the departed
             // source's list must never overwrite the new source's inventory.
@@ -713,7 +718,7 @@ export default function VideoPlayer({ src, playbackStartedAt, movie, episode, au
             }
         }
         // eslint-disable-next-line react-hooks/exhaustive-deps
-    }, [subContext?.type, subContext?.tmdbId, subContext?.season, subContext?.episode, subContext?.sourceToken, subContext?.playbackSessionId]);
+    }, [subContext?.type, subContext?.tmdbId, subContext?.season, subContext?.episode, subContext?.sourceToken, subContext?.playbackSessionId, sessionStartAt, targetAt]);
 
     // A new playing FILE owns a new subtitle inventory: drop the old list so
     // the loader below cannot early-return on the previous source's 'full'
@@ -815,7 +820,7 @@ export default function VideoPlayer({ src, playbackStartedAt, movie, episode, au
                     clearInterval(timer);
                     if (!cancelled) {
                         setSubJobId(null);
-                        if (job.error) setSubNote(job.error);
+                        if (job.error) { setSubNote(job.error); subLoadModeRef.current = 'idle'; }
                     }
                 }
             } catch {
@@ -841,32 +846,45 @@ export default function VideoPlayer({ src, playbackStartedAt, movie, episode, au
     // (it needs a url). Watch the selected track and fire it the moment
     // a URL appears so subtitles appear as soon as the file is readable.
     useEffect(() => {
-        if (selectedSub === 'off' || !selectedSub) return;
-        const track = subTracks.find((t) => t.id === selectedSub);
-        if (track?.url && !cueCache[track.id]) void ensureCues(track);
+        for (const id of [selectedSub, ...(bilingual ? [secondarySub] : [])]) {
+            const track = subTracks.find(t => t.id === id);
+            if (track?.url && (!cueCache[track.id] || cueWindowRef.current[track.id] !== track.windowStart)) void ensureCues(track);
+        }
         // eslint-disable-next-line react-hooks/exhaustive-deps
-    }, [selectedSub, subTracks, cueCache]);
+    }, [selectedSub, secondarySub, bilingual, subTracks, cueCache]);
+
+    useEffect(() => {
+        const timer = setInterval(() => {
+            const video = videoRef.current;
+            if (!video || video.paused || restorePendingRef.current || subJobId) return;
+            const track = subTracks.find(t => t.id === selectedSub);
+            if (subtitleWindowNeedsRefresh(track, sessionStartAt + video.currentTime)) {
+                subLoadModeRef.current = 'external';
+                void loadSubtitleInventory(true);
+            }
+        }, 10000);
+        return () => clearInterval(timer);
+    }, [selectedSub, subTracks, sessionStartAt, subJobId, loadSubtitleInventory]);
 
     const ensureCues = useCallback(async (track: SubTrack) => {
-        if (cueCache[track.id] || !track.url) return;
+        if (!track.url || (cueCache[track.id] && cueWindowRef.current[track.id] === track.windowStart)) return;
+        // New slices keep the same track ID so manual English/off choices survive.
+        // A newer window or source must outrank an older fetch finishing late.
+        const epoch = subSourceEpochRef.current;
+        const queued = cueRequestsRef.current[track.id];
+        if (queued && queued.epoch === epoch && queued.window === track.windowStart) return;
+        const request = { window: track.windowStart, epoch };
+        cueRequestsRef.current[track.id] = request;
         setCuesLoading(true);
         try {
             const cues = await fetchCues(apiUrl(track.url));
-            setCueCache((prev) => ({ ...prev, [track.id]: cues }));
+            if (epoch !== subSourceEpochRef.current || cueRequestsRef.current[track.id] !== request) return;
+            cueWindowRef.current[track.id] = track.windowStart;
+            setCueCache(prev => ({ ...prev, [track.id]: cues }));
         } catch {
-            // Leave the key absent on failure: an empty array is truthy, so
-            // storing it would make the guard above skip every later call and
-            // the track could never recover without remounting — the overlay
-            // would show nothing forever after one transient failure (expired
-            // token, evicted cache entry, hiccup). Absent means the next
-            // select retries the fetch.
-            setCueCache((prev) => {
-                if (!(track.id in prev)) return prev;
-                const next = { ...prev };
-                delete next[track.id];
-                return next;
-            });
+            // Retain the current overlapping slice if the replacement request fails.
         } finally {
+            if (cueRequestsRef.current[track.id] === request) delete cueRequestsRef.current[track.id];
             setCuesLoading(false);
         }
         // eslint-disable-next-line react-hooks/exhaustive-deps
@@ -939,8 +957,11 @@ export default function VideoPlayer({ src, playbackStartedAt, movie, episode, au
         }
     };
 
-    const syncKey = React.useMemo(() => subtitleSyncKey(subContext, selectedSub, cueCache[selectedSub] || []),
-        [subContext?.type, subContext?.tmdbId, subContext?.season, subContext?.episode, subContext?.sourceToken, selectedSub, cueCache]);
+    const syncKey = React.useMemo(() => {
+        const track = subTracks.find(t => t.id === selectedSub);
+        return subtitleSyncKey(subContext, selectedSub, cueCache[selectedSub] || [],
+            track?.source === 'embedded' && typeof track.windowStart === 'number');
+    }, [subContext?.type, subContext?.tmdbId, subContext?.season, subContext?.episode, subContext?.sourceToken, selectedSub, cueCache, subTracks]);
     // Restore only the exact film/release/track/cue content, never a reused embedded index.
     useEffect(() => {
         selectedSubRef.current = selectedSub;
@@ -953,7 +974,6 @@ export default function VideoPlayer({ src, playbackStartedAt, movie, episode, au
 
     // Display timeline: the element plays truncated 0-based bytes while the
     // viewer sees positions offset by the session's start (0 = from the start).
-    const sessionStartAt = typeof startAt === 'number' && Number.isFinite(startAt) && startAt > 0 ? startAt : 0;
     const displayTime = sessionStartAt + currentTime;
     // Full-length duration for the seek bar and readout: the element duration
     // of a seek-started session only covers its truncated tail.
@@ -2499,6 +2519,12 @@ export default function VideoPlayer({ src, playbackStartedAt, movie, episode, au
                         <RotateCw className="w-5 h-5" />
                         <span className="pointer-events-none absolute inset-0 flex items-center justify-center pt-[2px] text-[8px] font-bold leading-none">10</span>
                     </button>
+                </div>
+            )}
+
+            {subJobId && subTracks.some(t => t.id === selectedSub && t.source === 'embedded' && t.ready === false) && primaryCues.length === 0 && (
+                <div role="status" className="pointer-events-none absolute inset-x-0 bottom-32 sm:bottom-28 z-20 text-center">
+                    <span className="rounded-md bg-black/70 px-3 py-1 text-sm text-white/80">Đang chuẩn bị phụ đề nhúng…</span>
                 </div>
             )}
 

@@ -39,3 +39,9 @@ test('storage validates values, bounds size and resets only the chosen release',
  assert.equal(m.readSubtitleDelay(raw, 'first'), 0);
  assert.equal(m.readSubtitleDelay(raw, 'key-204'), 20.4);
 });
+
+test('embedded window refresh keeps calibration for the exact file and chosen track', () => {
+ const key = m.subtitleSyncKey(film, 'exact-file:0', cues, true);
+ assert.equal(m.subtitleSyncKey(film, 'exact-file:0', [{start:600,end:602,text:'Next window'}], true), key);
+ assert.notEqual(m.subtitleSyncKey(film, 'different-file:0', cues, true), key);
+});

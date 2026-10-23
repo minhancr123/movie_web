@@ -178,7 +178,6 @@ const run = (bin, args, { timeoutMs }) =>
     });
   });
 
-const SUBS_TIMEOUT_MS = 120000;
 
 const SUBS_ROOT = path.resolve(
   process.env.SUBS_ROOT || path.join(process.cwd(), 'tmp', 'subs')
@@ -202,68 +201,40 @@ export const isConvertibleSubtitle = (codec) =>
  * so this finishes in seconds for text subs. Throws on image-based subs or
  * ffmpeg failure; callers decide whether to skip the track.
  */
-export const extractSubtitleTrack = async (inputUrl, streamIndex, outPath) => {
-  await fs.mkdir(path.dirname(outPath), { recursive: true });
-  await run(
-    FFMPEG_BIN,
-    [
-      '-hide_banner',
-      '-loglevel',
-      'warning',
-      '-nostdin',
-      '-i',
-      inputUrl,
-      '-map',
-      `0:${Number(streamIndex)}`,
-      '-c:s',
-      'webvtt',
-      '-f',
-      'webvtt',
-      '-y',
-      outPath,
-    ],
-    { timeoutMs: SUBS_TIMEOUT_MS }
-  );
-  const stat = await fs.stat(outPath);
-  if (!stat.size) {
-    await fs.rm(outPath, { force: true });
-    throw new Error('subtitle track rỗng sau khi trích');
-  }
+export const extractSubtitleTrack = async (inputUrl, streamIndex, outPath, window = {}) => {
+  const [result] = await extractSubtitleTracks(inputUrl, [{ streamIndex, outPath }], window);
+  if (!result?.ok) throw new Error('Không trích được phụ đề');
   return outPath;
 };
 
 export const subsPath = (...parts) => path.join(SUBS_ROOT, ...parts);
+const SUBS_BATCH_TIMEOUT_MS = 120000;
 
-const SUBS_BATCH_TIMEOUT_MS = 300000;
-
-/**
- * Extract MANY subtitle tracks in ONE ffmpeg pass. Each track used to get its
- * own process (each re-reading the whole remote file over HTTP), so 6 tracks
- * meant 6 full sequential scans. One demux pass feeds all outputs at once.
- * `jobs`: [{ streamIndex, outPath }]. Resolves per-output results; a single
- * bad track never fails the batch.
- */
-export const extractSubtitleTracks = async (inputUrl, jobs) => {
-  await fs.mkdir(SUBS_ROOT, { recursive: true });
-  const args = ['-hide_banner', '-loglevel', 'warning', '-nostdin', '-i', inputUrl];
-  for (const job of jobs) {
-    args.push('-map', `0:${Number(job.streamIndex)}`, '-c:s', 'webvtt', '-f', 'webvtt', '-y', job.outPath);
+/** Publish atomically after ffmpeg exits; an existing empty file is not ready. */
+export const extractSubtitleTracks = async (inputUrl, jobs, window = {}) => {
+  if (!jobs.length) return [];
+  const temporary = jobs.map(job => ({ ...job, temp: `${job.outPath}.partial-${Date.now()}-${Math.random().toString(36).slice(2)}.vtt` }));
+  const start = Math.max(0, Number(window.startAt) || 0);
+  const duration = Math.max(0, Number(window.durationSeconds) || 0);
+  const args = ['-hide_banner', '-loglevel', 'warning', '-nostdin',
+    ...(duration ? ['-copyts', '-ss', String(start)] : []), '-i', inputUrl];
+  try {
+    for (const job of temporary) {
+      await fs.mkdir(path.dirname(job.outPath), { recursive: true });
+      args.push('-map', `0:${Number(job.streamIndex)}`,
+        ...(duration ? ['-to', String(start + duration)] : []),
+        '-c:s', 'webvtt', '-f', 'webvtt', '-y', job.temp);
+    }
+    await run(FFMPEG_BIN, args, { timeoutMs: SUBS_BATCH_TIMEOUT_MS });
+    return await Promise.all(temporary.map(async job => {
+      const text = await fs.readFile(job.temp, 'utf8').catch(() => '');
+      if (!/^WEBVTT(?:\s|$)/.test(text)) return { ...job, ok: false };
+      await fs.rename(job.temp, job.outPath);
+      return { ...job, ok: true };
+    }));
+  } finally {
+    await Promise.all(temporary.map(job => fs.rm(job.temp, { force: true }).catch(() => {})));
   }
-  await run(FFMPEG_BIN, args, { timeoutMs: SUBS_BATCH_TIMEOUT_MS });
-  return Promise.all(
-    jobs.map(async (job) => {
-      try {
-        const stat = await fs.stat(job.outPath);
-        if (!stat.size) {
-          await fs.rm(job.outPath, { force: true });
-          return { ...job, ok: false };
-        }
-        return { ...job, ok: true };
-      } catch {
-        return { ...job, ok: false };
-      }
-    })
-  );
 };
 
 const probeFile = async (inputUrl) => {

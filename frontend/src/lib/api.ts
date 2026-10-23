@@ -246,6 +246,7 @@ export const playbackAPI = {
     sourceToken?: string;
     playbackSessionId?: string;
     externalOnly?: boolean;
+    positionSeconds?: number;
   }) => authClient.post('/playback/subtitles', data),
   // Viewer-uploaded .srt: file read as text client-side, JSON body (no
   // multipart dependency). The response is a ready track, selected now.

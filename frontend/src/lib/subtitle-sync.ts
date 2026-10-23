@@ -6,8 +6,10 @@ export const clampSubtitleDelay = (value: number) => Number.isFinite(value)
 
 /** No expiring URLs/session IDs: seek rebuilds keep calibration; other cuts do not. */
 export function subtitleSyncKey(context: { type: string; tmdbId: number; season?: number | null; episode?: number | null; sourceToken?: string } | null | undefined,
-  trackId: string, cues: SubCue[]): string | null {
-  if (!context?.sourceToken || !trackId || trackId === 'off' || !cues.length) return null;
+  trackId: string, cues: SubCue[], embeddedWindow = false): string | null {
+  if (!context?.sourceToken || !trackId || trackId === 'off' || (!cues.length && !embeddedWindow)) return null;
+  // Windowed embedded IDs already contain exact file identity + track index.
+  if (embeddedWindow) return JSON.stringify([context.type, context.tmdbId, context.season ?? null, context.episode ?? null, context.sourceToken, trackId, 'embedded-window']);
   // Fingerprint all cues, including text, so replacement uploads cannot reuse an old correction.
   let hash = 2166136261;
   for (const cue of cues) for (const ch of `${cue.start}|${cue.end}|${cue.text}\n`) {

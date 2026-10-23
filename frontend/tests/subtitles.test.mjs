@@ -29,7 +29,7 @@ execFileSync(
   { cwd: root, stdio: 'pipe' },
 );
 
-const { isReadyTrack, isEmbeddedTrack, isViTrack, pickBestViTrack, pickAutoSubtitle, autoSubtitleRank } = await import(
+const { isReadyTrack, isEmbeddedTrack, isViTrack, pickBestViTrack, pickAutoSubtitle, autoSubtitleRank, subtitleWindowNeedsRefresh } = await import(
   pathToFileURL(path.join(outDir, 'subtitles.js')).href,
 );
 process.on('exit', () => rmSync(outDir, { recursive: true, force: true }));
@@ -78,3 +78,11 @@ assert.equal(isViTrack({ language: 'en' }), false);
 
 console.log('ok - isReadyTrack allows embedded tracks before their URL lands');
 console.log('ok - bestViTrack will now find embedded Vietnamese first');
+
+test('embedded slices refresh with overlap after forward/backward seeks; external tracks do not', () => {
+  const track = { id: 'file:0', source: 'embedded', windowStart: 600, windowSeconds: 300 };
+  assert.equal(subtitleWindowNeedsRefresh(track, 648), false);
+  assert.equal(subtitleWindowNeedsRefresh(track, 720), true);
+  assert.equal(subtitleWindowNeedsRefresh(track, 599), true);
+  assert.equal(subtitleWindowNeedsRefresh({ ...track, source: 'external' }, 1000), false);
+});

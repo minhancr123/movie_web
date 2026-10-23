@@ -117,7 +117,7 @@ import {
 import { planAdmission } from '../services/playback/deliveryPlan.js';
 import { getDecryptedKey } from '../services/providers/connectionStore.js';
 import { computeOpenSubtitlesHash } from '../services/playback/opensubtitlesHash.js';
-import { selectEmbeddedSubtitleTracks, needsEmbeddedInventory } from '../services/playback/subtitleInventory.js';
+import { selectEmbeddedSubtitleTracks, needsEmbeddedInventory, subtitleWindowAt, subtitleSidecarName, isCompletedSubtitle } from '../services/playback/subtitleInventory.js';
 import * as opensubtitles from '../services/playback/opensubtitles.js';
 import { resolveVimoSource, getVimoStreams, verifyVimoStream } from '../services/playback/vimoClient.js';
 import { resolveYaStreamSource } from '../services/playback/yastreamClient.js';
@@ -561,6 +561,7 @@ export const parseResolveBody = (body = {}) => {
       typeof body.playbackSessionId === 'string' && /^[a-f0-9]{32}$/i.test(body.playbackSessionId.trim())
         ? body.playbackSessionId.trim().toLowerCase()
         : null,
+    positionSeconds: Number.isFinite(Number(body.positionSeconds)) ? Math.max(0, Math.min(86400, Number(body.positionSeconds))) : null,
     externalOnly: body.externalOnly === true,
     // Audio track choice: ffprobe-order index into the file's audio streams.
     // Invalid values fall back to the default (first) track downstream.
@@ -2967,6 +2968,7 @@ export const listPlaybackSources = async (req, res) => {
 const SUB_TOKEN_TTL = 24 * 60 * 60;
 const SUB_INVENTORY_TTL = 12 * 60 * 60;
 const SUB_JOB_TTL = 60 * 60;
+const SUB_WORKER_ID = crypto.randomUUID();
 const MAX_SUB_TRACKS = 6;
 const subJobKey = (jobId) => `playback:subjob:${jobId}`;
 
@@ -3050,6 +3052,7 @@ export const getPlaybackSubtitles = async (req, res) => {
     sourceToken,
     playbackSessionId,
     externalOnly,
+    positionSeconds,
   } = parsed;
   const db = getDB();
 
@@ -3112,6 +3115,7 @@ export const getPlaybackSubtitles = async (req, res) => {
     }).catch((error) => ({ subtitles: [], errors: [error.message] }));
     const externalSubs = externalResult.subtitles || [];
 
+    const subtitleWindow = subtitleWindowAt(positionSeconds ?? ownedSession?.startAt ?? 0);
     const embeddedTracks = [];
     // Derive from the ownership-checked session. It was previously read off the
     // raw lookup; harmless in practice because probeFacts is only populated for
@@ -3122,10 +3126,10 @@ export const getPlaybackSubtitles = async (req, res) => {
       for (let i = 0; i < probeFacts.subtitles.length; i += 1) {
         const s = probeFacts.subtitles[i];
         if (!isConvertibleSubtitle(s.codec)) continue;
-        const file = subsPath(`${fileIdentity(infoHash, ownedSession.fileId)}-${i}.vtt`);
+        const file = subsPath(subtitleSidecarName(fileIdentity(infoHash, ownedSession.fileId), i, subtitleWindow));
         let ready = false;
         try {
-          await fs.access(file);
+          if (!(await isCompletedSubtitle(file))) throw new Error("Not ready");
           ready = true;
         } catch {
           ready = false;
@@ -3139,7 +3143,7 @@ export const getPlaybackSubtitles = async (req, res) => {
             label: `${subLabel(s.language)} (Gốc nhúng)`,
             url: `/api/playback/subtitles/vtt/${token}`,
             ready: true,
-            source: 'embedded',
+            source: 'embedded', windowStart: subtitleWindow.startAt, windowSeconds: subtitleWindow.durationSeconds,
           });
         }
       }
@@ -3389,7 +3393,7 @@ export const getPlaybackSubtitles = async (req, res) => {
     // Fast path: inventory is cached per torrent file — repeat opens
     // return instantly without touching TorBox or ffmpeg again. v3: file identity and response
     // shape carries the probe summary + per-track readiness.
-    const inventoryKey = `playback:subs:v4:${pickedScope}`;
+    const inventoryKey = `playback:subs:v5:${pickedScope}:w${subtitleWindow.startAt}`;
     const cachedInventory = await getCache(inventoryKey);
     if (cachedInventory?.done) {
       return res.json({
@@ -3406,7 +3410,7 @@ export const getPlaybackSubtitles = async (req, res) => {
 
     if (cachedInventory?.jobId) {
       const job = await getCache(subJobKey(cachedInventory.jobId));
-      if (job && !job.done) {
+      if (job && !job.done && job.worker === SUB_WORKER_ID) {
         return res.json({ success: true, data: {
           audio, tracks: cachedInventory.tracks,
           jobId: cachedInventory.jobId, probe: probeSummary, note,
@@ -3417,11 +3421,11 @@ export const getPlaybackSubtitles = async (req, res) => {
     const pending = [];
     for (const s of textSubs) {
       const i = s.inventoryIndex;
-      const file = subsPath(`${pickedScope}-${i}.vtt`);
+      const file = subsPath(subtitleSidecarName(pickedScope, i, subtitleWindow));
       let ready = false;
       let url = '';
       try {
-        await fs.access(file);
+        if (!(await isCompletedSubtitle(file))) throw new Error("Not ready");
         ready = true;
       } catch {
         ready = false;
@@ -3430,7 +3434,7 @@ export const getPlaybackSubtitles = async (req, res) => {
         const token = crypto.randomBytes(32).toString('hex');
         await setCache(subTokenKey(token), { file }, SUB_TOKEN_TTL);
         url = `/api/playback/subtitles/vtt/${token}`;
-        minted.push({ id: `${pickedScope}:${i}`, language: s.language || '', label: `${subLabel(s.language)} (Gốc nhúng)`, url, ready: true, source: 'embedded' });
+        minted.push({ id: `${pickedScope}:${i}`, language: s.language || '', label: `${subLabel(s.language)} (Gốc nhúng)`, url, ready: true, source: 'embedded', windowStart: subtitleWindow.startAt, windowSeconds: subtitleWindow.durationSeconds });
       } else {
         pending.push({ s, i, file });
       }
@@ -3444,7 +3448,7 @@ export const getPlaybackSubtitles = async (req, res) => {
         label: `${subLabel(s.language)} (Gốc nhúng)`,
         url: '',
         ready: false,
-        source: 'embedded',
+        source: 'embedded', windowStart: subtitleWindow.startAt, windowSeconds: subtitleWindow.durationSeconds,
       })),
       ...externalTracks,
     ];
@@ -3461,7 +3465,7 @@ export const getPlaybackSubtitles = async (req, res) => {
     // Slow path (first open only): one background ffmpeg pass extracts every
     // pending track at once; the player polls the job until URLs land.
     const jobId = crypto.randomBytes(16).toString('hex');
-    await setCache(subJobKey(jobId), { done: false, ready: {} }, SUB_JOB_TTL);
+    await setCache(subJobKey(jobId), { done: false, ready: {}, worker: SUB_WORKER_ID }, SUB_JOB_TTL);
     await setCache(
       inventoryKey,
       { done: false, tracks, jobId, probe: probeSummary },
@@ -3473,6 +3477,7 @@ export const getPlaybackSubtitles = async (req, res) => {
       pickedHash: pickedScope,
       inputUrl,
       probeSummary,
+      window: subtitleWindow,
       pending: pending.map(({ s, i, file }) => ({ streamIndex: s.streamIndex, outPath: file, trackId: `${pickedScope}:${i}` })),
     });
     return res.json({
@@ -3482,7 +3487,7 @@ export const getPlaybackSubtitles = async (req, res) => {
         tracks,
         jobId,
         probe: probeSummary,
-        note: note || 'Trích lần đầu hơi lâu (đọc 1 lượt toàn file), các lần sau mở tức thì',
+        note: note || 'Đang chuẩn bị phụ đề quanh vị trí đang xem; chữ sẽ hiện khi trích xong',
       },
     });
   } catch (error) {
@@ -3492,7 +3497,7 @@ export const getPlaybackSubtitles = async (req, res) => {
 };
 
 /** Background worker: single-pass extract, then publish URLs to job+inventory. */
-async function runSubtitleExtractionJob({ jobId, inventoryKey, pickedHash, inputUrl, probeSummary, pending }) {
+async function runSubtitleExtractionJob({ jobId, inventoryKey, pickedHash, inputUrl, probeSummary, pending, window }) {
   const ready = {};
   const minted = [];
   const publish = async (trackId, outPath) => {
@@ -3503,7 +3508,7 @@ async function runSubtitleExtractionJob({ jobId, inventoryKey, pickedHash, input
     minted.push({ idx, url: ready[trackId] });
   };
   try {
-    const results = await extractSubtitleTracks(inputUrl, pending);
+    const results = await extractSubtitleTracks(inputUrl, pending, window);
     for (const r of results) {
       if (r.ok) await publish(r.trackId, r.outPath);
     }
@@ -3516,7 +3521,7 @@ async function runSubtitleExtractionJob({ jobId, inventoryKey, pickedHash, input
     if (missing.length > 0 && missing.length < pending.length) {
       for (const p of missing) {
         try {
-          await extractSubtitleTrack(inputUrl, p.streamIndex, p.outPath);
+          await extractSubtitleTrack(inputUrl, p.streamIndex, p.outPath, window);
           await publish(p.trackId, p.outPath);
         } catch {
           // Track-level failure stays unready; the menu explains why.
@@ -3524,10 +3529,10 @@ async function runSubtitleExtractionJob({ jobId, inventoryKey, pickedHash, input
       }
     }
   } catch (error) {
-    console.error(`subtitle extraction batch ${jobId} failed, retrying per-track:`, error.message);
+    console.error(`subtitle extraction batch ${jobId} failed, retrying per-track:`, redactSecrets(error.message));
     for (const p of pending) {
       try {
-        await extractSubtitleTrack(inputUrl, p.streamIndex, p.outPath);
+        await extractSubtitleTrack(inputUrl, p.streamIndex, p.outPath, window);
         await publish(p.trackId, p.outPath);
       } catch {
         // Track-level failure stays unready; the menu explains why.
@@ -3540,8 +3545,8 @@ async function runSubtitleExtractionJob({ jobId, inventoryKey, pickedHash, input
       const hit = minted.find((m) => `${pickedHash}:${m.idx}` === t.id);
       return hit ? { ...t, url: hit.url, ready: true } : t;
     });
-    await setCache(inventoryKey, { done: true, tracks, probe: probeSummary || null }, SUB_INVENTORY_TTL);
-    await setCache(subJobKey(jobId), { done: true, ready }, SUB_JOB_TTL);
+    await setCache(inventoryKey, { done: true, tracks, probe: probeSummary || null }, minted.length === pending.length ? SUB_INVENTORY_TTL : 30);
+    await setCache(subJobKey(jobId), { done: true, ready, ...(minted.length ? {} : { error: "Chưa trích được phụ đề đoạn này. Vui lòng thử lại." }) }, SUB_JOB_TTL);
   } catch (error) {
     console.error(`subtitle extraction job ${jobId} failed:`, error.message);
     await setCache(subJobKey(jobId), { done: true, ready: {}, error: 'Trích phụ đề thất bại' }, SUB_JOB_TTL);
@@ -3554,6 +3559,7 @@ export const getSubtitleJob = async (req, res) => {
   if (!/^[a-f0-9]{32}$/.test(jobId)) return fail(res, 404, 'Không tìm thấy tác vụ');
   const job = await getCache(subJobKey(jobId));
   if (!job) return fail(res, 404, 'Tác vụ đã hết hạn');
+  if (!job.done && job.worker !== SUB_WORKER_ID) return res.json({ success: true, data: { done: true, ready: {}, error: 'Tác vụ đã dừng khi máy chủ cập nhật. Vui lòng tải lại phụ đề.' } });
   return res.json({ success: true, data: job });
 };
 
@@ -3568,6 +3574,10 @@ export const serveSubtitleVtt = async (req, res) => {
   if (!/^[a-f0-9]{64}$/.test(token)) return fail(res, 404, 'Không tìm thấy phụ đề');
   const entry = await getCache(subTokenKey(token));
   if (!entry?.file && !entry?.body) return fail(res, 404, 'Liên kết phụ đề đã hết hạn');
+  if (entry.file && !(await isCompletedSubtitle(entry.file))) {
+    res.set('Cache-Control', 'no-store');
+    return fail(res, 409, 'Phụ đề vẫn đang được chuẩn bị');
+  }
   res.type('text/vtt; charset=utf-8');
   res.set('Cache-Control', 'public, max-age=86400');
   if (entry.body) return res.send(entry.body);
