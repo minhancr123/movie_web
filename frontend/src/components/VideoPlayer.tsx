@@ -2,6 +2,7 @@
 
 import React, { useEffect, useRef, useState, useCallback } from 'react';
 import { createPortal } from 'react-dom';
+import { enterCssFullscreen } from '@/lib/css-fullscreen';
 import Hls from 'hls.js';
 import { SeekPreview, TimelineSkip, NextEpisodePrompt, RememberedIntroSkip } from './PlaybackExtras';
 import SubtitleSyncGuide from './SubtitleSyncGuide';
@@ -2213,9 +2214,9 @@ export default function VideoPlayer({ src, playbackStartedAt, movie, episode, au
             if (container?.requestFullscreen) {
                 try {
                     const p = container.requestFullscreen() as unknown as Promise<void> | undefined;
-                    // Rejection (denied gesture, ESC race) is fine: the
-                    // fullscreenchange listener above keeps state honest.
-                    p?.catch(() => {});
+                    // Some Safari versions expose this API but reject it for
+                    // elements. Keep our controls using the CSS fallback.
+                    p?.catch(() => setCssFullscreen(true));
                 } catch {
                     setCssFullscreen(true);
                 }
@@ -2242,42 +2243,16 @@ export default function VideoPlayer({ src, playbackStartedAt, movie, episode, au
     useEffect(() => {
         if (!cssFullscreen) return;
         setIsFullscreen(true);
-        const prevOverflow = document.body.style.overflow;
-        document.body.style.overflow = 'hidden';
         const el = fullscreenTargetRef?.current ?? containerRef.current;
-        const prevCss = el?.getAttribute('style') || '';
-        if (el) {
-            Object.assign(el.style, {
-                position: 'fixed', inset: '0', zIndex: '9999',
-                width: '100vw', height: '100dvh',
-                margin: '0', borderRadius: '0', background: '#000',
-            });
-        }
-        // The shell's z-index only competes inside its nearest stacking
-        // context. The watch page nests the player under wrappers that carry
-        // their own z-index/isolation, so the fixed header (z-50) and the
-        // bottom nav still painted OVER the fullscreen shell on phones.
-        // Promote every ancestor up to <body> above the site chrome, and put
-        // each back exactly as it was on exit.
-        const promoted: { el: HTMLElement; position: string; zIndex: string }[] = [];
-        let anc = el?.parentElement;
-        while (anc && anc !== document.body.parentElement) {
-            const cs = getComputedStyle(anc);
-            const z = Number(cs.zIndex);
-            if (cs.position === 'static' || (cs.zIndex !== 'auto' && (!Number.isFinite(z) || z < 9998))) {
-                promoted.push({ el: anc, position: anc.style.position, zIndex: anc.style.zIndex });
-                if (cs.position === 'static') anc.style.position = 'relative';
-                anc.style.zIndex = '9998';
-            }
-            anc = anc.parentElement;
-        }
+        if (!el) return;
+        const restore = enterCssFullscreen(el);
+        const onEscape = (event: KeyboardEvent) => {
+            if (event.key === 'Escape') setCssFullscreen(false);
+        };
+        document.addEventListener('keydown', onEscape);
         return () => {
-            for (const p of promoted.reverse()) {
-                p.el.style.position = p.position;
-                p.el.style.zIndex = p.zIndex;
-            }
-            document.body.style.overflow = prevOverflow;
-            if (el) el.setAttribute('style', prevCss);
+            document.removeEventListener('keydown', onEscape);
+            restore();
             setIsFullscreen(false);
         };
     }, [cssFullscreen, fullscreenTargetRef]);

@@ -494,10 +494,12 @@ img {
 
 /* Fullscreen never shrinks the film to make room for Ambilight.
    The same low-resolution wash becomes a soft, inward edge overlay instead. */
+[data-cinevn-css-fullscreen],
 .ambient-fullscreen-shell:fullscreen {
   display: flex;
   width: 100vw;
   height: 100vh;
+  height: 100dvh;
   align-items: center;
   justify-content: center;
   overflow: hidden;
@@ -509,12 +511,14 @@ img {
   background: #020204;
 }
 
+.ambient-fullscreen-shell[data-cinevn-css-fullscreen] .ambient-fullscreen-stage,
 .ambient-fullscreen-shell:fullscreen .ambient-fullscreen-stage {
   width: 100%;
   height: 100%;
   flex: none;
 }
 
+.ambient-fullscreen-shell[data-cinevn-css-fullscreen] .ambient-fullscreen-frame,
 .ambient-fullscreen-shell:fullscreen .ambient-fullscreen-frame {
   width: 100%;
   height: 100%;
@@ -524,6 +528,7 @@ img {
   box-shadow: none;
 }
 
+.ambient-fullscreen-shell[data-cinevn-css-fullscreen] .cinema-glow-viewport,
 .ambient-fullscreen-shell:fullscreen .cinema-glow-viewport {
   --cinema-glow-canvas-mask: none;
   --cinema-glow-depth: clamp(24px, 7vmin, 96px);
@@ -567,4 +572,20 @@ img {
 }
 @media (prefers-reduced-motion: reduce) {
   .hero-progress { animation-duration: 60s; }
+}
+
+/* iPhone's CSS fallback is not :fullscreen. Fill the visible viewport and
+   keep controls clear of the notch/home indicator in either orientation. */
+[data-cinevn-css-fullscreen] {
+  position: fixed;
+  inset: 0;
+  z-index: 2147483647;
+  margin: 0;
+  border-radius: 0;
+}
+[data-cinevn-css-fullscreen]:not(.ambient-fullscreen-shell),
+.ambient-fullscreen-shell[data-cinevn-css-fullscreen] .ambient-fullscreen-frame {
+  box-sizing: border-box;
+  padding: env(safe-area-inset-top, 0px) env(safe-area-inset-right, 0px)
+    env(safe-area-inset-bottom, 0px) env(safe-area-inset-left, 0px);
 }
