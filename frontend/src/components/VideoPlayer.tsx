@@ -18,7 +18,7 @@ import { PlaybackClock, sendPlaybackEvent } from '@/lib/playback-telemetry';
 import {
     fetchCues, activeCues,
     isEmbeddedTrack, trackSource, isViTrack, isEnTrack, isReadyTrack,
-    pickAutoSubtitle, autoSubtitleRank, subtitleWindowNeedsRefresh,
+    pickAutoSubtitle, autoSubtitleRank, sortSubtitleMenu, subtitleWindowNeedsRefresh,
     type SubCue, type SubTrack,
 } from '@/lib/subtitles';
 import { computeResumeAt, pickDisplayDuration, decideSeekTarget, nextRemuxWindowAt, planResume, shouldDowngradeForDropped, subtitleLookupTime, classifyStartAt, toLocalSeekTarget } from '@/lib/playback-progress';
@@ -3131,7 +3131,7 @@ export default function VideoPlayer({ src, playbackStartedAt, movie, episode, au
                                                         >
                                                             Tắt
                                                         </button>
-                                                        {subTracks.map((t) => {
+                                                        {sortSubtitleMenu(subTracks).map((t) => {
                                                             const pending = t.ready === false;
                                                             const verified = !pending && (isEmbeddedTrack(t) || t.matched === true);
                                                             return (

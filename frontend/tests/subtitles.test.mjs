@@ -33,12 +33,12 @@ const { isReadyTrack, isEmbeddedTrack, isViTrack, pickBestViTrack, pickAutoSubti
   pathToFileURL(path.join(outDir, 'subtitles.js')).href,
 );
 process.on('exit', () => rmSync(outDir, { recursive: true, force: true }));
-test('automatic selection chooses the synced English release over generic subtitles', () => {
+test('automatic selection prefers Vietnamese and ranks timing within each language', () => {
   const generic = { id: 'en-generic', language: 'en', label: 'English 1', url: '/generic.vtt' };
   const varyg = { id: 'en-varyg', language: 'en', label: 'VARYG', url: '/varyg.vtt', matched: true };
   const vi = { id: 'vi', language: 'vi', label: 'Vietnamese', url: '/vi.vtt' };
   assert.equal(pickAutoSubtitle([generic, varyg])?.id, varyg.id);
-  assert.equal(pickAutoSubtitle([vi, varyg])?.id, varyg.id);
+  assert.equal(pickAutoSubtitle([vi, varyg])?.id, vi.id);
   assert.equal(pickAutoSubtitle([varyg, { ...vi, matched: true }])?.id, vi.id);
   assert.equal(pickAutoSubtitle([generic, vi])?.id, vi.id);
   assert.equal(pickAutoSubtitle([{ ...varyg, ready: false }]), undefined);
