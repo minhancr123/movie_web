@@ -208,13 +208,16 @@ export default function VideoPlayer({ src, playbackStartedAt, movie, episode, au
 
     // Player display prefs, persisted on this device.
     type VideoScale = 'contain' | 'cover' | 'fill';
+    type BilingualOrder = 'english-first' | 'vietnamese-first';
     const readPrefs = (): {
         scale: VideoScale; subSize: number; subColor: string;
         audio: AudioEnhancerSettings; cinema: CinemaMode;
+        bilingualOrder: BilingualOrder;
     } => {
         const fallback = {
             scale: 'contain' as VideoScale, subSize: 20, subColor: '#ffffff',
             audio: DEFAULT_AUDIO_ENHANCER, cinema: 'off' as CinemaMode,
+            bilingualOrder: 'english-first' as BilingualOrder,
         };
         try {
             const raw = localStorage.getItem('cine_player_prefs');
@@ -224,6 +227,7 @@ export default function VideoPlayer({ src, playbackStartedAt, movie, episode, au
                 scale: ['contain', 'cover', 'fill'].includes(parsed.scale) ? parsed.scale : fallback.scale,
                 subSize: [16, 20, 26, 32].includes(Number(parsed.subSize)) ? Number(parsed.subSize) : fallback.subSize,
                 subColor: typeof parsed.subColor === 'string' && /^#[0-9a-f]{6}$/i.test(parsed.subColor) ? parsed.subColor : fallback.subColor,
+                bilingualOrder: parsed.bilingualOrder === 'vietnamese-first' ? 'vietnamese-first' : 'english-first',
                 audio: {
                     clarity: parsed.audio?.clarity === true,
                     width: clampWidth(Number(parsed.audio?.width)),
@@ -312,6 +316,7 @@ export default function VideoPlayer({ src, playbackStartedAt, movie, episode, au
     const savePrefs = (next: {
         scale?: VideoScale; subSize?: number; subColor?: string; subDelay?: number;
         audio?: AudioEnhancerSettings; cinema?: CinemaMode;
+        bilingualOrder?: BilingualOrder;
     }) => {
         try {
             localStorage.setItem('cine_player_prefs', JSON.stringify({ ...readPrefs(), ...next }));
@@ -569,6 +574,8 @@ export default function VideoPlayer({ src, playbackStartedAt, movie, episode, au
     const sessionStartAt = typeof startAt === 'number' && Number.isFinite(startAt) && startAt > 0 ? startAt : 0;
     const [selectedSub, setSelectedSub] = useState<string>('off');
     const [bilingual, setBilingual] = useState(false);
+    const [bilingualOrder, setBilingualOrder] = useState<BilingualOrder>(() =>
+        typeof window === 'undefined' ? 'english-first' : readPrefs().bilingualOrder);
     const [secondarySub, setSecondarySub] = useState<string>('');
     const [cueCache, setCueCache] = useState<Record<string, SubCue[]>>({});
     const cueWindowRef = useRef<Record<string, number | undefined>>({});
@@ -1032,6 +1039,15 @@ export default function VideoPlayer({ src, playbackStartedAt, movie, episode, au
         // secondaryOffset control is for.
         return activeCues(cueCache[secondarySub] || [], secondaryLookupTime);
     }, [cueCache, bilingual, secondarySub, selectedSub, secondaryLookupTime]);
+
+    const primarySubTrack = subTracks.find(t => t.id === selectedSub);
+    const secondarySubTrack = subTracks.find(t => t.id === secondarySub);
+    const englishVietnamesePair = !!primarySubTrack && !!secondarySubTrack
+        && ((isViTrack(primarySubTrack) && isEnTrack(secondarySubTrack))
+            || (isEnTrack(primarySubTrack) && isViTrack(secondarySubTrack)));
+    const secondaryOnTop = englishVietnamesePair
+        ? (bilingualOrder === 'english-first' ? isEnTrack(secondarySubTrack!) : isViTrack(secondarySubTrack!))
+        : bilingualOrder === 'english-first';
 
     // High-frequency RAF loop for smooth frame-accurate subtitle sync
     useEffect(() => {
@@ -2559,8 +2575,8 @@ export default function VideoPlayer({ src, playbackStartedAt, movie, episode, au
                     {secondaryCues.map((cue, i) => (
                         <p
                             key={`sec-${cue.start}-${i}`}
-                            className="order-1 max-w-3xl whitespace-pre-line rounded-md bg-black/55 px-3 py-1 font-medium opacity-90"
-                            style={{ textShadow: '0 1px 3px rgba(0,0,0,0.9)', fontSize: Math.round(subSize * 0.8), color: subColor }}
+                            className="max-w-3xl whitespace-pre-line rounded-md bg-black/55 px-3 py-1 font-medium opacity-90"
+                            style={{ order: secondaryOnTop ? 0 : 1, textShadow: '0 1px 3px rgba(0,0,0,0.9)', fontSize: Math.round(subSize * 0.8), color: subColor }}
                         >
                             {cue.text}
                         </p>
@@ -2569,7 +2585,7 @@ export default function VideoPlayer({ src, playbackStartedAt, movie, episode, au
                         <p
                             key={`pri-${cue.start}-${i}`}
                             className="max-w-3xl whitespace-pre-line rounded-md bg-black/65 px-4 py-1.5 font-semibold"
-                            style={{ textShadow: '0 2px 4px rgba(0,0,0,0.9)', fontSize: subSize, color: subColor }}
+                            style={{ order: secondaryOnTop ? 1 : 0, textShadow: '0 2px 4px rgba(0,0,0,0.9)', fontSize: subSize, color: subColor }}
                         >
                             {cue.text}
                         </p>
@@ -3239,6 +3255,28 @@ export default function VideoPlayer({ src, playbackStartedAt, movie, episode, au
                                                             </div>
                                                              {bilingual && (
                                                                 <div className="mt-2 space-y-2">
+                                                                    <p className="text-[10px] font-bold text-cinema-muted">Thứ tự hiển thị</p>
+                                                                    <div className="grid grid-cols-2 gap-1.5">
+                                                                        {([
+                                                                            { value: 'english-first', label: englishVietnamesePair ? 'Anh trên · Việt dưới' : 'Phụ đề 2 ở trên' },
+                                                                            { value: 'vietnamese-first', label: englishVietnamesePair ? 'Việt trên · Anh dưới' : 'Phụ đề chính ở trên' },
+                                                                        ] as const).map(option => (
+                                                                            <button
+                                                                                key={option.value}
+                                                                                type="button"
+                                                                                aria-pressed={bilingualOrder === option.value}
+                                                                                onClick={() => {
+                                                                                    setBilingualOrder(option.value);
+                                                                                    savePrefs({ bilingualOrder: option.value });
+                                                                                }}
+                                                                                className={`px-2 py-1.5 rounded-md text-[10px] font-bold border transition-all ${bilingualOrder === option.value
+                                                                                    ? 'bg-amber-primary text-black border-amber-primary'
+                                                                                    : 'bg-surface-container text-cinema-subtle border-white/10 hover:text-white'}`}
+                                                                            >
+                                                                                {option.label}
+                                                                            </button>
+                                                                        ))}
+                                                                    </div>
                                                                     <div className="grid grid-cols-2 gap-1.5">
                                                                         {sortSubtitleMenu(subTracks)
                                                                             .filter((t) => t.id !== selectedSub && t.ready !== false && t.url)
