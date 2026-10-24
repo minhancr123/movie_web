@@ -130,4 +130,3 @@ export const trimSubtitleWindow = (text, window) => {
     return times && seconds(times[2]) > window.startAt && seconds(times[1]) < end;
   }).join('\n\n') + '\n\n';
 };
-};
