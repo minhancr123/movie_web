@@ -39,3 +39,10 @@ export const recordAuthEvent = async (req, { user, provider, action, outcome = '
     console.error('[auth-audit] Unable to persist event:', error.message);
   }
 };
+
+// Errors from HTTP clients may retain passwords or OAuth tokens in config.data.
+// Authentication logs only retain a bounded error category and numeric DB code.
+export const authErrorSummary = error => ({
+  name: ['Error', 'TypeError', 'MongoServerError', 'MongoNetworkError', 'JsonWebTokenError', 'TokenExpiredError'].includes(error?.name) ? error.name : 'Error',
+  ...(Number.isInteger(error?.code) ? { code: error.code } : {}),
+});

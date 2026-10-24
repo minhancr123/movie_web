@@ -1,6 +1,6 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { authMetadata, describeUserAgent } from '../services/security/authAudit.js';
+import { authMetadata, describeUserAgent, authErrorSummary } from '../services/security/authAudit.js';
 test('audit uses Express trusted request IP and ignores arbitrary forwarding headers',()=>{
   const result=authMetadata({ip:'198.51.100.8',headers:{'cf-connecting-ip':'1.2.3.4','x-real-ip':'1.2.3.5','user-agent':'Mozilla/5.0 (Linux; Android 10; K) Chrome/155.0.0.0 Mobile Safari/537.36'},body:{password:'secret'},user:{token:'secret'}});
   assert.equal(result.ip,'198.51.100.8');assert.equal(result.device.os,'Android');assert.equal(result.device.browser,'Chrome');
@@ -16,4 +16,10 @@ test('user-agent values are bounded, control-free and treated as claims',()=>{
   assert.equal(describeUserAgent('Mozilla/5.0 Chrome/155 Safari/537.36 Edg/155').browser,'Edge');
   assert.equal(describeUserAgent('Mozilla/5.0 (iPhone) Version/18 Safari/605.1').os,'iOS / iPadOS');
   assert.equal(describeUserAgent('').type,'Không xác định');
+});
+
+test('authentication errors never serialize request credentials or HTTP client configuration',()=>{
+ const result=authErrorSummary({name:'AxiosError',code:'ERR_BAD_REQUEST',message:'token secret',config:{data:{password:'secret',idToken:'secret'}},response:{data:'secret'}});
+ assert.deepEqual(result,{name:'Error'});
+ assert.deepEqual(authErrorSummary({name:'MongoServerError',code:11000,keyValue:{password:'secret'}}),{name:'MongoServerError',code:11000});
 });

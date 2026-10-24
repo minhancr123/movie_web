@@ -1,4 +1,4 @@
-import { recordAuthEvent } from '../services/security/authAudit.js';
+import { recordAuthEvent, authErrorSummary } from '../services/security/authAudit.js';
 import { getDB } from '../config/database.js';
 import bcrypt from 'bcryptjs';
 import { signAccountToken } from '../services/security/accountToken.js';
@@ -106,7 +106,7 @@ export const register = async (req, res) => {
       }
     });
   } catch (error) {
-    console.error('Register error:', error);
+    console.error('Register error:', authErrorSummary(error));
     res.status(500).json({
       success: false,
       message: 'Lỗi server khi đăng ký'
@@ -175,7 +175,7 @@ export const login = async (req, res) => {
       }
     });
   } catch (error) {
-    console.error('Login error:', error);
+    console.error('Login error:', authErrorSummary(error));
     res.status(500).json({
       success: false,
       message: 'Lỗi server khi đăng nhập'
@@ -204,7 +204,7 @@ export const getMe = async (req, res) => {
       user
     });
   } catch (error) {
-    console.error('Get me error:', error);
+    console.error('Get me error:', authErrorSummary(error));
     res.status(500).json({
       success: false,
       message: 'Lỗi server'
@@ -327,7 +327,7 @@ export const googleLogin = async (req, res) => {
     });
 
   } catch (error) {
-    console.error('Google login error:', error);
+    console.error('Google login error:', authErrorSummary(error));
     res.status(500).json({
       success: false,
       message: 'Lỗi server khi đăng nhập bằng Google'
@@ -399,7 +399,7 @@ export const updateProfile = async (req, res) => {
     });
 
   } catch (error) {
-    console.error('Update profile error:', error);
+    console.error('Update profile error:', authErrorSummary(error));
     res.status(500).json({
       success: false,
       message: 'Lỗi server khi cập nhật thông tin'
@@ -432,7 +432,7 @@ export const createDefaultAdmin = async () => {
       console.log('Admin account created/verified: admin@movieweb.com');
     }
   } catch (error) {
-    console.error('Error creating default admin:', error);
+    console.error('Error creating default admin:', authErrorSummary(error));
   }
 };
 

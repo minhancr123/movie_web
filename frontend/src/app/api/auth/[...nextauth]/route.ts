@@ -67,7 +67,7 @@ const buildAuthOptions = (requestHeaders: Headers): NextAuthOptions => ({
           }
           return null;
         } catch (error) {
-          console.error('Login error:', error);
+          console.error('Credential sign-in failed');
           return null;
         }
       },
@@ -103,7 +103,7 @@ const buildAuthOptions = (requestHeaders: Headers): NextAuthOptions => ({
               setTokenData(response.data.user, response.data.token);
             }
           } catch (error) {
-            console.error('Google login error in JWT callback:', error);
+            console.error('Google sign-in backend request failed');
           }
         } else if (account.provider === 'credentials') {
           token.id = user.id;

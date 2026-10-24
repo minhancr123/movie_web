@@ -65,7 +65,7 @@ export default function AuthPage() {
     try {
       await signIn('google', { callbackUrl: '/' });
     } catch (err) {
-      console.error('Google login error:', err);
+      console.error('Google sign-in failed');
       setError('Đăng nhập Google thất bại');
       setGoogleLoading(false);
     }
@@ -114,7 +114,7 @@ export default function AuthPage() {
               localStorage.setItem('user', JSON.stringify(response.data.user));
             }
           } catch (err) {
-            console.error('API login sync failed', err);
+            console.error('Account sign-in sync failed');
           }
 
           try {
