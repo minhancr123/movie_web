@@ -63,8 +63,8 @@ test('the resume seed is scoped to the episode, not to the mount', () => {
 });
 
 test('the episode strip follows the episode that is on screen', () => {
-  assert.match(source, /\}, \[currentEpisode, episodes\.length, revealActiveEpisode\]\)/,
-    'the reveal re-runs on the effective episode');
+  assert.match(source, /\}, \[currentEpisode, episodes\.length, episodeStrip, revealActiveEpisode\]\)/,
+    'the reveal re-runs on the effective episode and on the delayed strip attachment');
   assert.match(source, /const isActive = ep\.episodeNumber === currentEpisode;/,
     'the highlight follows the effective episode');
   assert.match(source, /typeof currentEpisode === 'number'/,
