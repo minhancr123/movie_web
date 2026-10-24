@@ -60,7 +60,9 @@ router.get('/stats', route(async (_req, res) => {
 }));
 router.get('/users', route(async (req, res) => {
   const { page, limit, search, role } = parseAdminList(req.query), query = {};
-  if (role) query.role = role;
+  // Older Google-created accounts have no explicit role; their effective role
+  // is user, exactly as the token issuer and admin table already treat them.
+  if (role) query.role = role === 'user' ? { $in: ['user', null] } : 'admin';
   if (search) query.$or = ['email', 'username'].map(key => ({ [key]: { $regex: literalSearch(search), $options: 'i' } }));
   const collection = getDB().collection('users');
   const [total, data] = await Promise.all([collection.countDocuments(query), collection.find(query, { projection: USER_FIELDS }).sort({ createdAt: -1, _id: -1 }).skip((page - 1) * limit).limit(limit).toArray()]);
