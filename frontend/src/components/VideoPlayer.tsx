@@ -188,6 +188,11 @@ export default function VideoPlayer({ src, playbackStartedAt, movie, episode, au
     const [volume, setVolume] = useState(1);
     const [isMuted, setIsMuted] = useState(false);
     const [isFullscreen, setIsFullscreen] = useState(false);
+    // iPhone Safari has no element fullscreen for non-<video> elements, so
+    // the fullscreen button falls back to CSS fullscreen: the player shell
+    // pins to the viewport (100dvh) and the custom controls stay ours —
+    // instead of handing the video to the native AVKit player.
+    const [cssFullscreen, setCssFullscreen] = useState(false);
     const [showControls, setShowControls] = useState(true);
     const [showSettings, setShowSettings] = useState(false);
     const [playbackSpeed, setPlaybackSpeed] = useState(1);
@@ -2165,7 +2170,7 @@ export default function VideoPlayer({ src, playbackStartedAt, movie, episode, au
 
     const toggleFullscreen = useCallback(() => {
         const container = fullscreenTargetRef?.current ?? containerRef.current;
-        if (!document.fullscreenElement) {
+        if (!document.fullscreenElement && !cssFullscreen) {
             if (container?.requestFullscreen) {
                 try {
                     const p = container.requestFullscreen() as unknown as Promise<void> | undefined;
@@ -2173,20 +2178,48 @@ export default function VideoPlayer({ src, playbackStartedAt, movie, episode, au
                     // fullscreenchange listener above keeps state honest.
                     p?.catch(() => {});
                 } catch {
-                    // Older iOS Safari throws synchronously: fall through.
-                    (videoRef.current as HTMLVideoElement & { webkitEnterFullscreen?: () => void } | null)?.webkitEnterFullscreen?.();
+                    setCssFullscreen(true);
                 }
             } else {
-                // iOS Safari has no element fullscreen at all.
-                (videoRef.current as HTMLVideoElement & { webkitEnterFullscreen?: () => void } | null)?.webkitEnterFullscreen?.();
+                // iPhone Safari: no element fullscreen at all — pin the shell
+                // to the viewport with CSS so OUR controls stay in charge.
+                // webkitEnterFullscreen() would open the native AVKit player
+                // and discard the custom UI entirely.
+                setCssFullscreen(true);
             }
+        } else if (cssFullscreen) {
+            setCssFullscreen(false);
         } else if (document.exitFullscreen) {
             try {
                 const p = document.exitFullscreen() as unknown as Promise<void> | undefined;
                 p?.catch(() => {});
             } catch { /* already exiting */ }
         }
-    }, [fullscreenTargetRef]);
+    }, [fullscreenTargetRef, cssFullscreen]);
+
+    // CSS fullscreen bookkeeping: mirror isFullscreen so every existing
+    // fullscreen-aware UI branch behaves, pin the player shell to the
+    // viewport, and lock page scroll behind it.
+    useEffect(() => {
+        if (!cssFullscreen) return;
+        setIsFullscreen(true);
+        const prevOverflow = document.body.style.overflow;
+        document.body.style.overflow = 'hidden';
+        const el = fullscreenTargetRef?.current ?? containerRef.current;
+        const prevCss = el?.getAttribute('style') || '';
+        if (el) {
+            Object.assign(el.style, {
+                position: 'fixed', inset: '0', zIndex: '9999',
+                width: '100vw', height: '100dvh',
+                margin: '0', borderRadius: '0', background: '#000',
+            });
+        }
+        return () => {
+            document.body.style.overflow = prevOverflow;
+            if (el) el.setAttribute('style', prevCss);
+            setIsFullscreen(false);
+        };
+    }, [cssFullscreen, fullscreenTargetRef]);
 
     // Toggle Picture-in-Picture
     const togglePiP = async () => {
