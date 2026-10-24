@@ -18,3 +18,11 @@ Backend full test command passed locally (FFmpeg-dependent checks skip where too
 ## App landing images
 
 The preceding static artwork change is commit 0965e0d. It adds real TMDB poster, backdrop and episode-still assets to illustrative phone screens, with explicit illustration/attribution caption. Desktop and phone-size browser inspection showed loaded images and no horizontal page overflow. The deployed landing HTML currently matches the tracked file; backend/compiled frontend release IDs may still reflect the previous release until the combined deployment.
+
+## Deployed acceptance
+
+Application release `0b2cdc177721697603d6012992ab1464c8367d58` is running on both backend and frontend, with zero automatic service restarts at activation. It incorporates the shared branch's newer subtitle/fullscreen changes via fd19bc0; the following 0b2cdc1 commit only updates the subtitle-name test contract for opaque IDs.
+
+Linux backend full suite passed including the HEVC Main 10 decoded-frame remux check. The merged frontend suite (131 tests) and production build passed. Actual running admin API acceptance: stats/users/sessions/settings/audit all return 401 anonymously, 403 for a member, and 200 for an admin; five invalid catalog limits rejected. Real setting persistence/readback was tested at the existing value 120, without changing its effective value. Public `/api/admin/users` returns 401 without credentials.
+
+User opened `/admin` on Brave. Native UI inspection confirmed account list with 20 records, overview with live Mongo/Redis/resource/traffic data, provider panel showing connected shared TorBox with masked key, and movie-request filters/empty state. Settings controls and current limit were visible; no browser key or setting mutation was performed. Intermittent macOS capture failures prevented finishing interactive search and every tab's visual check; these paths were covered by API checks above.
