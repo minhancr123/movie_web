@@ -1071,6 +1071,7 @@ export default function VideoPlayer({ src, playbackStartedAt, movie, episode, au
     // sync and by how many seconds it hears early/late vs the film.
     const [syncReport, setSyncReport] = useState<{
         trackId: string; offset: number; slope: number | null; corrected: boolean; matchRate?: number; confident?: boolean;
+        basis?: 'embedded' | 'primary';
     } | null>(null);
     // Quality score per external track (vs the embedded fingerprint): 1.0 =
     // same cut, ~0 = timed for a different release (unfixable by offsets).
@@ -1120,8 +1121,11 @@ export default function VideoPlayer({ src, playbackStartedAt, movie, episode, au
         return activeCues(cueCache[secondarySub] || [], secondaryLookupTime);
     }, [cueCache, bilingual, secondarySub, selectedSub, secondaryLookupTime]);
 
-    // Only a file-embedded track can serve as the timing reference. Measure
-    // the shared window and apply target-minus-reference on either lookup.
+    // Timing reference: an embedded track when the pair has one; with two
+    // EXTERNAL tracks the primary is the reference instead — it is the track
+    // the viewer validated against the video, and cue-boundary matching is
+    // language-blind, so the secondary can be measured onto the primary's
+    // clock with no embedded track at all.
     const autoSyncedPairRef = useRef('');
     const lastMeasureRef = useRef<SubtitleAlignment | null>(null);
     const lastMappingRef = useRef<SubtitleTimeMapping | null>(null);
@@ -1141,15 +1145,16 @@ export default function VideoPlayer({ src, playbackStartedAt, movie, episode, au
         }
         if (!primary || !partner || manualSubtitleTimingRef.current || Math.abs(subDelay) > 0.05) return;
         const primaryEmbedded = isEmbeddedTrack(primary), partnerEmbedded = isEmbeddedTrack(partner);
-        if (primaryEmbedded === partnerEmbedded) return;
-        const reference = primaryEmbedded ? primary : partner;
-        const target = primaryEmbedded ? partner : primary;
+        if (primaryEmbedded && partnerEmbedded) return;
+        const reference = partnerEmbedded && !primaryEmbedded ? partner : primary;
+        const target = reference === primary ? partner : primary;
         const targetCues = cueCache[target.id], referenceCues = cueCache[reference.id];
         if (!targetCues?.length || !referenceCues?.length) return;
         const result = measureSubtitleAlignment(targetCues, referenceCues, reference);
         if (!result) return;
         setSyncReport({ trackId: target.id, offset: result.offset, slope: null,
-            corrected: false, confident: result.confident, matchRate: result.matchRate });
+            corrected: false, confident: result.confident, matchRate: result.matchRate,
+            basis: isEmbeddedTrack(reference) ? 'embedded' : 'primary' });
         const mapping = subtitleMappingFromMeasurements(lastMeasureRef.current, result);
         if (!mapping) return;
         if (lastMappingRef.current && lastMeasureRef.current && Math.abs(result.anchorT - lastMeasureRef.current.anchorT) < 90)
@@ -1160,7 +1165,8 @@ export default function VideoPlayer({ src, playbackStartedAt, movie, episode, au
         if (target.id === primary.id) setPrimarySync(mapping);
         else { setSecondaryOffset(mapping.offset); setSyncMapping({ anchorT: mapping.anchorT, slope: mapping.slope }); }
         setSyncReport({ trackId: target.id, offset: mapping.offset, slope: mapping.slope,
-            corrected: true, confident: true, matchRate: result.matchRate });
+            corrected: true, confident: true, matchRate: result.matchRate,
+            basis: isEmbeddedTrack(reference) ? 'embedded' : 'primary' });
         // eslint-disable-next-line react-hooks/exhaustive-deps
     }, [bilingual, secondarySub, selectedSub, cueCache, subTracks, subDelay, subContext?.sourceToken, subtitleReferenceId]);
 
@@ -3394,9 +3400,9 @@ export default function VideoPlayer({ src, playbackStartedAt, movie, episode, au
                                                                     {!syncReport.confident ? (
                                                                         <>Chưa đủ mốc câu chắc chắn để tự canh. Giữ thời gian hiện tại; bạn có thể chỉnh tay nếu thấy lệch.</>
                                                                     ) : abs < 0.2 ? (
-                                                                        <>✓ Mốc câu gần phụ đề nhúng (dưới 0.2s). Hãy đối chiếu thêm với lời thoại.</>
+                                                                        <>✓ Mốc câu {syncReport.basis === 'primary' ? 'khớp phụ đề chính' : 'gần phụ đề nhúng'} (dưới 0.2s). Hãy đối chiếu thêm với lời thoại.</>
                                                                     ) : (
-                                                                        <>Đã canh phụ đề {dir} {abs.toFixed(1)}s theo mốc phụ đề nhúng{syncReport.slope ? ' và bù độ trôi theo thời gian' : ''}. Bạn vẫn có thể chỉnh tay.</>
+                                                                        <>Đã canh phụ đề {dir} {abs.toFixed(1)}s theo {syncReport.basis === 'primary' ? 'mốc câu của phụ đề chính' : 'mốc phụ đề nhúng'}{syncReport.slope ? ' và bù độ trôi theo thời gian' : ''}. Bạn vẫn có thể chỉnh tay.</>
                                                                     )}
                                                                 </div>
                                                             );
