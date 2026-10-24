@@ -5,6 +5,7 @@ import { createPortal } from 'react-dom';
 import Hls from 'hls.js';
 import { SeekPreview, TimelineSkip, NextEpisodePrompt, RememberedIntroSkip } from './PlaybackExtras';
 import SubtitleSyncGuide from './SubtitleSyncGuide';
+import { suppressNativeSubtitles } from '@/lib/native-subtitles';
 import { measureSubtitleAlignment, subtitleMappingFromMeasurements, alignedSubtitleTime, type SubtitleAlignment, type SubtitleTimeMapping } from '@/lib/subtitle-alignment';
 import { SUBTITLE_SYNC_STORAGE, subtitleSyncKey, readSubtitleDelay, writeSubtitleDelay, clampSubtitleDelay, subtitleAnchorDelay } from '@/lib/subtitle-sync';
 import { seekPreviewPosition } from '@/lib/playback-extras';
@@ -1262,6 +1263,11 @@ export default function VideoPlayer({ src, playbackStartedAt, movie, episode, au
 
     // Initialize playback: HLS (remux playlists, .m3u8) via hls.js / native,
     // progressive files (direct TorBox URLs: mp4/webm/mkv) via plain <video>.
+    useEffect(() => {
+        const video = videoRef.current;
+        if (video) return suppressNativeSubtitles(video);
+    }, [src, retryKey, error, suspended]);
+
     useEffect(() => {
         const video = videoRef.current;
         if (!video) return;
