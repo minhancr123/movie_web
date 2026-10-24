@@ -5,6 +5,7 @@ import { createPortal } from 'react-dom';
 import Hls from 'hls.js';
 import { SeekPreview, TimelineSkip, NextEpisodePrompt, RememberedIntroSkip } from './PlaybackExtras';
 import SubtitleSyncGuide from './SubtitleSyncGuide';
+import { measureSubtitleAlignment, subtitleMappingFromMeasurements, alignedSubtitleTime, type SubtitleAlignment, type SubtitleTimeMapping } from '@/lib/subtitle-alignment';
 import { SUBTITLE_SYNC_STORAGE, subtitleSyncKey, readSubtitleDelay, writeSubtitleDelay, clampSubtitleDelay, subtitleAnchorDelay } from '@/lib/subtitle-sync';
 import { seekPreviewPosition } from '@/lib/playback-extras';
 import {
@@ -18,7 +19,7 @@ import { PlaybackClock, sendPlaybackEvent } from '@/lib/playback-telemetry';
 import {
     fetchCues, activeCues,
     isEmbeddedTrack, trackSource, isViTrack, isEnTrack, isReadyTrack,
-    pickAutoSubtitle, autoSubtitleRank, subtitleWindowNeedsRefresh,
+    pickAutoSubtitle, pickBestViTrack, autoSubtitleRank, sortSubtitleMenu, subtitleWindowNeedsRefresh,
     type SubCue, type SubTrack,
 } from '@/lib/subtitles';
 import { computeResumeAt, pickDisplayDuration, decideSeekTarget, nextRemuxWindowAt, planResume, shouldDowngradeForDropped, subtitleLookupTime, classifyStartAt, toLocalSeekTarget } from '@/lib/playback-progress';
@@ -208,13 +209,16 @@ export default function VideoPlayer({ src, playbackStartedAt, movie, episode, au
 
     // Player display prefs, persisted on this device.
     type VideoScale = 'contain' | 'cover' | 'fill';
+    type BilingualOrder = 'english-first' | 'vietnamese-first';
     const readPrefs = (): {
         scale: VideoScale; subSize: number; subColor: string;
         audio: AudioEnhancerSettings; cinema: CinemaMode;
+        bilingualOrder: BilingualOrder;
     } => {
         const fallback = {
             scale: 'contain' as VideoScale, subSize: 20, subColor: '#ffffff',
             audio: DEFAULT_AUDIO_ENHANCER, cinema: 'off' as CinemaMode,
+            bilingualOrder: 'english-first' as BilingualOrder,
         };
         try {
             const raw = localStorage.getItem('cine_player_prefs');
@@ -224,6 +228,7 @@ export default function VideoPlayer({ src, playbackStartedAt, movie, episode, au
                 scale: ['contain', 'cover', 'fill'].includes(parsed.scale) ? parsed.scale : fallback.scale,
                 subSize: [16, 20, 26, 32].includes(Number(parsed.subSize)) ? Number(parsed.subSize) : fallback.subSize,
                 subColor: typeof parsed.subColor === 'string' && /^#[0-9a-f]{6}$/i.test(parsed.subColor) ? parsed.subColor : fallback.subColor,
+                bilingualOrder: parsed.bilingualOrder === 'vietnamese-first' ? 'vietnamese-first' : 'english-first',
                 audio: {
                     clarity: parsed.audio?.clarity === true,
                     width: clampWidth(Number(parsed.audio?.width)),
@@ -296,6 +301,7 @@ export default function VideoPlayer({ src, playbackStartedAt, movie, episode, au
     const [subDelay, setSubDelay] = useState<number>(0);
     // Secondary subtitle offset relative to primary in bilingual mode.
     const [secondaryOffset, setSecondaryOffset] = useState<number>(0);
+    const manualSubtitleTimingRef = useRef(false);
 
     const [syncToast, setSyncToast] = useState<string | null>(null);
     const syncToastTimerRef = useRef<NodeJS.Timeout | undefined>(undefined);
@@ -312,6 +318,7 @@ export default function VideoPlayer({ src, playbackStartedAt, movie, episode, au
     const savePrefs = (next: {
         scale?: VideoScale; subSize?: number; subColor?: string; subDelay?: number;
         audio?: AudioEnhancerSettings; cinema?: CinemaMode;
+        bilingualOrder?: BilingualOrder;
     }) => {
         try {
             localStorage.setItem('cine_player_prefs', JSON.stringify({ ...readPrefs(), ...next }));
@@ -354,6 +361,7 @@ export default function VideoPlayer({ src, playbackStartedAt, movie, episode, au
     const autoSubSourceRef = useRef<string | null>(null);
 
     const saveSubtitleDelay = useCallback((value: number) => {
+        manualSubtitleTimingRef.current = true;
         const next = clampSubtitleDelay(value);
         subDelayRef.current = next;
         setSubDelay(next);
@@ -368,6 +376,7 @@ export default function VideoPlayer({ src, playbackStartedAt, movie, episode, au
     }, [showSyncToast, saveSubtitleDelay]);
 
     const adjustSecondaryOffset = useCallback((delta: number) => {
+        manualSubtitleTimingRef.current = true;
         setSecondaryOffset((prev) => {
             const next = Math.min(15, Math.max(-15, Math.round((prev + delta) * 2) / 2));
             const sign = next > 0 ? `+${next.toFixed(1)}` : `${next.toFixed(1)}`;
@@ -569,10 +578,14 @@ export default function VideoPlayer({ src, playbackStartedAt, movie, episode, au
     const sessionStartAt = typeof startAt === 'number' && Number.isFinite(startAt) && startAt > 0 ? startAt : 0;
     const [selectedSub, setSelectedSub] = useState<string>('off');
     const [bilingual, setBilingual] = useState(false);
+    const [bilingualOrder, setBilingualOrder] = useState<BilingualOrder>(() =>
+        typeof window === 'undefined' ? 'english-first' : readPrefs().bilingualOrder);
     const [secondarySub, setSecondarySub] = useState<string>('');
     const [cueCache, setCueCache] = useState<Record<string, SubCue[]>>({});
-    const cueWindowRef = useRef<Record<string, number | undefined>>({});
-    const cueRequestsRef = useRef<Record<string, { window?: number; epoch: number }>>({});
+    const cueCacheRef = useRef(cueCache);
+    useEffect(() => { cueCacheRef.current = cueCache; }, [cueCache]);
+    const cueWindowRef = useRef<Record<string, string>>({});
+    const cueRequestsRef = useRef<Record<string, { revision: string; epoch: number; promise?: Promise<SubCue[] | undefined> }>>({});
     const [cuesLoading, setCuesLoading] = useState(false);
     const [subJobId, setSubJobId] = useState<string | null>(null);
     // Viewer upload (.srt): file read as text and POSTed as JSON. Kept local
@@ -641,7 +654,7 @@ export default function VideoPlayer({ src, playbackStartedAt, movie, episode, au
     // (embedded↔embedded especially) avoids that entirely.
     const pickSecondaryFor = (primary: SubTrack | undefined, tracks: SubTrack[]) => {
         if (!primary) return undefined;
-        const pool = tracks.filter((t) => t.id !== primary.id && isReadyTrack(t));
+        const pool = sortSubtitleMenu(tracks).filter((t) => t.id !== primary.id && t.ready !== false && t.url);
         if (pool.length === 0) return undefined;
         const primaryVi = isViTrack(primary);
         const primaryLang2 = primary.language.toLowerCase().slice(0, 2);
@@ -825,7 +838,7 @@ export default function VideoPlayer({ src, playbackStartedAt, movie, episode, au
                 const ready: Record<string, string> = job.ready || {};
                 if (Object.keys(ready).length > 0) {
                     setSubTracks((prev) =>
-                        prev.map((t) => (ready[t.id] ? { ...t, url: ready[t.id], ready: true } : t))
+                        prev.map((t) => (ready[t.id] ? { ...t, url: ready[t.id], ready: true, coverageRanges: job.coverage?.[t.id] ?? t.coverageRanges } : t))
                     );
                 }
                 if (job.done || job.error) {
@@ -864,7 +877,7 @@ export default function VideoPlayer({ src, playbackStartedAt, movie, episode, au
             : undefined;
         for (const id of [selectedSub, ...(bilingual ? [secondarySub] : []), ...(silentRef ? [silentRef.id] : [])]) {
             const track = subTracks.find(t => t.id === id);
-            if (track?.url && (!cueCache[track.id] || cueWindowRef.current[track.id] !== track.windowStart)) void ensureCues(track);
+            if (track?.url && (!cueCache[track.id] || cueWindowRef.current[track.id] !== `${track.windowStart}:${track.url}`)) void ensureCues(track);
         }
         // eslint-disable-next-line react-hooks/exhaustive-deps
     }, [selectedSub, secondarySub, bilingual, subTracks, cueCache]);
@@ -873,38 +886,44 @@ export default function VideoPlayer({ src, playbackStartedAt, movie, episode, au
         const timer = setInterval(() => {
             const video = videoRef.current;
             if (!video || video.paused || restorePendingRef.current || subJobId) return;
-            const track = subTracks.find(t => t.id === selectedSub);
-            if (subtitleWindowNeedsRefresh(track, sessionStartAt + video.currentTime)) {
+            const silentRef = !bilingual ? subTracks.find(t => isEmbeddedTrack(t) && isEnTrack(t))?.id : undefined;
+            const selectedTracks = [selectedSub, ...(bilingual ? [secondarySub] : []), ...(silentRef ? [silentRef] : [])];
+            if (selectedTracks.some(id => subtitleWindowNeedsRefresh(
+                subTracks.find(t => t.id === id), sessionStartAt + video.currentTime))) {
                 subLoadModeRef.current = 'external';
                 void loadSubtitleInventory(true);
             }
         }, 10000);
         return () => clearInterval(timer);
-    }, [selectedSub, subTracks, sessionStartAt, subJobId, loadSubtitleInventory]);
+    }, [selectedSub, secondarySub, bilingual, subTracks, sessionStartAt, subJobId, loadSubtitleInventory]);
 
-    const ensureCues = useCallback(async (track: SubTrack) => {
-        if (!track.url || (cueCache[track.id] && cueWindowRef.current[track.id] === track.windowStart)) return;
-        // New slices keep the same track ID so manual English/off choices survive.
-        // A newer window or source must outrank an older fetch finishing late.
+    const ensureCues = useCallback(async (track: SubTrack): Promise<SubCue[] | undefined> => {
+        if (!track.url) return;
+        const revision = `${track.windowStart}:${track.url}`;
+        if (cueCacheRef.current[track.id] && cueWindowRef.current[track.id] === revision) return cueCacheRef.current[track.id];
         const epoch = subSourceEpochRef.current;
         const queued = cueRequestsRef.current[track.id];
-        if (queued && queued.epoch === epoch && queued.window === track.windowStart) return;
-        const request = { window: track.windowStart, epoch };
+        if (queued && queued.epoch === epoch && queued.revision === revision) return queued.promise;
+        const request: { revision: string; epoch: number; promise?: Promise<SubCue[] | undefined> } = { revision, epoch };
         cueRequestsRef.current[track.id] = request;
-        setCuesLoading(true);
-        try {
-            const cues = await fetchCues(apiUrl(track.url));
-            if (epoch !== subSourceEpochRef.current || cueRequestsRef.current[track.id] !== request) return;
-            cueWindowRef.current[track.id] = track.windowStart;
-            setCueCache(prev => ({ ...prev, [track.id]: cues }));
-        } catch {
-            // Retain the current overlapping slice if the replacement request fails.
-        } finally {
-            if (cueRequestsRef.current[track.id] === request) delete cueRequestsRef.current[track.id];
-            setCuesLoading(false);
-        }
-        // eslint-disable-next-line react-hooks/exhaustive-deps
-    }, [JSON.stringify(Object.keys(cueCache))]);
+        request.promise = (async () => {
+            setCuesLoading(true);
+            try {
+                const cues = await fetchCues(apiUrl(track.url));
+                if (epoch !== subSourceEpochRef.current || cueRequestsRef.current[track.id] !== request) return;
+                cueWindowRef.current[track.id] = revision;
+                cueCacheRef.current = { ...cueCacheRef.current, [track.id]: cues };
+                setCueCache(prev => ({ ...prev, [track.id]: cues }));
+                return cues;
+            } catch {
+                // Keep the previous overlapping slice if the replacement fails.
+            } finally {
+                if (cueRequestsRef.current[track.id] === request) delete cueRequestsRef.current[track.id];
+                setCuesLoading(false);
+            }
+        })();
+        return request.promise;
+    }, []);
 
     const readSubPref = (): string | null => {
         try {
@@ -1029,16 +1048,14 @@ export default function VideoPlayer({ src, playbackStartedAt, movie, episode, au
     // Measurement report surfaced in the subtitle menu: which track is in
     // sync and by how many seconds it hears early/late vs the film.
     const [syncReport, setSyncReport] = useState<{
-        trackId: string; offset: number; slope: number | null; corrected: boolean; matchRate?: number;
+        trackId: string; offset: number; slope: number | null; corrected: boolean; matchRate?: number; confident?: boolean;
     } | null>(null);
     // Quality score per external track (vs the embedded fingerprint): 1.0 =
     // same cut, ~0 = timed for a different release (unfixable by offsets).
-    const [subScores, setSubScores] = useState<Record<string, { matchRate: number; offset: number }>>({});
+    const [subScores, setSubScores] = useState<Record<string, { matchRate: number; offset: number; confident: boolean }>>({});
     const secondaryLookupTime = subLookupTime + secondaryOffset
-        + (syncMapping && bilingual ? syncMapping.slope * (subLookupTime - syncMapping.anchorT) : 0);
-    const primaryLookupTime = subLookupTime
-        + (primarySync ? primarySync.offset : 0)
-        + (primarySync && bilingual ? primarySync.slope * (subLookupTime - primarySync.anchorT) : 0);
+        + (syncMapping && bilingual ? syncMapping.slope * (subLookupTime - subDelay - syncMapping.anchorT) : 0);
+    const primaryLookupTime = alignedSubtitleTime(subLookupTime - subDelay, primarySync) + subDelay;
 
     const primaryCues = React.useMemo(() => {
         if (!selectedSub || selectedSub === 'off') return [];
@@ -1081,184 +1098,87 @@ export default function VideoPlayer({ src, playbackStartedAt, movie, episode, au
         return activeCues(cueCache[secondarySub] || [], secondaryLookupTime);
     }, [cueCache, bilingual, secondarySub, selectedSub, secondaryLookupTime]);
 
-    // Auto-sync (Netflix-style): the paired tracks often come from different
-    // releases, so their cue grids drift by a constant offset and the two
-    // lines alternate instead of stacking. Once per pairing, measure the
-    // median delta between each primary cue start and the NEAREST secondary
-    // cue start (±10s) and apply it as the secondary offset; the manual
-    // slider still overrides afterwards.
-    const autoSyncedPairRef = useRef<string>('');
-    const autoOffsetRef = useRef<number | null>(null);
-    const lastMeasureRef = useRef<{ t: number; o: number } | null>(null);
-    const secondaryOffsetRef = useRef(0);
-    useEffect(() => { secondaryOffsetRef.current = secondaryOffset; }, [secondaryOffset]);
+    // Only a file-embedded track can serve as the timing reference. Measure
+    // the shared window and apply target-minus-reference on either lookup.
+    const autoSyncedPairRef = useRef('');
+    const lastMeasureRef = useRef<SubtitleAlignment | null>(null);
+    const lastMappingRef = useRef<SubtitleTimeMapping | null>(null);
     useEffect(() => {
-        const silentRef = !bilingual
-            ? subTracks.find((t) => t.source === 'embedded' && t.ready !== false && t.url
-                && t.language?.toLowerCase().startsWith('en') && t.id !== selectedSub)
-            : undefined;
-        const refTrack = bilingual
-            ? subTracks.find((t) => t.id === secondarySub)
-            : silentRef;
-        const refId = refTrack?.id;
-        if (!refId || refId === selectedSub) return;
-        // Silent reference: fetch its cues once — the refresher above keeps
-        // new windows coming, which is what gives the slope its anchors.
-        if (!bilingual && !cueCache[refId]) { void ensureCues(refTrack!); return; }
-        const primaryAll = cueCache[selectedSub];
-        const secondaryAll = cueCache[refId];
-        if (!primaryAll?.length || !secondaryAll?.length) return;
-        const pairKey = `${selectedSub}|${secondarySub}`;
-        if (autoSyncedPairRef.current !== pairKey) {
-            autoSyncedPairRef.current = pairKey;
-            autoOffsetRef.current = null;
+        const primary = subTracks.find(t => t.id === selectedSub);
+        const partner = bilingual ? subTracks.find(t => t.id === secondarySub)
+            : subTracks.find(t => isEmbeddedTrack(t) && isEnTrack(t) && t.ready !== false && t.url && t.id !== selectedSub);
+        const pair = `${subContext?.sourceToken}|${selectedSub}|${partner?.id}|${bilingual}`;
+        if (autoSyncedPairRef.current !== pair) {
+            autoSyncedPairRef.current = pair;
             lastMeasureRef.current = null;
-            setSyncMapping(null);
-            setPrimarySync(null);
+            lastMappingRef.current = null;
+            setSecondaryOffset(0);
+            manualSubtitleTimingRef.current = false;
+            setSyncMapping(null); setPrimarySync(null); setSyncReport(null);
         }
-        // User moved the slider away from our last auto value: hands off.
-        if (autoOffsetRef.current !== null
-            && Math.abs(secondaryOffsetRef.current - autoOffsetRef.current) > 0.2) return;
-        const mapping = syncMapping && bilingual ? syncMapping : null;
-        // Ground truth = the embedded track (cut from the file itself). The
-        // EXTERNAL side gets remapped; the embedded side is never dragged.
-        const primarySrc = subTracks.find((t) => t.id === selectedSub)?.source;
-        const secondarySrc = refTrack?.source;
-        const target: 'primary' | 'secondary' =
-            secondarySrc === 'embedded' && primarySrc !== 'embedded' ? 'primary' : 'secondary';
-        const secondaryStarts = secondaryAll.map((c) => c.start).sort((a, b) => a - b);
-        const anchorT = mapping ? mapping.anchorT : 0;
-        const slope = mapping ? mapping.slope : 0;
-        const deltas: number[] = [];
-        for (const cue of primaryAll) {
-            // Predict where the secondary line SHOULD be (previous mapping
-            // applied), then accept only matches near the prediction: keeps
-            // lock while drift grows ~12s per 5 minutes (PAL-origin subs).
-            const baseOffset = target === 'primary'
-                ? (primarySync ? primarySync.offset : 0)
-                : secondaryOffsetRef.current;
-            const baseSlope = target === 'primary' && primarySync ? primarySync.slope : slope;
-            const predicted = cue.start + baseOffset + baseSlope * (cue.start - anchorT);
-            let best: number | null = null;
-            let bestDist = 10;
-            for (const st of secondaryStarts) {
-                const dist = Math.abs(st - predicted);
-                if (dist < bestDist) { bestDist = dist; best = st - cue.start; }
-            }
-            if (best !== null) deltas.push(best);
-        }
-        if (deltas.length < 3) return; // not enough evidence to auto-shift
-        const matchRate = deltas.length / primaryAll.length;
-        if (matchRate < 0.5) {
-            // Timed for a DIFFERENT cut: no offset can fix scattered matches.
-            setSyncReport({ trackId: selectedSub, offset: 0, slope: null, corrected: false, matchRate });
-            return;
-        }
-        deltas.sort((a, b) => a - b);
-        const median = Math.round(deltas[Math.floor(deltas.length / 2)] * 20) / 20;
-        if (Math.abs(median) < 0.2 || Math.abs(median) > 10) return;
-        // Progressive drift (different fps/cut): the measured offset moves
-        // over the film, so re-apply on EVERY window measurement instead of
-        // once per pair. Quiet when the value is unchanged.
-        // Median sits at the mean primary cue time of this window — the
-        // anchor for both the offset and the slope update.
-        const measuredT = primaryAll.reduce((sum, c) => sum + c.start, 0) / primaryAll.length;
-        const prev = lastMeasureRef.current;
-        lastMeasureRef.current = { t: measuredT, o: median };
-        const prevOffset = target === 'primary' ? (primarySync?.offset ?? 0) : secondaryOffsetRef.current;
-        if (Math.abs(median - prevOffset) <= 0.2 && !mapping) {
-            autoOffsetRef.current = median;
-            setSyncReport({ trackId: selectedSub, offset: median, slope: null, corrected: Math.abs(median) >= 0.2 });
-            return;
-        }
-        // Two anchors >=90s apart and a consistent slope => fps-scale remap
-        // (PAL 25fps vs 23.976 film is slope ~-0.041).
-        if (prev && Math.abs(measuredT - prev.t) >= 90) {
-            const slope = (median - prev.o) / (measuredT - prev.t);
-            if (Math.abs(slope) >= 0.002 && Math.abs(slope) <= 0.06) {
-                if (target === 'primary') setPrimarySync({ offset: median, anchorT: measuredT, slope });
-                else setSyncMapping({ anchorT: measuredT, slope });
-                setSecondaryOffset(target === 'primary' ? 0 : median);
-                autoOffsetRef.current = median;
-                setSyncReport({ trackId: selectedSub, offset: median, slope, corrected: true });
-                showSyncToast(`Đã canh phụ đề lệch chuẩn ${slope > 0 ? '+' : ''}${(slope * 100).toFixed(1)}%/giờ phát`);
-                return;
-            }
-        }
-        if (target === 'primary') setPrimarySync({ offset: median, anchorT: measuredT, slope: 0 });
-        else setSecondaryOffset(median);
-        autoOffsetRef.current = median;
-        setSyncReport({ trackId: selectedSub, offset: median, slope: null, corrected: true });
-        showSyncToast(`Đã tự canh lệch phụ đề ${median > 0 ? '+' : ''}${median.toFixed(1)}s`);
+        if (!primary || !partner || manualSubtitleTimingRef.current || Math.abs(subDelay) > 0.05) return;
+        const primaryEmbedded = isEmbeddedTrack(primary), partnerEmbedded = isEmbeddedTrack(partner);
+        if (primaryEmbedded === partnerEmbedded) return;
+        const reference = primaryEmbedded ? primary : partner;
+        const target = primaryEmbedded ? partner : primary;
+        const targetCues = cueCache[target.id], referenceCues = cueCache[reference.id];
+        if (!targetCues?.length || !referenceCues?.length) return;
+        const result = measureSubtitleAlignment(targetCues, referenceCues, reference);
+        if (!result) return;
+        setSyncReport({ trackId: target.id, offset: result.offset, slope: null,
+            corrected: false, confident: result.confident, matchRate: result.matchRate });
+        const mapping = subtitleMappingFromMeasurements(lastMeasureRef.current, result);
+        if (!mapping) return;
+        if (lastMappingRef.current && lastMeasureRef.current && Math.abs(result.anchorT - lastMeasureRef.current.anchorT) < 90)
+            mapping.slope = lastMappingRef.current.slope;
+        lastMappingRef.current = mapping;
+        if (!lastMeasureRef.current || Math.abs(lastMeasureRef.current.anchorT - result.anchorT) >= 90)
+            lastMeasureRef.current = result;
+        if (target.id === primary.id) setPrimarySync(mapping);
+        else { setSecondaryOffset(mapping.offset); setSyncMapping({ anchorT: mapping.anchorT, slope: mapping.slope }); }
+        setSyncReport({ trackId: target.id, offset: mapping.offset, slope: mapping.slope,
+            corrected: true, confident: true, matchRate: result.matchRate });
         // eslint-disable-next-line react-hooks/exhaustive-deps
-    }, [bilingual, secondarySub, selectedSub, cueCache]);
+    }, [bilingual, secondarySub, selectedSub, cueCache, subTracks, subDelay, subContext?.sourceToken]);
 
-    // One-shot per movie/source: score every ready external Vietnamese track
-    // against the embedded English fingerprint. The good cut matches ~90% of
-    // cue starts within ±2.5s; a different cut (TELESYNC vs WEB-DL) scatters.
-    const probedKeyRef = useRef<string>('');
+    // Score full external subtitles only within the embedded reference's real
+    // coverage. Await returned cues, never a stale render's cueCache snapshot.
+    const probedKeyRef = useRef('');
     useEffect(() => {
-        const viTracks = subTracks.filter((t) =>
-            t.ready !== false && t.url && t.id !== selectedSub
-            && !isEmbeddedTrack(t)
-            && t.language?.toLowerCase().startsWith('vi'));
-        if (viTracks.length === 0) return;
-        const refTrack = subTracks.find((t) => t.source === 'embedded' && t.ready !== false
-            && t.language?.toLowerCase().startsWith('en'));
-        if (!refTrack) return;
-        const key = `${movie.slug}|${refTrack.id}|${viTracks.map((t) => t.id).join(',')}`;
+        const viTracks = subTracks.filter(t => t.ready !== false && t.url && !isEmbeddedTrack(t) && isViTrack(t));
+        const reference = subTracks.find(t => isEmbeddedTrack(t) && isEnTrack(t) && t.ready !== false && t.url);
+        if (!viTracks.length || !reference) return;
+        const key = `${subContext?.sourceToken}|${reference.id}|${reference.windowStart}|${reference.url}|${viTracks.map(t => t.id).join(',')}`;
         if (probedKeyRef.current === key) return;
-        probedKeyRef.current = key;
         let cancelled = false;
         void (async () => {
-            if (!cueCache[refTrack.id]) await ensureCues(refTrack);
-            const refCues = cueCache[refTrack.id];
-            if (cancelled || !refCues?.length) return;
-            const refStarts = refCues.map((c) => c.start).sort((a, b) => a - b);
-            const scores: Record<string, { matchRate: number; offset: number }> = {};
+            const referenceCues = await ensureCues(reference);
+            if (cancelled || !referenceCues?.length) return;
+            const scores: Record<string, { matchRate: number; offset: number; confident: boolean }> = {};
             for (const track of viTracks) {
-                let cues = cueCache[track.id];
-                if (!cues) { await ensureCues(track); cues = cueCache[track.id]; }
-                if (cancelled || !cues?.length) continue;
-                let matched = 0; const deltas: number[] = [];
-                for (const cue of cues) {
-                    let best: number | null = null; let bestDist = 2.5;
-                    for (const st of refStarts) {
-                        const d = Math.abs(st - cue.start);
-                        if (d < bestDist) { bestDist = d; best = st - cue.start; }
-                    }
-                    if (best !== null) { matched += 1; deltas.push(best); }
-                }
-                const matchRate = cues.length ? matched / cues.length : 0;
-                const offset = deltas.length
-                    ? [...deltas].sort((a, b) => Math.abs(a) - Math.abs(b))[Math.floor(deltas.length / 2)]
-                    : 0;
-                scores[track.id] = { matchRate, offset };
-                setSubScores((prev) => ({ ...prev, ...scores }));
+                const cues = await ensureCues(track);
+                if (cancelled) return;
+                if (!cues?.length) continue;
+                const result = measureSubtitleAlignment(cues, referenceCues, reference);
+                if (result) scores[track.id] = { matchRate: result.matchRate, offset: result.offset, confident: result.confident };
             }
             if (cancelled) return;
-            // Auto-switch only while the viewer has not made a manual choice
-            // and the remembered preference is absent: the current external
-            // track is from another cut and a clearly better one exists.
+            probedKeyRef.current = key;
+            setSubScores(scores);
             if (!autoSubRef.current || readSubPref()) return;
-            const current = subTracks.find((t) => t.id === selectedSub);
-            if (!current || isEmbeddedTrack(current)) return;
-            const currentScore = scores[current.id];
-            if (currentScore && currentScore.matchRate >= 0.5) return;
-            const bestId = Object.entries(scores)
-                .filter(([, sc]) => sc.matchRate >= 0.7)
+            const current = scores[selectedSub];
+            if (current?.confident) return;
+            const bestId = Object.entries(scores).filter(([, result]) => result.confident
+                && result.matchRate >= (current?.matchRate || 0) + 0.2)
                 .sort((a, b) => b[1].matchRate - a[1].matchRate)[0]?.[0];
-            if (bestId && bestId !== current.id) {
-                const bestTrack = subTracks.find((t) => t.id === bestId);
-                if (bestTrack) {
-                    showSyncToast(`Đã đổi sang bản Việt khớp phim (${bestTrack.label.replace(/^Tiếng Việt · /, '')})`);
-                    pickSubtitle(bestId);
-                }
+            if (bestId && bestId !== selectedSub) {
+                pickSubtitle(bestId);
+                showSyncToast('Đã chọn bản Việt có mốc câu gần phụ đề nhúng hơn; hãy kiểm tra với lời thoại.');
             }
         })();
         return () => { cancelled = true; };
         // eslint-disable-next-line react-hooks/exhaustive-deps
-    }, [subTracks, selectedSub, movie.slug]);
+    }, [subTracks, selectedSub, movie.slug, subContext?.sourceToken]);
 
     // Bilingual pairing completes late: when the toggle is ON with no partner
     // (the English track was still extracting), pair it the moment a ready
@@ -1273,6 +1193,15 @@ export default function VideoPlayer({ src, playbackStartedAt, movie, episode, au
         }
         // eslint-disable-next-line react-hooks/exhaustive-deps
     }, [bilingual, secondarySub, selectedSub, subTracks]);
+
+    const primarySubTrack = subTracks.find(t => t.id === selectedSub);
+    const secondarySubTrack = subTracks.find(t => t.id === secondarySub);
+    const englishVietnamesePair = !!primarySubTrack && !!secondarySubTrack
+        && ((isViTrack(primarySubTrack) && isEnTrack(secondarySubTrack))
+            || (isEnTrack(primarySubTrack) && isViTrack(secondarySubTrack)));
+    const secondaryOnTop = englishVietnamesePair
+        ? (bilingualOrder === 'english-first' ? isEnTrack(secondarySubTrack!) : isViTrack(secondarySubTrack!))
+        : bilingualOrder === 'english-first';
 
     // High-frequency RAF loop for smooth frame-accurate subtitle sync
     useEffect(() => {
@@ -2829,7 +2758,7 @@ export default function VideoPlayer({ src, playbackStartedAt, movie, episode, au
                         <p
                             key={`sec-${cue.start}-${i}`}
                             className="max-w-3xl whitespace-pre-line rounded-md bg-black/55 px-3 py-1 font-medium opacity-90"
-                            style={{ textShadow: '0 1px 3px rgba(0,0,0,0.9)', fontSize: Math.round(subSize * 0.8), color: subColor }}
+                            style={{ order: secondaryOnTop ? 0 : 1, textShadow: '0 1px 3px rgba(0,0,0,0.9)', fontSize: Math.round(subSize * 0.8), color: subColor }}
                         >
                             {cue.text}
                         </p>
@@ -2838,7 +2767,7 @@ export default function VideoPlayer({ src, playbackStartedAt, movie, episode, au
                         <p
                             key={`pri-${cue.start}-${i}`}
                             className="max-w-3xl whitespace-pre-line rounded-md bg-black/65 px-4 py-1.5 font-semibold"
-                            style={{ textShadow: '0 2px 4px rgba(0,0,0,0.9)', fontSize: subSize, color: subColor }}
+                            style={{ order: secondaryOnTop ? 1 : 0, textShadow: '0 2px 4px rgba(0,0,0,0.9)', fontSize: subSize, color: subColor }}
                         >
                             {cue.text}
                         </p>
@@ -3403,20 +3332,20 @@ export default function VideoPlayer({ src, playbackStartedAt, movie, episode, au
                                                         </button>
                                                         {syncReport && (() => {
                                                             const abs = Math.abs(syncReport.offset);
-                                                            const dir = syncReport.offset > 0 ? 'trễ' : 'sớm';
+                                                            const dir = syncReport.offset > 0 ? 'sớm hơn' : 'muộn hơn';
                                                             return (
                                                                 <div className="mb-1.5 rounded-lg border border-white/10 bg-white/5 px-2.5 py-1.5 text-[11px] leading-snug text-cinema-muted">
-                                                                    {(syncReport.matchRate !== undefined && syncReport.matchRate < 0.5) ? (
-                                                                        <>⚠ Bản đang chọn làm cho <b className="text-amber-gold">bản phát khác</b> (chỉ {Math.round((syncReport.matchRate || 0) * 100)}% câu khớp) — <b>không thể canh tự động</b>, hãy thử track Việt khác.</>
+                                                                    {!syncReport.confident ? (
+                                                                        <>Chưa đủ mốc câu chắc chắn để tự canh. Giữ thời gian hiện tại; bạn có thể chỉnh tay nếu thấy lệch.</>
                                                                     ) : abs < 0.2 ? (
-                                                                        <>✓ <b className="text-emerald-400">Bản đang chọn khớp phim</b> (lệch dưới 0.2s, đối chiếu phụ đề nhúng gốc).</>
+                                                                        <>✓ Mốc câu gần phụ đề nhúng (dưới 0.2s). Hãy đối chiếu thêm với lời thoại.</>
                                                                     ) : (
-                                                                        <>⏱ Bản đang chọn <b className="text-amber-gold">{dir} {abs.toFixed(1)}s</b> so với thoại{syncReport.slope ? ` và trôi chuẩn ${syncReport.slope > 0 ? '+' : ''}${(syncReport.slope * 100).toFixed(1)}%/giờ` : ''} — đã tự canh. Muốn bản chuẩn hơn: thử từng track, chỉ số này đo ngay khi chọn.</>
+                                                                        <>Đã canh phụ đề {dir} {abs.toFixed(1)}s theo mốc phụ đề nhúng{syncReport.slope ? ' và bù độ trôi theo thời gian' : ''}. Bạn vẫn có thể chỉnh tay.</>
                                                                     )}
                                                                 </div>
                                                             );
                                         })()}
-                                                        {subTracks.map((t) => {
+                                                        {sortSubtitleMenu(subTracks).map((t) => {
                                                             const pending = t.ready === false;
                                                             const verified = !pending && (isEmbeddedTrack(t) || t.matched === true);
                                                             const report = syncReport?.trackId === t.id ? syncReport : null;
@@ -3506,19 +3435,12 @@ export default function VideoPlayer({ src, playbackStartedAt, movie, episode, au
                                                                         const next = !bilingual;
                                                                         setBilingual(next);
                                                                         if (next) {
-                                                                            // No primary yet (subs off)? Pick the best one
-                                                                            // first, otherwise pairing has nothing to attach to
-                                                                            // and the toggle reads as "no effect".
-                                                                            let currentTrack = subTracks.find((t) => t.id === selectedSub);
-                                                                            if (!currentTrack) {
-                                                                                const auto = pickAutoSubtitle(subTracks);
-                                                                                if (auto) {
-                                                                                    setSelectedSub(auto.id);
-                                                                                    void ensureCues(auto);
-                                                                                    currentTrack = auto;
-                                                                                }
-                                                                            }
-                                                                            const candidate = pickSecondaryFor(currentTrack, subTracks);
+                                                                            const currentTrack = subTracks.find((t) => t.id === selectedSub);
+                                                                            const vietnamese = pickBestViTrack(subTracks.filter((t) => t.ready !== false && t.url));
+                                                                            const primary = vietnamese || currentTrack || pickAutoSubtitle(subTracks);
+                                                                            if (primary) pickSubtitle(primary.id);
+                                                                            setSecondaryOffset(0);
+                                                                            const candidate = pickSecondaryFor(primary, subTracks);
                                                                             if (candidate) {
                                                                                 setSecondarySub(candidate.id);
                                                                                 void ensureCues(candidate);
@@ -3534,8 +3456,30 @@ export default function VideoPlayer({ src, playbackStartedAt, movie, episode, au
                                                             </div>
                                                              {bilingual && (
                                                                 <div className="mt-2 space-y-2">
+                                                                    <p className="text-[10px] font-bold text-cinema-muted">Thứ tự hiển thị</p>
                                                                     <div className="grid grid-cols-2 gap-1.5">
-                                                                        {subTracks
+                                                                        {([
+                                                                            { value: 'english-first', label: englishVietnamesePair ? 'Anh trên · Việt dưới' : 'Phụ đề 2 ở trên' },
+                                                                            { value: 'vietnamese-first', label: englishVietnamesePair ? 'Việt trên · Anh dưới' : 'Phụ đề chính ở trên' },
+                                                                        ] as const).map(option => (
+                                                                            <button
+                                                                                key={option.value}
+                                                                                type="button"
+                                                                                aria-pressed={bilingualOrder === option.value}
+                                                                                onClick={() => {
+                                                                                    setBilingualOrder(option.value);
+                                                                                    savePrefs({ bilingualOrder: option.value });
+                                                                                }}
+                                                                                className={`px-2 py-1.5 rounded-md text-[10px] font-bold border transition-all ${bilingualOrder === option.value
+                                                                                    ? 'bg-amber-primary text-black border-amber-primary'
+                                                                                    : 'bg-surface-container text-cinema-subtle border-white/10 hover:text-white'}`}
+                                                                            >
+                                                                                {option.label}
+                                                                            </button>
+                                                                        ))}
+                                                                    </div>
+                                                                    <div className="grid grid-cols-2 gap-1.5">
+                                                                        {sortSubtitleMenu(subTracks)
                                                                             .filter((t) => t.id !== selectedSub && t.ready !== false && t.url)
                                                                             .map((t) => (
                                                                                 <button
@@ -3569,6 +3513,7 @@ export default function VideoPlayer({ src, playbackStartedAt, movie, episode, au
                                                                         <button
                                                                             type="button"
                                                                             onClick={() => {
+                                                                                manualSubtitleTimingRef.current = true;
                                                                                 setSecondaryOffset(0);
                                                                                 showSyncToast('Đã đặt lại lệch phụ đề 2 về 0s');
                                                                             }}

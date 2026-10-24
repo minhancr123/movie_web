@@ -27,95 +27,89 @@ export const subtitleWindowAt = value => {
   return { startAt: Math.floor(at / 120) * 120, durationSeconds: 300 };
 };
 export const subtitleSidecarName = (scope, index, window) =>
-  `v5-${scope}-w${window.startAt}-${index}.vtt`;
+  `v6-${scope}-w${window.startAt}-${index}.vtt`;
 export const isCompletedSubtitle = async file => {
   try { return /^WEBVTT(?:\s|$)/.test(await fs.readFile(file, 'utf8')); }
   catch { return false; }
 };
 
-// Windows step in buckets of 120s and span 300s, so neighbours overlap: a
-// viewer seeking one bucket forward already HAS most of the bytes in a
-// previously completed sidecar. Reading them again (or worse, telling the
-// player "not ready" for 30-60s) is what made seeking feel like the subtitle
-// vanished.
-const VTT_CUE_TIME = /^((?:\d{1,3}:)?\d{2}:\d{2}\.\d{3})\s+-->\s+((?:\d{1,3}:)?\d{2}:\d{2}\.\d{3})/;
-const vttStampSeconds = stamp => {
-  let seconds = 0;
-  for (const part of String(stamp).split(':')) seconds = seconds * 60 + Number(part);
-  return Number.isFinite(seconds) ? seconds : NaN;
-};
-
-const cuesWithin = (text, start, end) => {
-  const out = [];
-  for (const block of String(text).split(/\n\s*\n/)) {
-    const trimmed = block.trim();
-    if (!trimmed || /^(WEBVTT|NOTE|STYLE|REGION)\b/.test(trimmed)) continue;
-    const match = VTT_CUE_TIME.exec(trimmed.split('\n').find(l => VTT_CUE_TIME.test(l)) || '');
-    if (!match) continue;
-    const cueStart = vttStampSeconds(match[1]);
-    const cueEnd = vttStampSeconds(match[2]);
-    if (Number.isFinite(cueStart) && Number.isFinite(cueEnd)
-      && cueEnd > start && cueStart < end) out.push(trimmed);
+// Coverage is embedded in the atomically published VTT, so bytes and metadata
+// cannot disagree after a concurrent read or a process restart.
+const COVERAGE_NOTE = /^NOTE CINEVN-COVERAGE (.+)$/m;
+export const mergeSubtitleCoverage = ranges => {
+  const sorted = (Array.isArray(ranges) ? ranges : [])
+    .filter(r => Array.isArray(r) && r.length === 2 && r.every(Number.isFinite)
+      && r[0] >= 0 && r[1] <= 172800 && r[1] > r[0])
+    .map(r => [...r]).sort((a, b) => a[0] - b[0]);
+  const result = [];
+  for (const [start, end] of sorted) {
+    const last = result[result.length - 1];
+    if (last && start <= last[1]) last[1] = Math.max(last[1], end);
+    else result.push([start, end]);
   }
-  return out;
+  return result;
+};
+export const subtitleCoverageFromText = text => {
+  if (!/^WEBVTT(?:\s|$)/.test(text)) return [];
+  try { return mergeSubtitleCoverage(JSON.parse(text.match(COVERAGE_NOTE)?.[1] || 'null')); }
+  catch { return []; }
+};
+export const withSubtitleCoverage = (text, ranges) => {
+  const blocks = String(text).replace(/\r\n/g, '\n').split(/\n\s*\n/)
+    .filter(block => !/^NOTE CINEVN-COVERAGE /.test(block.trim()));
+  const header = blocks.shift()?.trim() || 'WEBVTT';
+  return `${header}\n\nNOTE CINEVN-COVERAGE ${JSON.stringify(mergeSubtitleCoverage(ranges))}\n\n${blocks.join('\n\n').trim()}\n`;
+};
+const coverageContains = (ranges, start, end) => ranges.some(r => r[0] <= start && r[1] >= end);
+export const subtitleWindowStatus = async (file, window) => {
+  const text = await fs.readFile(file, 'utf8').catch(() => '');
+  const ranges = subtitleCoverageFromText(text);
+  const start = window.startAt;
+  const end = start + window.durationSeconds;
+  return { ready: coverageContains(ranges, start, Math.min(end, start + 120)),
+    fullCoverage: coverageContains(ranges, start, end), ranges };
 };
 
-/**
- * Build the requested window sidecar from completed sidecars of the same
- * track whose coverage overlaps it. Returns { sliced, fullCoverage }:
- * sliced=true means the file now exists and covers at least the CURRENT
- * bucket (the 120s the viewer is actually in); fullCoverage=false means the
- * rest of the 300s span is missing and a background refill is worthwhile.
- */
+const VTT_CUE_TIME = /^((?:\d{1,3}:)?\d{2}:\d{2}\.\d{3})\s+-->\s+((?:\d{1,3}:)?\d{2}:\d{2}\.\d{3})/;
+const vttStampSeconds = stamp => String(stamp).split(':').reduce((sum, part) => sum * 60 + Number(part), 0);
+const cueTimes = block => {
+  const timing = block.trim().split('\n').find(line => VTT_CUE_TIME.test(line));
+  const match = timing?.match(VTT_CUE_TIME);
+  return match ? [vttStampSeconds(match[1]), vttStampSeconds(match[2])] : null;
+};
+
+/** Reuse only measured coverage. Slices never manufacture new covered time. */
 export const trySliceWindowFromCoverage = async (subsRoot, scope, index, window) => {
-  const requestedStart = window.startAt;
-  const requestedEnd = window.startAt + window.durationSeconds;
-  const bucketEnd = requestedStart + 120;
+  const start = window.startAt;
+  const end = start + window.durationSeconds;
   const names = await fs.readdir(subsRoot).catch(() => []);
-  const sidecarRe = new RegExp(`^v5-${String(scope).replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}-w(\\d+)-${index}\\.vtt$`);
+  const prefix = `v6-${scope}-w`;
+  const suffix = `-${index}.vtt`;
   const sources = [];
   for (const name of names) {
-    const match = sidecarRe.exec(name);
-    if (!match) continue;
-    const file = `${subsRoot}/${name}`;
-    if (!(await isCompletedSubtitle(file))) continue;
-    const start = Number(match[1]);
-    sources.push({ file, start, end: start + window.durationSeconds });
+    if (!name.startsWith(prefix) || !name.endsWith(suffix)
+      || !/^\d+$/.test(name.slice(prefix.length, -suffix.length))) continue;
+    const text = await fs.readFile(`${subsRoot}/${name}`, 'utf8').catch(() => '');
+    const ranges = subtitleCoverageFromText(text)
+      .map(([a, b]) => [Math.max(a, start), Math.min(b, end)]).filter(([a, b]) => b > a);
+    if (ranges.length) sources.push({ text, ranges });
   }
-  if (!sources.length) return { sliced: false, fullCoverage: false };
-
-  // Union of source coverage vs the ranges we care about.
-  const segments = sources.map(src => [src.start, src.end]).sort((a, b) => a[0] - b[0]);
-  const merged = [];
-  for (const [start, end] of segments) {
-    const last = merged[merged.length - 1];
-    if (last && start <= last[1]) last[1] = Math.max(last[1], end);
-    else merged.push([start, end]);
-  }
-  const covers = (from, to) => merged.some(([start, end]) => start <= from && end >= to);
-  if (!covers(requestedStart, bucketEnd)) return { sliced: false, fullCoverage: false };
-
-  const seen = new Set();
-  const cueBlocks = [];
-  for (const src of sources) {
-    const text = await fs.readFile(src.file, 'utf8').catch(() => '');
-    for (const cue of cuesWithin(text, requestedStart, requestedEnd)) {
-      if (seen.has(cue)) continue; // overlapping windows carry duplicate cues
-      seen.add(cue);
-      cueBlocks.push(cue);
+  const ranges = mergeSubtitleCoverage(sources.flatMap(source => source.ranges));
+  if (!coverageContains(ranges, start, Math.min(end, start + 120))) return { sliced: false, fullCoverage: false };
+  const unique = new Map();
+  for (const source of sources) {
+    for (const block of source.text.replace(/\r\n/g, '\n').split(/\n\s*\n/)) {
+      const times = cueTimes(block);
+      if (times && times[1] > start && times[0] < end) unique.set(block.trim(), times[0]);
     }
   }
-  cueBlocks.sort((a, b) => {
-    const ta = vttStampSeconds(VTT_CUE_TIME.exec(a)?.[1] || '0:00.000');
-    const tb = vttStampSeconds(VTT_CUE_TIME.exec(b)?.[1] || '0:00.000');
-    return ta - tb;
-  });
-  const body = cueBlocks.length ? `WEBVTT\n\n${cueBlocks.join('\n\n')}\n` : 'WEBVTT\n';
+  const blocks = [...unique].sort((a, b) => a[1] - b[1]).map(([block]) => block);
+  const body = withSubtitleCoverage(`WEBVTT\n\n${blocks.join('\n\n')}\n`, ranges);
   const out = `${subsRoot}/${subtitleSidecarName(scope, index, window)}`;
   const temp = `${out}.slice-${Date.now()}-${Math.random().toString(36).slice(2)}.vtt`;
-  await fs.writeFile(temp, body);
-  await fs.rename(temp, out);
-  return { sliced: true, fullCoverage: covers(requestedStart, requestedEnd) };
+  try { await fs.writeFile(temp, body); await fs.rename(temp, out); }
+  finally { await fs.rm(temp, { force: true }).catch(() => {}); }
+  return { sliced: true, fullCoverage: coverageContains(ranges, start, end) };
 };
 
 // Input seeking can rewind to an earlier video keyframe. Keep original cue

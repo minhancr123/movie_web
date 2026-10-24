@@ -4,7 +4,7 @@ import os from 'os';
 import { createHash } from 'node:crypto';
 import { spawn } from 'child_process';
 import { planAdmission } from './deliveryPlan.js';
-import { trimSubtitleWindow } from './subtitleInventory.js';
+import { trimSubtitleWindow, withSubtitleCoverage } from './subtitleInventory.js';
 
 // Must stay absolute: res.sendFile() rejects relative paths, and ffmpeg's
 // -hls_fmp4_init_filename is resolved against the playlist's directory.
@@ -312,8 +312,9 @@ export const extractSubtitleTracks = async (inputUrl, jobs, window = {}) => {
       const published = duration > 0
         ? filterVttCuesToWindow(text, start, start + duration)
         : text;
-      await fs.writeFile(job.outPath, published);
-      await fs.rm(job.temp, { force: true });
+      await fs.writeFile(job.temp, withSubtitleCoverage(published,
+        [[start, duration > 0 ? start + duration : 172800]]));
+      await fs.rename(job.temp, job.outPath);
       return { ...job, ok: true };
     }));
   } finally {

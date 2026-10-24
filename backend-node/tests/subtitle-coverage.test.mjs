@@ -6,7 +6,7 @@ import path from 'node:path';
 import {
   subtitleWindowAt,
   subtitleSidecarName,
-  trySliceWindowFromCoverage,
+  trySliceWindowFromCoverage, withSubtitleCoverage, subtitleWindowStatus,
 } from '../services/playback/subtitleInventory.js';
 
 const SCOPE = 'a'.repeat(40);
@@ -15,7 +15,7 @@ const mkWindow = (startAt) => ({ startAt, durationSeconds: 300 });
 const writeSidecar = async (dir, scope, index, startAt, cues) => {
   const name = subtitleSidecarName(scope, index, mkWindow(startAt));
   const body = cues.map(c => `${c[0]} --> ${c[1]}\n${c[2]}`).join('\n\n');
-  await fs.writeFile(path.join(dir, name), `WEBVTT\n\n${body}\n`);
+  await fs.writeFile(path.join(dir, name), withSubtitleCoverage(`WEBVTT\n\n${body}\n`, [[startAt, startAt + 300]]));
 };
 
 test('a seek into a neighbouring window is served instantly by slicing', async () => {
@@ -67,7 +67,7 @@ test('uncovered buckets still report not sliced; partial files are ignored', asy
     assert.equal(far.sliced, false);
     // in-progress temp file for another track must not count as coverage
     await fs.writeFile(
-      path.join(dir, `v5-${SCOPE}-w0-1.vtt.partial-123-abc.vtt`),
+      path.join(dir, `v6-${SCOPE}-w0-1.vtt.partial-123-abc.vtt`),
       'WEBVTT\n',
     );
     const none = await trySliceWindowFromCoverage(dir, SCOPE, 1, mkWindow(0));
@@ -81,4 +81,29 @@ test('subtitleWindowAt buckets by 120s with 300s span', () => {
   assert.deepEqual(subtitleWindowAt(0), { startAt: 0, durationSeconds: 300 });
   assert.deepEqual(subtitleWindowAt(119), { startAt: 0, durationSeconds: 300 });
   assert.deepEqual(subtitleWindowAt(800), { startAt: 720, durationSeconds: 300 });
+});
+
+test('repeated and chained slices never extend actual extracted coverage', async () => {
+  const dir = await fs.mkdtemp(path.join(os.tmpdir(), 'cinevn-sub-chain-'));
+  try {
+    await writeSidecar(dir, SCOPE, 0, 0, [['00:04:10.000', '00:04:12.000', 'cue']]);
+    assert.deepEqual(await trySliceWindowFromCoverage(dir, SCOPE, 0, mkWindow(120)), { sliced: true, fullCoverage: false });
+    assert.deepEqual(await trySliceWindowFromCoverage(dir, SCOPE, 0, mkWindow(120)), { sliced: true, fullCoverage: false });
+    assert.deepEqual(await trySliceWindowFromCoverage(dir, SCOPE, 0, mkWindow(240)), { sliced: false, fullCoverage: false });
+    const status = await subtitleWindowStatus(path.join(dir, subtitleSidecarName(SCOPE, 0, mkWindow(120))), mkWindow(120));
+    assert.deepEqual(status, { ready: true, fullCoverage: false, ranges: [[120, 300]] });
+    await writeSidecar(dir, SCOPE, 0, 120, [['00:06:00.000', '00:06:02.000', 'new']]);
+    assert.equal((await trySliceWindowFromCoverage(dir, SCOPE, 0, mkWindow(240))).sliced, true);
+  } finally { await fs.rm(dir, { recursive: true, force: true }); }
+});
+test('quiet extracted coverage is valid, while a header alone proves no coverage', async () => {
+  const dir = await fs.mkdtemp(path.join(os.tmpdir(), 'cinevn-sub-quiet-'));
+  try {
+    const file = path.join(dir, subtitleSidecarName(SCOPE, 0, mkWindow(0)));
+    await fs.writeFile(file, 'WEBVTT\n');
+    assert.equal((await subtitleWindowStatus(file, mkWindow(0))).ready, false);
+    await fs.writeFile(file, withSubtitleCoverage('WEBVTT\n', [[0, 300]]));
+    assert.equal((await subtitleWindowStatus(file, mkWindow(0))).fullCoverage, true);
+    assert.equal((await trySliceWindowFromCoverage(dir, SCOPE, 0, mkWindow(120))).fullCoverage, false);
+  } finally { await fs.rm(dir, { recursive: true, force: true }); }
 });

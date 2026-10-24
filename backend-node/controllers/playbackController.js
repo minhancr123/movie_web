@@ -117,7 +117,7 @@ import {
 import { planAdmission } from '../services/playback/deliveryPlan.js';
 import { getDecryptedKey } from '../services/providers/connectionStore.js';
 import { computeOpenSubtitlesHash } from '../services/playback/opensubtitlesHash.js';
-import { selectEmbeddedSubtitleTracks, needsEmbeddedInventory, subtitleWindowAt, subtitleSidecarName, isCompletedSubtitle, trySliceWindowFromCoverage } from '../services/playback/subtitleInventory.js';
+import { selectEmbeddedSubtitleTracks, needsEmbeddedInventory, subtitleWindowAt, subtitleSidecarName, isCompletedSubtitle, trySliceWindowFromCoverage, subtitleWindowStatus, subtitleCoverageFromText } from '../services/playback/subtitleInventory.js';
 import * as opensubtitles from '../services/playback/opensubtitles.js';
 import { resolveVimoSource, getVimoStreams, verifyVimoStream } from '../services/playback/vimoClient.js';
 import { resolveYaStreamSource } from '../services/playback/yastreamClient.js';
@@ -3395,6 +3395,7 @@ export const getPlaybackSubtitles = async (req, res) => {
 
     const subtitleWindow = subtitleWindowAt(positionSeconds ?? ownedSession?.startAt ?? 0);
     const embeddedTracks = [];
+    let embeddedNeedsRefill = false;
     // Derive from the ownership-checked session. It was previously read off the
     // raw lookup; harmless in practice because probeFacts is only populated for
     // an owned session, but that made the guard depend on a second variable
@@ -3405,20 +3406,13 @@ export const getPlaybackSubtitles = async (req, res) => {
         const s = probeFacts.subtitles[i];
         if (!isConvertibleSubtitle(s.codec)) continue;
         const file = subsPath(subtitleSidecarName(fileIdentity(infoHash, ownedSession.fileId), i, subtitleWindow));
-        let ready = false;
-        try {
-          if (!(await isCompletedSubtitle(file))) throw new Error("Not ready");
-          ready = true;
-        } catch {
-          // A neighbouring window already holds these cues: slice them into
-          // place instead of reporting the track as not-ready (the viewer
-          // seeking a bucket forward used to lose subtitles for a full
-          // extraction round-trip).
-          const sliced = await trySliceWindowFromCoverage(
-            subsPath(), fileIdentity(infoHash, ownedSession.fileId), i, subtitleWindow,
-          );
-          ready = sliced.sliced;
+        let status = await subtitleWindowStatus(file, subtitleWindow);
+        if (!status.ready) {
+          await trySliceWindowFromCoverage(subsPath(), fileIdentity(infoHash, ownedSession.fileId), i, subtitleWindow);
+          status = await subtitleWindowStatus(file, subtitleWindow);
         }
+        const ready = status.ready;
+        embeddedNeedsRefill ||= ready && !status.fullCoverage;
         if (ready) {
           const token = crypto.randomBytes(32).toString('hex');
           await setCache(subTokenKey(token), { file }, SUB_TOKEN_TTL);
@@ -3428,7 +3422,7 @@ export const getPlaybackSubtitles = async (req, res) => {
             label: `${subLabel(s.language)} (Gốc nhúng)`,
             url: `/api/playback/subtitles/vtt/${token}`,
             ready: true,
-            source: 'embedded', streamIndex: s.streamIndex, windowStart: subtitleWindow.startAt, windowSeconds: subtitleWindow.durationSeconds,
+            source: 'embedded', streamIndex: s.streamIndex, windowStart: subtitleWindow.startAt, windowSeconds: subtitleWindow.durationSeconds, coverageRanges: status.ranges,
           });
         }
       }
@@ -3561,7 +3555,7 @@ export const getPlaybackSubtitles = async (req, res) => {
       // Uploads are a bonus track source: never fail the list for them.
     }
 
-    const loadEmbedded = needsEmbeddedInventory({
+    const loadEmbedded = (!externalOnly && embeddedNeedsRefill) || needsEmbeddedInventory({
       externalOnly, ownedSession, probeFacts, readyTracks: embeddedTracks,
       convertible: isConvertibleSubtitle,
     });
@@ -3697,9 +3691,10 @@ export const getPlaybackSubtitles = async (req, res) => {
     // Fast path: inventory is cached per torrent file — repeat opens
     // return instantly without touching TorBox or ffmpeg again. v3: file identity and response
     // shape carries the probe summary + per-track readiness.
-    const inventoryKey = `playback:subs:v5:${pickedScope}:w${subtitleWindow.startAt}`;
+    const inventoryKey = `playback:subs:v6:${pickedScope}:w${subtitleWindow.startAt}`;
     const cachedInventory = await getCache(inventoryKey);
-    if (cachedInventory?.done) {
+    if (cachedInventory?.done && cachedInventory.tracks?.every(t => t.source !== 'embedded'
+      || t.coverageRanges?.some(([a, b]) => a <= subtitleWindow.startAt && b >= subtitleWindow.startAt + subtitleWindow.durationSeconds))) {
       return res.json({
         success: true,
         data: {
@@ -3727,28 +3722,20 @@ export const getPlaybackSubtitles = async (req, res) => {
     for (const s of textSubs) {
       const i = s.inventoryIndex;
       const file = subsPath(subtitleSidecarName(pickedScope, i, subtitleWindow));
-      let ready = false;
       let url = '';
-      let refill = false;
-      try {
-        if (!(await isCompletedSubtitle(file))) throw new Error("Not ready");
-        ready = true;
-      } catch {
-        const sliced = await trySliceWindowFromCoverage(subsPath(), pickedScope, i, subtitleWindow);
-        if (sliced.sliced) {
-          ready = true;
-          // The current bucket is served from existing coverage, but the rest
-          // of the 300s span is missing: refill in the background so forward
-          // playback keeps its head start.
-          refill = !sliced.fullCoverage;
-        }
+      let status = await subtitleWindowStatus(file, subtitleWindow);
+      if (!status.ready) {
+        await trySliceWindowFromCoverage(subsPath(), pickedScope, i, subtitleWindow);
+        status = await subtitleWindowStatus(file, subtitleWindow);
       }
+      const ready = status.ready;
+      const refill = ready && !status.fullCoverage;
       if (refill) refills.push({ s, i, file });
       if (ready) {
         const token = crypto.randomBytes(32).toString('hex');
         await setCache(subTokenKey(token), { file }, SUB_TOKEN_TTL);
         url = `/api/playback/subtitles/vtt/${token}`;
-        minted.push({ id: `${pickedScope}:${i}`, language: s.language || '', label: `${subLabel(s.language)} (Gốc nhúng)`, url, ready: true, source: 'embedded', streamIndex: s.streamIndex, windowStart: subtitleWindow.startAt, windowSeconds: subtitleWindow.durationSeconds });
+        minted.push({ id: `${pickedScope}:${i}`, language: s.language || '', label: `${subLabel(s.language)} (Gốc nhúng)`, url, ready: true, source: 'embedded', streamIndex: s.streamIndex, windowStart: subtitleWindow.startAt, windowSeconds: subtitleWindow.durationSeconds, coverageRanges: status.ranges });
       } else {
         pending.push({ s, i, file });
       }
@@ -3767,28 +3754,8 @@ export const getPlaybackSubtitles = async (req, res) => {
       ...externalTracks,
     ];
 
-    if (pending.length === 0) {
-      await setCache(
-        inventoryKey,
-        { done: true, tracks: tracks.filter((t) => t.ready), probe: probeSummary },
-        SUB_INVENTORY_TTL
-      );
-      // Everything answered instantly, but some windows were sliced from
-      // partial coverage: top them up in the background. The response stays
-      // ready-only — the player never sees a spinner for this.
-      if (refills.length > 0) {
-        const refillJobId = crypto.randomBytes(16).toString('hex');
-        await setCache(subJobKey(refillJobId), { done: false, ready: {}, worker: SUB_WORKER_ID }, SUB_JOB_TTL);
-        void runSubtitleExtractionJob({
-          jobId: refillJobId,
-          inventoryKey,
-          pickedHash: pickedScope,
-          inputUrl,
-          probeSummary,
-          window: subtitleWindow,
-          pending: refills.map(({ s, i, file }) => ({ streamIndex: s.streamIndex, outPath: file, trackId: `${pickedScope}:${i}` })),
-        });
-      }
+    if (pending.length === 0 && refills.length === 0) {
+      await setCache(inventoryKey, { done: true, tracks, probe: probeSummary }, SUB_INVENTORY_TTL);
       return res.json({ success: true, data: { audio, tracks, note, jobId: null, probe: probeSummary } });
     }
 
@@ -3808,7 +3775,7 @@ export const getPlaybackSubtitles = async (req, res) => {
       inputUrl,
       probeSummary,
       window: { ...subtitleWindow, sessionId: ownedSession?.sessionId || null },
-      pending: pending.map(({ s, i, file }) => ({ streamIndex: s.streamIndex, outPath: file, trackId: `${pickedScope}:${i}` })),
+      pending: [...pending, ...refills].map(({ s, i, file }) => ({ streamIndex: s.streamIndex, outPath: file, trackId: `${pickedScope}:${i}` })),
     });
     return res.json({
       success: true,
@@ -3829,6 +3796,7 @@ export const getPlaybackSubtitles = async (req, res) => {
 /** Background worker: single-pass extract, then publish URLs to job+inventory. */
 async function runSubtitleExtractionJob({ jobId, inventoryKey, pickedHash, inputUrl, probeSummary, pending, window }) {
   const ready = {};
+  const coverage = {};
   const minted = [];
   const publish = async (trackId, outPath) => {
     const text = await fs.readFile(outPath, 'utf8');
@@ -3843,6 +3811,7 @@ async function runSubtitleExtractionJob({ jobId, inventoryKey, pickedHash, input
     const token = crypto.randomBytes(32).toString('hex');
     await setCache(subTokenKey(token), { file: outPath }, SUB_TOKEN_TTL);
     ready[trackId] = `/api/playback/subtitles/vtt/${token}`;
+    coverage[trackId] = subtitleCoverageFromText(text);
     const idx = Number(String(trackId).split(':').pop());
     minted.push({ idx, url: ready[trackId] });
   };
@@ -3882,10 +3851,10 @@ async function runSubtitleExtractionJob({ jobId, inventoryKey, pickedHash, input
     const current = (await getCache(inventoryKey)) || { tracks: [] };
     const tracks = (current.tracks || []).map((t) => {
       const hit = minted.find((m) => `${pickedHash}:${m.idx}` === t.id);
-      return hit ? { ...t, url: hit.url, ready: true } : t;
+      return hit ? { ...t, url: hit.url, ready: true, coverageRanges: coverage[t.id] } : t;
     });
     await setCache(inventoryKey, { done: true, tracks, probe: probeSummary || null }, minted.length === pending.length ? SUB_INVENTORY_TTL : 30);
-    await setCache(subJobKey(jobId), { done: true, ready, ...(minted.length ? {} : { error: "Chưa trích được phụ đề đoạn này. Vui lòng thử lại." }) }, SUB_JOB_TTL);
+    await setCache(subJobKey(jobId), { done: true, ready, coverage, ...(minted.length ? {} : { error: "Chưa trích được phụ đề đoạn này. Vui lòng thử lại." }) }, SUB_JOB_TTL);
   } catch (error) {
     console.error(`subtitle extraction job ${jobId} failed:`, error.message);
     await setCache(subJobKey(jobId), { done: true, ready: {}, error: 'Trích phụ đề thất bại' }, SUB_JOB_TTL);

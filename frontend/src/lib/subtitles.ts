@@ -16,6 +16,7 @@ export interface SubTrack {
   streamIndex?: number;
   windowStart?: number;
   windowSeconds?: number;
+  coverageRanges?: [number, number][];
   /**
    * Where the track came from. 'embedded' tracks are extracted from the
    * playing file itself, so their timing is exact; anything else is an
@@ -88,15 +89,18 @@ export const pickBestViTrack = <T extends { language: string; url: string; sourc
   || tracks.find((t) => isReadyTrack(t) && isViTrack(t) && isSuggestedTrack(t))
   || tracks.find((t) => isReadyTrack(t) && isViTrack(t));
 
-/** Timing confidence first; Vietnamese wins ties, English is the fallback. */
-// Language dominates timing: ANY ready Vietnamese sidecar outranks every
-// English one, embedded included — the audience reads Vietnamese, and the
-// embedded English track (also the bilingual partner) is applied only when
-// the viewer picks it. Timing trust still orders tracks within a language.
+/** Vietnamese first; timing confidence chooses the best track in that language. */
 export const autoSubtitleRank = (track: SubTrack | undefined): number => {
   if (!track || !isReadyTrack(track) || (!isViTrack(track) && !isEnTrack(track))) return -1;
   const timing = isEmbeddedTrack(track) ? 3 : track.matched ? 2 : track.suggested ? 1 : 0;
-  return (isViTrack(track) ? 10 : 0) + timing;
+  return (isViTrack(track) ? 100 : 0) + timing * 10;
+};
+
+/** Keep Vietnamese visible first in the menu, then English and other languages. */
+export const sortSubtitleMenu = (tracks: SubTrack[]): SubTrack[] => {
+  const languageOrder = (track: SubTrack) => isViTrack(track) ? 0 : isEnTrack(track) ? 1 : 2;
+  return [...tracks].sort((a, b) => languageOrder(a) - languageOrder(b)
+    || autoSubtitleRank(b) - autoSubtitleRank(a));
 };
 
 export const pickAutoSubtitle = (tracks: SubTrack[]): SubTrack | undefined =>

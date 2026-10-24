@@ -56,3 +56,23 @@ test('failed extraction leaves existing completed subtitles intact and removes p
   assert.equal(await fs.readFile(out, 'utf8'), before);
   assert.ok(!(await fs.readdir(dir)).some(n => n.includes('.partial-')));
 });
+
+test('failed atomic replacement keeps the previous published VTT readable', async () => {
+  const before = await fs.readFile(out, 'utf8');
+  const rename = fs.rename;
+  let intercepted = false;
+  fs.rename = async (from, to) => {
+    if (to === out) {
+      intercepted = true;
+      assert.equal(await fs.readFile(out, 'utf8'), before);
+      assert.match(await fs.readFile(from, 'utf8'), /NOTE CINEVN-COVERAGE/);
+      throw new Error('simulated publication failure');
+    }
+    return rename(from, to);
+  };
+  try { await assert.rejects(extractSubtitleTracks('fixture', [{ streamIndex: 4, outPath: out }], subtitleWindowAt(648))); }
+  finally { fs.rename = rename; }
+  assert.equal(intercepted, true);
+  assert.equal(await fs.readFile(out, 'utf8'), before);
+  assert.ok(!(await fs.readdir(dir)).some(n => n.includes('.partial-')));
+});
