@@ -4,6 +4,7 @@ import os from 'node:os';
 import { statfs } from 'node:fs/promises';
 import { getDB } from '../config/database.js';
 import { cacheClient } from '../config/redis.js';
+import { getServerHealth } from '../services/admin/serverHealth.js';
 import { adminMiddleware } from '../middleware/auth.js';
 import { getSiteSetting, setSiteSetting } from '../services/siteSettings.js';
 import { adminTraffic } from '../services/admin/traffic.js';
@@ -19,6 +20,8 @@ router.get('/site-settings/pause-overlay', async (_req, res) => {
 });
 router.use(adminMiddleware);
 router.use((_req, res, next) => { res.set('Cache-Control', 'private, no-store'); next(); });
+
+router.get('/server-health', getServerHealth);
 const route = handler => async (req, res) => {
   try { await handler(req, res); }
   catch (error) { console.error('[admin]', req.path, error.message); res.status(500).json({ success: false, message: 'Không tải được dữ liệu quản trị. Vui lòng thử lại.' }); }
