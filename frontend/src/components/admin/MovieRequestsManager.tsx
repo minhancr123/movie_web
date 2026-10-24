@@ -1,7 +1,7 @@
 'use client';
 
 import React, { useEffect, useState } from 'react';
-import { movieRequestAPI, MovieRequestItem } from '@/lib/api';
+import { movieRequestAPI, MovieRequestItem, TmdbMatch } from '@/lib/api';
 import { getFriendlyErrorMessage } from '@/lib/i18n';
 import { 
   CheckCircle2, 
@@ -12,7 +12,9 @@ import {
   ChevronLeft, 
   ChevronRight,
   Save,
-  Loader2
+  Loader2,
+  Search,
+  Users
 } from 'lucide-react';
 
 export default function MovieRequestsManager() {
@@ -25,6 +27,35 @@ export default function MovieRequestsManager() {
   const [editingId, setEditingId] = useState<string | null>(null);
   const [adminNote, setAdminNote] = useState('');
   const [submitting, setSubmitting] = useState(false);
+  const [checkingId, setCheckingId] = useState<string | null>(null);
+  const [tmdbMatches, setTmdbMatches] = useState<{ id: string; results: TmdbMatch[] } | null>(null);
+
+  const handleCheckTmdb = async (id: string) => {
+    setCheckingId(id);
+    try {
+      const res = await movieRequestAPI.checkTmdb(id);
+      setTmdbMatches({ id, results: res.data.data.results });
+    } catch (err: any) {
+      alert(getFriendlyErrorMessage(err?.response?.data?.message || err.message, true));
+    } finally {
+      setCheckingId(null);
+    }
+  };
+
+  const handleAttachTmdb = async (id: string, tmdbId: number) => {
+    setSubmitting(true);
+    try {
+      await movieRequestAPI.updateStatus(id, { tmdbId });
+      setTmdbMatches(null);
+      fetchRequests(pagination.page);
+    } catch (err: any) {
+      alert(getFriendlyErrorMessage(err?.response?.data?.message || err.message, true));
+    } finally {
+      setSubmitting(false);
+    }
+  };
+
+  const requesterCount = (req: MovieRequestItem) => req.requesters?.length ?? req.requestCount ?? 1;
 
   const fetchRequests = async (page = 1, status = statusFilter) => {
     setLoading(true);
@@ -100,6 +131,41 @@ export default function MovieRequestsManager() {
 
       {error && <div className="p-4 bg-red-500/10 border border-red-500/20 rounded-xl text-red-400 text-sm">{error}</div>}
 
+      {tmdbMatches && (
+        <div className="glass-panel rounded-2xl border border-amber-primary/30 p-4">
+          <div className="flex items-center justify-between mb-3">
+            <p className="text-sm font-bold text-white">Kết quả TMDB — gắn vào yêu cầu</p>
+            <button onClick={() => setTmdbMatches(null)} className="text-xs text-cinema-subtle hover:text-white">Đóng</button>
+          </div>
+          {tmdbMatches.results.length === 0 ? (
+            <p className="text-sm text-cinema-subtle">TMDB không có phim nào khớp tiêu đề này.</p>
+          ) : (
+            <div className="grid gap-2 sm:grid-cols-2 lg:grid-cols-3">
+              {tmdbMatches.results.map((m) => (
+                <button
+                  key={`${m.tmdbId}-${m.mediaType}`}
+                  onClick={() => handleAttachTmdb(tmdbMatches.id, m.tmdbId)}
+                  disabled={submitting}
+                  className="flex items-center gap-3 rounded-xl border border-white/10 bg-white/5 p-2 text-left hover:border-amber-primary/40 hover:bg-white/10 transition-all disabled:opacity-50"
+                >
+                  {m.poster ? (
+                    // eslint-disable-next-line @next/next/no-img-element
+                    <img src={m.poster} alt={m.title} className="h-16 w-11 rounded object-cover shrink-0" />
+                  ) : (
+                    <div className="h-16 w-11 rounded bg-white/10 shrink-0" />
+                  )}
+                  <div className="min-w-0">
+                    <p className="truncate text-xs font-bold text-white">{m.title}</p>
+                    <p className="text-[10px] text-cinema-subtle">{m.mediaType === 'tv' ? 'Phim bộ' : 'Phim lẻ'} {m.year ? `· ${m.year}` : ''} · TMDB {m.tmdbId}</p>
+                    <p className="mt-1 text-[10px] font-bold text-amber-gold">Gắn vào yêu cầu</p>
+                  </div>
+                </button>
+              ))}
+            </div>
+          )}
+        </div>
+      )}
+
       {/* Table */}
       <div className="glass-panel overflow-hidden rounded-2xl border border-white/10">
         <div className="overflow-x-auto">
@@ -128,6 +194,15 @@ export default function MovieRequestsManager() {
                   <tr key={req._id} className="hover:bg-white/5 transition-colors group">
                     <td className="px-6 py-4">
                       <p className="text-sm font-bold text-white group-hover:text-amber-gold transition-colors">{req.title}</p>
+                      {req.tmdbId ? (
+                        <a href={`https://www.themoviedb.org/movie/${req.tmdbId}`} target="_blank" rel="noreferrer" className="mt-1 inline-block text-[10px] font-bold text-emerald-400 hover:text-emerald-300">
+                          TMDB {String(req.tmdbId)} ↗
+                        </a>
+                      ) : (
+                        <button onClick={() => handleCheckTmdb(req._id)} disabled={checkingId === req._id} className="mt-1 flex items-center gap-1 text-[10px] font-bold text-cinema-subtle hover:text-amber-gold transition-colors disabled:opacity-50">
+                          {checkingId === req._id ? <Loader2 size={10} className="animate-spin" /> : <Search size={10} />} Tìm trên TMDB
+                        </button>
+                      )}
                       {req.note && (
                         <div className="mt-1 flex items-start gap-1.5 text-[11px] text-cinema-subtle">
                           <MessageSquare size={10} className="mt-0.5 shrink-0" />
@@ -138,6 +213,11 @@ export default function MovieRequestsManager() {
                     </td>
                     <td className="px-6 py-4">
                       <span className="text-xs text-white/70">{req.username}</span>
+                      {requesterCount(req) > 1 && (
+                        <span className="mt-1 flex items-center gap-1 text-[10px] font-bold text-amber-400 w-fit" title={(req.requesters || []).map(r => r.name).join(', ')}>
+                          <Users size={10} /> {requesterCount(req)} người xin
+                        </span>
+                      )}
                     </td>
                     <td className="px-6 py-4">
                       {getStatusBadge(req.status)}

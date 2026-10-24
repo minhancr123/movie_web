@@ -4,7 +4,8 @@ import {
   createRequest,
   getRequests,
   getMyRequests,
-  updateRequestStatus
+  updateRequestStatus,
+  checkTmdbMatch
 } from '../controllers/movieRequestController.js';
 
 const router = express.Router();
@@ -32,5 +33,6 @@ router.post('/', authMiddleware, createRequest);
  * @desc    Update movie request status (Admin only)
  */
 router.put('/:id', adminMiddleware, updateRequestStatus);
+router.get('/:id/tmdb', adminMiddleware, checkTmdbMatch);
 
 export default router;

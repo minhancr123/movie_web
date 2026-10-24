@@ -17,6 +17,7 @@ export default function MovieRequestForm({ initialTitle = '', onSuccess, onCance
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [success, setSuccess] = useState(false);
+  const [successMessage, setSuccessMessage] = useState('');
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -25,7 +26,8 @@ export default function MovieRequestForm({ initialTitle = '', onSuccess, onCance
     setIsSubmitting(true);
     setError(null);
     try {
-      await movieRequestAPI.create({ title, note });
+      const res = await movieRequestAPI.create({ title, note });
+      setSuccessMessage(res.data?.message || '');
       setSuccess(true);
       if (onSuccess) setTimeout(onSuccess, 2000);
     } catch (err: any) {
@@ -43,7 +45,7 @@ export default function MovieRequestForm({ initialTitle = '', onSuccess, onCance
             <CheckCircle2 size={32} />
           </div>
         </div>
-        <h3 className="text-xl font-syne font-bold text-white mb-2">Gửi yêu cầu thành công!</h3>
+        <h3 className="text-xl font-syne font-bold text-white mb-2">{successMessage || 'Gửi yêu cầu thành công!'}</h3>
         <p className="text-cinema-subtle text-sm">
           Cảm ơn bạn đã đóng góp. Chúng tôi sẽ sớm cập nhật phim này.
         </p>

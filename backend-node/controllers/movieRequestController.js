@@ -1,5 +1,13 @@
 import { getDB } from '../config/database.js';
 import { ObjectId } from 'mongodb';
+import { search as tmdbSearch } from '../services/tmdb.js';
+
+/** Collapse whitespace/case so "Dune  2" and "dune 2" dedupe to one row. */
+const normalizeTitle = (title) =>
+  String(title || '').toLowerCase().replace(/[^\p{L}\p{N}]+/gu, ' ').trim();
+
+/** Cap the roster so a viral title cannot grow one document forever. */
+const REQUESTERS_CAP = 50;
 
 /**
  * @route POST /api/movie-requests
@@ -33,11 +41,43 @@ export const createRequest = async (req, res) => {
       });
     }
 
+    const requester = { id: new ObjectId(userId), name: username || email || 'Ẩn danh', at: new Date() };
+    const dedupeQuery = tmdbId
+      ? { status: 'pending', $or: [{ tmdbId: Number(tmdbId) }, { normalizedTitle: normalizeTitle(title) }] }
+      : { status: 'pending', normalizedTitle: normalizeTitle(title) };
+    const existing = await db.collection('movie_requests').findOne(dedupeQuery);
+
+    if (existing) {
+      const already = (existing.requesters || []).some(r => String(r.id) === String(requester.id));
+      const push = already
+        ? {}
+        : { $push: { requesters: { $each: [requester], $slice: -REQUESTERS_CAP } } };
+      await db.collection('movie_requests').updateOne(
+        { _id: existing._id },
+        {
+          ...push,
+          $set: { updatedAt: new Date() },
+          $inc: already ? {} : { requestCount: 1 },
+        },
+      );
+      return res.status(200).json({
+        success: true,
+        message: already
+          ? 'Bạn đã gửi yêu cầu phim này rồi — đang trong hàng chờ.'
+          : `Phim này đã có ${(existing.requesters?.length || 1)} người yêu cầu trước đó — đã thêm bạn vào danh sách.`,
+        request: existing,
+        joined: true,
+      });
+    }
+
     const newRequest = {
       title: title.trim(),
+      normalizedTitle: normalizeTitle(title),
       tmdbId: tmdbId || null,
       userId: new ObjectId(userId),
       username: username || email || 'Ẩn danh',
+      requesters: [requester],
+      requestCount: 1,
       status: 'pending',
       note: note || '',
       adminNote: '',
@@ -110,7 +150,7 @@ export const getMyRequests = async (req, res) => {
     const db = getDB();
 
     const requests = await db.collection('movie_requests')
-      .find({ userId: new ObjectId(userId) })
+      .find({ $or: [{ userId: new ObjectId(userId) }, { 'requesters.id': new ObjectId(userId) }] })
       .sort({ createdAt: -1 })
       .toArray();
 
@@ -128,10 +168,13 @@ export const getMyRequests = async (req, res) => {
 export const updateRequestStatus = async (req, res) => {
   try {
     const { id } = req.params;
-    const { status, adminNote } = req.body;
+    const { status, adminNote, tmdbId } = req.body;
 
-    if (!status || !['pending', 'completed', 'rejected'].includes(status)) {
+    if (status !== undefined && !['pending', 'completed', 'rejected'].includes(status)) {
       return res.status(400).json({ success: false, message: 'Trạng thái không hợp lệ.' });
+    }
+    if (status === undefined && tmdbId === undefined) {
+      return res.status(400).json({ success: false, message: 'Cần trạng thái hoặc tmdbId để cập nhật.' });
     }
 
     if (!ObjectId.isValid(id)) {
@@ -139,29 +182,104 @@ export const updateRequestStatus = async (req, res) => {
     }
 
     const db = getDB();
+    const set = { updatedAt: new Date() };
+    if (status !== undefined) set.status = status;
+    if (adminNote !== undefined) set.adminNote = adminNote;
+    if (tmdbId !== undefined) {
+      const n = Number(tmdbId);
+      if (!Number.isInteger(n) || n <= 0) {
+        return res.status(400).json({ success: false, message: 'tmdbId phải là số dương.' });
+      }
+      set.tmdbId = n;
+    }
     const result = await db.collection('movie_requests').findOneAndUpdate(
       { _id: new ObjectId(id) },
-      { 
-        $set: { 
-          status, 
-          adminNote: adminNote || '',
-          updatedAt: new Date() 
-        } 
-      },
+      { $set: set },
       { returnDocument: 'after' }
     );
+    // mongodb driver 6 returns the updated document directly; older drivers
+    // wrapped it in {value}. Handle both or a successful update reads as 404.
+    const updated = result?.value ?? result;
 
-    if (!result.value) {
+    if (!updated) {
       return res.status(404).json({ success: false, message: 'Không tìm thấy yêu cầu.' });
+    }
+
+    // A completed request tells every requester the film landed. One
+    // notification per user per request (requestId keyed) so a status
+    // flip-flop never spams; missing requesters (legacy rows) just skip.
+    let notified = 0;
+    if (status === 'completed') {
+      const request = updated;
+      const roster = Array.isArray(request.requesters) ? request.requesters : [];
+      const legacyOnly = roster.length === 0 && request.userId ? [{ id: request.userId, name: request.username }] : roster;
+      const targets = [...new Map(legacyOnly.filter(u => u?.id).map(u => [String(u.id), u])).values()];
+      if (targets.length) {
+        const existing = await db.collection('notifications')
+          .find({ requestId: request._id, type: 'request_completed' })
+          .project({ userId: 1 }).toArray();
+        const already = new Set(existing.map(n => String(n.userId)));
+        const fresh = targets.filter(u => !already.has(String(u.id)));
+        if (fresh.length) {
+          await db.collection('notifications').insertMany(fresh.map(u => ({
+            userId: u.id,
+            type: 'request_completed',
+            title: 'Phim bạn yêu cầu đã có',
+            message: `“${request.title}” đã lên CineVN${request.tmdbId ? ` — tìm trong mục tìm kiếm để xem ngay` : ''}.`,
+            requestId: request._id,
+            tmdbId: request.tmdbId || null,
+            isRead: false,
+            createdAt: new Date(),
+          })));
+          notified = fresh.length;
+        }
+      }
     }
 
     res.json({
       success: true,
-      message: 'Cập nhật trạng thái thành công.',
-      request: result.value
+      message: notified > 0
+        ? `Cập nhật thành công — đã thông báo cho ${notified} người yêu cầu.`
+        : 'Cập nhật trạng thái thành công.',
+      request: updated
     });
   } catch (error) {
     console.error('[updateRequestStatus] error:', error);
     res.status(500).json({ success: false, message: 'Lỗi hệ thống khi cập nhật yêu cầu.' });
+  }
+};
+/**
+ * @route GET /api/movie-requests/:id/tmdb
+ * @access Private (Admin only)
+ * Search TMDB for the requested title so the admin can attach the right id
+ * without leaving the moderation tab. Same normalization as the dedupe so a
+ * messy request title still finds its film.
+ */
+export const checkTmdbMatch = async (req, res) => {
+  try {
+    const { id } = req.params;
+    if (!ObjectId.isValid(id)) {
+      return res.status(400).json({ success: false, message: 'ID yêu cầu không hợp lệ.' });
+    }
+    const db = getDB();
+    const request = await db.collection('movie_requests').findOne({ _id: new ObjectId(id) });
+    if (!request) return res.status(404).json({ success: false, message: 'Không tìm thấy yêu cầu.' });
+
+    const payload = await tmdbSearch(request.title);
+    const results = (payload?.results || [])
+      .filter(r => r.media_type === 'movie' || r.media_type === 'tv')
+      .slice(0, 6)
+      .map(r => ({
+        tmdbId: r.id,
+        mediaType: r.media_type,
+        title: r.title || r.name || '',
+        year: (r.release_date || r.first_air_date || '').slice(0, 4) || null,
+        poster: r.poster_path ? `https://image.tmdb.org/t/p/w92${r.poster_path}` : null,
+        popularity: r.popularity || 0,
+      }));
+    res.json({ success: true, data: { title: request.title, attachedTmdbId: request.tmdbId || null, results } });
+  } catch (error) {
+    console.error('[checkTmdbMatch] error:', error);
+    res.status(500).json({ success: false, message: 'Không tra cứu được TMDB lúc này.' });
   }
 };

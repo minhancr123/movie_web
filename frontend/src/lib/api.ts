@@ -151,11 +151,21 @@ export interface MovieRequestItem {
   tmdbId?: string | number | null;
   userId: string;
   username: string;
+  requesters?: { id: string; name: string; at: string }[];
+  requestCount?: number;
   status: 'pending' | 'completed' | 'rejected';
   note?: string;
   adminNote?: string;
   createdAt: string;
   updatedAt: string;
+}
+
+export interface TmdbMatch {
+  tmdbId: number;
+  mediaType: 'movie' | 'tv';
+  title: string;
+  year: string | null;
+  poster: string | null;
 }
 
 export const movieRequestAPI = {
@@ -169,8 +179,11 @@ export const movieRequestAPI = {
       pagination: { total: number; page: number; limit: number; pages: number };
     }>('/movie-requests', { params }),
 
-  updateStatus: (id: string, data: { status: 'pending' | 'completed' | 'rejected'; adminNote?: string }) =>
+  updateStatus: (id: string, data: { status?: 'pending' | 'completed' | 'rejected'; adminNote?: string; tmdbId?: number }) =>
     authClient.put<{ success: boolean; message: string; request: MovieRequestItem }>(`/movie-requests/${id}`, data),
+
+  checkTmdb: (id: string) =>
+    authClient.get<{ success: boolean; data: { title: string; attachedTmdbId: number | null; results: TmdbMatch[] } }>(`/movie-requests/${id}/tmdb`),
 
   getMyRequests: () =>
     authClient.get<{ success: boolean; data: MovieRequestItem[] }>('/movie-requests/me'),
