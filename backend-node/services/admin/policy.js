@@ -25,5 +25,5 @@ export const parseAdminList = query => ({
 });
 export const literalSearch = value => value.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
 // All admin lists use allowlists: never return credential fields or media URLs.
-export const USER_FIELDS = { username: 1, email: 1, role: 1, createdAt: 1, updatedAt: 1 };
+export const USER_FIELDS = { username: 1, email: 1, role: 1, createdAt: 1, updatedAt: 1, authProvider: 1, lastLogin: 1, registration: 1 };
 export const SESSION_FIELDS = { sessionId: 1, tmdbId: 1, type: 1, season: 1, episode: 1, mode: 1, provider: 1, progress: 1, createdAt: 1, updatedAt: 1, expiresAt: 1, startAt: 1 };

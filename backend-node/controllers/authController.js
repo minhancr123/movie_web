@@ -1,3 +1,4 @@
+import { recordAuthEvent } from '../services/security/authAudit.js';
 import { getDB } from '../config/database.js';
 import bcrypt from 'bcryptjs';
 import { signAccountToken } from '../services/security/accountToken.js';
@@ -90,6 +91,7 @@ export const register = async (req, res) => {
       throw error;
     }
 
+    await recordAuthEvent(req, { user: newUser, provider: 'local', action: 'register' });
     res.status(201).json({
       success: true,
       message: 'Đăng ký thành công',
@@ -141,6 +143,7 @@ export const login = async (req, res) => {
     const isMatch = await bcrypt.compare(password, user.password);
 
     if (!isMatch) {
+      await recordAuthEvent(req, { user, provider: 'local', action: 'login', outcome: 'failure' });
       return res.status(401).json({
         success: false,
         message: 'Email hoặc mật khẩu không đúng'
@@ -157,6 +160,7 @@ export const login = async (req, res) => {
       }
     );
 
+    await recordAuthEvent(req, { user, provider: 'local', action: 'login' });
     res.json({
       success: true,
       message: 'Đăng nhập thành công',
@@ -275,6 +279,7 @@ export const googleLogin = async (req, res) => {
         avatar: avatar || `https://ui-avatars.com/api/?name=${encodeURIComponent(username)}&background=dc2626&color=fff`,
         googleId,
         authProvider: 'google',
+        role: 'user',
         createdAt: new Date(),
         updatedAt: new Date()
       };
@@ -306,6 +311,7 @@ export const googleLogin = async (req, res) => {
       }
     );
 
+    await recordAuthEvent(req, { user, provider: 'google', action: isNewUser ? 'register' : 'login' });
     res.json({
       success: true,
       message: isNewUser ? 'Đăng ký bằng Google thành công' : 'Đăng nhập bằng Google thành công',
@@ -315,7 +321,8 @@ export const googleLogin = async (req, res) => {
         email: user.email,
         username: user.username,
         fullName: user.fullName,
-        avatar: user.avatar
+        avatar: user.avatar,
+        role: user.role || 'user'
       }
     });
 

@@ -37,6 +37,8 @@ const createIndexes = async () => {
     const specs = [
       // Users collection indexes
       ['users', { email: 1 }, { unique: true }],
+      ['auth_events', { userIdStr: 1, at: -1 }],
+      ['auth_events', { at: 1 }, { expireAfterSeconds: EVENT_TTL_SECONDS }],
       ['users', { username: 1 }, { unique: true }],
 
       // Comments collection indexes

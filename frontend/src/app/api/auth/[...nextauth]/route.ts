@@ -1,3 +1,5 @@
+import { authRequestHeaders } from '@/lib/auth-request-context';
+import type { NextRequest } from 'next/server';
 import NextAuth, { NextAuthOptions } from 'next-auth';
 import CredentialsProvider from 'next-auth/providers/credentials';
 import GoogleProvider from 'next-auth/providers/google';
@@ -33,7 +35,7 @@ declare module "next-auth/jwt" {
   }
 }
 
-const authOptions: NextAuthOptions = {
+const buildAuthOptions = (requestHeaders: Headers): NextAuthOptions => ({
   providers: [
     GoogleProvider({
       clientId: process.env.GOOGLE_CLIENT_ID || "",
@@ -50,7 +52,7 @@ const authOptions: NextAuthOptions = {
           const response = await authAPI.login({
             email: credentials?.email,
             password: credentials?.password,
-          });
+          }, authRequestHeaders(requestHeaders));
 
           if (response.data.success && response.data.token) {
             return {
@@ -80,7 +82,7 @@ const authOptions: NextAuthOptions = {
         token.name = userData.fullName;
         token.email = userData.email;
         token.image = userData.avatar;
-        token.role = userData.role;
+        token.role = userData.role || 'user';
         token.accessToken = accessToken;
       };
 
@@ -95,7 +97,7 @@ const authOptions: NextAuthOptions = {
               name: user.name || "",
               avatar: user.image || "",
               googleId: user.id || "",
-            });
+            }, authRequestHeaders(requestHeaders));
 
             if (response.data.success && response.data.token) {
               setTokenData(response.data.user, response.data.token);
@@ -135,7 +137,8 @@ const authOptions: NextAuthOptions = {
     maxAge: 7 * 24 * 60 * 60, // 7 days
   },
   secret: process.env.NEXTAUTH_SECRET,
-};
+});
 
-const handler = NextAuth(authOptions);
+const handler = (request: NextRequest, context: { params: Promise<{ nextauth: string[] }> }) =>
+  NextAuth(buildAuthOptions(request.headers))(request, context);
 export { handler as GET, handler as POST };

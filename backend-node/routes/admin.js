@@ -1,4 +1,5 @@
 import express from 'express';
+import { ObjectId } from 'mongodb';
 import os from 'node:os';
 import { statfs } from 'node:fs/promises';
 import { getDB } from '../config/database.js';
@@ -64,6 +65,21 @@ router.get('/users', route(async (req, res) => {
   const collection = getDB().collection('users');
   const [total, data] = await Promise.all([collection.countDocuments(query), collection.find(query, { projection: USER_FIELDS }).sort({ createdAt: -1, _id: -1 }).skip((page - 1) * limit).limit(limit).toArray()]);
   res.json({ success: true, data, pagination: { page, limit, total, pages: Math.max(1, Math.ceil(total / limit)) } });
+}));
+router.get('/users/:id/activity', route(async (req, res) => {
+  if (!/^[a-f0-9]{24}$/i.test(req.params.id)) return res.status(400).json({ success: false, message: 'Mã tài khoản không hợp lệ.' });
+  const db = getDB(), id = new ObjectId(req.params.id);
+  const user = await db.collection('users').findOne({ _id: id }, { projection: USER_FIELDS });
+  if (!user) return res.status(404).json({ success: false, message: 'Không tìm thấy tài khoản.' });
+  const [events, history] = await Promise.all([
+    db.collection('auth_events').find({ userIdStr: String(id) }, { projection: {
+      at: 1, provider: 1, action: 1, outcome: 1, ip: 1, ipSource: 1, userAgent: 1, device: 1, evidence: 1, note: 1,
+    } }).sort({ at: -1 }).limit(50).toArray(),
+    db.collection('watch_history').find({ $or: [{ userId: id }, { userId: String(id) }] }, { projection: {
+      movieData: { name: 1 }, tmdbId: 1, mediaType: 1, watchedAt: 1, currentTime: 1, episode: 1,
+    } }).sort({ watchedAt: -1 }).limit(10).toArray(),
+  ]);
+  res.json({ success: true, data: { user, events, history, retentionDays: 60 } });
 }));
 router.get('/sessions', route(async (req, res) => {
   const { page, limit } = parseAdminList(req.query);

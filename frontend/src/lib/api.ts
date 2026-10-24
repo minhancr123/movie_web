@@ -294,8 +294,8 @@ authClient.interceptors.request.use(async (config) => {
 // Auth APIs
 export const authAPI = {
   register: (data: any) => authClient.post('/auth/register', data),
-  login: (data: any) => authClient.post('/auth/login', data),
-  googleLogin: (data: any) => authClient.post('/auth/google-login', data),
+  login: (data: any, headers?: Record<string, string>) => authClient.post('/auth/login', data, { headers }),
+  googleLogin: (data: any, headers?: Record<string, string>) => authClient.post('/auth/google-login', data, { headers }),
   getMe: () => authClient.get('/auth/me'),
   updateProfile: (data: any) => authClient.put('/auth/profile', data),
 };
