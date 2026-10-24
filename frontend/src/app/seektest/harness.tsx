@@ -28,11 +28,21 @@ export default function SeekHarness() {
       setSrc(`${ORIGIN}/window/0/index.m3u8`);
     }
   }, []);
+  const [churn, setChurn] = useState(false);
+  const [ticks, setTicks] = useState(0);
+  const [firedAt, setFiredAt] = useState<number | null>(null);
+  useEffect(() => {
+    if (new URLSearchParams(window.location.search).get('churn') !== '1') return;
+    setChurn(true);
+    const timer = setInterval(() => setTicks(t => t + 1), 100);
+    return () => clearInterval(timer);
+  }, []);
   const callsRef = useRef<{ at: number; t: number }[]>([]);
   const cancelsRef = useRef(0);
 
   const onSeekToPosition = useCallback((displaySeconds: number) => {
     callsRef.current.push({ at: displaySeconds, t: Date.now() });
+    setFiredAt(displaySeconds);
     if (windowMode) {
       const origin = Math.floor(displaySeconds / 6) * 6;
       setStartAt(origin);
@@ -77,6 +87,9 @@ export default function SeekHarness() {
 
   return (
     <div style={{ maxWidth: 900, margin: '40px auto', aspectRatio: '16/9', height: 500 }}>
+      <output aria-label="Kết quả kiểm tra tua" style={{ position: 'fixed', bottom: 0, left: 0, zIndex: 1000, background: '#111', color: '#fff' }}>
+        Renders: {ticks}; resolves: {callsRef.current.length}; target: {firedAt ?? 'none'}
+      </output>
       <VideoPlayer
         src={src}
         startAt={startAt}
@@ -87,7 +100,7 @@ export default function SeekHarness() {
         movie={{ name: 'Seek Test', slug: 'seek-test', poster_url: '', origin_name: 'Seek Test', quality: 'HD' }}
         episode={{ name: 'Full', slug: 'full' }}
         subContext={null}
-        onSeekToPosition={onSeekToPosition}
+        onSeekToPosition={churn ? (at) => onSeekToPosition(at) : onSeekToPosition}
         onCancelSeek={onCancelSeek}
       />
     </div>

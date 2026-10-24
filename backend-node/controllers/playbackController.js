@@ -1,3 +1,4 @@
+import { sourceListingFailure, incompatibleSourcesFailure } from '../services/playback/sourceAvailability.js';
 import { SEEK_BUCKET_SECONDS, bucketSeekStart, seekBufferFloor, startupTarget, sessionStartupTarget, hasPlayableBuffer } from '../services/playback/startupPolicy.js';
 import { isRecommendedDirectSource } from '../services/playback/directPlayVerdict.js';
 /**
@@ -1077,12 +1078,17 @@ const serveVimoDirect = async ({ db, req, detail, type, tmdbId, season, episode,
     vimoName = found.name || '';
   }
 
-  const streams = await getVimoStreams({
-    vimoId,
-    type: streamType === 'series' ? 'tv' : 'movie',
-    season: epSeason,
-    episode: epEpisode,
-  }).catch(() => []);
+  let streams;
+  try {
+    streams = await getVimoStreams({
+      vimoId,
+      type: streamType === 'series' ? 'tv' : 'movie',
+      season: epSeason,
+      episode: epEpisode,
+    });
+  } catch {
+    return { error: 'Dịch vụ Vimo đang phản hồi lỗi', status: 503, code: 'SOURCE_LIST_UNAVAILABLE', retryable: true };
+  }
   // First LIVE stream wins, not first listed: the addon lists URLs whose files
   // are already gone (rotated hosts, purged date directories, expired
   // signatures), and handing one to the player costs minutes of spinner plus
@@ -1450,7 +1456,7 @@ export const resolvePlayback = async (req, res) => {
     if (vimoToken) {
       stage('vimo');
       const served = await serveVimoDirect({ db, req, detail, type, tmdbId, season, episode, vimoToken, requestedStartAt });
-      if (served.error) return fail(res, 404, served.error);
+      if (served.error) return fail(res, served.status || 404, served.error, { code: served.code || 'SOURCE_NOT_FOUND', retryable: served.retryable === true });
       if (served.data) return res.json({ success: true, data: served.data });
       return fail(res, 404, 'Vimo hiện không có link cho nội dung này');
     }
@@ -1475,6 +1481,11 @@ export const resolvePlayback = async (req, res) => {
           episode,
         })
       : { candidates: [], errors: [] };
+    // A pinned release cannot be declared gone while its feed is down.
+    if (sourceToken && !candidates.length && addonErrors.length) {
+      const { status, message, ...extra } = sourceListingFailure(addonErrors);
+      return fail(res, status, message, extra);
+    }
       
     if (!candidates.length && !yastreamToken && !vimoToken) {
       // If we don't have torrents and we aren't already resolving a direct source,
@@ -1486,7 +1497,8 @@ export const resolvePlayback = async (req, res) => {
       });
 
       if (!vietsubData.yastream?.streams?.length && !vietsubData.vimo) {
-        return fail(res, 404, 'Phim này hiện chưa có nguồn phát trực tuyến hoặc chưa phát hành bản kỹ thuật số.');
+        const { status, message, ...extra } = sourceListingFailure(addonErrors);
+        return fail(res, status, message, extra);
       }
     }
 
@@ -1538,10 +1550,10 @@ export const resolvePlayback = async (req, res) => {
       // A manual pick may override quality/codec warnings, but never a wrong
       // film: that is a mismatch in the addon's data, not a user preference.
       if (picked.titleMatched === false) {
-        return fail(res, 422, 'Nguồn đã chọn không khớp phim đang xem');
+        return fail(res, 422, 'Nguồn đã chọn không khớp phim đang xem', { code: 'SOURCE_TITLE_MISMATCH', retryable: false });
       }
       if (picked.playable === false) {
-        return fail(res, 422, picked.reasons?.[0] || 'Nguồn đã chọn không phát được trên thiết bị này');
+        return fail(res, 422, picked.reasons?.[0] || 'Nguồn đã chọn không phát được trên thiết bị này', { code: 'NO_COMPATIBLE_SOURCE', retryable: false });
       }
       attempts = [picked];
     } else {
@@ -1554,7 +1566,8 @@ export const resolvePlayback = async (req, res) => {
       playable = ranked.playable;
       const { best, rejected } = ranked;
       if (!best || !playable.length) {
-        return fail(res, 422, 'Không có nguồn nào phát được trên thiết bị này', {
+        return fail(res, 422, incompatibleSourcesFailure.message, {
+          code: incompatibleSourcesFailure.code, retryable: false,
           rejected: rejected.slice(0, 5).map(sanitizeCandidateForResponse),
         });
       }

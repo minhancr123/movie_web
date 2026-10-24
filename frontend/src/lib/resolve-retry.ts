@@ -15,3 +15,7 @@ export const busyRetryDelayMs = (attempt: number): number => {
   const index = Math.min(Math.max(Math.floor(Number(attempt) || 1), 1), BASE_DELAYS_MS.length) - 1;
   return BASE_DELAYS_MS[index] + Math.floor(Math.random() * JITTER_MS[index]);
 };
+
+/** Empty/incompatible listings are not evidence of a provider outage. */
+export const isSourceAvailabilityFailure = (status: number | undefined, code: unknown, retryable: unknown): boolean =>
+    (status === 422 || status === 503) && retryable === true && code === 'SOURCE_LIST_UNAVAILABLE';

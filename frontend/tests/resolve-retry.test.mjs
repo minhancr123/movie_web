@@ -19,7 +19,7 @@ execFileSync(
     { cwd: root, stdio: 'pipe' },
 );
 
-const { BUSY_RETRY_ATTEMPTS, busyRetryDelayMs } = await import(
+const { BUSY_RETRY_ATTEMPTS, busyRetryDelayMs, isSourceAvailabilityFailure } = await import(
     pathToFileURL(path.join(outDir, 'resolve-retry.js')).href
 );
 
@@ -58,3 +58,17 @@ test('junk attempts fall back to the first band, never NaN', () => {
 });
 
 rmSync(outDir, { recursive: true, force: true });
+
+
+test('transient listing errors retry for both automatic and manually pinned resolves', () => {
+    // Source selection is intentionally not an input to the retry policy.
+    assert.equal(isSourceAvailabilityFailure(503, 'SOURCE_LIST_UNAVAILABLE', true), true);
+    assert.equal(isSourceAvailabilityFailure(422, 'SOURCE_LIST_UNAVAILABLE', true), true);
+});
+test('generic 422, incompatible codecs, wrong titles and empty successful listings fail fast', () => {
+    for (const [status, code, retryable] of [
+        [422, undefined, undefined], [422, 'NO_COMPATIBLE_SOURCE', false],
+        [422, 'SOURCE_TITLE_MISMATCH', false], [404, 'SOURCE_NOT_FOUND', false],
+        [503, 'SOURCE_LIST_UNAVAILABLE', false], [401, 'SOURCE_LIST_UNAVAILABLE', true],
+    ]) assert.equal(isSourceAvailabilityFailure(status, code, retryable), false);
+});

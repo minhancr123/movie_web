@@ -24,7 +24,7 @@ import CinemaLayer, { type CinemaMode } from '@/components/CinemaLayer';
 const STARTUP_BUFFER_HINT = 15;
 
 import { getResolveStageLabels, getFriendlyErrorMessage } from '@/lib/i18n';
-import { BUSY_RETRY_ATTEMPTS, busyRetryDelayMs } from '@/lib/resolve-retry';
+import { BUSY_RETRY_ATTEMPTS, busyRetryDelayMs, isSourceAvailabilityFailure } from '@/lib/resolve-retry';
 
 const isProd = process.env.NODE_ENV === 'production';
 
@@ -501,6 +501,7 @@ export default function PlaybackSection({
     'Đang chuẩn bị tập khác nên phải chờ lượt',
     'Phim cần thêm chỗ trống để mở',
     'Dịch vụ lưu trữ đang phản hồi chậm',
+    'Dịch vụ nguồn đang trục trặc',
   ];
   const clearBusyWaitNotices = () => {
     busyRetriesRef.current = 0;
@@ -1793,21 +1794,16 @@ export default function PlaybackSection({
         return;
       }
 
-      // 422 "no playable source" is usually a TEMPORARY condition: the Vimo
-      // or debrid listing hiccupped, nothing changed on this device, so an
-      // immediate re-resolve would just hammer the same dead listing. Same
-      // backed-off ladder as the 503 one — and placed BEFORE the pinned-source
-      // clear below, so a listing outage does not throw away the release the
-      // viewer deliberately picked (a re-rank cannot conjure sources either).
-      const noPlayableSources = status === 422 && !sourceToken
-        && typeof message === 'string' && message.includes('Không có nguồn nào phát được');
+      // Retry only an explicit transient failure, including manually pinned
+      // sources. Incompatible codecs and empty successful listings fail fast.
+      const noPlayableSources = isSourceAvailabilityFailure(status, code, err.response?.data?.retryable);
       if (noPlayableSources && (busyRetriesRef.current ?? 0) < BUSY_RETRY_ATTEMPTS) {
         const attempt = (busyRetriesRef.current ?? 0) + 1;
         busyRetriesRef.current = attempt;
         setResolveStageLabel(
           isProd
             ? `Nguồn chưa mở được, tự động thử lại (${attempt}/${BUSY_RETRY_ATTEMPTS})…`
-            : `422 no-source — retry ${attempt}/${BUSY_RETRY_ATTEMPTS}`,
+            : `${code} — retry ${attempt}/${BUSY_RETRY_ATTEMPTS}`,
         );
         if (attempt === 1) {
           setNotice('Dịch vụ nguồn đang trục trặc nên chưa mở được phim. Hệ thống sẽ tự thử lại.');
@@ -1816,8 +1812,8 @@ export default function PlaybackSection({
         resolveInFlightEpochRef.current = null;
         setPendingAudioIndex(null);
         await new Promise((r) => setTimeout(r, busyRetryDelayMs(attempt)));
-        if (seekEpochRef.current === requestEpoch) {
-          return startPlaybackResolution(sourceToken, audioIndex, {
+        if (!resolveController.signal.aborted && seekEpochRef.current === requestEpoch) {
+          return startPlaybackResolution(resolvedSourceToken || undefined, audioIndex, {
             ...options,
             seekEpoch: requestEpoch,
             serverRetry: true,
@@ -1826,7 +1822,7 @@ export default function PlaybackSection({
         return;
       }
 
-      if (!sourceToken && resolvedSourceToken && status && status >= 400 && status < 500 && typeof window !== 'undefined') {
+      if (!noPlayableSources && !sourceToken && resolvedSourceToken && status && status >= 400 && status < 500 && typeof window !== 'undefined') {
         localStorage.removeItem(selectedSourceKey);
         setActiveToken('');
         activeTokenRef.current = '';
@@ -1883,7 +1879,7 @@ export default function PlaybackSection({
         resolveInFlightEpochRef.current = null;
         setPendingAudioIndex(null);
         await new Promise((r) => setTimeout(r, waitMs));
-        if (seekEpochRef.current === requestEpoch) {
+        if (!resolveController.signal.aborted && seekEpochRef.current === requestEpoch) {
           return startPlaybackResolution(sourceToken, audioIndex, {
             ...options,
             seekEpoch: requestEpoch,
@@ -2106,8 +2102,8 @@ export default function PlaybackSection({
           Đang chuẩn bị nguồn phát… <span className="font-mono text-amber-gold">{resolveElapsed}s</span>
         </p>
         <p className="text-cinema-subtle text-xs max-w-sm mb-3">
-          Lần đầu mỗi phim mất khoảng 10–20 giây: tìm nguồn, kiểm codec, rồi dựng
-          sẵn {STARTUP_BUFFER_HINT}s đệm. Những lần sau gần như tức thì.
+          Hệ thống đang tìm nguồn, kiểm tra codec và chuẩn bị {STARTUP_BUFFER_HINT}s đệm.
+          Thời gian chờ tùy nguồn và kết nối; đoạn đã cache có thể mở nhanh hơn.
         </p>
         {/* Live server stage: measurement, not the old elapsed-time guess. */}
         <div className="flex items-center gap-2 text-[10px] font-mono">

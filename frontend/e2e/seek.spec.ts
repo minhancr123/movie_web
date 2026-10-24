@@ -155,3 +155,26 @@ test('failed seek shows its reason and keeps the old picture', async ({ page }) 
   expect(t, 'old position keeps playing').toBeLessThan(120);
   expect(errors, `page errors:\n${errors.join('\n')}`).toEqual([]);
 });
+
+// The harness deliberately changes the callback every 100ms, faster than
+// the 650ms debounce. This used to cancel the timer forever.
+test('callback churn cannot cancel a far seek or roll the slider back', async ({ page }) => {
+  await page.goto('/seektest?churn=1', { waitUntil: 'domcontentloaded' });
+  await expect(page.locator('video')).toBeVisible();
+  await page.getByRole('button', { name: 'Phát', exact: true }).click();
+  const slider = page.getByRole('slider', { name: 'Tua video', exact: true });
+  await slider.evaluate(input => {
+    const setter = Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, 'value')!.set!;
+    setter.call(input, '120');
+    input.dispatchEvent(new Event('input', { bubbles: true }));
+  });
+  await expect(page.getByText('Vui lòng đợi trong giây lát')).toBeVisible();
+  await expect(slider).toHaveValue('120');
+  await expect(page.locator('output[aria-label="Kết quả kiểm tra tua"]')).toContainText('resolves: 1; target: 120', { timeout: 5000 });
+  // A follow-up change must carry the held destination, not the old playhead.
+  await slider.evaluate(input => input.dispatchEvent(new Event('change', { bubbles: true })));
+  await expect(page.getByText('Vui lòng đợi trong giây lát')).toBeHidden({ timeout: 15000 });
+  await expect.poll(async () => Number(await slider.inputValue())).toBeGreaterThanOrEqual(120);
+  await expect(page.getByRole('button', { name: 'Tạm dừng', exact: true })).toBeVisible();
+  await expect(page.locator('output[aria-label="Kết quả kiểm tra tua"]')).toContainText('resolves: 1; target: 120');
+});

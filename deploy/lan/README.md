@@ -92,3 +92,28 @@ measure TorBox speed, HDR correctness, the custom player UI or concurrent viewer
 Cloudflare Tunnel can serve the website/control API. Do not assume it supplies
 an unlimited video delivery service. Choose the public media route separately
 after provider terms and real upload/concurrency tests are known.
+
+## Reproducible releases
+
+Archive a **full Git SHA** into a new `~/cinevn-runtime/<sha>/` directory.
+Copy dependencies and private environment files from the active services;
+never copy source from a mutable runtime. Set `RELEASE_ID` to that same full
+SHA in backend `.env`, frontend `.env.production` **before building**, and the
+standalone environment. Keep `PLAYBACK_REMUX_WINDOW_SECONDS=900` in the active
+backend environment unless deliberately changing the playback policy. It is
+an upper limit: the byte budget may shorten windows for high bitrate sources.
+Build frontend from that archive and copy its static/public assets into the
+standalone output. Run both services from the new release; back up both
+service overrides first, and restore both on failed readiness checks.
+
+Before activation, compare every tracked backend/frontend file with Git:
+
+```sh
+node deploy/lan/verify-runtime.mjs "$runtime_root" "$git_repository" "$full_sha"
+# After activation, also verify the releases both services actually serve:
+node deploy/lan/verify-runtime.mjs "$runtime_root" "$git_repository" "$full_sha" --health
+```
+
+Do not edit files or replace `.next` inside an active release. Build and
+activate another archived revision. `/release` alone cannot prove integrity
+if source and build output have been copied into an old release directory.

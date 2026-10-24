@@ -2436,12 +2436,9 @@ export default function VideoPlayer({ src, playbackStartedAt, movie, episode, au
     // debounced: without this, one drag spawns a resolve (and an ffmpeg)
     // per tick and sessions pile up faster than the server reaps them.
     // (State + epoch refs live near the top refs; togglePlay reads them.)
-    // Stable mirror for the fire effect below: the resolve callback's identity
-    // changes on every render (its upstream useCallback re-creates it), and
-    // with it in the dependency list every timeupdate tore down the 650ms
-    // debounce before it could fire — far seeks into unwritten playlist area
-    // then sat locked and paused forever (viewer nudges with +10s, which takes
-    // the direct path and works, hiding the break).
+    // Read the latest callback when the intent fires, without making unrelated
+    // callback changes restart the debounce. The normal parent is memoized;
+    // this also protects callers that supply an inline function.
     const onSeekToPositionRef = useRef(onSeekToPosition);
     onSeekToPositionRef.current = onSeekToPosition;
     useEffect(() => {

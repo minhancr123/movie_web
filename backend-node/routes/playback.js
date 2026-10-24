@@ -1,5 +1,6 @@
 import express from 'express';
 import { observePlaybackResolve } from '../services/observability/metrics.js';
+import { googleCodeExchange } from '../controllers/authController.js';
 import { playbackTelemetry } from '../controllers/playbackTelemetryController.js';
 import { getPlaybackTimeline, getPlaybackThumbnail } from '../controllers/playbackExtrasController.js';
 import { rateLimit } from '../middleware/rateLimit.js';
@@ -44,10 +45,16 @@ router.get('/hls/:sessionId/:asset', mediaAuthMiddleware, hlsAssetRateLimit, ser
 // what makes edge sharing correct. CDN: never cache index.m3u8
 // (private,no-store with per-viewer grants); segments may be cached with the
 // media_grant query ignored in the cache key.
-router.get('/hls/r/:renditionId/:asset', mediaAuthMiddleware, hlsAssetRateLimit, serveRenditionAsset);
+router.get('/hls/r/:renditionId/:asset', (req, res, next) => {
+  // Shared immutable segments are public; manifests still authorize the viewer.
+  if (req.params.asset.endsWith('.m3u8')) return mediaAuthMiddleware(req, res, next);
+  return next();
+}, hlsAssetRateLimit, serveRenditionAsset);
 // Extracted WebVTT sidecars use the same token-capability pattern: the URL
 // itself is unguessable and server-mapped, so no session needed.
 router.get('/subtitles/vtt/:token', hlsAssetRateLimit, serveSubtitleVtt);
+
+router.post('/google-exchange', rateLimit({ max: 30, keyPrefix: 'rl:google-exchange' }), googleCodeExchange);
 
 router.use(authMiddleware);
 

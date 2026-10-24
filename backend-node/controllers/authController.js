@@ -213,6 +213,42 @@ export const getMe = async (req, res) => {
 };
 
 // Google Login
+// POST /api/playback/google-exchange — Safari flow từ app iOS: code → Google
+// token endpoint → idToken → googleLogin. iOS client loại installed: không cần secret.
+export const googleCodeExchange = async (req, res) => {
+  try {
+    const { code } = req.body || {};
+    if (!code) return res.status(400).json({ success: false, message: "code là bắt buộc" });
+    const clientId = String(req.body.clientId || process.env.GOOGLE_CLIENT_ID);
+    const redirectUri = String(req.body.redirectUri || "");
+    const params = {
+      code,
+      client_id: clientId,
+      redirect_uri: redirectUri,
+      grant_type: "authorization_code",
+    };
+    if (clientId === process.env.GOOGLE_CLIENT_ID) {
+      params.client_secret = process.env.GOOGLE_CLIENT_SECRET;
+    }
+    const tokenRes = await fetch("https://oauth2.googleapis.com/token", {
+      method: "POST",
+      headers: { "Content-Type": "application/x-www-form-urlencoded" },
+      body: new URLSearchParams(params),
+    });
+    const tokens = await tokenRes.json();
+    if (!tokens.id_token) {
+      return res.status(401).json({ success: false, message: tokens.error_description || tokens.error || "Đổi mã Google thất bại" });
+    }
+    req.body.idToken = tokens.id_token;
+    // Audience comes from the successful server-side code exchange, never
+    // directly from an arbitrary idToken login request body.
+    req.googleCodeAudience = clientId;
+    return googleLogin(req, res);
+  } catch (error) {
+    return res.status(500).json({ success: false, message: error.message || "Lỗi server" });
+  }
+};
+
 export const googleLogin = async (req, res) => {
   try {
     const idToken = req.body.idToken || req.body.id_token;
@@ -226,9 +262,10 @@ export const googleLogin = async (req, res) => {
 
     let payload;
     try {
+      const audience = req.googleCodeAudience || process.env.GOOGLE_CLIENT_ID;
       const ticket = await googleClient.verifyIdToken({
         idToken,
-        audience: process.env.GOOGLE_CLIENT_ID,
+        audience,
       });
       payload = ticket.getPayload();
     } catch (err) {
