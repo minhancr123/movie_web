@@ -13,6 +13,10 @@ const router = express.Router();
 router.get('/site-settings/hover-trailer', async (_req, res) => {
   res.json({ success: true, data: { enabled: await getSiteSetting('hoverTrailer', false) } });
 });
+// Public read (player gate); the flip lives behind adminMiddleware below.
+router.get('/site-settings/pause-overlay', async (_req, res) => {
+  res.json({ success: true, data: { enabled: await getSiteSetting('pauseOverlay', true) } });
+});
 router.use(adminMiddleware);
 router.use((_req, res, next) => { res.set('Cache-Control', 'private, no-store'); next(); });
 const route = handler => async (req, res) => {
@@ -28,9 +32,15 @@ router.post('/site-settings/hover-trailer', route(async (req, res) => {
   await audit(req, 'hover-trailer', { enabled: req.body.enabled });
   res.json({ success: true, data: { enabled: req.body.enabled } });
 }));
+router.post('/site-settings/pause-overlay', route(async (req, res) => {
+  if (typeof req.body?.enabled !== 'boolean') return res.status(400).json({ success: false, message: 'enabled phải là true hoặc false.' });
+  await setSiteSetting('pauseOverlay', req.body.enabled);
+  await audit(req, 'pause-overlay', { enabled: req.body.enabled });
+  res.json({ success: true, data: { enabled: req.body.enabled } });
+}));
 router.get('/settings', route(async (_req, res) => {
-  const [hoverTrailer, catalogRateLimit] = await Promise.all([getSiteSetting('hoverTrailer', false), getCatalogLimit()]);
-  res.json({ success: true, data: { hoverTrailer, catalogRateLimit, windowSeconds: 60, scope: 'catalog' } });
+  const [hoverTrailer, pauseOverlay, catalogRateLimit] = await Promise.all([getSiteSetting('hoverTrailer', false), getSiteSetting('pauseOverlay', true), getCatalogLimit()]);
+  res.json({ success: true, data: { hoverTrailer, pauseOverlay, catalogRateLimit, windowSeconds: 60, scope: 'catalog' } });
 }));
 router.post('/rate-limit', route(async (req, res) => {
   if (!validCatalogLimit(req.body?.limit)) return res.status(400).json({ success: false, message: 'Giới hạn phải là số nguyên từ 30 đến 3000.' });

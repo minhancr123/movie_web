@@ -200,8 +200,23 @@ export default function VideoPlayer({ src, playbackStartedAt, movie, episode, au
     // comes from the public catalog detail (5-min cached server-side); the
     // overlay works fine without it if that fetch fails.
     const [showPauseInfo, setShowPauseInfo] = useState(false);
+    const [pauseOverlayEnabled, setPauseOverlayEnabled] = useState(true);
     const [pauseMeta, setPauseMeta] = useState<{ overview: string } | null>(null);
     const pauseInfoTimerRef = useRef<number | null>(null);
+    // Admin kill-switch (default ON): fetched once per mount; a failed read
+    // keeps the overlay on rather than silently removing a feature.
+    useEffect(() => {
+        let cancelled = false;
+        void (async () => {
+            try {
+                const res = await fetch(apiUrl('/api/admin/site-settings/pause-overlay'));
+                const json = await res.json();
+                if (!cancelled) setPauseOverlayEnabled(json?.data?.enabled !== false);
+            } catch { /* default stays on */ }
+        })();
+        return () => { cancelled = true; };
+    }, []);
+
     useEffect(() => {
         if (!subContext?.tmdbId || !subContext?.type) return;
         let cancelled = false;
@@ -2828,7 +2843,7 @@ export default function VideoPlayer({ src, playbackStartedAt, movie, episode, au
                 </div>
             )}
 
-            {showPauseInfo && !episodeEnded && !suspended && (
+            {pauseOverlayEnabled && showPauseInfo && !episodeEnded && !suspended && (
                 <div aria-hidden="true" className="pointer-events-none absolute inset-0 z-10 animate-in fade-in duration-500" style={{ background: 'linear-gradient(to top, rgba(0,0,0,0.85) 0%, rgba(0,0,0,0.55) 40%, rgba(0,0,0,0.35) 100%)' }}>
                     <div className="absolute bottom-24 left-4 right-16 sm:bottom-28 sm:left-8 sm:right-auto sm:max-w-lg">
                         <p className="text-[11px] font-semibold uppercase tracking-[0.25em] text-white/60">Bạn đang xem</p>
