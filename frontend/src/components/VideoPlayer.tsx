@@ -195,6 +195,28 @@ export default function VideoPlayer({ src, playbackStartedAt, movie, episode, au
     // the fullscreen button falls back to CSS fullscreen: the player shell
     // pins to the viewport (100dvh) and the custom controls stay ours —
     // instead of handing the video to the native AVKit player.
+    // Netflix-style pause identification: after a beat of being paused the
+    // frame dims and the title + synopsis appear bottom-left. The synopsis
+    // comes from the public catalog detail (5-min cached server-side); the
+    // overlay works fine without it if that fetch fails.
+    const [showPauseInfo, setShowPauseInfo] = useState(false);
+    const [pauseMeta, setPauseMeta] = useState<{ overview: string } | null>(null);
+    const pauseInfoTimerRef = useRef<number | null>(null);
+    useEffect(() => {
+        if (!subContext?.tmdbId || !subContext?.type) return;
+        let cancelled = false;
+        void (async () => {
+            try {
+                const res = await fetch(apiUrl(`/api/catalog/${subContext.type}/${subContext.tmdbId}`));
+                const json = await res.json();
+                const overview = String(json?.data?.overview || '').trim();
+                if (!cancelled && overview) setPauseMeta({ overview });
+            } catch { /* overlay works without the synopsis */ }
+        })();
+        return () => { cancelled = true; };
+        // eslint-disable-next-line react-hooks/exhaustive-deps
+    }, [subContext?.tmdbId, subContext?.type]);
+
     const [cssFullscreen, setCssFullscreen] = useState(false);
     const [showControls, setShowControls] = useState(true);
     const [showSettings, setShowSettings] = useState(false);
@@ -1981,6 +2003,8 @@ export default function VideoPlayer({ src, playbackStartedAt, movie, episode, au
         const handleDurationChange = () => setDuration(pickDisplayDuration(video.duration, durationSeconds));
         const handlePlay = () => {
             setEpisodeEnded(false);
+            if (pauseInfoTimerRef.current) { window.clearTimeout(pauseInfoTimerRef.current); pauseInfoTimerRef.current = null; }
+            setShowPauseInfo(false);
             hasPlayedRef.current = true;
             userPausedRef.current = false;
             setIsPlaying(true);
@@ -1988,7 +2012,13 @@ export default function VideoPlayer({ src, playbackStartedAt, movie, episode, au
             armStallTimer();
         };
         const handlePause = () => {
-            if (seekTargetRef.current === null && !restorePendingRef.current) userPausedRef.current = true;
+            if (seekTargetRef.current === null && !restorePendingRef.current) {
+                userPausedRef.current = true;
+                // A short beat, so scrubbing-pauses and instant re-plays never
+                // flash the dim; buffering/stall pauses don't land here.
+                if (pauseInfoTimerRef.current) window.clearTimeout(pauseInfoTimerRef.current);
+                pauseInfoTimerRef.current = window.setTimeout(() => setShowPauseInfo(true), 700);
+            }
             clearStallTimer();
             setIsPlaying(false);
             // Persist the exact stop point now: the 10s interval skips paused
@@ -2798,6 +2828,20 @@ export default function VideoPlayer({ src, playbackStartedAt, movie, episode, au
                 </div>
             )}
 
+            {showPauseInfo && !episodeEnded && !suspended && (
+                <div aria-hidden="true" className="pointer-events-none absolute inset-0 z-10 animate-in fade-in duration-500" style={{ background: 'linear-gradient(to top, rgba(0,0,0,0.85) 0%, rgba(0,0,0,0.55) 40%, rgba(0,0,0,0.35) 100%)' }}>
+                    <div className="absolute bottom-24 left-4 right-16 sm:bottom-28 sm:left-8 sm:right-auto sm:max-w-lg">
+                        <p className="text-[11px] font-semibold uppercase tracking-[0.25em] text-white/60">Bạn đang xem</p>
+                        <h3 className="mt-1 text-2xl sm:text-4xl font-black leading-tight text-white drop-shadow-lg">{movie.name}</h3>
+                        {episode?.name && (
+                            <p className="mt-1 text-xs sm:text-sm font-bold text-amber-gold/90">{episode.name}</p>
+                        )}
+                        {pauseMeta?.overview && (
+                            <p className="mt-2 line-clamp-3 text-xs sm:text-sm leading-relaxed text-white/70 drop-shadow">{pauseMeta.overview}</p>
+                        )}
+                    </div>
+                </div>
+            )}
             {/* Custom subtitle overlay (single + bilingual). Rendered by hand
                 instead of native <track> so cross-origin VTT needs no CORS
                 changes on the media itself and two languages can show at once. */}
