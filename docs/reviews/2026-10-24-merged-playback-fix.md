@@ -86,3 +86,20 @@ claim follows from this verification.
 Continue from the shared optimize baseline. Build into a new release directory
 and activate the tested artifacts together; do not copy another branch over an
 existing runtime directory whose name identifies an older commit.
+
+## Follow-up: native MP4 caption overlay
+
+Frontend-only release `847a02d55a9a3769a65eec893bea38171a19e04d` addresses a
+third caption overlay on Hope 1058424. The selected source is direct MP4; its
+cached probe lists two English mov_text streams. The player previously left
+the browser's TextTrack modes unmanaged while also rendering custom subtitles.
+
+The player now disables native subtitle/caption tracks at attachment, metadata,
+playback and track-list changes, including late-added tracks. Chapter and
+metadata tracks are preserved; listeners are cleaned up on element retirement.
+Both native caption regressions pass; all 128 frontend tests and local/Linux
+production builds pass. Frontend health and public release report 847a02d.
+Backend remains 8ae0fe5 intentionally: this follow-up changes no backend code
+and does not restart video workers. Safari screenshot access was unavailable
+with ScreenCaptureKit -3811, so removal of the large line on the user's actual
+frame still requires reloading the existing tab and visual confirmation.

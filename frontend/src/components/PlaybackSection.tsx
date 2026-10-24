@@ -280,6 +280,13 @@ export default function PlaybackSection({
   // Auto quality step-down fires once per title: no flapping between releases.
   const decodeDowngradeDoneRef = useRef<boolean>(false);
   const episodeScrollRef = useRef<HTMLDivElement>(null);
+  // The strip mounts only once playback is ready, after the initial effects.
+  // Its actual attachment must trigger revealing and ResizeObserver setup.
+  const [episodeStrip, setEpisodeStrip] = useState<HTMLDivElement | null>(null);
+  const attachEpisodeStrip = useCallback((node: HTMLDivElement | null) => {
+    episodeScrollRef.current = node;
+    setEpisodeStrip(node);
+  }, []);
 
   const scrollEpisodes = (direction: 'left' | 'right') => {
     if (!episodeScrollRef.current) return;
@@ -400,17 +407,17 @@ export default function PlaybackSection({
       cancelAnimationFrame(frame);
       clearTimeout(settle);
     };
-  }, [currentEpisode, episodes.length, revealActiveEpisode]);
+  }, [currentEpisode, episodes.length, episodeStrip, revealActiveEpisode]);
 
   // Rotation, a resized panel or a maximised player all change the strip's
   // width, which re-snaps it and can walk the active card back out of view.
   useEffect(() => {
-    const container = episodeScrollRef.current;
+    const container = episodeStrip;
     if (!container || typeof ResizeObserver === 'undefined') return;
     const observer = new ResizeObserver(() => revealActiveEpisode());
     observer.observe(container);
     return () => observer.disconnect();
-  }, [revealActiveEpisode]);
+  }, [episodeStrip, revealActiveEpisode]);
 
   const pickAudio = useCallback(
     (index: number) => {
@@ -2563,7 +2570,7 @@ export default function PlaybackSection({
               </div>
             </div>
             <div
-              ref={episodeScrollRef}
+              ref={attachEpisodeStrip}
               className="hide-scrollbar relative flex gap-3 overflow-x-auto scroll-smooth pb-2 snap-x snap-mandatory touch-pan-x"
               style={{ scrollbarWidth: 'none', msOverflowStyle: 'none', WebkitOverflowScrolling: 'touch' }}
             >

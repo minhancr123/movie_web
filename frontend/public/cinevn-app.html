@@ -1,0 +1,384 @@
+<!DOCTYPE html>
+<html lang="vi">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>CineVN — Xem phim điện ảnh trên iPhone & Web</title>
+<meta name="description" content="CineVN — phim chiếu rạp chất lượng cao, không quảng cáo, phụ đề tiếng Việt tự tối ưu. Có trên iPhone (TestFlight) và Web. Android sắp ra mắt.">
+<meta property="og:title" content="CineVN — App xem phim điện ảnh">
+<meta property="og:description" content="iOS qua TestFlight · Web truy cập ngay · Android sắp ra mắt">
+<meta property="og:type" content="website">
+<style>
+  :root{
+    --bg:#0D0E11; --bg2:#131419; --card:#1B1C22; --line:#2A2B33;
+    --amber:#F59E0B; --amber2:#FBBF24; --text:#F4F4F5; --muted:#A1A1AA;
+  }
+  *{margin:0;padding:0;box-sizing:border-box}
+  html{scroll-behavior:smooth}
+  body{
+    background:var(--bg); color:var(--text);
+    font-family:-apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,"Helvetica Neue",Arial,sans-serif;
+    line-height:1.6; -webkit-font-smoothing:antialiased;
+  }
+  a{color:inherit;text-decoration:none}
+  .wrap{max-width:1080px;margin:0 auto;padding:0 20px}
+
+  /* NAV */
+  nav{position:sticky;top:0;z-index:50;background:rgba(13,14,17,.85);backdrop-filter:blur(14px);border-bottom:1px solid var(--line)}
+  .nav-in{display:flex;align-items:center;justify-content:space-between;height:64px}
+  .logo{display:flex;align-items:center;gap:10px;font-size:20px;font-weight:800;letter-spacing:-.02em}
+  .logo-mark{width:34px;height:34px;border-radius:9px;background:radial-gradient(circle at 50% 35%,#2A2B33,#101116);display:flex;align-items:center;justify-content:center;box-shadow:inset 0 0 0 1px rgba(245,158,11,.25)}
+  .logo-mark svg{width:18px;height:18px;fill:url(#logoGrad)}
+  .nav-links{display:flex;gap:26px;font-size:14.5px;color:var(--muted)}
+  .nav-links a:hover{color:var(--text)}
+  @media(max-width:720px){.nav-links{display:none}}
+
+  /* HERO */
+  .hero{position:relative;overflow:hidden;padding:84px 0 60px;
+    background:
+      radial-gradient(900px 420px at 78% -10%, rgba(245,158,11,.16), transparent 60%),
+      radial-gradient(700px 380px at 8% 110%, rgba(245,158,11,.07), transparent 60%),
+      var(--bg);}
+  .hero-grid{display:grid;grid-template-columns:1.1fr .9fr;gap:48px;align-items:center}
+  @media(max-width:860px){.hero-grid{grid-template-columns:1fr;gap:40px}}
+  .badge{display:inline-flex;align-items:center;gap:8px;font-size:13px;font-weight:600;color:var(--amber2);
+    background:rgba(245,158,11,.1);border:1px solid rgba(245,158,11,.3);border-radius:999px;padding:6px 14px;margin-bottom:22px}
+  .badge .dot{width:7px;height:7px;border-radius:50%;background:var(--amber);box-shadow:0 0 10px var(--amber)}
+  h1{font-size:clamp(34px,5.2vw,54px);font-weight:800;letter-spacing:-.03em;line-height:1.12;margin-bottom:18px}
+  h1 .amber{color:var(--amber)}
+  .sub{font-size:18px;color:var(--muted);max-width:520px;margin-bottom:30px}
+  .cta-row{display:flex;flex-wrap:wrap;gap:14px;align-items:center}
+  .btn{display:inline-flex;align-items:center;gap:10px;padding:14px 24px;border-radius:12px;font-size:15.5px;font-weight:700;transition:transform .15s ease, box-shadow .15s ease}
+  .btn:hover{transform:translateY(-2px)}
+  .btn-primary{background:linear-gradient(180deg,var(--amber2),var(--amber));color:#111;box-shadow:0 8px 26px rgba(245,158,11,.35)}
+  .btn-ghost{background:var(--card);border:1px solid var(--line);color:var(--text)}
+  .btn-disabled{background:var(--card);border:1px dashed var(--line);color:var(--muted);cursor:default}
+  .btn svg{width:20px;height:20px;flex:none}
+  .btn small{display:block;font-size:10.5px;font-weight:500;opacity:.75;letter-spacing:.04em;text-transform:uppercase;line-height:1.2}
+  .hero-note{margin-top:16px;font-size:13px;color:var(--muted)}
+
+  /* Product previews: real catalog artwork inside illustrative app screens. */
+  .hero-grid{grid-template-columns:minmax(0,1fr) minmax(0,1.06fr);gap:36px}
+  .preview-showcase{min-width:0}
+  .phones{position:relative;height:530px;isolation:isolate;max-width:560px;margin:auto}
+  .phones::before{content:"";position:absolute;inset:16% -8% 0;background:radial-gradient(ellipse,rgba(245,158,11,.16),transparent 66%);filter:blur(24px);z-index:-1}
+  .phone{width:216px;height:454px;border-radius:33px;background:#0b0c10;border:5px solid #303138;box-shadow:0 28px 55px #0009,inset 0 0 0 1px #ffffff14;overflow:hidden;position:absolute;top:50%;left:50%}
+  .phone.main{z-index:3;transform:translate(-50%,-50%) rotate(-2deg);border-color:#45454b}
+  .phone.side.left{z-index:1;transform:translate(calc(-50% - 144px),calc(-50% + 30px)) rotate(-10deg) scale(.87)}
+  .phone.side.right{z-index:2;transform:translate(calc(-50% + 145px),calc(-50% + 30px)) rotate(10deg) scale(.87)}
+  .notch{position:absolute;top:8px;left:50%;transform:translateX(-50%);width:66px;height:17px;border-radius:12px;background:#050506;z-index:5}
+  .scr{position:absolute;inset:0;overflow:hidden;background:#101115;color:#f4f4f5}
+  .status{position:absolute;top:10px;left:14px;right:13px;display:flex;justify-content:space-between;font-size:7px;font-weight:700;z-index:4;line-height:12px}
+  .screen-top{display:flex;align-items:center;justify-content:space-between;padding:35px 13px 10px;font-size:11px;font-weight:800;letter-spacing:-.3px}
+  .screen-top .brand{color:var(--amber2)}
+  .screen-top .avatar{display:grid;place-items:center;width:20px;height:20px;border-radius:50%;border:1px solid #f59e0b88;color:var(--amber2);font-size:8px}
+  .scr-hero{height:57%;position:relative;display:flex;flex-direction:column;justify-content:flex-end;padding:0 13px 12px;isolation:isolate}
+  .scr-hero>img{position:absolute;inset:0;width:100%;height:100%;object-fit:cover;object-position:50% 26%;z-index:-2}
+  .scr-hero::after{content:"";position:absolute;inset:0;background:linear-gradient(180deg,#0002 20%,#10111522 40%,#101115 100%);z-index:-1}
+  .scr-hero .eyebrow{font-size:6px;letter-spacing:1.4px;color:var(--amber2);font-weight:700;margin-bottom:4px}
+  .scr-hero .t{font-size:21px;font-weight:800;line-height:1.15;letter-spacing:-.4px;text-shadow:0 2px 12px #0008}
+  .scr-hero .m{font-size:7px;color:#d4d4d8;margin:5px 0 9px}
+  .scr-hero .b{display:flex;gap:6px}
+  .pill{font-size:8px;font-weight:700;padding:5px 10px;border-radius:6px;background:var(--amber);color:#111;white-space:nowrap}
+  .pill.ghost{background:#ffffff1c;color:#fff}
+  .scr-row{padding:10px 12px 0}
+  .scr-row .h{display:flex;justify-content:space-between;font-size:9px;font-weight:700;margin-bottom:7px;color:#eee}
+  .scr-row .h span{font-size:6px;color:var(--amber2);font-weight:500}
+  .posters{display:flex;gap:6px}
+  .poster{display:block;width:57px;height:81px;border-radius:5px;flex:none;object-fit:cover;background:#22232a}
+  .episodes{display:flex;gap:6px}
+  .episode-thumb{width:86px;flex:none;font-size:7px;color:#c7c7cf}
+  .episode-thumb img{width:100%;height:49px;object-fit:cover;border-radius:5px;display:block;margin-bottom:3px}
+  .screen-tabs{display:flex;gap:15px;padding:10px 12px 0;font-size:7px;color:#93939f}
+  .screen-tabs .active{color:var(--amber2);border-bottom:1px solid var(--amber);padding-bottom:6px}
+  .screen-bottom{position:absolute;bottom:0;left:0;right:0;padding:10px 13px 17px;display:flex;justify-content:space-around;background:#101115ed;border-top:1px solid #ffffff0c;color:#8c8d98;font-size:6px}
+  .screen-bottom .active{color:var(--amber2)}
+  .home-indicator{position:absolute;bottom:5px;left:50%;transform:translateX(-50%);width:67px;height:3px;border-radius:2px;background:#ffffff91;z-index:6}
+  .watch-art{position:relative;height:230px;margin:0 8px;border-radius:9px;overflow:hidden;background:#22232a}
+  .watch-art>img{width:100%;height:100%;object-fit:cover;object-position:64% center;display:block}
+  .watch-art::after{content:"";position:absolute;inset:0;background:linear-gradient(180deg,#0001 35%,#000b)}
+  .watch-quality{position:absolute;left:9px;top:9px;font-size:6px;color:#ffe1a3;padding:3px 5px;background:#141414a6;border:1px solid #fbbf2455;border-radius:4px;z-index:1}
+  .watch-play{position:absolute;top:50%;left:50%;transform:translate(-50%,-50%);height:40px;width:40px;display:grid;place-items:center;border:1px solid #ffffff55;border-radius:50%;background:#1115;backdrop-filter:blur(5px);z-index:1}
+  .watch-play svg{width:16px;height:16px;fill:#fff;margin-left:2px}
+  .watch-title{position:absolute;bottom:12px;left:11px;z-index:1}
+  .watch-title small{font-size:6px;letter-spacing:1.8px;color:#ddd}
+  .watch-title strong{display:block;font-size:22px;line-height:1.2;letter-spacing:-.5px}
+  .watch-meta{padding:10px 13px 0;font-size:7px;color:#b9b9c2;display:flex;justify-content:space-between}
+  .watch-meta span:last-child{color:var(--amber2)}
+  .scr-player .bar{height:3px;background:#ffffff24;margin:13px 13px 5px;border-radius:3px;position:relative}
+  .scr-player .bar i{position:absolute;inset:0 auto 0 0;width:25%;background:var(--amber);border-radius:3px}
+  .scr-player .bar i::after{content:"";position:absolute;right:-2px;top:-2px;width:7px;height:7px;background:var(--amber2);border-radius:50%}
+  .scr-player .tm{display:flex;justify-content:space-between;font-size:6px;color:#9899a4;padding:0 13px}
+  .scr-player .ctl{display:flex;align-items:center;justify-content:center;gap:20px;margin-top:11px}
+  .ctl .c{font-size:12px;color:#d2d2da}
+  .ctl .big{height:29px;width:29px;display:grid;place-items:center;border-radius:50%;background:var(--amber);color:#111;font-size:11px}
+  .subtitle-chip{margin:11px 13px 0;display:flex;justify-content:space-between;padding:6px 8px;border:1px solid #ffffff12;background:#ffffff06;border-radius:6px;font-size:6px;color:#bcbcc6}
+  .subtitle-chip span:last-child{color:#75d2a4}
+  .preview-caption{font-size:11px;color:#8b8c97;text-align:center;margin-top:-8px;letter-spacing:.1px}
+  @media(max-width:860px){.hero-grid{grid-template-columns:minmax(0,1fr);gap:28px}.hero-grid>div:first-child{max-width:620px}.phones{height:510px;max-width:500px}.hero{padding-top:48px}}
+  @media(max-width:520px){.phones{height:450px}.phone{width:190px;height:408px;border-radius:30px}.phone.side.left{transform:translate(calc(-50% - 107px),calc(-50% + 20px)) rotate(-10deg) scale(.84)}.phone.side.right{transform:translate(calc(-50% + 107px),calc(-50% + 20px)) rotate(10deg) scale(.84)}.phone.main{transform:translate(-50%,-50%) rotate(-2deg)}.watch-art{height:192px}.scr-hero .t{font-size:19px}.watch-title strong{font-size:20px}.poster{width:50px;height:71px}.preview-caption{font-size:10px;margin-top:0}.hero{padding-bottom:36px}}
+
+  /* SECTIONS */
+  section{padding:70px 0}
+  .sec-head{text-align:center;max-width:620px;margin:0 auto 44px}
+  .sec-head h2{font-size:clamp(26px,3.6vw,36px);font-weight:800;letter-spacing:-.02em;margin-bottom:12px}
+  .sec-head p{color:var(--muted);font-size:16px}
+
+  /* PLATFORM CARDS */
+  .plat-grid{display:grid;grid-template-columns:repeat(3,1fr);gap:18px}
+  @media(max-width:860px){.plat-grid{grid-template-columns:1fr}}
+  .plat{background:var(--card);border:1px solid var(--line);border-radius:18px;padding:28px 24px;position:relative;transition:border-color .2s}
+  .plat:hover{border-color:rgba(245,158,11,.4)}
+  .plat .st{position:absolute;top:18px;right:18px;font-size:11px;font-weight:700;padding:4px 10px;border-radius:999px}
+  .st.live{background:rgba(34,197,94,.15);color:#4ADE80}
+  .st.beta{background:rgba(245,158,11,.15);color:var(--amber2)}
+  .st.soon{background:rgba(255,255,255,.07);color:var(--muted)}
+  .plat .ic{width:52px;height:52px;border-radius:13px;display:flex;align-items:center;justify-content:center;margin-bottom:18px}
+  .plat .ic svg{width:26px;height:26px}
+  .plat.ios .ic{color:#fff}
+  .plat.web .ic{color:var(--amber)}
+  .plat.and .ic{color:var(--muted)}
+  .feat .fi svg{width:22px;height:22px;color:var(--amber)}
+  .plat h3{font-size:19px;font-weight:800;margin-bottom:6px}
+  .plat p{font-size:14px;color:var(--muted);margin-bottom:20px;min-height:44px}
+  .plat .btn{width:100%;justify-content:center;padding:12px}
+  .plat.ios .ic{background:linear-gradient(160deg,#3a3d46,#15161b)}
+  .plat.web .ic{background:rgba(245,158,11,.12)}
+  .plat.and .ic{background:rgba(255,255,255,.05)}
+
+  /* FEATURES */
+  .feat-grid{display:grid;grid-template-columns:repeat(3,1fr);gap:16px}
+  @media(max-width:860px){.feat-grid{grid-template-columns:1fr 1fr}}
+  @media(max-width:560px){.feat-grid{grid-template-columns:1fr}}
+  .feat{background:var(--bg2);border:1px solid var(--line);border-radius:16px;padding:24px}
+  .feat .fi{width:44px;height:44px;border-radius:11px;background:rgba(245,158,11,.12);display:flex;align-items:center;justify-content:center;margin-bottom:16px}
+  .feat h4{font-size:15.5px;font-weight:700;margin-bottom:6px}
+  .feat p{font-size:13.5px;color:var(--muted)}
+
+  /* GUIDE */
+  .guide{background:var(--bg2);border:1px solid var(--line);border-radius:20px;padding:38px}
+  @media(max-width:640px){.guide{padding:26px 20px}}
+  .guide h3{font-size:22px;font-weight:800;margin-bottom:8px}
+  .guide > p{color:var(--muted);font-size:14.5px;margin-bottom:28px}
+  .steps{display:grid;grid-template-columns:repeat(4,1fr);gap:18px}
+  @media(max-width:860px){.steps{grid-template-columns:1fr 1fr}}
+  @media(max-width:520px){.steps{grid-template-columns:1fr}}
+  .step{position:relative;padding-top:14px}
+  .step .n{width:34px;height:34px;border-radius:10px;background:rgba(245,158,11,.14);color:var(--amber2);font-weight:800;display:flex;align-items:center;justify-content:center;margin-bottom:12px;font-size:15px}
+  .step h5{font-size:14.5px;font-weight:700;margin-bottom:4px}
+  .step p{font-size:13px;color:var(--muted)}
+
+  /* FAQ */
+  .faq{max-width:720px;margin:0 auto}
+  .qa{border-bottom:1px solid var(--line);padding:20px 4px}
+  .qa h4{font-size:15.5px;font-weight:700;margin-bottom:6px}
+  .qa p{font-size:14px;color:var(--muted)}
+
+  /* FOOTER */
+  footer{border-top:1px solid var(--line);padding:34px 0;text-align:center;color:var(--muted);font-size:13.5px}
+  footer .logo{justify-content:center;margin-bottom:10px;font-size:17px}
+  footer a{color:var(--amber2)}
+
+  .center{text-align:center}
+</style>
+</head>
+<body>
+
+<!-- ═══ Không quảng cáo · Lưu ý: thay mã mời TestFlight thật tại TESTFLIGHT_URL phía cuối file ═══ -->
+
+<nav>
+  <div class="wrap nav-in">
+    <a class="logo" href="#top">
+      <span class="logo-mark"><svg viewBox="0 0 24 24"><defs><linearGradient id="logoGrad" x1="0" y1="0" x2="0" y2="1"><stop offset="0" stop-color="#FBBF24"/><stop offset="1" stop-color="#F59E0B"/></linearGradient></defs><path d="M8 5.5v13c0 .9 1 1.4 1.7.9l9.4-6.5c.6-.4.6-1.3 0-1.8L9.7 4.6C9 4.1 8 4.6 8 5.5z"/></svg></span>
+      CineVN
+    </a>
+    <div class="nav-links">
+      <a href="#tinh-nang">Tính năng</a>
+      <a href="#nen-tang">Nền tảng</a>
+      <a href="#cai-dat">Cài đặt</a>
+      <a href="#faq">Hỏi đáp</a>
+    </div>
+    <a class="btn btn-primary" style="padding:9px 18px;font-size:13.5px" href="#cai-dat">Dùng thử</a>
+  </div>
+</nav>
+
+<header class="hero" id="top">
+  <div class="wrap hero-grid">
+    <div>
+      <div class="badge"><span class="dot"></span> iOS bản thử nghiệm đã có trên TestFlight</div>
+      <h1>Xem phim điện ảnh,<br><span class="amber">đúng chất điện ảnh.</span></h1>
+      <p class="sub">Phim chiếu rạp chất lượng cao — không quảng cáo, không popup. Phụ đề tiếng Việt tự chọn bản khớp nhất, khởi phát tức thì, đồng bộ tiến độ trên mọi thiết bị.</p>
+      <div class="cta-row">
+        <a class="btn btn-primary" href="#cai-dat">
+          <svg viewBox="0 0 24 24" fill="currentColor"><path d="M17.05 20.28c-.98.95-2.05.8-3.08.35-1.09-.46-2.09-.48-3.24 0-1.44.62-2.2.44-3.06-.35C2.79 15.25 3.51 7.59 9.05 7.31c1.35.07 2.29.74 3.08.8.79-.16 2.42-.9 3.75-.77 1.63.13 2.86.78 3.67 1.94-3.35 2.01-2.83 6.42.55 7.94-.66 1.55-1.51 3.08-3.05 4.06zM12.03 7.25c-.15-2.23 1.66-4.07 3.74-4.25.29 2.58-2.34 4.5-3.74 4.25z"/></svg>
+          <span><small>Tải cho iPhone</small>Cài qua TestFlight</span>
+        </a>
+        <a class="btn btn-ghost" href="https://cinevn.me" target="_blank" rel="noopener">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="10"/><path d="M2 12h20M12 2a15.3 15.3 0 0 1 4 10 15.3 15.3 0 0 1-4 10 15.3 15.3 0 0 1-4-10 15.3 15.3 0 0 1 4-10z"/></svg>
+          <span><small>Truy cập ngay</small>cinevn.me</span>
+        </a>
+      </div>
+      <p class="hero-note">Miễn phí trong giai đoạn thử nghiệm · Tài khoản web dùng chung cho app</p>
+    </div>
+
+    <figure class="preview-showcase" aria-label="Minh họa giao diện CineVN: chi tiết phim, trình phát và thư viện, với ảnh phim từ TMDB">
+      <div class="phones" aria-hidden="true">
+        <div class="phone side left">
+          <div class="scr">
+            <div class="status"><span>9:41</span><span>▴ ▰</span></div><div class="notch"></div>
+            <div class="scr-hero">
+              <img src="/images/app-preview/apothecary-hero.jpg" alt="" width="342" height="513" decoding="async" class="" >
+              <div class="eyebrow">KHÁM PHÁ CÙNG CINEVN</div>
+              <div class="t">Dược Sư<br>Tự Sự</div>
+              <div class="m">2023 · ★ 8.7 · Hoạt hình</div>
+              <div class="b"><span class="pill">▶ Xem phim</span><span class="pill ghost">＋</span></div>
+            </div>
+            <div class="screen-tabs"><span class="active">Tập phim</span><span>Giới thiệu</span><span>Liên quan</span></div>
+            <div class="scr-row"><div class="h">Mùa 1 <span>24 tập</span></div><div class="episodes">
+              <div class="episode-thumb"><img src="/images/app-preview/episode-1.jpg" alt="" width="342" height="513" decoding="async" class="" >Tập 1 · Miêu Miêu</div>
+              <div class="episode-thumb"><img src="/images/app-preview/episode-2.jpg" alt="" width="342" height="513" decoding="async" class="" >Tập 2</div>
+            </div></div>
+            <div class="scr-row"><div class="h">Có thể bạn thích</div><div class="posters"><img src="/images/app-preview/apothecary-poster.jpg" alt="" width="342" height="513" decoding="async" class="poster" ><img src="/images/app-preview/hope-poster.jpg" alt="" width="342" height="513" decoding="async" class="poster" ><img src="/images/app-preview/avengers-poster.jpg" alt="" width="342" height="513" decoding="async" class="poster" ></div></div>
+            <div class="screen-bottom"><span class="active">⌂ Trang chủ</span><span>⌕ Tìm kiếm</span><span>♡ Đã lưu</span></div><div class="home-indicator"></div>
+          </div>
+        </div>
+        <div class="phone main">
+          <div class="scr scr-player">
+            <div class="status"><span>9:41</span><span>▴ ▰</span></div><div class="notch"></div>
+            <div class="screen-top"><span>‹</span><span class="brand">CineVN</span><span>•••</span></div>
+            <div class="watch-art">
+              <img src="/images/app-preview/interstellar-scene.jpg" alt="" width="342" height="513" decoding="async" class="" fetchpriority="high">
+              <span class="watch-quality">4K · HDR</span>
+              <div class="watch-play"><svg viewBox="0 0 24 24"><path d="M8 5v14l11-7z"/></svg></div>
+              <div class="watch-title"><small>CHUYẾN ĐI VƯỢT KHÔNG GIAN</small><strong>Interstellar</strong></div>
+            </div>
+            <div class="watch-meta"><span>2014 · Khoa học viễn tưởng</span><span>★ 8.5</span></div>
+            <div class="bar"><i></i></div><div class="tm"><span>42:15</span><span>2:49:00</span></div>
+            <div class="ctl"><span class="c">↶</span><span class="c">−10</span><span class="c big">▶</span><span class="c">+10</span><span class="c">⚙</span></div>
+            <div class="subtitle-chip"><span>CC &nbsp; Tiếng Việt</span><span>Đang bật ✓</span></div>
+            <div class="home-indicator"></div>
+          </div>
+        </div>
+        <div class="phone side right">
+          <div class="scr">
+            <div class="status"><span>9:41</span><span>▴ ▰</span></div><div class="notch"></div>
+            <div class="screen-top"><span class="brand">CineVN</span><span class="avatar">H</span></div>
+            <div class="scr-hero" style="height:34%">
+              <img src="/images/app-preview/apothecary-scene.jpg" alt="" width="342" height="513" decoding="async" class="" >
+              <div class="eyebrow">ĐÁNG XEM HÔM NAY</div><div class="t" style="font-size:16px">Dược Sư Tự Sự</div>
+              <div class="m">Mỗi tập phim, một bí ẩn mới.</div>
+              <div class="b"><span class="pill">▶ Xem ngay</span></div>
+            </div>
+            <div class="scr-row"><div class="h">Thịnh hành tuần này <span>Xem tất cả</span></div><div class="posters"><img src="/images/app-preview/spiderman-poster.jpg" alt="" width="342" height="513" decoding="async" class="poster" ><img src="/images/app-preview/avengers-poster.jpg" alt="" width="342" height="513" decoding="async" class="poster" ><img src="/images/app-preview/interstellar-poster.jpg" alt="" width="342" height="513" decoding="async" class="poster" ></div></div>
+            <div class="scr-row"><div class="h">Dành riêng cho bạn</div><div class="posters"><img src="/images/app-preview/interstellar-poster.jpg" alt="" width="342" height="513" decoding="async" class="poster" ><img src="/images/app-preview/hope-poster.jpg" alt="" width="342" height="513" decoding="async" class="poster" ><img src="/images/app-preview/apothecary-poster.jpg" alt="" width="342" height="513" decoding="async" class="poster" ></div></div>
+            <div class="screen-bottom"><span class="active">⌂ Trang chủ</span><span>⌕ Tìm kiếm</span><span>♡ Đã lưu</span></div><div class="home-indicator"></div>
+          </div>
+        </div>
+      </div>
+      <figcaption class="preview-caption">Giao diện minh họa · Ảnh phim từ TMDB</figcaption>
+    </figure>
+  </div>
+</header>
+
+<section id="nen-tang">
+  <div class="wrap">
+    <div class="sec-head">
+      <h2>Có trên những nền tảng nào?</h2>
+      <p>Một tài khoản — xem mọi nơi, tiến độ và phụ đề theo bạn.</p>
+    </div>
+    <div class="plat-grid">
+      <div class="plat ios">
+        <span class="st beta">TestFlight · Beta</span>
+        <div class="ic"><svg class="ic-svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect x="5" y="2" width="14" height="20" rx="2"/><path d="M12 18h.01"/></svg></div>
+        <h3>iPhone / iPad</h3>
+        <p>Ứng dụng native: phát Direct Play tức thì, PiP, điều khiển từ Lock Screen, tua thumbnail.</p>
+        <a class="btn btn-primary" href="#cai-dat">Cài qua TestFlight</a>
+      </div>
+      <div class="plat web">
+        <span class="st live">Đang hoạt động</span>
+        <div class="ic"><svg class="ic-svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="12" cy="12" r="10"/><path d="M2 12h20"/><path d="M12 2a15.3 15.3 0 0 1 4 10 15.3 15.3 0 0 1-4 10 15.3 15.3 0 0 1-4-10 15.3 15.3 0 0 1 4-10z"/></svg></div>
+        <h3>Website</h3>
+        <p>Truy cập trực tiếp trên bất kỳ trình duyệt nào — không cần cài đặt gì cả.</p>
+        <a class="btn btn-ghost" href="https://cinevn.me" target="_blank" rel="noopener">Mở cinevn.me ↗</a>
+      </div>
+      <div class="plat and">
+        <span class="st soon">Sắp ra mắt</span>
+        <div class="ic"><svg class="ic-svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M12 8V4H8"/><rect x="4" y="8" width="16" height="12" rx="2"/><path d="M2 14h2"/><path d="M20 14h2"/><path d="M15 13v2"/><path d="M9 13v2"/></svg></div>
+        <h3>Android</h3>
+        <p>Đang trong lộ trình phát triển. Nhấn theo dõi — sẽ thông báo khi lên Google Play.</p>
+        <button class="btn btn-disabled" disabled>Google Play — sắp ra mắt</button>
+      </div>
+    </div>
+  </div>
+</section>
+
+<section id="tinh-nang" style="background:var(--bg2);border-top:1px solid var(--line);border-bottom:1px solid var(--line)">
+  <div class="wrap">
+    <div class="sec-head">
+      <h2>Vì sao đáng cài?</h2>
+      <p>Xây dựng dành riêng cho cách xem phim của người Việt.</p>
+    </div>
+    <div class="feat-grid">
+      <div class="feat"><div class="fi"><svg class="fi-svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M4 14a1 1 0 0 1-.78-1.63l9.9-10.2a.5.5 0 0 1 .86.46l-1.92 6.02A1 1 0 0 0 13 10h7a1 1 0 0 1 .78 1.63l-9.9 10.2a.5.5 0 0 1-.86-.46l1.92-6.02A1 1 0 0 0 11 14z"/></svg></div><h4>Khởi phát tức thì</h4><p>Nguồn đã kiểm tra chơi thẳng từ CDN — bấm là chạy, không chờ chuyển mã.</p></div>
+      <div class="feat"><div class="fi"><svg class="fi-svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect x="3" y="5" width="18" height="14" rx="2"/><path d="M7 15h4"/><path d="M15 15h2"/><path d="M7 11h2"/><path d="M13 11h4"/></svg></div><h4>Phụ đề Việt tự tối ưu</h4><p>Tự chọn bản khớp nhất với file đang phát, tự sửa lệch FPS, nhớ chỉnh sync theo từng phim.</p></div>
+      <div class="feat"><div class="fi"><svg class="fi-svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M3 12a9 9 0 0 1 9-9 9.75 9.75 0 0 1 6.74 2.74L21 8"/><path d="M21 3v5h-5"/><path d="M21 12a9 9 0 0 1-9 9 9.75 9.75 0 0 1-6.74-2.74L3 16"/><path d="M8 16H3v5"/></svg></div><h4>Đồng bộ mọi thiết bị</h4><p>Tiến độ xem, yêu thích — xem dở trên web, mở iPhone là tiếp tục đúng giây.</p></div>
+      <div class="feat"><div class="fi"><svg class="fi-svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M20.2 6 3 11l-.9-2.4c-.3-1.1.3-2.2 1.3-2.5l13.5-4c1.1-.3 2.2.3 2.5 1.3Z"/><path d="m6.2 5.3 3.1 3.9"/><path d="m12.4 3.4 3.1 4"/><path d="M3 11h18v8a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2Z"/></svg></div><h4>Chất lượng điện ảnh</h4><p>Lên tới 4K với remux HLS ổn định, tự chọn nguồn tốt nhất theo thiết bị.</p></div>
+      <div class="feat"><div class="fi"><svg class="fi-svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><polygon points="5 4 15 12 5 20 5 4"/><line x1="19" x2="19" y1="5" y2="19"/></svg></div><h4>Bỏ qua giới thiệu</h4><p>Nhận diện intro/credits — một nút bỏ qua, hết tập tự đếm ngược chuyển tập kế.</p></div>
+      <div class="feat"><div class="fi"><svg class="fi-svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="12" cy="12" r="10"/><path d="m4.9 4.9 14.2 14.2"/></svg></div><h4>Không quảng cáo</h4><p>Không popup, không redirect, không banner — chỉ có phim.</p></div>
+    </div>
+  </div>
+</section>
+
+<section id="cai-dat">
+  <div class="wrap">
+    <div class="sec-head">
+      <h2>Cài bản iOS qua TestFlight</h2>
+      <p>TestFlight là kênh chính thức của Apple để dùng app trước khi lên App Store — mất 2 phút.</p>
+    </div>
+    <div class="guide">
+      <div class="steps">
+        <div class="step"><div class="n">1</div><h5>Cài TestFlight</h5><p>Mở App Store, tìm "TestFlight" (của Apple) và cài miễn phí.</p></div>
+        <div class="step"><div class="n">2</div><h5>Mở link mời</h5><p>Bấm nút <b>Cài qua TestFlight</b> phía trên bằng iPhone — link mời CineVN sẽ mở trong TestFlight.</p></div>
+        <div class="step"><div class="n">3</div><h5>Nhận bản dựng</h5><p>Nhấn <b>Accept</b> rồi <b>Install</b> — CineVN tự cài về máy như app thường.</p></div>
+        <div class="step"><div class="n">4</div><h5>Đăng nhập & xem</h5><p>Dùng tài khoản cinevn.me của bạn — tiến độ xem sẽ tự đồng bộ.</p></div>
+      </div>
+      <p class="center" style="margin-top:26px;font-size:13px;color:var(--muted)">Bản build mới tự động thông báo qua TestFlight — bạn không cần cài lại thủ công.</p>
+      <div class="cta-row" style="justify-content:center;margin-top:8px">
+        <a class="btn btn-primary" href="https://testflight.apple.com/join/YOUR-INVITE-CODE" target="_blank" rel="noopener" id="tfLink">
+          <svg viewBox="0 0 24 24" fill="currentColor"><path d="M17.05 20.28c-.98.95-2.05.8-3.08.35-1.09-.46-2.09-.48-3.24 0-1.44.62-2.2.44-3.06-.35C2.79 15.25 3.51 7.59 9.05 7.31c1.35.07 2.29.74 3.08.8.79-.16 2.42-.9 3.75-.77 1.63.13 2.86.78 3.67 1.94-3.35 2.01-2.83 6.42.55 7.94-.66 1.55-1.51 3.08-3.05 4.06zM12.03 7.25c-.15-2.23 1.66-4.07 3.74-4.25.29 2.58-2.34 4.5-3.74 4.25z"/></svg>
+          <span><small>App Store</small>Mở link TestFlight</span>
+        </a>
+      </div>
+    </div>
+  </div>
+</section>
+
+<section id="faq">
+  <div class="wrap faq">
+    <div class="sec-head"><h2>Hỏi đáp</h2></div>
+    <div class="qa"><h4>Bản TestFlight có mất phí không?</h4><p>Không. Miễn phí trong suốt giai đoạn thử nghiệm. Bản dựng mới tự động đẩy qua TestFlight.</p></div>
+    <div class="qa"><h4>Tài khoản trên web và app có chung không?</h4><p>Chung. Đăng nhập cùng email — tiến độ xem, yêu thích và cài đặt phụ đề đồng bộ hai chiều.</p></div>
+    <div class="qa"><h4>Phụ đề tiếng Việt có luôn sẵn không?</h4><p>App tự chọn bản khớp nhất: ưu tiên phụ đề nhúng trong file và bản xác minh khớp release; nếu lệch nhẹ, chỉnh một lần là app nhớ cho phim đó.</p></div>
+    <div class="qa"><h4>Khi nào có bản Android?</h4><p>Đang trong lộ trình. Theo dõi trang này — Google Play badge sẽ sáng lên tại đây khi sẵn sàng.</p></div>
+  </div>
+</section>
+
+<footer>
+  <div class="wrap">
+    <div class="logo">
+      <span class="logo-mark"><svg viewBox="0 0 24 24"><path fill="#F59E0B" d="M8 5.5v13c0 .9 1 1.4 1.7.9l9.4-6.5c.6-.4.6-1.3 0-1.8L9.7 4.6C9 4.1 8 4.6 8 5.5z"/></svg></span>
+      CineVN
+    </div>
+    <p>Xem phim điện ảnh, đúng chất điện ảnh. · <a href="https://cinevn.me" target="_blank" rel="noopener">cinevn.me</a></p>
+    <p style="margin-top:6px;opacity:.6">© 2026 CineVN. Thiết kế cho người Việt.</p>
+  </div>
+</footer>
+
+<script>
+  // ⚠️ THAY MÃ MỜI THẬT: đặt link TestFlight của bạn vào đây (định dạng
+  // https://testflight.apple.com/join/XXXXXXXX). Link hiện tại là placeholder.
+  var TESTFLIGHT_URL = "https://testflight.apple.com/join/YOUR-INVITE-CODE";
+  document.getElementById("tfLink").href = TESTFLIGHT_URL;
+</script>
+</body>
+</html>
