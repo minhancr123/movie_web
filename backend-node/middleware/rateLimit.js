@@ -1,8 +1,9 @@
+import { getCatalogLimit } from '../services/admin/policy.js';
 import { cacheClient } from '../config/redis.js';
 
 // Sliding-window limiter backed by a Redis sorted set.
 // Fails open: if Redis is unavailable the request is allowed through.
-export const rateLimit = ({ windowMs = 60_000, max = 120, keyPrefix = 'rl', skipMediaGrant = false } = {}) => {
+export const rateLimit = ({ windowMs = 60_000, max = 120, keyPrefix = 'rl', skipMediaGrant = false, limitProvider } = {}) => {
   const windowSeconds = Math.ceil(windowMs / 1000);
 
   return async (req, res, next) => {
@@ -39,7 +40,8 @@ export const rateLimit = ({ windowMs = 60_000, max = 120, keyPrefix = 'rl', skip
         .exec();
 
       const count = Number(results?.[2]?.[1] || 0);
-      if (count > max) {
+      const effectiveMax = limitProvider ? await limitProvider() : max;
+      if (count > effectiveMax) {
         res.setHeader('Retry-After', String(windowSeconds));
         return res.status(429).json({
           success: false,
@@ -54,7 +56,7 @@ export const rateLimit = ({ windowMs = 60_000, max = 120, keyPrefix = 'rl', skip
   };
 };
 
-export const catalogRateLimit = rateLimit({ windowMs: 60_000, max: 120, keyPrefix: 'rl:catalog' });
+export const catalogRateLimit = rateLimit({ windowMs: 60_000, max: 120, keyPrefix: 'rl:catalog', limitProvider: getCatalogLimit });
 export const playbackRateLimit = rateLimit({ windowMs: 60_000, max: 30, keyPrefix: 'rl:playback' });
 // HLS playback is inherently chatty: a 4s-segment stream pulls ~15 segments a
 // minute plus playlist refreshes, so asset serving needs its own headroom.

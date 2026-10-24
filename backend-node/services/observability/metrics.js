@@ -1,3 +1,4 @@
+import { adminTraffic } from '../admin/traffic.js';
 import promClient from 'prom-client';
 import { getResolveTimings, finishResolveStages } from '../playback/resolveProgress.js';
 import { writerSlotStatus } from '../playback/remuxService.js';
@@ -75,10 +76,13 @@ export const observePlaybackResolve = (req, res, next) => {
 };
 export const observeHttp = (req, res, next) => {
   const started = performance.now();
-  res.once('finish', () => httpDuration.observe({
-    method: ['GET', 'POST', 'PUT', 'PATCH', 'DELETE', 'HEAD', 'OPTIONS'].includes(req.method) ? req.method : 'OTHER',
-    route: req.route?.path || 'unmatched', status_code: String(res.statusCode),
-  }, Math.max(0, performance.now() - started) / 1000));
+  res.once('finish', () => {
+    adminTraffic.record(res.statusCode);
+    httpDuration.observe({
+      method: ['GET', 'POST', 'PUT', 'PATCH', 'DELETE', 'HEAD', 'OPTIONS'].includes(req.method) ? req.method : 'OTHER',
+      route: req.route?.path || 'unmatched', status_code: String(res.statusCode),
+    }, Math.max(0, performance.now() - started) / 1000);
+  });
   next();
 };
 export function metricsMiddleware(app) {

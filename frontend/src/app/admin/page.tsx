@@ -1,264 +1,148 @@
 'use client';
 
-import { useState, useEffect } from 'react';
+import { useCallback, useEffect, useRef, useState } from 'react';
 import { useSession } from 'next-auth/react';
+import Link from 'next/link';
 import { useRouter } from 'next/navigation';
-import { Loader2, Users, Activity, Eye, Server, RefreshCw, Film } from 'lucide-react';
+import { Activity, Users, Film, Play, Settings, ShieldCheck, RefreshCw, Loader2, AlertCircle, ExternalLink, Search, ChevronLeft, ChevronRight, CheckCircle2 } from 'lucide-react';
 import MovieRequestsManager from '@/components/admin/MovieRequestsManager';
-import { authClient } from '@/lib/api';
+import { authClient, providerAPI } from '@/lib/api';
+
+type Tab = 'overview' | 'users' | 'requests' | 'sessions' | 'providers' | 'settings';
+type Summary = {
+  totalUsers: number; admins: number; newUsers: number; totalViews: number; pendingRequests: number; unexpiredSessions: number;
+  measuredAt: string; traffic: { requests: number; errors: number; windowSeconds: number };
+  system: { mongo: boolean; redis: boolean; uptimeSeconds: number; hostUptimeSeconds: number; cpuCores: number; loadAverage: number[]; memoryTotal: number; memoryFree: number; processRss: number; diskTotal: number | null; diskFree: number | null; release: string; nodeVersion: string };
+};
+type UserRow = { _id: string; username?: string; email?: string; role?: string; createdAt?: string };
+type SessionRow = { _id: string; sessionId: string; type?: string; tmdbId?: number; season?: number; episode?: number; mode?: string; provider?: string; progress?: number; createdAt?: string; expiresAt?: string; startAt?: number };
+type AuditRow = { _id: string; actor: string; action: string; details?: { enabled?: boolean; limit?: number }; createdAt: string };
+type Page = { page: number; total: number; pages: number; limit: number };
+const emptyPage: Page = { page: 1, total: 0, pages: 1, limit: 20 };
+const tabs: { id: Tab; label: string; icon: typeof Activity }[] = [
+  { id: 'overview', label: 'Tổng quan', icon: Activity }, { id: 'users', label: 'Người dùng', icon: Users },
+  { id: 'requests', label: 'Yêu cầu phim', icon: Film }, { id: 'sessions', label: 'Phiên phát', icon: Play },
+  { id: 'providers', label: 'Nguồn phát', icon: ShieldCheck }, { id: 'settings', label: 'Cài đặt', icon: Settings },
+];
+const date = (value?: string) => value ? new Date(value).toLocaleString('vi-VN') : 'Chưa có dữ liệu';
+const number = (value: number) => value.toLocaleString('vi-VN');
+const bytes = (value: number | null) => value === null ? 'Chưa đo được' : `${(value / 1024 ** 3).toFixed(1)} GiB`;
+const uptime = (value: number) => `${Math.floor(value / 86400)} ngày ${Math.floor(value % 86400 / 3600)} giờ ${Math.floor(value % 3600 / 60)} phút`;
+const button = 'inline-flex items-center justify-center gap-2 rounded-xl border border-white/10 px-4 py-2 text-sm transition hover:bg-white/10 disabled:opacity-40 disabled:cursor-not-allowed';
+const input = 'w-full rounded-xl border border-white/15 bg-black/25 px-3 py-2.5 text-sm outline-none focus:border-amber-400';
+const panel = 'rounded-2xl border border-white/10 bg-white/[0.035] p-5 md:p-6';
 
 export default function AdminDashboard() {
-    const { data: session, status } = useSession();
-    const router = useRouter();
+  const { data: session, status } = useSession();
+  const router = useRouter();
+  const allowed = status === 'authenticated' && session?.user?.role === 'admin';
+  const [tab, setTab] = useState<Tab>('overview');
+  const [summary, setSummary] = useState<Summary | null>(null);
+  const [users, setUsers] = useState<UserRow[]>([]);
+  const [sessions, setSessions] = useState<SessionRow[]>([]);
+  const [pagination, setPagination] = useState<Page>(emptyPage);
+  const [page, setPage] = useState(1);
+  const [query, setQuery] = useState('');
+  const [search, setSearch] = useState('');
+  const [role, setRole] = useState('');
+  const [scope, setScope] = useState('active');
+  const [provider, setProvider] = useState<{ connected?: boolean; masked?: string; plan?: string | number; mode?: string; canManage?: boolean } | null>(null);
+  const [apiKey, setApiKey] = useState('');
+  const [hoverTrailer, setHoverTrailer] = useState(false);
+  const [limit, setLimit] = useState(120);
+  const [draftLimit, setDraftLimit] = useState('120');
+  const [audit, setAudit] = useState<AuditRow[]>([]);
+  const [loading, setLoading] = useState(true);
+  const [saving, setSaving] = useState(false);
+  const [error, setError] = useState('');
+  const [notice, setNotice] = useState('');
+  const [revision, setRevision] = useState(0);
+  const [loadedAt, setLoadedAt] = useState('');
+  const requestEpoch = useRef(0);
+  useEffect(() => {
+    if (status !== 'loading' && !allowed) router.replace('/');
+  }, [status, allowed, router]);
 
-    // States for dashboard data
-    const [activeTab, setActiveTab] = useState<'overview' | 'requests'>('overview');
-    const [rateLimit, setRateLimit] = useState<number>(0);
-    const [hoverTrailer, setHoverTrailer] = useState<boolean>(false);
-    const [hoverSaving, setHoverSaving] = useState(false);
-
-    useEffect(() => {
-        authClient.get('/admin/site-settings/hover-trailer', { timeout: 5000 })
-            .then((res) => setHoverTrailer(Boolean(res.data?.data?.enabled)))
-            .catch(() => {});
-    }, []);
-
-    const toggleHoverTrailer = async () => {
-        setHoverSaving(true);
-        try {
-            const next = !hoverTrailer;
-            await authClient.post('/admin/site-settings/hover-trailer', { enabled: next }, { timeout: 5000 });
-            setHoverTrailer(next);
-        } catch { /* keep old state */ } finally {
-            setHoverSaving(false);
+  const refresh = useCallback(() => setRevision(v => v + 1), []);
+  useEffect(() => {
+    if (!allowed) return;
+    const controller = new AbortController();
+    const epoch = ++requestEpoch.current;
+    let busy = false;
+    const load = async (initial = false) => {
+      if (busy || (!initial && document.hidden)) return;
+      busy = true;
+      if (initial) setLoading(true);
+      setError('');
+      const config = { signal: controller.signal, timeout: 15000 };
+      try {
+        if (tab === 'overview') {
+          const result = await authClient.get('/admin/stats', config);
+          if (requestEpoch.current === epoch) setSummary(result.data.data);
+        } else if (tab === 'users' || tab === 'sessions') {
+          const result = await authClient.get(`/admin/${tab}`, { ...config, params: { page, limit: 20, search, role: role || undefined, scope } });
+          if (requestEpoch.current === epoch) { tab === 'users' ? setUsers(result.data.data) : setSessions(result.data.data); setPagination(result.data.pagination); }
+        } else if (tab === 'providers') {
+          const result = await authClient.get('/providers/status', config);
+          if (requestEpoch.current === epoch) setProvider(result.data?.data?.torbox || null);
+        } else if (tab === 'settings') {
+          const [settings, history] = await Promise.all([authClient.get('/admin/settings', config), authClient.get('/admin/audit', config)]);
+          if (requestEpoch.current === epoch) { setHoverTrailer(settings.data.data.hoverTrailer); setLimit(settings.data.data.catalogRateLimit); setDraftLimit(String(settings.data.data.catalogRateLimit)); setAudit(history.data.data); }
         }
+        if (requestEpoch.current === epoch) setLoadedAt(new Date().toISOString());
+      } catch (err: any) {
+        if (!controller.signal.aborted && requestEpoch.current === epoch) setError(err.response?.data?.message || 'Không tải được dữ liệu. Kiểm tra kết nối rồi thử lại.');
+      } finally {
+        busy = false;
+        if (!controller.signal.aborted && requestEpoch.current === epoch) setLoading(false);
+      }
     };
-    const [newRateLimit, setNewRateLimit] = useState<number>(0);
-    const [stats, setStats] = useState<{ activeUsers: number, requestRate: number, totalViews: number }>({ activeUsers: 0, requestRate: 0, totalViews: 0 });
-    const [isLoading, setIsLoading] = useState(true);
-    const [isUpdating, setIsUpdating] = useState(false);
+    void load(true);
+    const timer = tab === 'overview' ? setInterval(() => void load(), 30000) : null;
+    return () => { controller.abort(); if (timer) clearInterval(timer); };
+  }, [allowed, tab, page, search, role, scope, revision]);
 
-    // Initial Load
-    useEffect(() => {
-        if (status === 'loading') return;
-        if (status === 'unauthenticated' || session?.user?.role !== 'admin') { router.push('/'); return; }
-
-        fetchData();
-        const interval = setInterval(fetchData, 5000); // Poll every 5s
-        return () => clearInterval(interval);
-    }, [status, session, router]);
-
-    const fetchData = async () => {
-        try {
-            const apiUrl = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:5001/api';
-            const headers = {
-                'Authorization': `Bearer ${session?.user?.accessToken || ''}`,
-                'Content-Type': 'application/json'
-            };
-
-            const statsRes = await fetch(`${apiUrl}/admin/stats`, { headers });
-            if (statsRes.ok) {
-                const sData = await statsRes.json();
-                setStats({
-                    activeUsers: sData.activeUsers || 0,
-                    requestRate: sData.requestRate || 0,
-                    totalViews: sData.totalViews || 0
-                });
-            }
-
-            setIsLoading(false);
-        } catch (error) {
-            console.error("Dashboard fetch error:", error);
-        }
-    };
-
-    const handleUpdateLimit = async () => {
-        setIsUpdating(true);
-        try {
-            const apiUrl = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:5001/api';
-            const headers = {
-                'Authorization': `Bearer ${session?.user?.accessToken || ''}`,
-                'Content-Type': 'application/json'
-            };
-            await fetch(`${apiUrl}/admin/rate-limit`, { 
-                method: 'POST', 
-                headers, 
-                body: JSON.stringify({ limit: newRateLimit }) 
-            });
-            setRateLimit(newRateLimit);
-            alert("Đã cập nhật giới hạn truy cập thành công!");
-        } catch (e) {
-            alert("Lỗi khi cập nhật");
-        }
-        setIsUpdating(false);
-    };
-
-    if (status === 'loading' || isLoading) {
-        return <div className="min-h-screen flex items-center justify-center bg-black text-amber-gold"><Loader2 className="animate-spin w-10 h-10" /></div>;
-    }
-
-    return (
-        <div className="min-h-screen bg-surface-dark text-white pt-24 pb-12 px-4">
-            <div className="container mx-auto max-w-6xl">
-                <div className="flex justify-between items-center mb-8">
-                    <h1 className="text-3xl font-bold flex items-center gap-3">
-                        <Activity className="text-amber-gold" /> Admin Dashboard
-                    </h1>
-                    <div className="flex items-center gap-2 text-sm text-cinema-subtle bg-white/5 px-4 py-2 rounded-full border border-white/10">
-                        <span className="w-2 h-2 rounded-full bg-green-500 animate-pulse"></span> Hệ thống đang hoạt động
-                    </div>
-                </div>
-
-                {/* Tab Navigation */}
-                <div className="flex border-b border-white/10 mb-10 gap-6">
-                    <button
-                        onClick={() => setActiveTab('overview')}
-                        className={`pb-4 px-2 text-sm font-bold transition-all border-b-2 flex items-center gap-2 ${
-                            activeTab === 'overview'
-                                ? 'border-amber-primary text-amber-gold'
-                                : 'border-transparent text-cinema-subtle hover:text-white'
-                        }`}
-                    >
-                        <Activity size={18} /> TỔNG QUAN
-                    </button>
-                    <button
-                        onClick={() => setActiveTab('requests')}
-                        className={`pb-4 px-2 text-sm font-bold transition-all border-b-2 flex items-center gap-2 ${
-                            activeTab === 'requests'
-                                ? 'border-amber-primary text-amber-gold'
-                                : 'border-transparent text-cinema-subtle hover:text-white'
-                        }`}
-                    >
-                        <Film size={18} /> YÊU CẦU PHIM
-                    </button>
-                </div>
-
-                {activeTab === 'overview' && (
-                    <div className="animate-in fade-in slide-in-from-bottom-4 duration-500">
-                        {/* Site experience settings */}
-                        <div className="mb-10 flex items-center justify-between rounded-2xl border border-white/10 bg-surface-light p-6">
-                            <div>
-                                <h3 className="font-bold text-white">Xem trước trailer khi rê chuột</h3>
-                                <p className="mt-1 text-sm text-cinema-subtle">
-                                    Bật để card phim tự chạy trailer im lặng khi người dùng rê chuột giữ ~1 giây. Mặc định tắt.
-                                </p>
-                            </div>
-                            <button
-                                onClick={toggleHoverTrailer}
-                                disabled={hoverSaving}
-                                className={`relative h-8 w-14 shrink-0 rounded-full transition-colors ${hoverTrailer ? 'bg-emerald-500' : 'bg-white/15'} disabled:opacity-50`}
-                                aria-pressed={hoverTrailer}
-                            >
-                                <span className={`absolute top-1 h-6 w-6 rounded-full bg-white transition-all ${hoverTrailer ? 'left-7' : 'left-1'}`} />
-                            </button>
-                        </div>
-                        {/* Grid Stats */}
-                        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6 mb-10">
-                    {/* Active Users */}
-                    <div className="bg-surface-light p-6 rounded-2xl border border-white/10 shadow-lg relative overflow-hidden group">
-                        <div className="absolute top-0 right-0 p-4 opacity-10 group-hover:opacity-20 transition-opacity">
-                            <Users size={60} />
-                        </div>
-                        <h3 className="text-cinema-subtle font-bold text-sm uppercase tracking-wider mb-2">Đang truy cập</h3>
-                        <div className="text-4xl font-black text-white flex items-baseline gap-2">
-                            {stats.activeUsers}
-                            <span className="text-xs font-normal text-green-500 bg-green-900/30 px-2 py-0.5 rounded flex items-center gap-1">
-                                <Activity size={10} /> +12%
-                            </span>
-                        </div>
-                        <p className="text-xs text-cinema-subtle mt-2">Người dùng active trong 5 phút qua</p>
-                    </div>
-
-                    {/* Request Rate */}
-                    <div className="bg-surface-light p-6 rounded-2xl border border-white/10 shadow-lg relative overflow-hidden group">
-                        <div className="absolute top-0 right-0 p-4 opacity-10 group-hover:opacity-20 transition-opacity">
-                            <Server size={60} />
-                        </div>
-                        <h3 className="text-cinema-subtle font-bold text-sm uppercase tracking-wider mb-2">Request / Phút</h3>
-                        <div className="text-4xl font-black text-white flex items-baseline gap-2">
-                            {stats.requestRate}
-                            <span className="text-xs font-normal text-blue-500 bg-blue-900/30 px-2 py-0.5 rounded">CPM</span>
-                        </div>
-                        <p className="text-xs text-cinema-subtle mt-2">Tổng request đến server</p>
-                    </div>
-
-                    {/* Total Views (Simulated Total) */}
-                    <div className="bg-surface-light p-6 rounded-2xl border border-white/10 shadow-lg relative overflow-hidden group">
-                        <div className="absolute top-0 right-0 p-4 opacity-10 group-hover:opacity-20 transition-opacity">
-                            <Eye size={60} />
-                        </div>
-                        <h3 className="text-cinema-subtle font-bold text-sm uppercase tracking-wider mb-2">Tổng Lượt Xem</h3>
-                        <div className="text-4xl font-black text-white">
-                            {stats.totalViews > 0 ? stats.totalViews.toLocaleString() : 'Loading...'}
-                        </div>
-                        <p className="text-xs text-cinema-subtle mt-2">Tổng view toàn trang (Real-time)</p>
-                    </div>
-
-                    {/* System Status */}
-                    <div className="bg-surface-light p-6 rounded-2xl border border-white/10 shadow-lg relative overflow-hidden group">
-                        <div className="absolute top-0 right-0 p-4 opacity-10 group-hover:opacity-20 transition-opacity">
-                            <Activity size={60} />
-                        </div>
-                        <h3 className="text-cinema-subtle font-bold text-sm uppercase tracking-wider mb-2">Trạng thái Server</h3>
-                        <div className="text-4xl font-black text-green-500">
-                            Good
-                        </div>
-                        <p className="text-xs text-cinema-subtle mt-2">CPU: 12% | RAM: 45%</p>
-                    </div>
-                </div>
-
-                {/* Control Panel */}
-                <div className="bg-surface-light rounded-2xl border border-white/10 p-8">
-                    <h2 className="text-xl font-bold text-white mb-6 flex items-center gap-2">
-                        <Server className="text-amber-gold" /> Quản lý truy cập (Anti-DDOS)
-                    </h2>
-
-                    <div className="flex flex-col md:flex-row items-end gap-6">
-                        <div className="flex-1 w-full">
-                            <label className="block text-sm font-bold text-cinema-subtle mb-2">
-                                Giới hạn Request (mỗi IP / phút)
-                            </label>
-                            <div className="relative">
-                                <input
-                                    type="number"
-                                    value={newRateLimit}
-                                    onChange={(e) => setNewRateLimit(Number(e.target.value))}
-                                    className="w-full bg-black border border-white/10 rounded-xl px-4 py-3 text-white focus:border-amber-primary outline-none transition-colors"
-                                />
-                                <div className="absolute right-4 top-1/2 -translate-y-1/2 text-sm text-cinema-subtle font-bold">
-                                    Req/min
-                                </div>
-                            </div>
-                            <p className="text-xs text-cinema-subtle mt-2">
-                                Giới hạn mặc định: 60. Đặt cao hơn nếu server chịu tải tốt (Ví dụ: 200).
-                            </p>
-                        </div>
-
-                        <button
-                            onClick={handleUpdateLimit}
-                            disabled={isUpdating}
-                            className="bg-amber-primary hover:bg-amber-600 text-white font-bold py-3 px-8 rounded-xl transition-all hover:scale-105 active:scale-95 disabled:opacity-50 disabled:scale-100 flex items-center gap-2"
-                        >
-                            {isUpdating ? <Loader2 className="animate-spin" /> : <RefreshCw />}
-                            Cập nhật Cấu hình
-                        </button>
-                    </div>
-
-                    <div className="mt-8 p-4 bg-amber-primary/5 border border-amber-primary/20 rounded-xl text-sm text-cinema-muted">
-                        <p className="font-bold text-amber-gold mb-1">Lưu ý quản trị viên:</p>
-                        Việc giảm giới hạn xuống quá thấp (ví dụ: dưới 30) có thể ảnh hưởng đến trải nghiệm người dùng xem phim bình thường.
-                        Khuyến nghị mức từ 100 - 300.
-                    </div>
-                </div>
-                    </div>
-                )}
-
-                {activeTab === 'requests' && (
-                    <div className="animate-in fade-in slide-in-from-bottom-4 duration-500">
-                        <MovieRequestsManager />
-                    </div>
-                )}
-            </div>
-        </div>
-    );
+  const action = async (run: () => Promise<unknown>, success: string) => {
+    setSaving(true); setError(''); setNotice('');
+    try { await run(); setNotice(success); refresh(); }
+    catch (err: any) { setError(err.response?.data?.message || 'Không lưu được thay đổi. Vui lòng thử lại.'); }
+    finally { setSaving(false); }
+  };
+  const changeTab = (value: Tab) => { setTab(value); setPage(1); setNotice(''); setError(''); };
+  if (!allowed) return <div className="min-h-screen grid place-items-center"><Loader2 className="animate-spin text-amber-400" aria-label="Kiểm tra quyền quản trị" /></div>;
+  const system = summary?.system;
+  return (
+    <main className="min-h-screen bg-[#0c0e12] px-4 pb-16 pt-24 text-zinc-100">
+      <div className="mx-auto max-w-7xl space-y-6">
+        <header className="flex flex-wrap items-start justify-between gap-4">
+          <div><div className="mb-2 text-xs font-bold uppercase tracking-[.2em] text-amber-400">CineVN · Quản trị</div><h1 className="text-3xl font-bold">Trung tâm điều hành</h1><p className="mt-2 text-sm text-zinc-400">Theo dõi hoạt động, xử lý yêu cầu và cấu hình website.</p></div>
+          <div className="flex flex-wrap gap-2"><Link href="/admin/cong-chieu" className={button}><Film size={16} /> Quản lý công chiếu</Link><button onClick={refresh} disabled={loading || saving} className={button}><RefreshCw size={16} className={loading ? 'animate-spin' : ''} /> Làm mới</button></div>
+        </header>
+        <nav aria-label="Các mục quản trị" className="flex gap-1 overflow-x-auto rounded-2xl border border-white/10 bg-white/[.03] p-1.5">
+          {tabs.map(({ id, label, icon: Icon }) => <button key={id} onClick={() => changeTab(id)} aria-current={tab === id ? 'page' : undefined} className={`flex shrink-0 items-center gap-2 rounded-xl px-4 py-3 text-sm font-semibold ${tab === id ? 'bg-amber-400 text-black' : 'text-zinc-400 hover:bg-white/5 hover:text-white'}`}><Icon size={16} />{label}</button>)}
+        </nav>
+        {error && <div role="alert" className="flex flex-wrap items-center gap-3 rounded-xl border border-red-500/25 bg-red-500/10 p-4 text-sm text-red-200"><AlertCircle size={18} /><span className="flex-1">{error}</span><button className={button} onClick={refresh}>Thử lại</button></div>}
+        {notice && <div role="status" className="flex items-center gap-2 rounded-xl border border-emerald-500/20 bg-emerald-500/10 p-4 text-sm text-emerald-200"><CheckCircle2 size={17} />{notice}</div>}
+        <div className="flex justify-between gap-3 text-xs text-zinc-500"><span>{tabs.find(t => t.id === tab)?.label}</span><span>{loadedAt ? `Cập nhật: ${date(loadedAt)}` : 'Đang tải dữ liệu'}</span></div>
+        {loading && <div className="flex items-center gap-3 py-6 text-sm text-zinc-400"><Loader2 size={18} className="animate-spin" />Đang tải dữ liệu quản trị…</div>}
+        {tab === 'overview' && summary && <>
+          <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-4">{[
+            ['Tổng tài khoản', number(summary.totalUsers), `${number(summary.admins)} quản trị viên · ${number(summary.newUsers)} tài khoản mới / 7 ngày`],
+            ['Lượt xem đã ghi nhận', number(summary.totalViews), 'Tổng tích lũy từ hệ thống thống kê'],
+            ['Yêu cầu chờ xử lý', number(summary.pendingRequests), 'Mở mục Yêu cầu phim để xử lý'],
+            ['Yêu cầu HTTP / 60 giây', number(summary.traffic.requests), `${number(summary.traffic.errors)} lỗi 5xx · Bộ đếm tiến trình hiện tại`],
+          ].map(([label, value, note]) => <section key={label} className={panel}><h2 className="text-sm text-zinc-400">{label}</h2><p className="my-3 text-3xl font-bold">{value}</p><p className="text-xs leading-relaxed text-zinc-500">{note}</p></section>)}</div>
+          <div className="grid gap-5 lg:grid-cols-2"><section className={panel}><h2 className="mb-5 text-lg font-semibold">Sức khỏe dịch vụ</h2><dl className="space-y-4 text-sm">{[['MongoDB', system?.mongo ? 'Kết nối tốt' : 'Mất kết nối'], ['Redis cache', system?.redis ? 'Kết nối tốt' : 'Mất kết nối'], ['Backend đã chạy', uptime(system!.uptimeSeconds)], ['Máy chủ đã chạy', uptime(system!.hostUptimeSeconds)], ['Phiên phát còn hạn', number(summary.unexpiredSessions)], ['Phiên bản backend', system!.release.slice(0, 12)]].map(([k, v]) => <div className="flex justify-between gap-4" key={k}><dt className="text-zinc-400">{k}</dt><dd className="break-all text-right">{v}</dd></div>)}</dl><p className="mt-5 text-xs leading-relaxed text-zinc-500">Phiên còn hạn có thể đã ngừng xem; đây không phải số người đang online.</p></section>
+          <section className={panel}><h2 className="mb-5 text-lg font-semibold">Tài nguyên máy chủ</h2><dl className="space-y-4 text-sm">{[['CPU logic', String(system!.cpuCores)], ['Tải CPU trung bình (1 / 5 / 15 phút)', system!.loadAverage.map(v => v.toFixed(2)).join(' / ')], ['RAM tổng / trống', `${bytes(system!.memoryTotal)} / ${bytes(system!.memoryFree)}`], ['RAM tiến trình backend (RSS)', bytes(system!.processRss)], ['Ổ đĩa tổng / còn trống', `${bytes(system!.diskTotal)} / ${bytes(system!.diskFree)}`], ['Node.js', system!.nodeVersion]].map(([k,v]) => <div className="flex justify-between gap-4" key={k}><dt className="text-zinc-400">{k}</dt><dd className="text-right">{v}</dd></div>)}</dl><a href="https://dapperunicycle1362.grafana.net/d/cinevn-playback/cinevn-playback-observability" target="_blank" rel="noopener noreferrer" className={`${button} mt-5 text-amber-300`}>Mở biểu đồ phát phim trên Grafana <ExternalLink size={14} /></a></section></div>
+        </>}
+        {tab === 'users' && <section className={panel}><div className="mb-5 flex flex-wrap items-end justify-between gap-3"><div><h2 className="text-lg font-semibold">Danh sách tài khoản</h2><p className="mt-1 text-sm text-zinc-500">{number(pagination.total)} kết quả · Không hiển thị mật khẩu hoặc thông tin kết nối riêng.</p></div><form className="flex flex-wrap gap-2" onSubmit={e => { e.preventDefault(); setSearch(query); setPage(1); }}><input aria-label="Tìm email hoặc tên người dùng" className={input} style={{width:240}} value={query} onChange={e => setQuery(e.target.value)} placeholder="Email hoặc tên người dùng" maxLength={100} /><select aria-label="Lọc vai trò" className={input} style={{width:150}} value={role} onChange={e => {setRole(e.target.value);setPage(1);}}><option value="">Tất cả vai trò</option><option value="admin">Quản trị viên</option><option value="user">Người dùng</option></select><button className={button} type="submit"><Search size={16} />Tìm</button></form></div><div className="overflow-x-auto"><table className="w-full text-left text-sm"><thead className="border-b border-white/10 text-xs uppercase text-zinc-500"><tr>{['Tài khoản','Email','Vai trò','Ngày tạo'].map(h=><th key={h} className="px-3 py-3">{h}</th>)}</tr></thead><tbody>{users.map(u=><tr key={u._id} className="border-b border-white/5"><td className="px-3 py-4 font-medium">{u.username || 'Chưa đặt tên'}</td><td className="px-3 py-4">{u.email || '—'}</td><td className="px-3 py-4"><span className={`rounded-full px-2.5 py-1 text-xs ${u.role==='admin'?'bg-amber-400/10 text-amber-300':'bg-white/5 text-zinc-400'}`}>{u.role==='admin'?'Quản trị viên':'Người dùng'}</span></td><td className="whitespace-nowrap px-3 py-4 text-zinc-400">{date(u.createdAt)}</td></tr>)}</tbody></table></div>{!loading && !users.length && <Empty text="Không tìm thấy tài khoản phù hợp." />}<Pagination value={pagination} page={page} setPage={setPage} disabled={loading} /></section>}
+        {tab === 'requests' && <MovieRequestsManager />}
+        {tab === 'sessions' && <section className={panel}><div className="mb-5 flex flex-wrap items-center justify-between gap-3"><div><h2 className="text-lg font-semibold">Các phiên phát</h2><p className="mt-1 text-sm text-zinc-500">Phiên còn hạn không đồng nghĩa với đang xem. Danh sách không chứa URL phim hay token.</p></div><select className={input} style={{width:190}} aria-label="Lọc phiên phát" value={scope} onChange={e=>{setScope(e.target.value);setPage(1);}}><option value="active">Còn hạn</option><option value="all">Tất cả</option></select></div><div className="overflow-x-auto"><table className="w-full text-left text-sm"><thead className="border-b border-white/10 text-xs uppercase text-zinc-500"><tr>{['Nội dung','Kiểu phát','Chuẩn bị','Tạo lúc','Hết hạn'].map(h=><th key={h} className="px-3 py-3">{h}</th>)}</tr></thead><tbody>{sessions.map(s=><tr key={s._id} className="border-b border-white/5"><td className="px-3 py-4"><div className="font-medium">{s.type==='tv'?'Phim bộ':'Phim lẻ'} · TMDB {s.tmdbId}</div>{s.type==='tv'&&<div className="mt-1 text-xs text-zinc-500">Mùa {s.season} · Tập {s.episode}</div>}</td><td className="px-3 py-4"><span className="rounded-md bg-white/5 px-2 py-1 text-xs">{s.mode || 'Chưa ghi nhận'}</span><div className="mt-1 text-xs text-zinc-500">{s.provider || '—'}</div></td><td className="px-3 py-4">{typeof s.progress==='number'?`${Math.max(0,Math.min(100,s.progress)).toFixed(0)}%`:'—'}</td><td className="whitespace-nowrap px-3 py-4 text-xs text-zinc-400">{date(s.createdAt)}</td><td className="whitespace-nowrap px-3 py-4 text-xs text-zinc-400">{date(s.expiresAt)}</td></tr>)}</tbody></table></div>{!loading&&!sessions.length&&<Empty text="Chưa có phiên phát trong phạm vi này." />}<Pagination value={pagination} page={page} setPage={setPage} disabled={loading} /></section>}
+        {tab === 'providers' && <div className="grid gap-5 lg:grid-cols-2"><section className={panel}><div className="flex justify-between gap-3"><h2 className="text-lg font-semibold">Kết nối TorBox</h2><span className={`rounded-full px-3 py-1 text-xs ${provider?.connected?'bg-emerald-500/10 text-emerald-300':'bg-white/5 text-zinc-400'}`}>{provider===null?'Chưa có dữ liệu':provider.connected?'Đã kết nối':'Chưa kết nối'}</span></div><dl className="my-6 space-y-4 text-sm"><div className="flex justify-between"><dt className="text-zinc-400">Chế độ cấp nguồn</dt><dd>{provider?.mode==='shared'?'Dùng chung toàn CineVN':provider?.mode==='personal'?'Theo tài khoản':'—'}</dd></div><div className="flex justify-between"><dt className="text-zinc-400">Key được che</dt><dd>{provider?.masked || '—'}</dd></div><div className="flex justify-between"><dt className="text-zinc-400">Gói dịch vụ</dt><dd>{provider?.plan ?? 'Chưa ghi nhận'}</dd></div></dl><p className="text-sm leading-relaxed text-zinc-400">Người xem đăng nhập để sử dụng nguồn đã cấu hình. Khả năng Direct Play và 4K phụ thuộc codec, thiết bị và tốc độ nguồn.</p></section><section className={panel}><h2 className="text-lg font-semibold">Cập nhật kết nối</h2><p className="my-3 text-sm leading-relaxed text-zinc-400">Key mới được kiểm tra trước khi thay kết nối hiện tại. Nhập trực tiếp tại đây; không gửi key trong chat.</p><form onSubmit={e=>{e.preventDefault();void action(async()=>{await providerAPI.connectTorbox(apiKey.trim());setApiKey('');},'Đã kiểm tra và lưu kết nối TorBox.');}}><label htmlFor="torbox-key" className="mb-2 block text-sm">API key TorBox</label><input id="torbox-key" className={input} type="password" autoComplete="off" value={apiKey} onChange={e=>setApiKey(e.target.value)} placeholder="Nhập key để kết nối hoặc thay key" /><button className={`${button} mt-4 bg-amber-400 text-black hover:bg-amber-300`} disabled={saving||loading||apiKey.trim().length<8||provider?.canManage!==true}>{saving?<Loader2 size={16} className="animate-spin" />:<ShieldCheck size={16} />}Kiểm tra & lưu kết nối</button></form></section></div>}
+        {tab === 'settings' && <div className="space-y-5"><div className="grid gap-5 lg:grid-cols-2"><section className={panel}><h2 className="text-lg font-semibold">Trải nghiệm duyệt phim</h2><p className="my-3 text-sm leading-relaxed text-zinc-400">Tự chạy trailer im lặng khi rê chuột giữ trên thẻ phim. Áp dụng toàn website.</p><button className={button} disabled={saving||loading} aria-pressed={hoverTrailer} onClick={()=>void action(()=>authClient.post('/admin/site-settings/hover-trailer',{enabled:!hoverTrailer}),`Đã ${hoverTrailer?'tắt':'bật'} xem trước trailer.`)}><span className={`h-2 w-2 rounded-full ${hoverTrailer?'bg-emerald-400':'bg-zinc-500'}`} />{hoverTrailer?'Đang bật · Bấm để tắt':'Đang tắt · Bấm để bật'}</button></section><section className={panel}><h2 className="text-lg font-semibold">Giới hạn API danh mục phim</h2><p className="my-3 text-sm leading-relaxed text-zinc-400">Tìm kiếm, trang chủ và chi tiết phim: số yêu cầu mỗi IP trong 60 giây. Không thay giới hạn resolve, phụ đề hay segment video.</p><form onSubmit={e=>{e.preventDefault();void action(()=>authClient.post('/admin/rate-limit',{limit:Number(draftLimit)}),'Đã lưu giới hạn API danh mục. Các tiến trình áp dụng trong tối đa 10 giây.');}}><label className="mb-2 block text-sm" htmlFor="catalog-limit">Giới hạn hiện tại: {number(limit)} yêu cầu/phút</label><div className="flex gap-3"><input id="catalog-limit" className={input} type="number" min={30} max={3000} step={1} required value={draftLimit} onChange={e=>setDraftLimit(e.target.value)} /><button className={`${button} shrink-0 bg-amber-400 text-black`} disabled={saving||loading||!Number.isInteger(Number(draftLimit))||Number(draftLimit)<30||Number(draftLimit)>3000}>Lưu</button></div><p className="mt-2 text-xs text-zinc-500">Mặc định 120 · Cho phép 30–3000 · Được lưu trên máy chủ.</p></form></section></div><section className={panel}><h2 className="mb-4 text-lg font-semibold">Lịch sử thay đổi cấu hình</h2><p className="mb-4 text-sm text-zinc-500">50 thay đổi gần nhất về trailer và giới hạn API, ghi nhận từ khi nâng cấp trang quản trị.</p><div className="space-y-3">{audit.map(row=><div key={row._id} className="flex flex-wrap justify-between gap-2 border-b border-white/5 pb-3 text-sm"><div>{row.action==='hover-trailer'?`${row.details?.enabled?'Bật':'Tắt'} xem trước trailer`:row.action==='catalog-rate-limit'?`Đặt giới hạn danh mục: ${row.details?.limit} yêu cầu/phút`:row.action}<p className="mt-1 text-xs text-zinc-500">Tài khoản thực hiện: {row.actor}</p></div><time className="text-xs text-zinc-500">{date(row.createdAt)}</time></div>)}</div>{!audit.length&&!loading&&<Empty text="Chưa có thay đổi cấu hình được ghi nhận." />}</section></div>}
+      </div>
+    </main>
+  );
 }
+function Empty({text}:{text:string}) { return <p className="py-10 text-center text-sm text-zinc-500">{text}</p>; }
+function Pagination({value,page,setPage,disabled}:{value:Page;page:number;setPage:(page:number)=>void;disabled:boolean}) { return <div className="mt-5 flex items-center justify-between gap-3 text-sm text-zinc-400"><span>{number(value.total)} kết quả · Trang {page}/{value.pages}</span><div className="flex gap-2"><button aria-label="Trang trước" className={button} onClick={()=>setPage(page-1)} disabled={disabled||page<=1}><ChevronLeft size={16} /></button><button aria-label="Trang sau" className={button} onClick={()=>setPage(page+1)} disabled={disabled||page>=value.pages}><ChevronRight size={16} /></button></div></div>; }

@@ -1,4 +1,4 @@
-import { cached } from '../config/redis.js';
+import { cached, setCache } from '../config/redis.js';
 import { getDB } from '../config/database.js';
 
 /**
@@ -22,4 +22,5 @@ export const setSiteSetting = async (key, enabled) => {
     { $set: { enabled: Boolean(enabled), updatedAt: new Date() } },
     { upsert: true },
   );
+  await setCache(`site:setting:${key}`, Boolean(enabled), 60);
 };
