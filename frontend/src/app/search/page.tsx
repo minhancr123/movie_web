@@ -69,11 +69,19 @@ export default async function SearchPage({ searchParams }: SearchPageProps) {
       )}
 
       {items.length > 0 && (
-        <div className="grid grid-cols-2 gap-4 md:grid-cols-4 lg:grid-cols-5 md:gap-6">
-          {items.map((item) => (
-            <CatalogCard key={item.contentRef} item={item} />
-          ))}
-        </div>
+        <>
+          <div className="grid grid-cols-2 gap-4 md:grid-cols-4 lg:grid-cols-5 md:gap-6">
+            {items.map((item) => (
+              <CatalogCard key={item.contentRef} item={item} />
+            ))}
+          </div>
+          {/* Results often contain near-misses, and clicking one of those cards
+              leaves for a detail page — the request path must be reachable
+              here too, not only on the zero-results screen. */}
+          <div className="mt-10">
+            <MovieRequestTrigger keyword={keyword} compact />
+          </div>
+        </>
       )}
 
       {pagination.totalPages > 1 && (
