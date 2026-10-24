@@ -32,6 +32,37 @@ const toMs = (h, m, s, ms) =>
   Number(h) * 3600000 + Number(m) * 60000 + Number(s) * 1000 + Number(String(ms).padEnd(3, '0').slice(0, 3));
 
 /**
+ * Parse SSA/ASS ([Events] Dialogue lines) into cues. Stremio addons relay
+ * OpenSubtitles downloads, which are frequently .ssa — without this the
+ * proxy emitted a 0-cue VTT and the browser showed nothing for that track.
+ */
+export const parseSsa = (text) => {
+  const clean = String(text || '').replace(/^\uFEFF/, '').replace(/\r\n?/g, '\n');
+  const cues = [];
+  for (const line of clean.split('\n')) {
+    const m = line.match(/^dialogue:\s*[^,]*,\s*(\d+):(\d{1,2}):(\d{1,2})[.,](\d{1,3})\s*,\s*(\d+):(\d{1,2}):(\d{1,2})[.,](\d{1,3})\s*,(.*)$/i);
+    if (!m) continue;
+    const start = toMs(m[1], m[2], m[3], m[4]);
+    const end = toMs(m[5], m[6], m[7], m[8]);
+    // After layer+start+end the Dialogue line still carries
+    // style,name,marginL,marginR,marginV,effect (6 fields, so 6 commas)
+    // before the text — and the text itself may contain commas, so join the
+    // tail back together instead of splitting it.
+    let content = m[9] || '';
+    const parts = content.split(',');
+    if (parts.length > 6) content = parts.slice(6).join(',');
+    content = content.replace(/\{[^}]*\}/g, '').replace(/\\N/gi, '\n').trim();
+    if (!Number.isFinite(start) || !Number.isFinite(end) || end <= start) continue;
+    if (!content) continue;
+    cues.push({ start, end, text: content });
+  }
+  if (cues.length === 0) {
+    throw new Error('File SSA/ASS không đọc được câu phụ đề nào');
+  }
+  return cues;
+};
+
+/**
  * Parse SRT text into cues, or throw a viewer-readable reason. Pure and
  * strict on structure, lenient on content: sequence numbers optional,
  * positions/ass tags kept for the text cleaner downstream, but at least one
@@ -72,7 +103,10 @@ const fmtVttTs = (ms) => {
   return `${pad(h, 2)}:${pad(m, 2)}:${pad(s, 2)}.${pad(r, 3)}`;
 };
 
-/** SRT text (or already-VTT) → WebVTT document. Throws viewer-readable reasons. */
+const serializeVtt = (cues) =>
+  `WEBVTT\n\n${cues.map((c) => `${fmtVttTs(c.start)} --> ${fmtVttTs(c.end)}\n${c.text}`).join('\n\n')}\n`;
+
+/** SRT/VTT/SSA/ASS text → WebVTT document. Throws viewer-readable reasons. */
 export const toVttDocument = (text, filename = '') => {
   const raw = String(text || '');
   if (Buffer.byteLength(raw, 'utf8') > UPLOAD_MAX_BYTES) {
@@ -86,8 +120,10 @@ export const toVttDocument = (text, filename = '') => {
     if (cues.length === 0) throw new Error('Không đọc được khung giờ nào trong file .vtt');
     return raw.replace(/^\uFEFF/, '').replace(/\r\n?/g, '\n').trim() + '\n';
   }
-  const cues = parseSrt(raw);
-  return `WEBVTT\n\n${cues.map((c) => `${fmtVttTs(c.start)} --> ${fmtVttTs(c.end)}\n${c.text}`).join('\n\n')}\n`;
+  if (/\[Events\]/i.test(raw) || /\.(ssa|ass)$/i.test(filename)) {
+    return serializeVtt(parseSsa(raw));
+  }
+  return serializeVtt(parseSrt(raw));
 };
 
 export const uploadKey = ({ userId, tmdbId, season = null, episode = null }) =>

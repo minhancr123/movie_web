@@ -101,7 +101,13 @@ const SUB_NAME_MAX = 120;
 export const subtitleVariantName = (subtitle, url = '') => {
   const raw = subtitle?.name ?? subtitle?.title ?? subtitle?.SubFileName ?? '';
   const stated = String(raw).replace(/\s+/g, ' ').trim();
-  if (stated) return stated.slice(0, SUB_NAME_MAX);
+  // Addons sometimes stamp an internal id (base64 JSON, hex, uuid) into
+  // name/title. A long separator-free blob is an id dressed up as a release
+  // name and reads as garbage in the menu; real names carry dots, dashes,
+  // underscores or spaces (or are short words).
+  const junkId = stated.length >= 16 && !/\s/.test(stated) && !/[._-]/.test(stated)
+    || /^eyj/i.test(stated);
+  if (stated && !junkId) return stated.slice(0, SUB_NAME_MAX);
   return releaseNameFromUrl(url).slice(0, SUB_NAME_MAX);
 };
 
@@ -317,7 +323,12 @@ export const releaseSimilarity = (subRelease, fileName) => {
  * library. Failing both, the bare counter this always used to be.
  */
 export const subtitleVariantLabel = ({ base, name = '', source = '', index = 1 } = {}) => {
-  const clean = String(name).trim();
+  // Same id-blob rule as subtitleVariantName, applied at render time: names
+  // cached from an inventory built before that filter still arrive here.
+  const rawClean = String(name).trim();
+  const junkId = rawClean.length >= 16 && !/\s/.test(rawClean) && !/[._-]/.test(rawClean)
+    || /^eyj/i.test(rawClean);
+  const clean = junkId ? '' : rawClean;
   // A "name" that only repeats the language describes nothing.
   if (clean && clean.toLowerCase() !== String(base).toLowerCase()) return `${base} · ${clean}`;
   const host = String(source).trim();
@@ -383,14 +394,20 @@ const fetchSubtitlesFromAddon = async (addon, type, id, hints = {}) => {
   const url = buildSubtitleUrl(addon, type, id, hints);
   const payload = await safeFetchJson(url, { timeoutMs: SUBTITLE_REQUEST_TIMEOUT_MS });
   const tracks = normalizeSubtitlePayload(payload, host);
-  if (host !== 'api3.subdl.com') return tracks;
-  // SubDL action links expire independently of the cached inventory. Fetch
-  // them immediately and keep validated text behind our existing VTT tokens.
+  // Every addon's sidecars are fetched and re-serialized up front, not just
+  // SubDL's: OpenSubtitles relays serve raw .ssa the browser cannot parse and
+  // action links that expire while still cached in an inventory. Behind our
+  // VTT tokens every track becomes CORS-free, SSA included, and one that
+  // barely parses (<3 cues) is dropped instead of pinning the sync
+  // measurement floor and reading as a broken track.
   const settled = await Promise.allSettled(tracks.map(async (track) => {
     const raw = await safeFetchText(track.url, { timeoutMs: SUBTITLE_REQUEST_TIMEOUT_MS });
     // Re-serialize also normalizes ASS-converted 0:12:00 timestamps to VTT's
     // 00:12:00, which the current production player understands.
     const body = normalizeAddonSubtitle(raw);
+    if ((String(body).match(/-->/g) || []).length < 3) {
+      throw new Error('sidecar không đủ câu phụ đề');
+    }
     const token = crypto.randomBytes(32).toString('hex');
     await setCache(`playback:sub:${token}`, { body }, SUBTITLE_CACHE_TTL + 86400);
     return { ...track, url: `/api/playback/subtitles/vtt/${token}` };
