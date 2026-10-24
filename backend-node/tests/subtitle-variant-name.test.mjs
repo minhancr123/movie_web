@@ -25,7 +25,9 @@ assert.equal(one({ title: 'WEBDL.2160p.HDR' }).name, 'WEBDL.2160p.HDR', 'title i
 assert.equal(one({ SubFileName: 'Oak.Street.2026.srt' }).name, 'Oak.Street.2026.srt', 'OpenSubtitles spelling');
 assert.equal(one({ name: '  spaced  ' }).name, 'spaced', 'trimmed');
 assert.equal(one({}).name, '', 'addons that say nothing stay silent, not "undefined"');
-assert.equal(one({ name: 'x'.repeat(300) }).name.length, 120, 'capped so one addon cannot flood the menu');
+assert.equal(one({ name: 'Film.Release.'.repeat(30) }).name.length, 120, 'capped so one addon cannot flood the menu');
+assert.equal(one({ name: 'a'.repeat(64) }).name, '', 'opaque id blobs are not release names');
+assert.equal(one({ name: 'eyJmb28iOiJiYXIifQ==' }).name, '', 'base64 identifiers stay out of labels');
 // Control characters would break the label in the UI.
 assert.equal(one({ name: 'a\nb\tc' }).name, 'a b c', 'newlines and tabs collapsed');
 
