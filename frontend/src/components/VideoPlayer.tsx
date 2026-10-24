@@ -20,7 +20,7 @@ import { PlaybackClock, sendPlaybackEvent } from '@/lib/playback-telemetry';
 import {
     fetchCues, activeCues,
     isEmbeddedTrack, trackSource, isViTrack, isEnTrack, isReadyTrack,
-    pickAutoSubtitle, pickBestViTrack, autoSubtitleRank, sortSubtitleMenu, subtitleWindowNeedsRefresh,
+    pickAutoSubtitle, pickBestViTrack, autoSubtitleRank, sortSubtitleMenu, subtitleWindowNeedsRefresh, pickEmbeddedReference, pickValidatedViTrack,
     type SubCue, type SubTrack,
 } from '@/lib/subtitles';
 import { computeResumeAt, pickDisplayDuration, decideSeekTarget, nextRemuxWindowAt, planResume, shouldDowngradeForDropped, subtitleLookupTime, classifyStartAt, toLocalSeekTarget } from '@/lib/playback-progress';
@@ -357,6 +357,8 @@ export default function VideoPlayer({ src, playbackStartedAt, movie, episode, au
     // may be replaced when a better (file-matched) list arrives. A manual
     // choice always sticks, even if an embedded track shows up later.
     const autoSubRef = useRef(true);
+    const validatedAutoSubRef = useRef<string | null>(null);
+    const [subtitleReferenceId, setSubtitleReferenceId] = useState<string | null>(null);
     // Timing base of the auto-picked track. An online pick upgrades to an
     // embedded one; anything else never moves on its own.
     const autoSubSourceRef = useRef<string | null>(null);
@@ -627,7 +629,10 @@ export default function VideoPlayer({ src, playbackStartedAt, movie, episode, au
             }
             if (pref) return; // already on it — do not let ranking yank it off
         }
-        const best = pickAutoSubtitle(tracks);
+        const validated = tracks.find(t => t.id === validatedAutoSubRef.current && isReadyTrack(t));
+        const ranked = pickAutoSubtitle(tracks);
+        const fileMatchedVi = ranked && isViTrack(ranked) && (isEmbeddedTrack(ranked) || ranked.matched);
+        const best = fileMatchedVi ? ranked : validated || ranked;
         if (!best) return;
         if (currentId === 'off' || currentId === '') {
             autoSubSourceRef.current = trackSource(best);
@@ -636,7 +641,7 @@ export default function VideoPlayer({ src, playbackStartedAt, movie, episode, au
             return;
         }
         const current = tracks.find((t) => t.id === currentId);
-        if (best.id !== currentId && autoSubtitleRank(best) > autoSubtitleRank(current)) {
+        if (best.id !== currentId && (validated || autoSubtitleRank(best) > autoSubtitleRank(current))) {
             autoSubSourceRef.current = trackSource(best);
             setSelectedSub(best.id);
             void ensureCues(best);
@@ -778,6 +783,9 @@ export default function VideoPlayer({ src, playbackStartedAt, movie, episode, au
             subRequestInFlightEpochRef.current = null;
             subRequestFullAfterRef.current = false;
             autoSubRef.current = true;
+            validatedAutoSubRef.current = null;
+            setSubtitleReferenceId(null);
+            setSubScores({});
             autoSubSourceRef.current = null;
             selectedSubRef.current = 'off';
             setSubTracks([]);
@@ -813,6 +821,14 @@ export default function VideoPlayer({ src, playbackStartedAt, movie, episode, au
         const timer = setTimeout(() => void loadSubtitleInventory(false), 800);
         return () => clearTimeout(timer);
     }, [loadSubtitleInventory]);
+
+    // Once playback is established, prepare a bounded embedded reference in
+    // the background so Vietnamese validation does not require opening Settings.
+    useEffect(() => {
+        if (currentTime < 5 || videoRef.current?.paused || subLoadModeRef.current !== 'external') return;
+        if (!subTracks.some(t => isViTrack(t) && !isEmbeddedTrack(t))) return;
+        void loadSubtitleInventory(true);
+    }, [currentTime, subTracks, loadSubtitleInventory]);
 
     // No client-side audio default: the backend picks the film's own language
     // (TMDB original_language matched against ffprobe tags, English fallback)
@@ -873,21 +889,21 @@ export default function VideoPlayer({ src, playbackStartedAt, movie, episode, au
     // a URL appears so subtitles appear as soon as the file is readable.
     useEffect(() => {
         const silentRef = !bilingual
-            ? subTracks.find((t) => t.source === 'embedded' && t.ready !== false && t.url
-                && t.language?.toLowerCase().startsWith('en') && t.id !== selectedSub)
+            ? subTracks.find((t) => t.id === subtitleReferenceId)
+                || subTracks.find((t) => isEmbeddedTrack(t) && isEnTrack(t) && t.ready !== false && t.url && t.id !== selectedSub)
             : undefined;
         for (const id of [selectedSub, ...(bilingual ? [secondarySub] : []), ...(silentRef ? [silentRef.id] : [])]) {
             const track = subTracks.find(t => t.id === id);
             if (track?.url && (!cueCache[track.id] || cueWindowRef.current[track.id] !== `${track.windowStart}:${track.url}`)) void ensureCues(track);
         }
         // eslint-disable-next-line react-hooks/exhaustive-deps
-    }, [selectedSub, secondarySub, bilingual, subTracks, cueCache]);
+    }, [selectedSub, secondarySub, bilingual, subTracks, cueCache, subtitleReferenceId]);
 
     useEffect(() => {
         const timer = setInterval(() => {
             const video = videoRef.current;
             if (!video || video.paused || restorePendingRef.current || subJobId) return;
-            const silentRef = !bilingual ? subTracks.find(t => isEmbeddedTrack(t) && isEnTrack(t))?.id : undefined;
+            const silentRef = !bilingual ? subtitleReferenceId || subTracks.find(t => isEmbeddedTrack(t) && isEnTrack(t))?.id : undefined;
             const selectedTracks = [selectedSub, ...(bilingual ? [secondarySub] : []), ...(silentRef ? [silentRef] : [])];
             if (selectedTracks.some(id => subtitleWindowNeedsRefresh(
                 subTracks.find(t => t.id === id), sessionStartAt + video.currentTime))) {
@@ -896,7 +912,7 @@ export default function VideoPlayer({ src, playbackStartedAt, movie, episode, au
             }
         }, 10000);
         return () => clearInterval(timer);
-    }, [selectedSub, secondarySub, bilingual, subTracks, sessionStartAt, subJobId, loadSubtitleInventory]);
+    }, [selectedSub, secondarySub, bilingual, subTracks, sessionStartAt, subJobId, loadSubtitleInventory, subtitleReferenceId]);
 
     const ensureCues = useCallback(async (track: SubTrack): Promise<SubCue[] | undefined> => {
         if (!track.url) return;
@@ -1107,7 +1123,8 @@ export default function VideoPlayer({ src, playbackStartedAt, movie, episode, au
     useEffect(() => {
         const primary = subTracks.find(t => t.id === selectedSub);
         const partner = bilingual ? subTracks.find(t => t.id === secondarySub)
-            : subTracks.find(t => isEmbeddedTrack(t) && isEnTrack(t) && t.ready !== false && t.url && t.id !== selectedSub);
+            : subTracks.find(t => t.id === subtitleReferenceId && t.id !== selectedSub)
+                || subTracks.find(t => isEmbeddedTrack(t) && isEnTrack(t) && t.ready !== false && t.url && t.id !== selectedSub);
         const pair = `${subContext?.sourceToken}|${selectedSub}|${partner?.id}|${bilingual}`;
         if (autoSyncedPairRef.current !== pair) {
             autoSyncedPairRef.current = pair;
@@ -1140,41 +1157,41 @@ export default function VideoPlayer({ src, playbackStartedAt, movie, episode, au
         setSyncReport({ trackId: target.id, offset: mapping.offset, slope: mapping.slope,
             corrected: true, confident: true, matchRate: result.matchRate });
         // eslint-disable-next-line react-hooks/exhaustive-deps
-    }, [bilingual, secondarySub, selectedSub, cueCache, subTracks, subDelay, subContext?.sourceToken]);
+    }, [bilingual, secondarySub, selectedSub, cueCache, subTracks, subDelay, subContext?.sourceToken, subtitleReferenceId]);
 
-    // Score full external subtitles only within the embedded reference's real
-    // coverage. Await returned cues, never a stale render's cueCache snapshot.
-    const probedKeyRef = useRef('');
+    // Validate readable Vietnamese candidates even when the source has no
+    // English subtitles. A full French/Japanese/etc. dialogue track can supply
+    // timing boundaries; sparse signs tracks cannot prove a match.
     useEffect(() => {
         const viTracks = subTracks.filter(t => t.ready !== false && t.url && !isEmbeddedTrack(t) && isViTrack(t));
-        const reference = subTracks.find(t => isEmbeddedTrack(t) && isEnTrack(t) && t.ready !== false && t.url);
-        if (!viTracks.length || !reference) return;
-        const key = `${subContext?.sourceToken}|${reference.id}|${reference.windowStart}|${reference.url}|${viTracks.map(t => t.id).join(',')}`;
-        if (probedKeyRef.current === key) return;
+        const references = subTracks.filter(t => isEmbeddedTrack(t) && t.ready !== false && t.url);
+        if (!viTracks.length) return;
         let cancelled = false;
         void (async () => {
-            const referenceCues = await ensureCues(reference);
-            if (cancelled || !referenceCues?.length) return;
-            const scores: Record<string, { matchRate: number; offset: number; confident: boolean }> = {};
-            for (const track of viTracks) {
-                const cues = await ensureCues(track);
-                if (cancelled) return;
-                if (!cues?.length) continue;
-                const result = measureSubtitleAlignment(cues, referenceCues, reference);
-                if (result) scores[track.id] = { matchRate: result.matchRate, offset: result.offset, confident: result.confident };
-            }
+            const loaded = await Promise.all([...references, ...viTracks].map(async track =>
+                [track.id, await ensureCues(track)] as const));
             if (cancelled) return;
-            probedKeyRef.current = key;
+            const cues: Record<string, SubCue[]> = {};
+            for (const [id, value] of loaded) if (value) cues[id] = value;
+            const reference = pickEmbeddedReference(references, cues);
+            setSubtitleReferenceId(reference?.id || null);
+            const scores: Record<string, { matchRate: number; offset: number; confident: boolean }> = {};
+            if (reference) for (const track of viTracks) {
+                const result = measureSubtitleAlignment(cues[track.id] || [], cues[reference.id], reference);
+                if (result) scores[track.id] = result;
+            }
             setSubScores(scores);
             if (!autoSubRef.current || readSubPref()) return;
-            const current = scores[selectedSub];
-            if (current?.confident) return;
-            const bestId = Object.entries(scores).filter(([, result]) => result.confident
-                && result.matchRate >= (current?.matchRate || 0) + 0.2)
-                .sort((a, b) => b[1].matchRate - a[1].matchRate)[0]?.[0];
-            if (bestId && bestId !== selectedSub) {
-                pickSubtitle(bestId);
-                showSyncToast('Đã chọn bản Việt có mốc câu gần phụ đề nhúng hơn; hãy kiểm tra với lời thoại.');
+            const best = pickValidatedViTrack(subTracks, cues, scores, selectedSub);
+            if (best && best.id !== selectedSub) {
+                validatedAutoSubRef.current = best.id;
+                autoSubSourceRef.current = trackSource(best);
+                setSelectedSub(best.id);
+                // This is still an automatic pick. Never persist it as a
+                // viewer preference or prevent later evidence from improving it.
+                showSyncToast(scores[best.id]?.confident
+                    ? 'Đã chọn bản Việt có mốc câu gần phụ đề nhúng hơn; hãy kiểm tra với lời thoại.'
+                    : 'Đã chuyển sang bản Việt có nội dung; bản trước không đọc được câu phụ đề.');
             }
         })();
         return () => { cancelled = true; };

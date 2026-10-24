@@ -29,7 +29,7 @@ execFileSync(
   { cwd: root, stdio: 'pipe' },
 );
 
-const { isReadyTrack, isEmbeddedTrack, isViTrack, pickBestViTrack, pickAutoSubtitle, autoSubtitleRank, subtitleWindowNeedsRefresh } = await import(
+const { isReadyTrack, isEmbeddedTrack, isViTrack, pickBestViTrack, pickAutoSubtitle, autoSubtitleRank, subtitleWindowNeedsRefresh, pickEmbeddedReference, pickValidatedViTrack } = await import(
   pathToFileURL(path.join(outDir, 'subtitles.js')).href,
 );
 process.on('exit', () => rmSync(outDir, { recursive: true, force: true }));
@@ -85,4 +85,31 @@ test('embedded slices refresh with overlap after forward/backward seeks; externa
   assert.equal(subtitleWindowNeedsRefresh(track, 720), true);
   assert.equal(subtitleWindowNeedsRefresh(track, 599), true);
   assert.equal(subtitleWindowNeedsRefresh({ ...track, source: 'external' }, 1000), false);
+});
+
+
+test('a full French reference beats an English signs-only stream', () => {
+  const signs = { id: 'en-signs', language: 'eng', source: 'embedded', url: '/signs' };
+  const dialogue = { id: 'fr-dialogue', language: 'fre', source: 'embedded', url: '/dialogue' };
+  assert.equal(pickEmbeddedReference([signs, dialogue], { 'en-signs': Array(3).fill({}), 'fr-dialogue': Array(68).fill({}) })?.id, dialogue.id);
+  assert.equal(pickEmbeddedReference([signs], { 'en-signs': Array(3).fill({}) }), undefined);
+});
+test('measured Vietnamese dialogue replaces empty online candidates and stays selected', () => {
+  const empty = { id: 'vi-empty', language: 'vie', url: '/ssa' };
+  const good = { id: 'vi-good', language: 'vie', url: '/srt' };
+  const cues = { 'vi-empty': [], 'vi-good': [{ start: 157, end: 160, text: 'Dialogue' }] };
+  const scores = { 'vi-good': { confident: true, matchRate: 0.82, offset: 0.156 } };
+  assert.equal(pickValidatedViTrack([empty, good], cues, scores, empty.id)?.id, good.id);
+  assert.equal(pickValidatedViTrack([empty, good], cues, scores, good.id)?.id, good.id);
+  assert.equal(pickValidatedViTrack([empty, good], cues, {}, empty.id)?.id, good.id);
+  assert.equal(pickValidatedViTrack([empty, good], { 'vi-good': cues['vi-good'] }, {}, empty.id), undefined, 'failed or pending response is not a confirmed empty track');
+});
+test('weak timing evidence does not displace readable Vietnamese or an exact match', () => {
+  const current = { id: 'current', language: 'vi', url: '/current' };
+  const other = { id: 'other', language: 'vi', url: '/other' };
+  const cues = { current: [{ start: 1, end: 2, text: 'a' }], other: [{ start: 1, end: 2, text: 'b' }] };
+  const scores = { other: { confident: false, matchRate: 0.6, offset: 5 } };
+  assert.equal(pickValidatedViTrack([current, other], cues, scores, current.id), undefined);
+  assert.equal(pickValidatedViTrack([{ ...current, matched: true }, other], cues,
+    { other: { confident: true, matchRate: 0.9, offset: 0 } }, current.id)?.id, current.id);
 });

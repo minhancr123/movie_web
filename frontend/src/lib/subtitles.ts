@@ -107,6 +107,32 @@ export const pickAutoSubtitle = (tracks: SubTrack[]): SubTrack | undefined =>
   tracks.reduce<SubTrack | undefined>((best, track) =>
     autoSubtitleRank(track) > autoSubtitleRank(best) ? track : best, undefined);
 
+/** Prefer a complete dialogue reference over a sparse signs/forced track.
+ * English is a tie-breaker only: timings also work across other languages.
+ */
+export const pickEmbeddedReference = (tracks: SubTrack[], cues: Record<string, SubCue[]>) =>
+  tracks.filter(t => isEmbeddedTrack(t) && t.ready !== false && t.url && (cues[t.id]?.length || 0) >= 8)
+    .sort((a, b) => (cues[b.id]?.length || 0) - (cues[a.id]?.length || 0)
+      || Number(isEnTrack(b)) - Number(isEnTrack(a)))[0];
+
+export type SubtitleScore = { matchRate: number; offset: number; confident: boolean };
+/** Loaded empty responses must never beat readable dialogue. Unknown/failed
+ * responses stay unknown; a manual choice is handled separately by the player.
+ */
+export const pickValidatedViTrack = (tracks: SubTrack[], cues: Record<string, SubCue[]>,
+  scores: Record<string, SubtitleScore>, currentId: string) => {
+  const viable = tracks.filter(t => isViTrack(t) && t.ready !== false && t.url && cues[t.id]?.length);
+  const current = viable.find(t => t.id === currentId);
+  if (current && (isEmbeddedTrack(current) || current.matched || scores[current.id]?.confident)) return current;
+  const measured = viable.filter(t => scores[t.id]?.confident)
+    .sort((a, b) => scores[b.id].matchRate - scores[a.id].matchRate
+      || Math.abs(scores[a.id].offset) - Math.abs(scores[b.id].offset))[0];
+  if (measured) return measured;
+  // With no timing evidence, only replace a confirmed empty response.
+  if (cues[currentId]?.length === 0) return pickBestViTrack(viable);
+  return undefined;
+};
+
 const TS = '(\\d{2,}):(\\d{2}):(\\d{2})[.,](\\d{3})';
 const TS_SHORT = '(\\d{2}):(\\d{2})[.,](\\d{3})';
 
