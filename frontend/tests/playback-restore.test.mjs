@@ -102,3 +102,21 @@ test('a seek snapped backwards times out instead of playing the prefix', async (
   assert.equal(ready, 0);
   assert.equal(media.paused, true);
 });
+
+// Safari can deliver the first frame while paused without a canplay event.
+test('native first frame loadeddata releases zero-origin restore without waiting for canplay', () => {
+  const media = new Media(); let ready = 0;
+  const cancel = restoreBeforePlayback(media, 0, { ready: () => ready++, failed: () => assert.fail() });
+  media.readyState = 1; media.event('loadedmetadata'); assert.equal(ready, 0);
+  media.readyState = 2; media.position = 0.083; media.event('loadeddata');
+  assert.equal(ready, 1); assert.deepEqual(media.assignments, []); cancel();
+});
+
+test('a Safari seeked event at metadata-only state settles when loadeddata brings the destination frame', () => {
+  const media = new Media(); media.readyState = 1; let ready = 0;
+  const cancel = restoreBeforePlayback(media, 98.911, { ready: () => ready++, failed: () => assert.fail() });
+  media.position = 98.911; media.seeking = false; media.event('seeked');
+  assert.equal(ready, 0);
+  media.readyState = 2; media.event('loadeddata');
+  assert.equal(ready, 1); cancel();
+});

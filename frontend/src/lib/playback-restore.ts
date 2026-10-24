@@ -17,7 +17,7 @@ export const restoreBeforePlayback = (video: RestoreMedia, target: number, optio
   let cancelled = false;
   let assigned = false;
   let seekFinished = false;
-  const events = ['loadedmetadata', 'progress', 'seeked', 'canplay', 'timeupdate'];
+  const events = ['loadedmetadata', 'loadeddata', 'progress', 'seeked', 'canplay', 'timeupdate'];
   let timer: ReturnType<typeof setTimeout>;
   const cleanup = () => {
     cancelled = true;

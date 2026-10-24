@@ -3,6 +3,7 @@
 import React, { useEffect, useRef, useState, useCallback } from 'react';
 import { createPortal } from 'react-dom';
 import { enterCssFullscreen } from '@/lib/css-fullscreen';
+import { observeBuffering } from '@/lib/media-buffering';
 import Hls from 'hls.js';
 import { SeekPreview, TimelineSkip, NextEpisodePrompt, RememberedIntroSkip } from './PlaybackExtras';
 import SubtitleSyncGuide from './SubtitleSyncGuide';
@@ -1263,7 +1264,6 @@ export default function VideoPlayer({ src, playbackStartedAt, movie, episode, au
     }, [src, retryKey]);
 
     const controlsTimeoutRef = useRef<NodeJS.Timeout | undefined>(undefined);
-    const loadingTimeoutRef = useRef<NodeJS.Timeout | undefined>(undefined);
     const { history, addToHistory } = useWatchHistory();
 
     const toggleSettings = () => {
@@ -1997,29 +1997,12 @@ export default function VideoPlayer({ src, playbackStartedAt, movie, episode, au
             void saveProgressRef.current?.(true);
         };
         const handleWaiting = () => {
-            if (video.paused) return;
-            armStallTimer();
-            if (loadingTimeoutRef.current) clearTimeout(loadingTimeoutRef.current);
-            loadingTimeoutRef.current = setTimeout(() => {
-                setIsLoading(true);
-            }, 600);
+            if (!video.paused) armStallTimer();
         };
-        const handlePlaying = () => {
-            armStallTimer();
-            if (loadingTimeoutRef.current) {
-                clearTimeout(loadingTimeoutRef.current);
-                loadingTimeoutRef.current = undefined;
-            }
-            setIsLoading(false);
-        };
-        const handleCanPlay = () => {
-            armStallTimer();
-            if (loadingTimeoutRef.current) {
-                clearTimeout(loadingTimeoutRef.current);
-                loadingTimeoutRef.current = undefined;
-            }
-            setIsLoading(false);
-        };
+        const handlePlaying = () => armStallTimer();
+        const handleCanPlay = () => armStallTimer();
+        const stopBufferingObserver = observeBuffering(video, setIsLoading,
+            () => restorePendingRef.current);
         const handleEnded = () => {
             clearStallTimer();
             const next = nextRemuxWindowAt(sessionStartAt, video.currentTime, durationSeconds || 0, windowSeconds);
@@ -2059,10 +2042,7 @@ export default function VideoPlayer({ src, playbackStartedAt, movie, episode, au
         video.addEventListener('ended', handleEnded);
 
         return () => {
-            if (loadingTimeoutRef.current) {
-                clearTimeout(loadingTimeoutRef.current);
-                loadingTimeoutRef.current = undefined;
-            }
+            stopBufferingObserver();
             clearStallTimer();
             video.removeEventListener('timeupdate', handleTimeUpdate);
             video.removeEventListener('durationchange', handleDurationChange);
