@@ -4171,7 +4171,7 @@ export const heartbeatPlaybackSession = async (req, res) => {
       return fail(res, 403, 'Không có quyền truy cập phiên phát này');
     }
     registerSessionViewer(sessionId, viewerId);
-    if (session?.adoptedFromSessionId) registerSessionViewer(playbackSession.adoptedFromSessionId, viewerId);
+    if (session?.adoptedFromSessionId) registerSessionViewer(session.adoptedFromSessionId, viewerId);
     // A published session serves shared immutable bytes: pin its rendition
     // with the same lease so budget eviction cannot delete what is playing.
     // Live remux rows carry renditionKey (not publishedRenditionId), so fall
@@ -4208,7 +4208,7 @@ export const leavePlaybackSession = async (req, res) => {
       return fail(res, 403, 'Không có quyền truy cập phiên phát này');
     }
     const remaining = removeSessionViewer(sessionId, viewerId);
-    if (session?.adoptedFromSessionId) removeSessionViewer(playbackSession.adoptedFromSessionId, viewerId);
+    if (session?.adoptedFromSessionId) removeSessionViewer(session.adoptedFromSessionId, viewerId);
     const leaveRenditionId = session.publishedRenditionId || session.renditionKey;
     if (leaveRenditionId) unpinRenditionViewer(leaveRenditionId, viewerId);
     return res.json({ success: true, data: { ok: true, remaining } });
