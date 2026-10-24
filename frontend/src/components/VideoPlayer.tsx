@@ -18,7 +18,7 @@ import { PlaybackClock, sendPlaybackEvent } from '@/lib/playback-telemetry';
 import {
     fetchCues, activeCues,
     isEmbeddedTrack, trackSource, isViTrack, isEnTrack, isReadyTrack,
-    pickAutoSubtitle, autoSubtitleRank, sortSubtitleMenu, subtitleWindowNeedsRefresh,
+    pickAutoSubtitle, pickBestViTrack, autoSubtitleRank, sortSubtitleMenu, subtitleWindowNeedsRefresh,
     type SubCue, type SubTrack,
 } from '@/lib/subtitles';
 import { computeResumeAt, pickDisplayDuration, decideSeekTarget, nextRemuxWindowAt, planResume, shouldDowngradeForDropped, subtitleLookupTime, classifyStartAt, toLocalSeekTarget } from '@/lib/playback-progress';
@@ -629,7 +629,7 @@ export default function VideoPlayer({ src, playbackStartedAt, movie, episode, au
     // (embedded↔embedded especially) avoids that entirely.
     const pickSecondaryFor = (primary: SubTrack | undefined, tracks: SubTrack[]) => {
         if (!primary) return undefined;
-        const pool = tracks.filter((t) => t.id !== primary.id && isReadyTrack(t));
+        const pool = sortSubtitleMenu(tracks).filter((t) => t.id !== primary.id && t.ready !== false && t.url);
         if (pool.length === 0) return undefined;
         const primaryVi = isViTrack(primary);
         const primaryLang2 = primary.language.toLowerCase().slice(0, 2);
@@ -857,14 +857,15 @@ export default function VideoPlayer({ src, playbackStartedAt, movie, episode, au
         const timer = setInterval(() => {
             const video = videoRef.current;
             if (!video || video.paused || restorePendingRef.current || subJobId) return;
-            const track = subTracks.find(t => t.id === selectedSub);
-            if (subtitleWindowNeedsRefresh(track, sessionStartAt + video.currentTime)) {
+            const selectedTracks = [selectedSub, ...(bilingual ? [secondarySub] : [])];
+            if (selectedTracks.some(id => subtitleWindowNeedsRefresh(
+                subTracks.find(t => t.id === id), sessionStartAt + video.currentTime))) {
                 subLoadModeRef.current = 'external';
                 void loadSubtitleInventory(true);
             }
         }, 10000);
         return () => clearInterval(timer);
-    }, [selectedSub, subTracks, sessionStartAt, subJobId, loadSubtitleInventory]);
+    }, [selectedSub, secondarySub, bilingual, subTracks, sessionStartAt, subJobId, loadSubtitleInventory]);
 
     const ensureCues = useCallback(async (track: SubTrack) => {
         if (!track.url || (cueCache[track.id] && cueWindowRef.current[track.id] === track.windowStart)) return;
@@ -2558,7 +2559,7 @@ export default function VideoPlayer({ src, playbackStartedAt, movie, episode, au
                     {secondaryCues.map((cue, i) => (
                         <p
                             key={`sec-${cue.start}-${i}`}
-                            className="max-w-3xl whitespace-pre-line rounded-md bg-black/55 px-3 py-1 font-medium opacity-90"
+                            className="order-1 max-w-3xl whitespace-pre-line rounded-md bg-black/55 px-3 py-1 font-medium opacity-90"
                             style={{ textShadow: '0 1px 3px rgba(0,0,0,0.9)', fontSize: Math.round(subSize * 0.8), color: subColor }}
                         >
                             {cue.text}
@@ -3220,7 +3221,11 @@ export default function VideoPlayer({ src, playbackStartedAt, movie, episode, au
                                                                         setBilingual(next);
                                                                         if (next) {
                                                                             const currentTrack = subTracks.find((t) => t.id === selectedSub);
-                                                                            const candidate = pickSecondaryFor(currentTrack, subTracks);
+                                                                            const vietnamese = pickBestViTrack(subTracks.filter((t) => t.ready !== false && t.url));
+                                                                            const primary = vietnamese || currentTrack;
+                                                                            if (primary) pickSubtitle(primary.id);
+                                                                            setSecondaryOffset(0);
+                                                                            const candidate = pickSecondaryFor(primary, subTracks);
                                                                             if (candidate) {
                                                                                 setSecondarySub(candidate.id);
                                                                                 void ensureCues(candidate);
@@ -3235,7 +3240,7 @@ export default function VideoPlayer({ src, playbackStartedAt, movie, episode, au
                                                              {bilingual && (
                                                                 <div className="mt-2 space-y-2">
                                                                     <div className="grid grid-cols-2 gap-1.5">
-                                                                        {subTracks
+                                                                        {sortSubtitleMenu(subTracks)
                                                                             .filter((t) => t.id !== selectedSub && t.ready !== false && t.url)
                                                                             .map((t) => (
                                                                                 <button
