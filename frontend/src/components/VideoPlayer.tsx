@@ -1045,6 +1045,28 @@ export default function VideoPlayer({ src, playbackStartedAt, movie, episode, au
         return activeCues(cueCache[selectedSub] || [], primaryLookupTime);
     }, [cueCache, selectedSub, primaryLookupTime]);
 
+    const syncSnapshotsRef = useRef(new Set<string>());
+    useEffect(() => {
+        const track = subTracks.find(t => t.id === selectedSub);
+        const sessionId = subContext?.playbackSessionId;
+        const video = videoRef.current;
+        if (!authToken || !sessionId || !track || !isEmbeddedTrack(track) || !isEnTrack(track)
+            || !Number.isInteger(track.streamIndex) || !primaryCues.length || !video
+            || video.readyState < 2 || video.seeking || restorePendingRef.current) return;
+        const key = `${sessionId}:${track.id}:${track.windowStart}:${seekIntentSerialRef.current}:${activeAudioIndex}:${subDelay}`;
+        if (syncSnapshotsRef.current.has(key)) return;
+        if (syncSnapshotsRef.current.size >= 100) syncSnapshotsRef.current.clear();
+        syncSnapshotsRef.current.add(key);
+        sendPlaybackEvent(apiUrl(`/api/playback/session/${encodeURIComponent(sessionId)}/telemetry`), authToken, {
+            type: 'sync_snapshot', requestedStartAt: targetAt ?? 0, playerCurrentTime: currentTime,
+            absolutePlaybackTime: sessionStartAt + currentTime, subtitleLookupTime: subLookupTime,
+            subtitleCueStart: primaryCues[0].start, subtitleDelaySeconds: subDelay,
+            presentationShiftMs, selectedAudioIndex: activeAudioIndex ?? 0,
+            subtitleStreamIndex: track.streamIndex!,
+        });
+    }, [authToken, subContext?.playbackSessionId, subTracks, selectedSub, primaryCues, currentTime,
+        targetAt, sessionStartAt, subLookupTime, subDelay, presentationShiftMs, activeAudioIndex]);
+
     const secondaryCues = React.useMemo(() => {
         if (!bilingual || !secondarySub || secondarySub === selectedSub) return [];
         // Show only cues that actually cover the current time.

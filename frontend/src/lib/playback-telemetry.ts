@@ -1,7 +1,11 @@
 export type PlaybackEvent =
   | { type: 'first_frame' | 'seek'; seconds: number }
   | { type: 'summary'; playedSeconds: number; stalledSeconds: number }
-  | { type: 'error' };
+  | { type: 'error' }
+  | { type: 'sync_snapshot'; requestedStartAt: number; playerCurrentTime: number;
+      absolutePlaybackTime: number; subtitleLookupTime: number; subtitleCueStart: number;
+      subtitleDelaySeconds: number; presentationShiftMs: number; selectedAudioIndex: number;
+      subtitleStreamIndex: number };
 
 /** Pure wall-clock accounting. Pauses, startup and seeks are not rebuffering. */
 export class PlaybackClock {

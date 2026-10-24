@@ -4,6 +4,7 @@ import os from 'os';
 import { createHash } from 'node:crypto';
 import { spawn } from 'child_process';
 import { planAdmission } from './deliveryPlan.js';
+import { trimSubtitleWindow } from './subtitleInventory.js';
 
 // Must stay absolute: res.sendFile() rejects relative paths, and ffmpeg's
 // -hls_fmp4_init_filename is resolved against the playlist's directory.
