@@ -2436,8 +2436,16 @@ export default function VideoPlayer({ src, playbackStartedAt, movie, episode, au
     // debounced: without this, one drag spawns a resolve (and an ffmpeg)
     // per tick and sessions pile up faster than the server reaps them.
     // (State + epoch refs live near the top refs; togglePlay reads them.)
+    // Stable mirror for the fire effect below: the resolve callback's identity
+    // changes on every render (its upstream useCallback re-creates it), and
+    // with it in the dependency list every timeupdate tore down the 650ms
+    // debounce before it could fire — far seeks into unwritten playlist area
+    // then sat locked and paused forever (viewer nudges with +10s, which takes
+    // the direct path and works, hiding the break).
+    const onSeekToPositionRef = useRef(onSeekToPosition);
+    onSeekToPositionRef.current = onSeekToPosition;
     useEffect(() => {
-        if (suspended || seekTarget === null || typeof onSeekToPosition !== 'function') return;
+        if (suspended || seekTarget === null || typeof onSeekToPositionRef.current !== 'function') return;
         const at = seekTarget;
         const intent = seekIntentSerialRef.current;
         if (firedSeekIntentRef.current === intent) return;
@@ -2451,7 +2459,7 @@ export default function VideoPlayer({ src, playbackStartedAt, movie, episode, au
                 console.debug(`[seek] resolve startAt=${at}s epoch=${epoch}`);
             }
             void Promise.resolve()
-                .then(() => onSeekToPosition(at))
+                .then(() => onSeekToPositionRef.current?.(at))
                 .catch((err: unknown) => {
                     // Resolve failed and no newer seek superseded it: drop the
                     // indicator and say why over the still-playing picture
@@ -2469,7 +2477,8 @@ export default function VideoPlayer({ src, playbackStartedAt, movie, episode, au
                 });
         }, 650);
         return () => clearTimeout(timer);
-    }, [seekTarget, onSeekToPosition, movie.slug, episode.slug, suspended]);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+    }, [seekTarget, movie.slug, episode.slug, suspended]);
 
     const handleVolumeChange = (e: React.ChangeEvent<HTMLInputElement>) => {
         const vol = Number(e.target.value);
@@ -2927,7 +2936,7 @@ export default function VideoPlayer({ src, playbackStartedAt, movie, episode, au
                         min={0}
                         max={fullDuration || 100}
                         step="0.1"
-                        value={dragPreview?.at ?? displayTime}
+                        value={dragPreview?.at ?? seekTarget ?? displayTime}
                         onChange={handleSeek}
                         onPointerDown={(event) => {
                             if (suspended || event.button !== 0) return;

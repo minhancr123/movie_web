@@ -1793,6 +1793,39 @@ export default function PlaybackSection({
         return;
       }
 
+      // 422 "no playable source" is usually a TEMPORARY condition: the Vimo
+      // or debrid listing hiccupped, nothing changed on this device, so an
+      // immediate re-resolve would just hammer the same dead listing. Same
+      // backed-off ladder as the 503 one — and placed BEFORE the pinned-source
+      // clear below, so a listing outage does not throw away the release the
+      // viewer deliberately picked (a re-rank cannot conjure sources either).
+      const noPlayableSources = status === 422 && !sourceToken
+        && typeof message === 'string' && message.includes('Không có nguồn nào phát được');
+      if (noPlayableSources && (busyRetriesRef.current ?? 0) < BUSY_RETRY_ATTEMPTS) {
+        const attempt = (busyRetriesRef.current ?? 0) + 1;
+        busyRetriesRef.current = attempt;
+        setResolveStageLabel(
+          isProd
+            ? `Nguồn chưa mở được, tự động thử lại (${attempt}/${BUSY_RETRY_ATTEMPTS})…`
+            : `422 no-source — retry ${attempt}/${BUSY_RETRY_ATTEMPTS}`,
+        );
+        if (attempt === 1) {
+          setNotice('Dịch vụ nguồn đang trục trặc nên chưa mở được phim. Hệ thống sẽ tự thử lại.');
+        }
+        resolveInFlightRef.current = null;
+        resolveInFlightEpochRef.current = null;
+        setPendingAudioIndex(null);
+        await new Promise((r) => setTimeout(r, busyRetryDelayMs(attempt)));
+        if (seekEpochRef.current === requestEpoch) {
+          return startPlaybackResolution(sourceToken, audioIndex, {
+            ...options,
+            seekEpoch: requestEpoch,
+            serverRetry: true,
+          });
+        }
+        return;
+      }
+
       if (!sourceToken && resolvedSourceToken && status && status >= 400 && status < 500 && typeof window !== 'undefined') {
         localStorage.removeItem(selectedSourceKey);
         setActiveToken('');
