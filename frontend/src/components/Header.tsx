@@ -56,6 +56,7 @@ const SearchPosterArt = ({ src, title, imgClassName }: { src: string; title: str
 
 const Header = () => {
     const [isScrolled, setIsScrolled] = useState(false);
+    const [logoFailed, setLogoFailed] = useState(false);
     const [isMobileMenuOpen, setIsMobileMenuOpen] = useState(false);
     const [isGenreOpen, setIsGenreOpen] = useState(false);
     const [isSearchOpen, setIsSearchOpen] = useState(false);
@@ -264,14 +265,20 @@ const Header = () => {
                     {/* Logo */}
                     <Link href="/" className="relative z-50 group flex items-center gap-2.5">
                         <div className="relative w-10 h-10 rounded-xl overflow-hidden shadow-[0_0_20px_rgba(245,158,11,0.35)] group-hover:scale-105 group-hover:shadow-[0_0_25px_rgba(245,158,11,0.55)] transition-all duration-300">
-                            <Image 
-                                src="/icon.png" 
-                                alt="CineVN Logo" 
-                                width={40} 
-                                height={40} 
-                                priority
-                                className="w-full h-full object-cover"
-                            />
+                            {logoFailed ? (
+                                <PlayCircle role="img" aria-label="CineVN Logo" className="h-full w-full bg-[#0d0e11] p-2 text-amber-300" />
+                            ) : (
+                                <Image
+                                    src="/icon-192.png"
+                                    alt="CineVN Logo"
+                                    width={40}
+                                    height={40}
+                                    priority
+                                    unoptimized
+                                    onError={() => setLogoFailed(true)}
+                                    className="w-full h-full object-cover"
+                                />
+                            )}
                         </div>
                         <div className="flex flex-col">
                             <span className="font-syne text-2xl md:text-3xl font-black tracking-tight bg-gradient-to-r from-amber-100 via-amber-gold to-amber-500 bg-clip-text text-transparent group-hover:brightness-110 transition-all">
