@@ -2035,6 +2035,16 @@ export default function VideoPlayer({ src, playbackStartedAt, movie, episode, au
             // 20s early when an auto-next exists so the countdown overlay has
             // time to run; otherwise the last-2s edge keeps its old behaviour.
             const endLead = onNextEpisode ? 20 : 2;
+            // An hls playlist still being written reports the buffered extent
+            // as its duration; reaching that live edge fires 'ended' with tens
+            // of minutes of episode left, which used to pop the next-episode
+            // countdown mid-episode. Treat it as a stall instead.
+            const atLiveEdge = video.duration > 0 && video.currentTime >= video.duration - 0.5
+                && Number(durationSeconds) > 0 && sessionStartAt + video.currentTime < Number(durationSeconds) - 30;
+            if (atLiveEdge) {
+                onPlaybackFailure?.('Đang tải tiếp đoạn cuối; giây lát nữa sẽ chạy tiếp.');
+                return;
+            }
             setEpisodeEnded(Number.isFinite(expectedEnd) && expectedEnd > 0 && sessionStartAt + video.currentTime >= expectedEnd - endLead);
         };
 
@@ -2243,7 +2253,29 @@ export default function VideoPlayer({ src, playbackStartedAt, movie, episode, au
                 margin: '0', borderRadius: '0', background: '#000',
             });
         }
+        // The shell's z-index only competes inside its nearest stacking
+        // context. The watch page nests the player under wrappers that carry
+        // their own z-index/isolation, so the fixed header (z-50) and the
+        // bottom nav still painted OVER the fullscreen shell on phones.
+        // Promote every ancestor up to <body> above the site chrome, and put
+        // each back exactly as it was on exit.
+        const promoted: { el: HTMLElement; position: string; zIndex: string }[] = [];
+        let anc = el?.parentElement;
+        while (anc && anc !== document.body.parentElement) {
+            const cs = getComputedStyle(anc);
+            const z = Number(cs.zIndex);
+            if (cs.position === 'static' || (cs.zIndex !== 'auto' && (!Number.isFinite(z) || z < 9998))) {
+                promoted.push({ el: anc, position: anc.style.position, zIndex: anc.style.zIndex });
+                if (cs.position === 'static') anc.style.position = 'relative';
+                anc.style.zIndex = '9998';
+            }
+            anc = anc.parentElement;
+        }
         return () => {
+            for (const p of promoted.reverse()) {
+                p.el.style.position = p.position;
+                p.el.style.zIndex = p.zIndex;
+            }
             document.body.style.overflow = prevOverflow;
             if (el) el.setAttribute('style', prevCss);
             setIsFullscreen(false);
@@ -2968,18 +3000,20 @@ export default function VideoPlayer({ src, playbackStartedAt, movie, episode, au
                             </div>
                         </div>
 
-                        {/* Mobile quick mute button (no slider taking 64px and overflowing) */}
+                        {/* Mobile quick mute button (no slider taking 64px and overflowing).
+                            Hidden below sm on top of that: phones have hardware
+                            volume and the row needs the ~34px for the clock. */}
                         <button
                             onClick={toggleMute}
                             aria-label={isMuted ? 'Bật tiếng' : 'Tắt tiếng'}
-                            className="liquid-glass-btn sm:hidden shrink-0 text-white hover:text-cinema-muted transition-all p-1.5 rounded-full active:scale-90"
+                            className="liquid-glass-btn hidden min-[520px]:inline-flex sm:hidden shrink-0 text-white hover:text-cinema-muted transition-all p-1.5 rounded-full active:scale-90"
                         >
                             {isMuted || volume === 0 ? <VolumeX className="w-5 h-5" /> : volume < 0.5 ? <Volume1 className="w-5 h-5" /> : <Volume2 className="w-5 h-5" />}
                         </button>
 
                         <div className="liquid-divider mx-1 hidden sm:block" />
 
-                        <div className="shrink-0 whitespace-nowrap text-xs sm:text-sm font-medium text-cinema-muted font-mono tracking-wider liquid-chip px-2 sm:px-2.5 py-0.5 sm:py-1">
+                        <div className="min-w-0 truncate whitespace-nowrap text-[10px] min-[520px]:text-xs sm:text-sm font-medium text-cinema-muted font-mono tabular-nums tracking-wider liquid-chip px-1.5 min-[520px]:px-2 sm:px-2.5 py-0.5 sm:py-1">
                             {formatTime(displayTime)} / {formatTime(fullDuration)}
                         </div>
                     </div>
@@ -2988,10 +3022,11 @@ export default function VideoPlayer({ src, playbackStartedAt, movie, episode, au
                         {onNextEpisode && (
                             <button
                                 onClick={onNextEpisode}
+                                aria-label="Tập tiếp"
                                 className="flex items-center gap-1.5 bg-amber-primary/90 hover:bg-amber-primary text-black text-sm px-2.5 sm:px-4 py-1.5 rounded-xl backdrop-blur-sm transition-all border border-amber-primary/50 shadow-[0_0_20px_-5px_rgba(245,158,11,0.6)]"
                             >
                                 <SkipForward size={16} fill="currentColor" />
-                                <span className="hidden font-bold min-[420px]:inline"> Tập Tiếp</span>
+                                <span className="hidden font-bold min-[520px]:inline"> Tập Tiếp</span>
                             </button>
                         )}
 
