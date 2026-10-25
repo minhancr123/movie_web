@@ -553,10 +553,27 @@ export default function VideoPlayer({ src, playbackStartedAt, movie, episode, au
             ['playing', frame], ['loadeddata', frame], ['seeked', frame], ['seeking', seeking], ['error', error]];
         events.forEach(([event, fn]) => video.addEventListener(event, fn));
         const timer = setInterval(() => clock.flush(), 30_000);
+        // Bounded snapshots only while restore is stuck, not a per-frame log.
+        const restoreTimers = [2000, 8000, 20000].map(delay => setTimeout(() => {
+            if (!restorePendingRef.current) return;
+            try {
+                sendPlaybackEvent(url, authToken, { type: 'restore_snapshot',
+                    engine: hlsRef.current ? 'mse' : /\.m3u8(\?|#|$)/i.test(src) ? 'native' : 'direct',
+                    readyState: video.readyState, networkState: video.networkState,
+                    localTime: Number.isFinite(video.currentTime) ? video.currentTime : 0,
+                    targetLocal: toLocalSeekTarget(seekTargetRef.current ?? targetAt ?? sessionStartAt, sessionStartAt),
+                    durationSeconds: Number.isFinite(video.duration) ? video.duration : 0,
+                    seekableEnd: video.seekable.length ? video.seekable.end(video.seekable.length - 1) : 0,
+                    bufferedEnd: video.buffered.length ? video.buffered.end(video.buffered.length - 1) : 0,
+                    seeking: video.seeking, paused: video.paused,
+                });
+            } catch { /* native ranges may change during a source replacement */ }
+        }, delay));
         const flush = () => clock.flush();
         window.addEventListener('pagehide', flush);
         return () => {
             clearInterval(timer); window.removeEventListener('pagehide', flush);
+            restoreTimers.forEach(clearTimeout);
             events.forEach(([event, fn]) => video.removeEventListener(event, fn));
             if (callback !== null) video.cancelVideoFrameCallback?.(callback);
             clock.flush(); if (telemetryClock.current === clock) telemetryClock.current = null;

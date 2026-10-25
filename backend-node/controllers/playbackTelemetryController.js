@@ -16,13 +16,21 @@ export const parsePlaybackEvent = body => {
     && body.playedSeconds + body.stalledSeconds <= 120) {
     return { ...base, playedSeconds: body.playedSeconds, stalledSeconds: body.stalledSeconds };
   }
-  if (body.type === 'error') {
+  if (body.type === 'error' || body.type === 'restore_snapshot') {
     const details = {};
     if (['native', 'mse', 'direct'].includes(body.engine)) details.engine = body.engine;
     for (const [field, max] of [['mediaErrorCode', 4], ['readyState', 4], ['networkState', 3]]) {
       if (Number.isInteger(body[field]) && valid(body[field], max)) details[field] = body[field];
     }
     if (valid(body.localTime, 200000)) details.localTime = Math.round(body.localTime * 1000) / 1000;
+    if (body.type === 'restore_snapshot') {
+      if (!details.engine || !Number.isInteger(details.readyState) || typeof body.seeking !== 'boolean' || typeof body.paused !== 'boolean') return null;
+      for (const field of ['targetLocal', 'durationSeconds', 'seekableEnd', 'bufferedEnd']) {
+        if (!valid(body[field], 200000)) return null;
+        details[field] = Math.round(body[field] * 1000) / 1000;
+      }
+      details.seeking = body.seeking; details.paused = body.paused;
+    }
     return { ...base, ...details };
   }
   return null;
@@ -45,6 +53,7 @@ export const playbackTelemetry = async (req, res) => {
     if (!session) return res.status(404).json({ success: false });
     if (acceptPlaybackEvent(session.sessionId, event)) {
       if (event.type === 'sync_snapshot') console.info('[playback-sync]', JSON.stringify(playbackSyncSnapshot(session, event)));
+      else if (event.type === 'restore_snapshot') console.info('[playback-restore]', JSON.stringify({ contentRef: session.contentRef, startAt: session.startAt || 0, ...event }));
       else {
         if (event.type === 'error') console.info('[playback-media]', JSON.stringify({ contentRef: session.contentRef, ...event }));
         recordPlaybackEvent(session, event);

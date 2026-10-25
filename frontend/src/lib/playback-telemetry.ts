@@ -2,6 +2,8 @@ export type PlaybackEvent =
   | { type: 'first_frame' | 'seek'; seconds: number }
   | { type: 'summary'; playedSeconds: number; stalledSeconds: number }
   | { type: 'error'; mediaErrorCode?: number; engine?: 'native' | 'mse' | 'direct'; readyState?: number; networkState?: number; localTime?: number }
+  | { type: 'restore_snapshot'; engine: 'native' | 'mse' | 'direct'; readyState: number; networkState: number;
+      localTime: number; targetLocal: number; durationSeconds: number; seekableEnd: number; bufferedEnd: number; seeking: boolean; paused: boolean }
   | { type: 'sync_snapshot'; requestedStartAt: number; playerCurrentTime: number;
       absolutePlaybackTime: number; subtitleLookupTime: number; subtitleCueStart: number;
       subtitleDelaySeconds: number; presentationShiftMs: number; selectedAudioIndex: number;

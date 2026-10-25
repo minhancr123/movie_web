@@ -75,6 +75,9 @@ test('client metrics count measured frames, seek and rebuffer with event validat
   assert.deepEqual(telemetry.parsePlaybackEvent({eventId:'valid-event',type:'error',engine:'native',mediaErrorCode:3,readyState:1,networkState:2,localTime:12.5,url:'secret',message:'secret'}),
     {eventId:'valid-event',type:'error',engine:'native',mediaErrorCode:3,readyState:1,networkState:2,localTime:12.5});
   assert.deepEqual(telemetry.parsePlaybackEvent({eventId:'valid-event',type:'error',engine:'secret',mediaErrorCode:99,localTime:Infinity}),{eventId:'valid-event',type:'error'});
+  const restore={eventId:'valid-event',type:'restore_snapshot',engine:'native',readyState:1,networkState:2,localTime:0,targetLocal:1.617,durationSeconds:0,seekableEnd:0,bufferedEnd:0,seeking:false,paused:true};
+  assert.deepEqual(telemetry.parsePlaybackEvent({...restore,url:'private',arbitrary:'private'}),restore);
+  assert.equal(telemetry.parsePlaybackEvent({...restore,targetLocal:Infinity}),null);
   const event=telemetry.parsePlaybackEvent({eventId:'valid-event',type:'first_frame',seconds:2});
   assert.equal(telemetry.acceptPlaybackEvent('own-session',event,1000),true);
   assert.equal(telemetry.acceptPlaybackEvent('own-session',event,1001),false);
