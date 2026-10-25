@@ -41,6 +41,8 @@ import {
 } from '../services/addonClient.js';
 import { toVttDocument, UPLOAD_MAX_PER_TITLE } from '../services/playback/userSubtitles.js';
 import * as torbox from '../services/debrid/torbox.js';
+import { createPreparedSourceCache } from '../services/playback/preparedSourceCache.js';
+const preparePlaybackSource = createPreparedSourceCache(torbox.prepareSource);
 import { DebridError } from '../services/debrid/torbox.js';
 import { normalizeCapabilities } from '../services/playback/sourceRanker.js';
 import { getStreamCandidates, rankPlaybackCandidates as rankCandidates } from '../services/playback/orchestrator.js';
@@ -1726,7 +1728,7 @@ export const resolvePlayback = async (req, res) => {
       stage('prepare', attemptTag);
       let prepared;
       try {
-        prepared = await torbox.prepareSource(debridKey, {
+        prepared = await preparePlaybackSource(debridKey, {
           magnet: candidate.magnet,
           infoHash: candidate.infoHash,
           // checkCached already said this infohash is in the account, so read
@@ -1760,7 +1762,7 @@ export const resolvePlayback = async (req, res) => {
         if (!transient || candidate.cached) continue;
         stage('prepare', attemptTag);
         try {
-          prepared = await torbox.prepareSource(debridKey, {
+          prepared = await preparePlaybackSource(debridKey, {
             magnet: candidate.magnet,
             infoHash: candidate.infoHash,
             assumeCached: true,
@@ -2897,7 +2899,7 @@ const trackPrewarmUntilReady = ({ debridKey, magnet, infoHash, torrentId, season
   const tick = async () => {
     let prepared;
     try {
-      prepared = await torbox.prepareSource(debridKey, { magnet, infoHash, torrentId, assumeCached: true });
+      prepared = await preparePlaybackSource(debridKey, { magnet, infoHash, torrentId, assumeCached: true });
     } catch {
       // Transient TorBox API error: retry on the next tick; the poll ceiling
       // still ends the waiter even if the provider stays down.
@@ -3008,7 +3010,7 @@ export const prewarmPlayback = async (req, res) => {
 
     let prepared;
     try {
-      prepared = await torbox.prepareSource(debridKey, {
+      prepared = await preparePlaybackSource(debridKey, {
         magnet: target.magnet,
         infoHash: target.infoHash,
       });
@@ -3805,7 +3807,7 @@ export const getPlaybackSubtitles = async (req, res) => {
     let pickedFileId = null;
     for (const candidate of pool.slice(0, 3)) {
       try {
-        const prepared = await torbox.prepareSource(debridKey, {
+        const prepared = await preparePlaybackSource(debridKey, {
           magnet: candidate.magnet,
           infoHash: candidate.infoHash,
         });
@@ -4224,7 +4226,7 @@ export const getPlaybackSession = async (req, res) => {
     if (session.mode === 'downloading' && session.infoHash) {
       try {
         const { key } = await getDecryptedKey(db, req.user.userId, PROVIDER);
-        const prepared = await torbox.prepareSource(key, {
+        const prepared = await preparePlaybackSource(key, {
           infoHash: session.infoHash,
           torrentId: session.torrentId ?? null,
         });
