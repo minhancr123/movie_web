@@ -4524,6 +4524,19 @@ export const refreshPlaybackUrl = async (req, res) => {
 const EXTERNAL_URL_CACHE_TTL_SECONDS = 8 * 60;
 const externalUrlKey = (sessionId) => `playback:exturl:${sessionId}`;
 
+/** Release-tag sniff for codecs the client cannot decode: release names carry
+ * the audio layout ("TrueHD Atmos 7.1", "DTS-HD MA", "EAC3") long before any
+ * probe. Unknown names are never blocked — only explicit tags are. */
+const audioUnavailableByFilename = (name, unsupported) => {
+  const s = String(name || '').toLowerCase();
+  return unsupported.some((codec) => {
+    if (codec === 'truehd' || codec === 'mlp') {
+      return /\b(truehd|mlp(?!a))[\s._-]|atmos/.test(s);
+    }
+    return new RegExp(`\\b${codec}\\b`, 'i').test(s);
+  });
+};
+
 /**
  * POST /api/playback/external — resolve for a native libmpv client (CineVN
  * desktop). The browser pipeline answers remux HLS because a browser cannot
@@ -4642,6 +4655,27 @@ export const resolveExternalPlayback = async (req, res) => {
       ...titleExpectation(detail),
       videoTranscode,
     };
+    // Codecs this client cannot decode (e.g. the desktop app's libmpv build
+    // ships no TrueHD decoder). Auto-pick then demotes releases whose only
+    // audio is undecodable — filename release tags carry the truth even
+    // before probe facts exist — so the default answer plays WITH sound.
+    // A manual pick below is never reordered: the viewer asked for it.
+    const audioUnsupported = (Array.isArray(req.body?.audioUnsupported) ? req.body.audioUnsupported : [])
+      .slice(0, 8)
+      .filter((c) => typeof c === 'string' && /^[a-z0-9_]{2,16}$/i.test(c))
+      .map((c) => c.toLowerCase());
+    const hasDecodableAudio = (candidate) => {
+      if (!audioUnsupported.length) return true;
+      const name = `${candidate.filename || ''} ${candidate.title || ''} ${candidate.releaseSource || ''}`;
+      const nameBlocked = audioUnavailableByFilename(name, audioUnsupported);
+      const tracks = Array.isArray(candidate.audioTracks) ? candidate.audioTracks : null;
+      if (!tracks?.length) return !nameBlocked;
+      return tracks.some((t) => {
+        const codec = String(t?.codec || '').toLowerCase();
+        return codec && !audioUnsupported.includes(codec);
+      });
+    };
+
     let attempts;
     if (sourceToken) {
       const targetCandidate = enriched.find((c) => matchCandidateToken(c, sourceToken));
@@ -4667,6 +4701,13 @@ export const resolveExternalPlayback = async (req, res) => {
         });
       }
       attempts = selectFallbackAttempts(ranked.playable, MAX_ATTEMPTS, []);
+      if (audioUnsupported.length) {
+        const playable = attempts.filter(hasDecodableAudio);
+        // Demote, never drop: an Atmos-only catalog still plays (silently on
+        // this client) rather than 502-ing on every source.
+        const demoted = attempts.filter((c) => !playable.includes(c));
+        if (playable.length) attempts = [...playable, ...demoted];
+      }
     }
 
     let lastError = null;
