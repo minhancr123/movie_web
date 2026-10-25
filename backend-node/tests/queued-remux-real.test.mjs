@@ -17,6 +17,6 @@ test('a queued real FFmpeg writer starts only after a reservation is freed and c
   svc.releaseWriterReservation(hold.reservationId);const session=await pending;
   assert.equal(waiting,true);assert.equal(svc.activeWriterCount(),1);
   const closed=new Promise(resolve=>session.process.once('close',resolve));await closed;
-  const state=await svc.readPlaylistState('b'.repeat(32));assert.equal(state.ended,true);assert.ok(state.duration>0);
+  const playlist=await fs.readFile(session.playlistPath,'utf8');assert.match(playlist,/#EXT-X-ENDLIST/);assert.match(playlist,/#EXTINF:/);
  } finally {svc.writerAdmissionQueue.close();svc.releaseWriterReservation(hold.reservationId);await svc.stopRemuxSession('b'.repeat(32));await fs.rm(root,{recursive:true,force:true});}
 });

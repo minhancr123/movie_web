@@ -42,3 +42,9 @@ test('an owned pending-job poll renews stage presence; another account cannot',a
  jobs.poll(request('B',id),new Response());assert.equal(touches,0);
  jobs.poll(request('A',id),new Response());assert.equal(touches,1);jobs.close();
 });
+
+test('lease expiry delivers a terminal timeout, never a silently ignored superseded response',async()=>{
+ let time=0;const jobs=createResolveJobs({leaseMs:10,now:()=>time,handler:async(req,res)=>{req.resolveJobContext.markWaiting();await new Promise(resolve=>res.once('close',resolve));res.status(499).json({code:'RESOLVE_SUPERSEDED'});}});
+ const res=new Response();await jobs.start(request(),res);const id=res.body.data.jobId;time=11;jobs.sweep();await tick();
+ const out=new Response();jobs.poll(request('A',id),out);assert.equal(out.statusCode,504);assert.equal(out.body.code,'RESOLVE_JOB_TIMEOUT');jobs.close();
+});

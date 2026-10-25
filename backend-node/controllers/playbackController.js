@@ -2548,6 +2548,11 @@ export const resolvePlayback = async (req, res) => {
           await fs.rm(sessionPath(sessionId), { recursive: true, force: true }).catch(() => {});
           throw error;
         }
+        // Queue exhaustion is capacity, never a reason to change release or
+        // enter another ten-minute queue for the next candidate.
+        if (['REMUX_QUEUE_TIMEOUT', 'REMUX_QUEUE_FULL'].includes(error?.code)) {
+          return fail(res, error.status || 503, error.message, { code: error.code, retryable: false });
+        }
         // Policy refusal is per-candidate, not per-box: this source needs a
         // video encode the operator disabled, so try the next source. The
         // loop-top clamp normally catches this earlier; the spawn guard is

@@ -13,15 +13,17 @@ export function createResolveJobs({ handler, observe = (_req,_res,next) => next(
     return { success:true, data:{mode:'resolve_pending',jobId:job.id,
       stage:stage?.stage || 'waiting_writer',detail:stage?.detail || 'Đang chờ lượt phát'} };
   };
-  const cancel = job => {
+  const cancel = (job, expired = false) => {
     if (job.done) return;
     // The controller owns its switch signal and listens to this close event.
     job.response.emit('close');
-    job.response.status(499).json({success:false,code:'RESOLVE_SUPERSEDED',message:'Đã hủy yêu cầu phát'});
+    job.response.status(expired ? 504 : 499).json({success:false,
+      code:expired ? 'RESOLVE_JOB_TIMEOUT' : 'RESOLVE_SUPERSEDED',
+      message:expired ? 'Hết thời gian chờ lượt phát. Vui lòng thử lại.' : 'Đã hủy yêu cầu phát'});
   };
   const sweep = () => {
     for (const [id,job] of jobs) {
-      if (!job.done && (now()-job.created >= lifetimeMs || (job.detached && now()-job.seen >= leaseMs))) cancel(job);
+      if (!job.done && (now()-job.created >= lifetimeMs || (job.detached && now()-job.seen >= leaseMs))) cancel(job,true);
       if (job.done && now()-job.finished >= retainMs) jobs.delete(id);
     }
   };
@@ -45,7 +47,7 @@ export function createResolveJobs({ handler, observe = (_req,_res,next) => next(
       const queued = new Promise(resolve => { waiting = resolve; });
       const response = new EventEmitter();
       Object.assign(response,{statusCode:200,writableEnded:false,headers:{},
-        status(code) { this.statusCode=code; return this; },
+        status(code) { if (!this.writableEnded) this.statusCode=code; return this; },
         set(key,value) { this.headers[key]=value; return this; },
         setHeader(key,value) { this.headers[key]=value; return this; },
         json(body) {
