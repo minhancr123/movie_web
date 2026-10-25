@@ -32,7 +32,7 @@ import {
     type AudioEnhancerSettings,
 } from '../hooks/useAudioEnhancer';
 import { clampLipSyncMs } from '@/lib/audioEnhancerGraph';
-import { isTaintFreePipeline } from '@/lib/mediaPipeline';
+import { isTaintFreePipeline, prefersNativeHls } from '@/lib/mediaPipeline';
 import { CINEMA_BRIGHT_ATTR, type CinemaMode } from '@/components/CinemaLayer';
 import { readShaderEnabled, setShaderEnabled } from '@/lib/shaderPref';
 import { clampWidth } from '@/lib/audioEnhancerGraph';
@@ -302,10 +302,12 @@ export default function VideoPlayer({ src, playbackStartedAt, movie, episode, au
         typeof window === 'undefined' ? '#ffffff' : readPrefs().subColor);
     const [audioFx, setAudioFx] = useState<AudioEnhancerSettings>(() =>
         typeof window === 'undefined' ? DEFAULT_AUDIO_ENHANCER : readPrefs().audio);
+    const nativeHlsPreferred = typeof navigator !== 'undefined'
+        && prefersNativeHls(navigator.userAgent, navigator.platform, navigator.maxTouchPoints);
     // Web Audio can only tap the element on the MSE path; the hook decides and
     // reports back so the UI can say why it is unavailable instead of going quiet.
     const audioFxStatus = useAudioEnhancer(
-        videoRef, src, typeof window !== 'undefined' && Hls.isSupported(), audioFx,
+        videoRef, src, typeof window !== 'undefined' && Hls.isSupported() && !nativeHlsPreferred, audioFx,
     );
     const [cinema, setCinema] = useState<CinemaMode>(() =>
         typeof window === 'undefined' ? 'off' : readPrefs().cinema);
@@ -316,7 +318,7 @@ export default function VideoPlayer({ src, playbackStartedAt, movie, episode, au
     // Only the glow reads pixels back, so only the glow needs a taint-free
     // pipeline; dimming the room works on any stream.
     const canSampleFrames = typeof window !== 'undefined'
-        && isTaintFreePipeline(src, Hls.isSupported());
+        && isTaintFreePipeline(src, Hls.isSupported(), nativeHlsPreferred);
     const effectiveCinema: CinemaMode =
         cinema === 'ambilight' && !canSampleFrames ? 'off' : cinema;
 
@@ -1540,7 +1542,10 @@ export default function VideoPlayer({ src, playbackStartedAt, movie, episode, au
             };
         }
 
-        if (Hls.isSupported()) {
+        // iOS 17.1+ exposes ManagedMediaSource, making isSupported() true even
+        // when native HLS is available. Keep Apple mobile on its native path;
+        // browser-managed HEVC buffering avoids MSE recovery loops there.
+        if (Hls.isSupported() && !(nativeHlsPreferred && video.canPlayType('application/vnd.apple.mpegurl'))) {
             const hls = new Hls({
                 enableWorker: true,
                 startPosition: restoreTargetLocal,
@@ -1873,7 +1878,7 @@ export default function VideoPlayer({ src, playbackStartedAt, movie, episode, au
             // read as a stall. It re-arms on the next play/waiting event.
             clearStallTimer();
         };
-    }, [src, movie.slug, episode.slug, authToken, retryKey, reloadKey, onPlaybackFailure, seekStartSupported, targetAt, suspended]);
+    }, [src, movie.slug, episode.slug, authToken, retryKey, reloadKey, onPlaybackFailure, seekStartSupported, targetAt, suspended, nativeHlsPreferred]);
 
     // History Saver
     useEffect(() => {

@@ -1430,7 +1430,13 @@ export const registerSessionViewer = (sessionId, viewerId, now = Date.now()) => 
   if (!session || !viewerId) return false;
   viewersOf(session).set(String(viewerId), Number(now) || Date.now());
   session.abandonedAt = undefined;
+  cancelScheduledStop(sessionId);
   return true;
+};
+
+export const hasFreshSessionViewer = (sessionId, now = Date.now()) => {
+  const viewers = sessions.get(safeId(sessionId))?.viewers;
+  return viewers instanceof Map && [...viewers.values()].some(at => now - at < VIEWER_LEASE_MS);
 };
 
 /** Heartbeat: refresh the lease, registering an unknown viewer. */
@@ -2089,10 +2095,10 @@ const supersedeTimers = new Map();
 
 export const scheduleSupersededStop = (sessionId, delayMs = SUPERSEDE_GRACE_MS) => {
   const id = safeId(sessionId);
-  if (!id || supersedeTimers.has(id)) return false;
+  if (!id || supersedeTimers.has(id) || hasFreshSessionViewer(id)) return false;
   const timer = setTimeout(() => {
     supersedeTimers.delete(id);
-    stopRemuxSession(id).catch(() => false);
+    if (!hasFreshSessionViewer(id)) stopRemuxSession(id).catch(() => false);
   }, delayMs);
   if (typeof timer.unref === 'function') timer.unref();
   supersedeTimers.set(id, timer);

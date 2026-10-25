@@ -16,6 +16,10 @@ test('a queued real FFmpeg writer starts only after a reservation is freed and c
   await new Promise(r=>setTimeout(r,100));assert.equal(svc.activeWriterCount(),0);
   svc.releaseWriterReservation(hold.reservationId);const session=await pending;
   assert.equal(waiting,true);assert.equal(svc.activeWriterCount(),1);
+  assert.equal(svc.scheduleSupersededStop(session.id,1000),true);
+  assert.equal(svc.registerSessionViewer(session.id,'mobile-test'),true);
+  assert.equal(svc.supersededWriterIds().includes(session.id),false,'heartbeat revokes a background warmup kill');
+  assert.equal(svc.scheduleSupersededStop(session.id,1),false,'an active viewer cannot be superseded by another title');
   const closed=new Promise(resolve=>session.process.once('close',resolve));await closed;
   const playlist=await fs.readFile(session.playlistPath,'utf8');assert.match(playlist,/#EXT-X-ENDLIST/);assert.match(playlist,/#EXTINF:/);
  } finally {svc.writerAdmissionQueue.close();svc.releaseWriterReservation(hold.reservationId);await svc.stopRemuxSession('b'.repeat(32));await fs.rm(root,{recursive:true,force:true});}

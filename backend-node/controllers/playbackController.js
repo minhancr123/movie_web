@@ -1,4 +1,5 @@
 import { createRenditionGate } from '../services/playback/admissionQueue.js';
+import { selectAdoptableSession } from '../services/playback/sessionAdoption.js';
 const renditionGate = createRenditionGate();
 import { sourceListingFailure, incompatibleSourcesFailure } from '../services/playback/sourceAvailability.js';
 import { SEEK_BUCKET_SECONDS, bucketSeekStart, seekBufferFloor, startupTarget, sessionStartupTarget, hasPlayableBuffer } from '../services/playback/startupPolicy.js';
@@ -655,21 +656,9 @@ const findAdoptableWriter = async (db, renditionKey, requestedStartAt, excludeSe
     .limit(10)
     .toArray()
     .catch(() => []);
-  for (const row of rows) {
-    const origin = Number(row.startAt) || 0;
-    const compatible = requestedStartAt === 0
-      ? origin <= 120
-      : Math.abs(origin - requestedStartAt) <= 120;
-    if (!compatible) continue;
-    try {
-      if (isRemuxSessionLive(row.sessionId)) return row;
-      // The producer may finish before a follower acquires the key. Reuse
-      // those completed bytes while publication waits for the janitor tick.
-      const state = await readPlaylistState(row.sessionId);
-      if (state.ended && completedSessionCovers(origin, state.duration, requestedStartAt)) return row;
-    } catch { /* not live in this process */ }
-  }
-  return null;
+  return selectAdoptableSession(rows, requestedStartAt, {
+    sessionPath, isLive: isRemuxSessionLive, readState: readPlaylistState,
+  });
 };
 
 const hasLiveRenditionWriter = async (db, renditionKey, excludeSessionId) => {
@@ -2339,6 +2328,7 @@ export const resolvePlayback = async (req, res) => {
           let servable = false;
           while (Date.now() < adoptDeadline) {
             throwIfSuperseded();
+            if (await fs.access(sessionPath(adoptedId, '.interrupted')).then(() => true, () => false)) break;
             if (await findPublishedRendition(db, renditionKey)) {
               return await servePublished();
             }
@@ -4596,6 +4586,9 @@ const ADOPTION_TTL_MS = 6 * 60 * 60 * 1000;
 const registerAdoptedViewer = (adoptedSessionId, userIdStr) => {
   const key = String(adoptedSessionId || '').toLowerCase();
   if (!key || !userIdStr) return;
+  // The producer may have been superseded by a speculative home-page warmup.
+  // Foreground adoption must revoke that delayed kill before the first heartbeat.
+  cancelScheduledStop(key);
   let set = adoptedViewers.get(key);
   if (!set) { set = new Map(); adoptedViewers.set(key, set); }
   set.set(String(userIdStr), Date.now() + ADOPTION_TTL_MS);

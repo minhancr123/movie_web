@@ -4,6 +4,15 @@ import fs from 'node:fs';
 import vm from 'node:vm';
 import ts from 'typescript';
 const load=(file,globals={})=>{const context={exports:{},setTimeout,clearTimeout,...globals};vm.runInNewContext(ts.transpileModule(fs.readFileSync(new URL(`../src/lib/${file}.ts`,import.meta.url),'utf8'),{compilerOptions:{module:ts.ModuleKind.CommonJS,target:ts.ScriptTarget.ES2020}}).outputText,context);return context.exports;};
+test('Apple mobile prefers native HLS even with MSE; desktop keeps frame sampling',()=>{
+ const {prefersNativeHls,isTaintFreePipeline}=load('mediaPipeline');
+ assert.equal(prefersNativeHls('Mozilla/5.0 (iPhone; CPU iPhone OS 18_0 like Mac OS X)'),true);
+ assert.equal(prefersNativeHls('Mozilla/5.0 (Macintosh)','MacIntel',5),true,'iPad desktop UA');
+ assert.equal(prefersNativeHls('Mozilla/5.0 (Macintosh)','MacIntel',0),false);
+ assert.equal(prefersNativeHls('Mozilla/5.0 (Linux; Android 14)'),false);
+ assert.equal(isTaintFreePipeline('/movie.m3u8',true,true),false,'native must never connect pixel/WebAudio sampling');
+ assert.equal(isTaintFreePipeline('/movie.m3u8',true,false),true);
+});
 test('clock separates startup, seek, paused time and actual rebuffering',()=>{
   let now=1000;const events=[];const {PlaybackClock}=load('playback-telemetry');
   const c=new PlaybackClock(()=>now,e=>events.push(e),0);

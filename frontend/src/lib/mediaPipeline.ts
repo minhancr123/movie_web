@@ -12,8 +12,11 @@
  * (Safari fetches the playlist itself and the element carries no crossOrigin
  * attribute), so both are refused rather than risked.
  */
-export const isTaintFreePipeline = (src: string, hlsSupported: boolean): boolean => {
+export const prefersNativeHls = (userAgent: string, platform = '', maxTouchPoints = 0): boolean =>
+    /iPhone|iPad|iPod/i.test(userAgent) || (platform === 'MacIntel' && maxTouchPoints > 1);
+
+export const isTaintFreePipeline = (src: string, hlsSupported: boolean, nativePreferred = false): boolean => {
     // Mirrors the player's own branch: the MSE path, and only that.
     const isHlsSrc = /\.m3u8(\?|#|$)/i.test(src);
-    return isHlsSrc && hlsSupported;
+    return isHlsSrc && hlsSupported && !nativePreferred;
 };

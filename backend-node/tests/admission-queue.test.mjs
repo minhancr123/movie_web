@@ -1,6 +1,24 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import {createAdmissionQueue,createRenditionGate} from '../services/playback/admissionQueue.js';
+import {selectAdoptableSession} from '../services/playback/sessionAdoption.js';
+import fs from 'node:fs/promises';
+import os from 'node:os';
+import path from 'node:path';
+
+test('an interrupted ENDLIST prefix is skipped; a completed compatible window remains reusable',async()=>{
+ const root=await fs.mkdtemp(path.join(os.tmpdir(),'adoption-'));
+ const sessionPath=(id,name)=>path.join(root,id+name);
+ try{
+  await fs.writeFile(sessionPath('interrupted','.interrupted'),'255');
+  const deps={sessionPath,isLive:()=>false,readState:async()=>({ended:true,duration:314})};
+  const rows=[{sessionId:'interrupted',startAt:0},{sessionId:'finished',startAt:0}];
+  assert.equal((await selectAdoptableSession(rows,0,deps)).sessionId,'finished');
+  assert.equal(await selectAdoptableSession([rows[0]],0,deps),null);
+  assert.equal(await selectAdoptableSession([rows[1]],900,deps),null,'completed prefix cannot answer far seek');
+  assert.equal(await selectAdoptableSession([rows[1]],0,{...deps,readState:async()=>({ended:false,duration:314})}),null);
+ }finally{await fs.rm(root,{recursive:true,force:true});}
+});
 const tick=()=>new Promise(resolve=>setImmediate(resolve));
 function fixture(limit=1,settings={}) {
  const held=new Set();let serial=0;
