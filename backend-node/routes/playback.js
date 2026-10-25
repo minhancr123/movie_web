@@ -16,6 +16,8 @@ import {
   heartbeatPlaybackSession,
   leavePlaybackSession,
   refreshPlaybackUrl,
+  resolveExternalPlayback,
+  serveExternalVideo,
   serveHlsAsset,
   serveRenditionAsset,
   getPlaybackSubtitles,
@@ -41,6 +43,10 @@ const router = express.Router();
 // Manifests are private,no-store; only immutable segments may be edge-cached
 // (with the media_grant query ignored in the cache key).
 router.get('/hls/:sessionId/:asset', mediaAuthMiddleware, hlsAssetRateLimit, serveHlsAsset);
+// Native-player video redirect: media-grant scoped to the sid (minted by
+// POST /external); every player connection re-mints the expiring provider
+// link, so seeks hours into a film still land on a fresh URL.
+router.get('/ext/:sessionId/video', mediaAuthMiddleware, hlsAssetRateLimit, serveExternalVideo);
 // Stable cross-viewer URLs for published (finished, immutable) renditions.
 // Different segment count than the session route, so no pattern conflict.
 // Same media guard; bytes are identical for every logged-in viewer, which is
@@ -78,6 +84,8 @@ router.post('/session/:sessionId/telemetry', rateLimit({ max: 30, keyPrefix: 'rl
 router.post('/prewarm', playbackRateLimit, prewarmPlayback);
 router.post('/preload', playbackRateLimit, preloadPlayback);
 router.post('/sources', playbackRateLimit, listPlaybackSources);
+// Native (libmpv) resolve: original file direct, no remux verdict.
+router.post('/external', playbackRateLimit, resolveExternalPlayback);
 router.post('/subtitles', playbackRateLimit, getPlaybackSubtitles);
 router.get('/subtitles/job/:jobId', playbackPollRateLimit, getSubtitleJob);
 // Viewer-uploaded .srt: JSON body (no multipart dependency), so this route
