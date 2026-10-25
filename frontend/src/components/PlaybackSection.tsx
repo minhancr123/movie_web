@@ -18,6 +18,8 @@ const VideoPlayer = dynamic(() => import('@/components/VideoPlayer'), {
   ),
 });
 import { nextPlayableEpisode, fallbackPlaybackNotice } from '@/lib/playback-extras';
+import { episodeResumePosition, readEpisodeHistory } from '@/lib/episode-resume';
+import EpisodeResumeDialog from '@/components/EpisodeResumeDialog';
 import CinemaLayer, { type CinemaMode } from '@/components/CinemaLayer';
 
 /** Mirrors PLAYBACK_STARTUP_BUFFER_SECONDS on the server, for the wait copy. */
@@ -329,6 +331,16 @@ export default function PlaybackSection({
   const episodeTransition = type === 'tv' && Boolean(displayedEpisodeRef.current.src) && displayedEpisode !== currentEpisode;
   const freshEpisodeRef = useRef<string | null>(null);
   const providerCheckEpochRef = useRef(0);
+  const [episodeResumeChoice, setEpisodeResumeChoice] = useState<{ episode: PlayerEpisode; position: number } | null>(null);
+  const selectEpisode = (ep: PlayerEpisode, fromStart: boolean) => {
+    setEpisodeResumeChoice(null);
+    providerCheckEpochRef.current += 1;
+    seekEpochRef.current += 1;
+    resolveAbortRef.current?.abort();
+    freshEpisodeRef.current = fromStart ? `${contentRef}:${season}:${ep.episodeNumber}` : null;
+    setSwitchedEpisode(ep.episodeNumber);
+    if (typeof window !== 'undefined') window.history.replaceState(null, '', ep.href);
+  };
   const nextEpisode = type === 'tv' ? nextPlayableEpisode(episodes, currentEpisode) : undefined;
   const advanceEpisode = useCallback(() => {
     if (!nextEpisode) return;
@@ -341,7 +353,8 @@ export default function PlaybackSection({
   }, [nextEpisode, contentRef, season]);
   useEffect(() => {
     setSwitchedEpisode(null);
-  }, [episode]);
+    setEpisodeResumeChoice(null);
+  }, [episode, contentRef, season]);
 
   // Brings the watching episode onto the strip. Manual math, because
   // scrollIntoView also scrolls every vertical ancestor and yanks the whole
@@ -562,7 +575,7 @@ export default function PlaybackSection({
   const getResumeSeed = useCallback((): number => {
     if (freshEpisodeRef.current === `${contentRef}:${season}:${currentEpisode}`) return 0;
     try {
-      const saved = resumeHistoryRef.current.find((h) => h.slug === contentRef);
+      const saved = readEpisodeHistory(contentRef, resumeHistoryRef.current.find((h) => h.slug === contentRef));
       if (!saved) return 0;
       const duration = runtimeMinutes && runtimeMinutes > 0 ? runtimeMinutes * 60 : 0;
       // Per-episode position first: the flat pair only belongs to the
@@ -2394,6 +2407,11 @@ export default function PlaybackSection({
 
     return (
       <div className="w-full space-y-2">
+        {episodeResumeChoice && (
+          <EpisodeResumeDialog episode={episodeResumeChoice.episode.episodeNumber} position={episodeResumeChoice.position}
+            onChoose={fromStart => selectEpisode(episodeResumeChoice.episode, fromStart)}
+            onDismiss={() => setEpisodeResumeChoice(null)} />
+        )}
         {notice && (
           <div className="flex items-start justify-between gap-3 rounded-xl border border-amber-primary/30 bg-amber-primary/10 px-4 py-2.5 text-xs leading-relaxed text-amber-gold">
             <span>{notice}</span>
@@ -2413,7 +2431,7 @@ export default function PlaybackSection({
           <VideoPlayer
             playbackStartedAt={playbackRequestAtRef.current}
             suspended={episodeTransition}
-            onNextEpisode={nextEpisode && !episodeTransition ? advanceEpisode : undefined}
+            onNextEpisode={nextEpisode && !episodeTransition && !episodeResumeChoice ? advanceEpisode : undefined}
             nextEpisodeLabel={nextEpisode ? `Tập ${nextEpisode.episodeNumber} · ${nextEpisode.name}` : undefined}
             onCinemaChange={setCinemaMode}
             onVideoReady={setVideoEl}
@@ -2632,19 +2650,10 @@ export default function PlaybackSection({
                       if (clickEvent.button !== 0) return;
                       clickEvent.preventDefault();
                       if (ep.episodeNumber === currentEpisode) return;
-                      providerCheckEpochRef.current += 1;
-                      seekEpochRef.current += 1;
-                      resolveAbortRef.current?.abort();
-                      freshEpisodeRef.current = `${contentRef}:${season}:${ep.episodeNumber}`;
-                      setSwitchedEpisode(ep.episodeNumber);
-                      // The address bar must stay truthful — a reload or a shared
-                      // link opens this episode — but replaceState is not a
-                      // navigation, so the player is left alone. replaceState
-                      // rather than push: walking a season should not bury the
-                      // page the viewer came from under 24 history entries.
-                      if (typeof window !== 'undefined') {
-                        window.history.replaceState(null, '', ep.href);
-                      }
+                      const saved = readEpisodeHistory(contentRef, history.find(item => item.slug === contentRef));
+                      const position = episodeResumePosition(saved, `s${season}e${ep.episodeNumber}`, (runtimeMinutes || 0) * 60);
+                      if (position !== null) setEpisodeResumeChoice({ episode: ep, position });
+                      else selectEpisode(ep, true);
                     }}
                     className={`group w-44 shrink-0 overflow-hidden rounded-xl border transition snap-start ${
                       isActive

@@ -62,9 +62,9 @@ test('the resume seed is scoped to the episode, not to the mount', () => {
     'the mount-scoped boolean is gone');
 });
 
-test('an explicit episode click starts fresh and invalidates older asynchronous starts', () => {
-  const handler=source.slice(source.indexOf('clickEvent.preventDefault()'),source.indexOf('clickEvent.preventDefault()')+1600);
-  assert.match(handler,/freshEpisodeRef\.current = `\$\{contentRef\}:\$\{season\}:\$\{ep\.episodeNumber\}`/);
+test('episode choices invalidate older asynchronous starts and distinguish restart from resume', () => {
+  const handler=source.slice(source.indexOf('const selectEpisode ='),source.indexOf('const selectEpisode =')+1000);
+  assert.match(handler,/freshEpisodeRef\.current = fromStart \? `\$\{contentRef\}:\$\{season\}:\$\{ep\.episodeNumber\}` : null/);
   assert.match(handler,/providerCheckEpochRef\.current \+= 1/);
   assert.match(handler,/seekEpochRef\.current \+= 1/);
   assert.match(handler,/resolveAbortRef\.current\?\.abort\(\)/);
@@ -73,7 +73,7 @@ test('an explicit episode click starts fresh and invalidates older asynchronous 
 
 test('periodic history saves cannot restart auto-resolution; stale provider checks are ignored', () => {
   assert.match(source,/resumeHistoryRef\.current = history/);
-  assert.match(source,/const saved = resumeHistoryRef\.current\.find/);
+  assert.match(source,/const saved = readEpisodeHistory\(contentRef, resumeHistoryRef\.current\.find/);
   assert.doesNotMatch(source,/\[history, contentRef, episodeSlug/);
   assert.equal((source.match(/if \(checkEpoch !== providerCheckEpochRef\.current\) return/g)||[]).length,2);
 });
