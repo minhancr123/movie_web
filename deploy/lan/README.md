@@ -82,6 +82,31 @@ and confirm the matching Vietnamese cue. Repeat for HLS; test 4K on a device
 that supports HEVC. These checks use a small synthetic source. They do not
 measure TorBox speed, HDR correctness, the custom player UI or concurrent viewers.
 
+## Bounded LAN delivery benchmark
+
+From a second machine, use the existing LAN-only synthetic samples:
+
+```sh
+python3 deploy/lan/check-delivery-capacity.py \
+  --base http://192.168.100.14:8088 --seconds 12 \
+  --connections 5 10 20 --rates 8 25 --output /tmp/cinevn-delivery.json
+```
+
+The diagnostic host must be a private IP. This tool caps concurrency at 20,
+duration at 30 seconds per phase and profiles at 8/25 Mbps per connection.
+It fetches paced random HTTP ranges, validates response lengths/range headers,
+and records p95 transfer time, delivered rate, errors and missed one-second
+deadlines. It does not call playback APIs, create users, consume provider
+traffic or change production limits. The default six phases transfer about
+1.73 GB over the LAN. Do not expose port 8088 publicly.
+
+Record the client network interface, server resources and active release.
+Compare loopback with a separate client to distinguish file serving from the
+network path. Warm small files do not exercise cold SSD reads. Late one-second
+chunks are not automatically playback stalls: the browser buffer is absent.
+This benchmark alone cannot certify WAN upload, TorBox, remux concurrency,
+real-device decoding or an Internet viewer count.
+
 ## Public checks
 
 - `/healthz`: backend dependency readiness, 200 only when ready.
