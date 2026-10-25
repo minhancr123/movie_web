@@ -4,11 +4,12 @@ import React, { useEffect, useRef, useState, useCallback } from 'react';
 import { createPortal } from 'react-dom';
 import { enterCssFullscreen } from '@/lib/css-fullscreen';
 import { observeBuffering } from '@/lib/media-buffering';
+import { prepareWindowAt } from '@/lib/prepared-window';
 import Hls from 'hls.js';
 import { SeekPreview, TimelineSkip, NextEpisodePrompt, RememberedIntroSkip } from './PlaybackExtras';
 import SubtitleSyncGuide from './SubtitleSyncGuide';
 import { suppressNativeSubtitles } from '@/lib/native-subtitles';
-import { measureSubtitleAlignment, subtitleMappingFromMeasurements, alignedSubtitleTime, type SubtitleAlignment, type SubtitleTimeMapping } from '@/lib/subtitle-alignment';
+import { measureSubtitleAlignment, subtitleMappingFromMeasurements, independentSubtitleTimes, type SubtitleAlignment, type SubtitleTimeMapping } from '@/lib/subtitle-alignment';
 import { SUBTITLE_SYNC_STORAGE, subtitleSyncKey, readSubtitleDelay, writeSubtitleDelay, clampSubtitleDelay, subtitleAnchorDelay } from '@/lib/subtitle-sync';
 import { seekPreviewPosition } from '@/lib/playback-extras';
 import {
@@ -411,6 +412,7 @@ export default function VideoPlayer({ src, playbackStartedAt, movie, episode, au
 
     const saveSubtitleDelay = useCallback((value: number) => {
         manualSubtitleTimingRef.current = true;
+        autoSubRef.current = false;
         const next = clampSubtitleDelay(value);
         subDelayRef.current = next;
         setSubDelay(next);
@@ -472,7 +474,7 @@ export default function VideoPlayer({ src, playbackStartedAt, movie, episode, au
     const seekResumeIntentRef = useRef(false);
     const seekIntentSerialRef = useRef(0);
     const firedSeekIntentRef = useRef(-1);
-    const preparedWindowRef = useRef<string>('');
+    const preparedWindowRef = useRef({ key: '', at: 0 });
     const beginSeekLock = (at: number, resume?: boolean) => {
         if (suspended) return;
         telemetrySeekAt.current ??= performance.now();
@@ -652,6 +654,7 @@ export default function VideoPlayer({ src, playbackStartedAt, movie, episode, au
     const [bilingualOrder, setBilingualOrder] = useState<BilingualOrder>(() =>
         typeof window === 'undefined' ? 'english-first' : readPrefs().bilingualOrder);
     const [secondarySub, setSecondarySub] = useState<string>('');
+    const secondaryManualRef = useRef(false);
     const [cueCache, setCueCache] = useState<Record<string, SubCue[]>>({});
     const cueCacheRef = useRef(cueCache);
     useEffect(() => { cueCacheRef.current = cueCache; }, [cueCache]);
@@ -735,7 +738,9 @@ export default function VideoPlayer({ src, playbackStartedAt, movie, episode, au
         const langMatch = (t: SubTrack) => primaryVi ? isEnTrack(t) : isViTrack(t);
         const sameSource = (t: SubTrack) => trackSource(t) === trackSource(primary);
         const otherLang = (t: SubTrack) => !t.language.toLowerCase().startsWith(primaryLang2);
-        return pool.find((t) => langMatch(t) && sameSource(t))
+        return pool.find((t) => primaryVi && isEnTrack(t) && t.id === subtitleReferenceId)
+            || pool.find((t) => primaryVi && isEnTrack(t) && isEmbeddedTrack(t))
+            || pool.find((t) => langMatch(t) && sameSource(t))
             || pool.find((t) => langMatch(t))
             || pool.find((t) => sameSource(t) && otherLang(t))
             || pool.find(otherLang)
@@ -863,6 +868,7 @@ export default function VideoPlayer({ src, playbackStartedAt, movie, episode, au
             setSelectedSub('off');
             setBilingual(false);
             setSecondarySub('');
+            secondaryManualRef.current = false;
             setSubNote('');
             setSubError('');
             setSubStatus('idle');
@@ -1011,15 +1017,17 @@ export default function VideoPlayer({ src, playbackStartedAt, movie, episode, au
     }, []);
 
     const readSubPref = (): string | null => {
+        if (!subContext?.sourceToken) return null;
         try {
             const map = JSON.parse(localStorage.getItem('cinevn_sub_pref') || '{}');
-            return map[movie.slug] ?? null;
+            return map[JSON.stringify([movie.slug, episode.slug, subContext.sourceToken])] ?? null;
         } catch { return null; }
     };
     const writeSubPref = (label: string) => {
+        if (!subContext?.sourceToken) return;
         try {
             const map = JSON.parse(localStorage.getItem('cinevn_sub_pref') || '{}');
-            map[movie.slug] = label;
+            map[JSON.stringify([movie.slug, episode.slug, subContext.sourceToken])] = label;
             localStorage.setItem('cinevn_sub_pref', JSON.stringify(map));
         } catch { /* best-effort */ }
     };
@@ -1119,12 +1127,13 @@ export default function VideoPlayer({ src, playbackStartedAt, movie, episode, au
     // Subtitle files are timed against the full film's source clock, which the
     // remux leads by its B-frame reorder delay; the session offset goes back on
     // top, and the viewer's manual nudge after that.
-    const subLookupTime = subtitleLookupTime({
+    const sourceSubtitleTime = subtitleLookupTime({
         sessionStart: sessionStartAt,
         elementTime: currentTime,
-        delay: subDelay,
+        delay: 0,
         presentationShiftMs,
     });
+    const subLookupTime = sourceSubtitleTime + subDelay;
     // Secondary subtitle has its own relative offset for fine-tuning in bilingual mode.
     const [syncMapping, setSyncMapping] = useState<{ anchorT: number; slope: number } | null>(null);
     // When the EXTERNAL track is the one drifted (embedded partner = ground
@@ -1139,9 +1148,10 @@ export default function VideoPlayer({ src, playbackStartedAt, movie, episode, au
     // Quality score per external track (vs the embedded fingerprint): 1.0 =
     // same cut, ~0 = timed for a different release (unfixable by offsets).
     const [subScores, setSubScores] = useState<Record<string, { matchRate: number; offset: number; confident: boolean }>>({});
-    const secondaryLookupTime = subLookupTime + secondaryOffset
-        + (syncMapping && bilingual ? syncMapping.slope * (subLookupTime - subDelay - syncMapping.anchorT) : 0);
-    const primaryLookupTime = alignedSubtitleTime(subLookupTime - subDelay, primarySync) + subDelay;
+    const subtitleTimes = independentSubtitleTimes(sourceSubtitleTime, subDelay, secondaryOffset,
+        primarySync, bilingual ? syncMapping : null);
+    const secondaryLookupTime = subtitleTimes.secondary;
+    const primaryLookupTime = subtitleTimes.primary;
 
     const primaryCues = React.useMemo(() => {
         if (!selectedSub || selectedSub === 'off') return [];
@@ -1208,6 +1218,7 @@ export default function VideoPlayer({ src, playbackStartedAt, movie, episode, au
         }
         if (!primary || !partner || manualSubtitleTimingRef.current || Math.abs(subDelay) > 0.05) return;
         const primaryEmbedded = isEmbeddedTrack(primary), partnerEmbedded = isEmbeddedTrack(partner);
+        if (!primaryEmbedded && !partnerEmbedded) return;
         if (primaryEmbedded && partnerEmbedded) return;
         const reference = partnerEmbedded && !primaryEmbedded ? partner : primary;
         const target = reference === primary ? partner : primary;
@@ -1237,8 +1248,9 @@ export default function VideoPlayer({ src, playbackStartedAt, movie, episode, au
     // English subtitles. A full French/Japanese/etc. dialogue track can supply
     // timing boundaries; sparse signs tracks cannot prove a match.
     useEffect(() => {
-        const viTracks = subTracks.filter(t => t.ready !== false && t.url && !isEmbeddedTrack(t) && isViTrack(t));
-        const references = subTracks.filter(t => isEmbeddedTrack(t) && t.ready !== false && t.url);
+        const viTracks = sortSubtitleMenu(subTracks).filter(t => t.ready !== false && t.url && !isEmbeddedTrack(t) && isViTrack(t)).slice(0, 4);
+        const references = subTracks.filter(t => isEmbeddedTrack(t) && t.ready !== false && t.url)
+            .sort((a, b) => Number(isEnTrack(b)) - Number(isEnTrack(a))).slice(0, 3);
         if (!viTracks.length) return;
         let cancelled = false;
         void (async () => {
@@ -1276,15 +1288,17 @@ export default function VideoPlayer({ src, playbackStartedAt, movie, episode, au
     // (the English track was still extracting), pair it the moment a ready
     // partner appears instead of leaving the mode silently empty.
     useEffect(() => {
-        if (!bilingual || secondarySub) return;
+        if (!bilingual || secondaryManualRef.current) return;
         const primary = subTracks.find((t) => t.id === selectedSub);
         const candidate = pickSecondaryFor(primary, subTracks);
-        if (candidate) {
+        const current = subTracks.find(t => t.id === secondarySub);
+        if (candidate && candidate.id !== secondarySub && (!current || (isEmbeddedTrack(candidate) && !isEmbeddedTrack(current))
+            || (candidate.id === subtitleReferenceId && isEnTrack(candidate)))) {
             setSecondarySub(candidate.id);
             void ensureCues(candidate);
         }
         // eslint-disable-next-line react-hooks/exhaustive-deps
-    }, [bilingual, secondarySub, selectedSub, subTracks]);
+    }, [bilingual, secondarySub, selectedSub, subTracks, subtitleReferenceId]);
 
     const primarySubTrack = subTracks.find(t => t.id === selectedSub);
     const secondarySubTrack = subTracks.find(t => t.id === secondarySub);
@@ -2027,13 +2041,13 @@ export default function VideoPlayer({ src, playbackStartedAt, movie, episode, au
             // pre-restore tick must never overwrite the parent's last-good
             // playhead (the "recovery replays from 0/bucket" class of bugs).
             if (restorePendingRef.current) return;
-            if (Number.isFinite(video.duration) && video.currentTime < video.duration - 90) preparedWindowRef.current = '';
-            if (windowSeconds > 0 && onPrepareWindow && !video.paused && Number.isFinite(video.duration)
-                && video.currentTime >= video.duration - Math.min(45, windowSeconds / 3) && seekTargetRef.current === null) {
-                const at = nextRemuxWindowAt(sessionStartAt, video.duration, durationSeconds || 0, windowSeconds);
+            if (windowSeconds > 0 && onPrepareWindow && !video.paused && seekTargetRef.current === null) {
+                const hlsDetails = hlsRef.current?.levels.find(level => level.details)?.details;
+                const finishedEnd = hlsDetails?.live === false ? hlsDetails.totalduration : undefined;
+                const at = prepareWindowAt(sessionStartAt, video.currentTime, durationSeconds || 0, windowSeconds, finishedEnd);
                 const key = `${src}|${at}`;
-                if (at !== null && preparedWindowRef.current !== key) {
-                    preparedWindowRef.current = key;
+                if (at !== null && (preparedWindowRef.current.key !== key || Date.now() - preparedWindowRef.current.at > 45000)) {
+                    preparedWindowRef.current = { key, at: Date.now() };
                     void onPrepareWindow(at);
                 }
             }
@@ -3619,11 +3633,14 @@ export default function VideoPlayer({ src, playbackStartedAt, movie, episode, au
                                                                     onClick={() => {
                                                                         const next = !bilingual;
                                                                         setBilingual(next);
+                                                                        secondaryManualRef.current = false;
                                                                         if (next) {
                                                                             const currentTrack = subTracks.find((t) => t.id === selectedSub);
-                                                                            const vietnamese = pickBestViTrack(subTracks.filter((t) => t.ready !== false && t.url));
+                                                                            const vietnamese = currentTrack && isViTrack(currentTrack) && currentTrack.ready !== false && currentTrack.url
+                                                                                ? currentTrack : subTracks.find(t => t.id === validatedAutoSubRef.current && isViTrack(t) && t.ready !== false && t.url)
+                                                                                    || pickBestViTrack(subTracks.filter((t) => t.ready !== false && t.url));
                                                                             const primary = vietnamese || currentTrack || pickAutoSubtitle(subTracks);
-                                                                            if (primary) pickSubtitle(primary.id);
+                                                                            if (primary) { setSelectedSub(primary.id); void ensureCues(primary); }
                                                                             setSecondaryOffset(0);
                                                                             const candidate = pickSecondaryFor(primary, subTracks);
                                                                             if (candidate) {
@@ -3670,6 +3687,7 @@ export default function VideoPlayer({ src, playbackStartedAt, movie, episode, au
                                                                                 <button
                                                                                     key={t.id}
                                                                                     onClick={() => {
+                                                                                        secondaryManualRef.current = true;
                                                                                         setSecondarySub(t.id);
                                                                                         void ensureCues(t);
                                                                                     }}

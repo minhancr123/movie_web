@@ -213,6 +213,7 @@ export const playbackAPI = {
     audioIndex?: number;
     excludeSourceTokens?: string[];
     background?: boolean;
+    viewerId?: string;
     resolveId?: string;
     startAt?: number;
   }, signal?: AbortSignal) => enhancePlaybackPayload(data).then(payload => completeResolveRequest(

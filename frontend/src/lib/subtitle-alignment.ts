@@ -15,11 +15,18 @@ const median = (values: number[]) => {
 export const alignedSubtitleTime = (sourceTime: number, mapping: SubtitleTimeMapping | null) =>
   sourceTime + (mapping ? mapping.offset + mapping.slope * (sourceTime - mapping.anchorT) : 0);
 
+/** Manual Vietnamese correction must never move an embedded English clock. */
+export const independentSubtitleTimes = (sourceTime: number, primaryDelay: number, secondaryOffset: number,
+  primary: SubtitleTimeMapping | null, secondary: { anchorT: number; slope: number } | null) => ({
+  primary: alignedSubtitleTime(sourceTime, primary) + primaryDelay,
+  secondary: sourceTime + secondaryOffset + (secondary ? secondary.slope * (sourceTime - secondary.anchorT) : 0),
+});
+
 /** Compare only shared, actually covered intervals. Cue density is not proof of a cut. */
 export function measureSubtitleAlignment(target: SubCue[], reference: SubCue[],
   track: Pick<SubTrack, 'coverageRanges' | 'windowStart' | 'windowSeconds'>): SubtitleAlignment | null {
   if (!target.length || !reference.length) return null;
-  const maxOffset = 10;
+  const maxOffset = 5;
   const ranges = track.coverageRanges?.length ? track.coverageRanges
     : typeof track.windowStart === 'number' && typeof track.windowSeconds === 'number'
       ? [[track.windowStart, track.windowStart + track.windowSeconds]]
@@ -56,7 +63,8 @@ export function measureSubtitleAlignment(target: SubCue[], reference: SubCue[],
       for (const ri of [lo - 1, lo]) {
         if (ri < 0 || ri >= refs.length) continue;
         const residual = Math.abs(targets[ti].start - refs[ri].start - offset);
-        if (residual <= 0.35) comparisons.push({ target: ti, reference: ri, residual });
+        const durationError = Math.abs((targets[ti].end - targets[ti].start) - (refs[ri].end - refs[ri].start));
+        if (residual <= 0.25 && durationError <= 0.35) comparisons.push({ target: ti, reference: ri, residual });
       }
     }
     const usedTarget = new Set<number>(), usedReference = new Set<number>();
@@ -66,14 +74,16 @@ export function measureSubtitleAlignment(target: SubCue[], reference: SubCue[],
     });
     const deltas = pairs.map(p => targets[p.target].start - refs[p.reference].start);
     const fitted = deltas.length ? median(deltas) : offset;
-    return { offset: fitted, anchorT: pairs.length ? median(pairs.map(p => refs[p.reference].start)) : 0,
+    const matchedTimes = pairs.map(p => refs[p.reference].start);
+    return { offset: fitted, anchorT: pairs.length ? median(matchedTimes) : 0,
+      span: pairs.length ? Math.max(...matchedTimes) - Math.min(...matchedTimes) : 0,
       samples: pairs.length, matchRate: pairs.length / targets.length,
       spread: deltas.length ? median(deltas.map(d => Math.abs(d - fitted))) : Infinity };
   }).sort((a, b) => b.samples - a.samples || a.spread - b.spread);
   const best = scored[0];
   const ambiguous = scored.some(s => Math.abs(s.offset - best.offset) >= 1
     && s.matchRate >= best.matchRate - 0.08);
-  return { ...best, confident: !ambiguous && best.samples >= 8 && best.matchRate >= 0.7 && best.spread <= 0.25 };
+  return { ...best, confident: !ambiguous && best.samples >= 12 && best.matchRate >= 0.8 && best.spread <= 0.2 && best.span >= 60 };
 }
 
 /** Offsets and slopes use SOURCE time as their anchor, for either target track. */

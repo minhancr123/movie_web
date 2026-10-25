@@ -308,7 +308,7 @@ export const nextRemuxWindowAt = (startAt: number, localAt: number, fullDuration
   // Never retry an unexpectedly short/broken chunk or loop at the film's end.
   return windowSeconds > 0 && Number.isFinite(at) && fullDuration > 0
     && localAt >= windowSeconds - 10 && at < fullDuration - 2
-    ? Math.floor(at) : null;
+    ? at : null;
 };
 
 /**

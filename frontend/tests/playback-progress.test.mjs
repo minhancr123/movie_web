@@ -28,7 +28,7 @@ test('progressive CDN seeks use the requested position beyond the downloaded pre
         { kind: 'direct', localTime: 1123, clamped: false });
 });
 test('bounded remux continues at its real edge and never loops at film EOF or an unexpectedly short chunk', () => {
-    assert.equal(nextRemuxWindowAt(900, 602.4, 7200, 600), 1502);
+    assert.equal(nextRemuxWindowAt(900, 602.4, 7200, 600), 1502.4);
     assert.equal(nextRemuxWindowAt(6600, 600, 7200, 600), null);
     assert.equal(nextRemuxWindowAt(900, 10, 7200, 600), null);
     assert.equal(nextRemuxWindowAt(0, 600, 7200, 0), null);

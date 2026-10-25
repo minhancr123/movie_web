@@ -20,6 +20,7 @@ const VideoPlayer = dynamic(() => import('@/components/VideoPlayer'), {
 import { nextPlayableEpisode, fallbackPlaybackNotice } from '@/lib/playback-extras';
 import { episodeResumePosition, readEpisodeHistory } from '@/lib/episode-resume';
 import EpisodeResumeDialog from '@/components/EpisodeResumeDialog';
+import { preparedWindowCovers, restoreRequestedPosition } from '@/lib/prepared-window';
 import CinemaLayer, { type CinemaMode } from '@/components/CinemaLayer';
 
 /** Mirrors PLAYBACK_STARTUP_BUFFER_SECONDS on the server, for the wait copy. */
@@ -1069,8 +1070,20 @@ export default function PlaybackSection({
   // (stalled) position, which would strand the viewer where they tried to
   // leave. Cleared once playback reports progress at the requested position.
   const pendingSeekRef = useRef<number | null>(null);
-  const stagedWindowRef = useRef<{ at: number; token: string; audio: number | null; preparedAt: number; data: any } | null>(null);
+  const stagedWindowRef = useRef<{ at: number; token: string; audio: number | null; preparedAt: number; viewerId: string; data: any } | null>(null);
   const stagedAbortRef = useRef<AbortController | null>(null);
+  const stagedExpiryRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const discardStagedWindow = useCallback(() => {
+    if (stagedExpiryRef.current) clearTimeout(stagedExpiryRef.current);
+    stagedExpiryRef.current = null;
+    const staged = stagedWindowRef.current;
+    stagedWindowRef.current = null;
+    if (staged?.data?.sessionId) void playbackAPI.leave(staged.data.sessionId, staged.viewerId).catch(() => {});
+  }, []);
+  useEffect(() => {
+    stagedAbortRef.current?.abort();
+    discardStagedWindow();
+  }, [activeToken, activeAudioIndex, discardStagedWindow]);
   // Applied session offset mirror (startOffset state): recovery and audio
   // switches re-resolve the CURRENT timeline, not from zero.
   const startOffsetRef = useRef<number>(0);
@@ -1080,10 +1093,7 @@ export default function PlaybackSection({
   // apart: a response that sets origin without target replays the bucket bug
   // (target=780/origin=600 restoring to minute 10).
   const applyTargetFromData = (data: any) => {
-    const returnedTarget =
-      typeof data?.requestedPositionSeconds === 'number' && data.requestedPositionSeconds >= 0
-        ? Math.floor(data.requestedPositionSeconds)
-        : lastRequestedStartAtRef.current;
+    const returnedTarget = restoreRequestedPosition(data?.requestedPositionSeconds, lastRequestedStartAtRef.current);
     setTargetPosition(returnedTarget);
   };
 
@@ -1183,10 +1193,13 @@ export default function PlaybackSection({
     const token = activeTokenRef.current;
     const audio = activeAudioIndexRef.current;
     const epoch = seekEpochRef.current;
+    const stagingViewerId = `prepare-${Date.now().toString(36)}-${Math.random().toString(36).slice(2)}`;
     stagedAbortRef.current?.abort();
     const controller = new AbortController();
     stagedAbortRef.current = controller;
-    stagedWindowRef.current = null;
+    discardStagedWindow();
+    let preparedId: string | null = null;
+    let retained = false;
     try {
       const response = await playbackAPI.resolve({
         type, tmdbId, ...(type === 'tv' ? {
@@ -1194,11 +1207,15 @@ export default function PlaybackSection({
           episode: currentEpisode ?? undefined,
         } : {}),
         capabilities: detectCapabilities(), sourceToken: token || undefined,
-        audioIndex: audio ?? undefined, startAt: at, background: true,
+        audioIndex: audio ?? undefined, startAt: at, background: true, viewerId: stagingViewerId,
       }, controller.signal);
       const data = response.data?.data;
+      preparedId = data?.sessionId || null;
       if (controller.signal.aborted || epoch !== seekEpochRef.current || token !== activeTokenRef.current
-        || audio !== activeAudioIndexRef.current || data?.mode !== 'remux' || !data.windowSeconds || data.fallbackSource) return;
+        || audio !== activeAudioIndexRef.current || data?.mode !== 'remux' || !data.windowSeconds || data.fallbackSource
+        || (data.sourceToken && data.sourceToken !== token) || (typeof data.audioIndex === 'number' && audio !== null && data.audioIndex !== audio)
+        || !preparedWindowCovers(data, at)) return;
+      await playbackAPI.heartbeat(data.sessionId, stagingViewerId);
       // Resolve may return before the head start finishes. Keep the current
       // movie on screen while the next chunk's own session fills its buffer.
       if (data.warmingUp) {
@@ -1210,33 +1227,48 @@ export default function PlaybackSection({
         }
       }
       if (!controller.signal.aborted && epoch === seekEpochRef.current && !data.warmingUp) {
-        stagedWindowRef.current = { at, token, audio, preparedAt: Date.now(), data };
+        stagedWindowRef.current = { at, token, audio, preparedAt: Date.now(), viewerId: stagingViewerId, data };
+        retained = true;
+        stagedExpiryRef.current = setTimeout(() => {
+          if (stagedWindowRef.current?.data?.sessionId === preparedId) discardStagedWindow();
+        }, 90000);
       }
     } catch {
       // Best effort: foreground seek at the boundary remains the fallback.
+    } finally {
+      if (!retained && preparedId) void playbackAPI.leave(preparedId, stagingViewerId).catch(() => {});
     }
-  }, [type, tmdbId, season, currentEpisode]);
+  }, [type, tmdbId, season, currentEpisode, discardStagedWindow]);
 
   useEffect(() => () => {
     stagedAbortRef.current?.abort();
-    stagedWindowRef.current = null;
-  }, [type, tmdbId, season, currentEpisode]);
+    discardStagedWindow();
+  }, [type, tmdbId, season, currentEpisode, discardStagedWindow]);
 
   const requestSeekPosition = useCallback((displaySeconds: number) => {
-    const at = Math.max(0, Math.floor(displaySeconds));
+    const at = Math.max(0, displaySeconds);
+    lastRequestedStartAtRef.current = at;
     pendingSeekRef.current = at;
     // A newer seek supersedes a pending audio switch (and vice versa in
     // pickAudio): the stale button spinner must not survive the new intent.
     setPendingAudioIndex(null);
     const epoch = ++seekEpochRef.current;
     const staged = stagedWindowRef.current;
+    if (stagedExpiryRef.current) clearTimeout(stagedExpiryRef.current);
+    stagedExpiryRef.current = null;
     stagedWindowRef.current = null;
     stagedAbortRef.current?.abort();
-    if (staged && Date.now() - staged.preparedAt < 120000 && Math.abs(staged.at - at) <= 1 && staged.token === activeTokenRef.current
+    if (staged && Date.now() - staged.preparedAt < 90000 && preparedWindowCovers(staged.data, at) && staged.token === activeTokenRef.current
       && staged.audio === activeAudioIndexRef.current) {
       handleResolveResponse({ ...staged.data, requestedPositionSeconds: at }, epoch);
+      // Establish the active viewer BEFORE releasing the preparation lease.
+      // A separate lease also protects a reused/adopted active writer when a
+      // rejected background result is discarded.
+      void playbackAPI.heartbeat(staged.data.sessionId, viewerIdRef.current)
+        .then(() => playbackAPI.leave(staged.data.sessionId, staged.viewerId)).catch(() => {});
       return Promise.resolve();
     }
+    if (staged?.data?.sessionId) void playbackAPI.leave(staged.data.sessionId, staged.viewerId).catch(() => {});
     return startPlaybackResolutionRef.current(
       activeTokenRef.current,
       activeAudioIndexRef.current ?? undefined,
@@ -1286,7 +1318,7 @@ export default function PlaybackSection({
     // Pre-bucket request target, mirrored for handleResolveResponse: the
     // server answers origin (bucket) + requestedPositionSeconds (target), and
     // old servers answer origin only — this ref is the fallback target.
-    lastRequestedStartAtRef.current = resolvedStartAt;
+    lastRequestedStartAtRef.current = Math.max(0, options?.startAt ?? 0);
     // Every resolve takes the current generation number (seek/recovery/audio
     // passes its own so the intent survives the 4xx retry below). Only the
     // latest generation may replace the picture: a slow earlier resolve

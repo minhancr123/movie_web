@@ -53,3 +53,16 @@ test('drift mapping uses source-time anchors for either primary or secondary tar
   assert.equal(lookup(300, result), 291);
   assert.equal(mapping(previous, { ...current, confident: false }), null);
 });
+
+test('Vietnamese manual delay and drift never shift the independent English reference clock', () => {
+  const clocks=ctx.exports.independentSubtitleTimes(300,3,0,{offset:-1.8,anchorT:100,slope:0.002},null);
+  assert.equal(clocks.primary,301.6);
+  assert.equal(clocks.secondary,300);
+  assert.equal(ctx.exports.independentSubtitleTimes(300,-5,0.5,null,null).secondary,300.5);
+});
+test('short or incompatible cue grids do not certify a Vietnamese match', () => {
+  const short=cues.slice(0,10);
+  assert.equal(measure(short,short,{}).confident,false);
+  const target=cues.slice(0,30).map(c=>({...c,end:c.end+3}));
+  assert.equal(measure(target,cues.slice(0,30),{}).confident,false,'different cue durations are weak evidence');
+});
