@@ -1348,6 +1348,9 @@ export const spawnBeatsReuse = ({
   freshStartAt,
   playableSeconds,
   minPlayable,
+  headAt,
+  requestedAt,
+  nearHeadWaitSeconds = 25,
 } = {}) => {
   // A writer with nothing servable yet cannot be handed to a player: the reuse
   // path answers immediately, so the client gets a playlist URL that returns
@@ -1360,6 +1363,16 @@ export const spawnBeatsReuse = ({
   const live = Number(sessionStartAt);
   const fresh = Number(freshStartAt);
   if (!Number.isFinite(live) || !Number.isFinite(fresh)) return false;
+  // A target only slightly ahead of the written head will be covered by THIS
+  // writer within seconds (writers run ≥2× realtime) — cheaper than a new
+  // TorBox URL + probe + a second ffmpeg for a fresh window, both in latency
+  // and in home bandwidth. Reuse and let the player wait for the segments.
+  const head = Number(headAt);
+  const wanted = Number(requestedAt);
+  if (Number.isFinite(head) && Number.isFinite(wanted)
+    && wanted >= head && wanted - head <= nearHeadWaitSeconds) {
+    return false;
+  }
   return fresh > live;
 };
 
