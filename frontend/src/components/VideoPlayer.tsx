@@ -507,6 +507,9 @@ export default function VideoPlayer({ src, playbackStartedAt, movie, episode, au
     // events); pausedBeforeRebuildRef snapshots the element at teardown as a
     // backstop for rebuilds that happen without events in between.
     const hasPlayedRef = useRef(false);
+    // MANIFEST_PARSED restore guard (see the hls handler): the initial
+    // position restore runs once per source, not once per manifest reload.
+    const manifestParsedOnceRef = useRef(false);
     const pipelineContentRef = useRef<string | null>(null);
     const pausedBeforeRebuildRef = useRef(false);
     const userPausedRef = useRef(false);
@@ -1612,6 +1615,12 @@ export default function VideoPlayer({ src, playbackStartedAt, movie, episode, au
             hls.attachMedia(video);
 
             hls.on(Hls.Events.MANIFEST_PARSED, () => {
+                // EVENT playlists re-emit MANIFEST_PARSED on reloads — e.g.
+                // when extracted subtitle tracks join the manifest minutes
+                // into playback. Re-running the restore below paused the
+                // video mid-stream (viewers read it as "bấm là dừng").
+                if (manifestParsedOnceRef.current) return;
+                manifestParsedOnceRef.current = true;
                 // Quality is picked upstream (source picker), so the player
                 // always stays on Auto here.
                 hls.currentLevel = -1;
@@ -2624,7 +2633,18 @@ export default function VideoPlayer({ src, playbackStartedAt, movie, episode, au
             // Touch screens never fire mousemove: taps must recall the bar too.
             onTouchStart={handleMouseMove}
             onMouseLeave={() => isPlaying && !showSettings && hasPicture && setShowControls(false)}
-            onClick={togglePlay}
+            // Nhấp vùng video = ẩn/hiện thanh điều khiển (chuẩn Netflix).
+            // Trước đây nhấp để play/pause — nhấp hụt ngoài nút làm phim dừng
+            // giữa chừng, và trên mobile không có cách nào ẩn thanh khi nó tự
+            // hiện lại. Play/pause giờ chỉ qua nút, phím Space/K.
+            onClick={() => {
+                if (showControls) {
+                    if (controlsTimeoutRef.current) clearTimeout(controlsTimeoutRef.current);
+                    setShowControls(false);
+                } else {
+                    handleMouseMove();
+                }
+            }}
             onDoubleClick={toggleFullscreen}
         >
             {/* Keyboard Shortcuts Help Modal */}
@@ -2829,7 +2849,10 @@ export default function VideoPlayer({ src, playbackStartedAt, movie, episode, au
                             <RotateCcw className="w-6 h-6" />
                             <span className="pointer-events-none absolute inset-0 flex items-center justify-center pt-[2px] text-[9px] font-bold leading-none">10</span>
                         </button>
-                        <div className="w-20 h-20 liquid-glass liquid-play rounded-full flex items-center justify-center pl-2 group-hover:scale-110 transition-transform duration-300">
+                        <div
+                            onClick={(e) => { e.stopPropagation(); togglePlay(); }}
+                            className="w-20 h-20 liquid-glass liquid-play rounded-full flex items-center justify-center pl-2 group-hover:scale-110 transition-transform duration-300"
+                        >
                             <Play className="text-white w-10 h-10 fill-white" />
                         </div>
                         <button
