@@ -2,7 +2,7 @@ import { createRenditionGate } from '../services/playback/admissionQueue.js';
 import { selectAdoptableSession } from '../services/playback/sessionAdoption.js';
 const renditionGate = createRenditionGate();
 import { sourceListingFailure, incompatibleSourcesFailure } from '../services/playback/sourceAvailability.js';
-import { SEEK_BUCKET_SECONDS, bucketSeekStart, seekBufferFloor, startupTarget, sessionStartupTarget, hasPlayableBuffer } from '../services/playback/startupPolicy.js';
+import { SEEK_BUCKET_SECONDS, bucketSeekStart, seekBufferFloor, startupTarget, sessionStartupTarget, hasPlayableBuffer, initialStartupFloor, sessionPlaylistFloor } from '../services/playback/startupPolicy.js';
 import { isRecommendedDirectSource } from '../services/playback/directPlayVerdict.js';
 /**
  * Playback resolution + HLS asset serving.
@@ -2504,7 +2504,9 @@ export const resolvePlayback = async (req, res) => {
         const seeking = requestedStartAt > 0;
         const minimumSeconds = seeking
           ? seekBufferFloor({ requestedAt: requestedStartAt, origin: seekOrigin, segmentSeconds: SEEK_STARTUP_BUFFER_SECONDS })
-          : playlistMinSeconds;
+          : initialStartupFloor({ defaultMinimum: playlistMinSeconds,
+            bufferedSeconds: initialBuffer.duration,
+            writerElapsedMs: Date.now() - new Date(session.startedAt).getTime(), seeking });
         // Never advertise a playlist below the endpoint's floor, or a seek
         // whose requested frame has not been produced yet.
         const servable = await waitForInitialBuffer(sessionId, minimumSeconds, 20000, switchSignal);
@@ -2513,7 +2515,8 @@ export const resolvePlayback = async (req, res) => {
         startupTargetSeconds = startupTarget({
           configuredSeconds: startupBufferForStartAt(startAt), minimumSeconds,
           initialDuration: initialBuffer.duration, bufferedSeconds: measuredBuffer.duration,
-          elapsedMs: Date.now() - bufferMeasuredAt, seeking,
+          elapsedMs: Date.now() - bufferMeasuredAt,
+          writerElapsedMs: Date.now() - new Date(session.startedAt).getTime(), seeking,
         });
         stage('warm', attemptTag);
         warmingUp = !(await waitForInitialBuffer(
@@ -4713,7 +4716,7 @@ export const serveHlsAsset = async (req, res) => {
     }
     if (asset === 'index.m3u8') {
       const state = await readPlaylistState(sessionId);
-      if (!hasPlayableBuffer(state, playlistMinForStartAt(session.startAt))) {
+      if (!hasPlayableBuffer(state, sessionPlaylistFloor(session, playlistMinForStartAt(session.startAt)))) {
         return fail(res, 409, 'Video vẫn đang được chuẩn bị');
       }
       if (!state.ended) {
