@@ -47,8 +47,9 @@ stable and backed up privately; the provider secret is never committed to Git.
 Authenticated viewers use that shared connection for resolve, prewarm, seek,
 refresh and thumbnails. They cannot change/disconnect it or see its fingerprint
 or account identity. Playback sessions and media grants remain viewer-scoped.
-Shared credentials do not make in-progress remux windows shared across users
-or remove upstream/network limits. No real playback is possible until the admin
+Compatible in-progress remux windows can now be adopted across users through
+the rendition gate; credentials alone do not provide that sharing or remove
+upstream/network limits. No real playback is possible until the admin
 supplies a valid provider key. No existing personal key is silently migrated.
 
 To roll back the credential policy, set `TORBOX_KEY_MODE=personal` and restart.
@@ -102,6 +103,22 @@ SHA in backend `.env`, frontend `.env.production` **before building**, and the
 standalone environment. Keep `PLAYBACK_REMUX_WINDOW_SECONDS=900` in the active
 backend environment unless deliberately changing the playback policy. It is
 an upper limit: the byte budget may shorten windows for high bitrate sources.
+With `PLAYBACK_ADAPTIVE_WINDOW=1`, new windows also shrink with occupied writer
+slots (including reservations): below half capacity, up to 900 seconds; at half
+capacity, up to 600; at full capacity or with admission waiters, up to 300.
+Existing writers are never truncated. Compatible followers share the leader's
+actual duration even when their pressure snapshot chose another tier. The byte
+budget still takes precedence. Set the flag to `0` and deploy to revert.
+Shorter windows release writer slots sooner but create more continuation work;
+they do not lower the selected quality or the bandwidth per viewer.
+
+For the audited 237-GiB LAN disk, the accompanying production policy sets
+`TRANSCODE_CACHE_MAX_GB=48`, `RENDITIONS_MAX_GB=48` and
+`PLAYBACK_DISK_RESERVE_GB=24`. These are separate janitor budgets, not a hard
+combined filesystem quota: leases protect active viewers, hard links can share
+bytes, and other applications can consume disk. Admission still checks free
+space plus reservations. Keep monitoring actual free space, queue depth and
+playback stalls before increasing writers or claiming a viewer capacity.
 Build frontend from that archive and copy its static/public assets into the
 standalone output. Run both services from the new release; back up both
 service overrides first, and restore both on failed readiness checks.

@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict';
 import fs from 'node:fs/promises';
-import { remuxWindowSeconds, pricedRemuxSeconds, completedSessionCovers, budgetedWindowSeconds } from '../services/playback/remuxWindow.js';
+import { remuxWindowSeconds, loadAdjustedWindowSeconds, pricedRemuxSeconds, completedSessionCovers, budgetedWindowSeconds } from '../services/playback/remuxWindow.js';
 import { buildFfmpegArgs, estimateSessionBytes, admitRemuxDisk, sessionPath, spawnBeatsReuse } from '../services/playback/remuxService.js';
 import { publishRendition } from '../services/playback/renditions.js';
 
@@ -8,6 +8,16 @@ assert.equal(remuxWindowSeconds(false, { PLAYBACK_REMUX_WINDOW_SECONDS: '600' })
 assert.equal(remuxWindowSeconds(true, { PLAYBACK_REMUX_WINDOW_SECONDS: '600' }), 600);
 assert.equal(remuxWindowSeconds(true, {}), 0, 'feature is opt-in');
 assert.equal(remuxWindowSeconds(true, { PLAYBACK_REMUX_WINDOW_SECONDS: '99999' }), 900);
+const adaptive = { PLAYBACK_ADAPTIVE_WINDOW: '1' };
+for (const [active, queued, expected] of [[0,0,900], [1,0,900], [2,0,600], [3,0,600], [4,0,300], [1,1,300]]) {
+  assert.equal(loadAdjustedWindowSeconds(900, { active, limit:4, queued }, adaptive), expected);
+}
+assert.equal(loadAdjustedWindowSeconds(900, { active:4, limit:4 }, {}), 900, 'explicit opt-in; rollback preserves old policy');
+assert.equal(loadAdjustedWindowSeconds(0, { active:4, limit:4 }, adaptive), 0, 'legacy non-window clients remain unchanged');
+assert.equal(loadAdjustedWindowSeconds(120, { active:4, limit:4 }, adaptive), 120, 'never enlarge the configured window');
+assert.equal(loadAdjustedWindowSeconds(900, { active:4, limit:0 }, adaptive), 900, 'drain mode is still enforced by admission');
+assert.equal(loadAdjustedWindowSeconds(900, { active:NaN, limit:4 }, adaptive), 900, 'invalid pressure does not invent a size');
+assert(budgetedWindowSeconds(80000, loadAdjustedWindowSeconds(900, {active:4,limit:4}, adaptive)) < 100, '4K byte cap still wins');
 assert.equal(pricedRemuxSeconds(7200, 600, 1100), 600);
 assert.equal(pricedRemuxSeconds(7200, 600, 7100), 100, 'near EOF prices remaining bytes');
 assert.equal(budgetedWindowSeconds(6600, 600), 600);

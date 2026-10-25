@@ -21,7 +21,7 @@ import { isRecommendedDirectSource } from '../services/playback/directPlayVerdic
 import crypto from 'crypto';
 import { pickBestFile, fileIdentity, FILE_SELECTION_BUILD } from '../services/playback/fileSelection.js';
 export { pickBestFile };
-import { remuxWindowSeconds, pricedRemuxSeconds, completedSessionCovers, budgetedWindowSeconds } from '../services/playback/remuxWindow.js';
+import { remuxWindowSeconds, loadAdjustedWindowSeconds, pricedRemuxSeconds, completedSessionCovers, budgetedWindowSeconds } from '../services/playback/remuxWindow.js';
 import fs from 'fs/promises';
 import path from 'path';
 import { getDB } from '../config/database.js';
@@ -69,6 +69,7 @@ import {
   scheduleSupersededStop,
   cancelScheduledStop,
   writerSlotStatus,
+  writerAdmissionQueue,
   computeWriteSpeed,
   SLOW_WRITER_MIN_OBSERVE_MS,
   SLOW_WRITER_MIN_SPEED,
@@ -2049,6 +2050,9 @@ export const resolvePlayback = async (req, res) => {
 
       if (decision.mode === 'remux' && inputUrl && file) {
         if (windowSeconds) {
+          windowSeconds = loadAdjustedWindowSeconds(windowSeconds, {
+            ...writerSlotStatus(), queued: writerAdmissionQueue.size,
+          });
           windowSeconds = budgetedWindowSeconds(videoPlan.kbps, windowSeconds);
           if (!windowSeconds) {
             lastError = new Error('Nguồn quá lớn cho đoạn phát; đang thử bản nhẹ hơn');
@@ -2243,7 +2247,9 @@ export const resolvePlayback = async (req, res) => {
         video: videoPlan,
         segmentSeconds: REMUX_SEGMENT_SECONDS,
       });
-      const releaseRendition = await renditionGate.acquire(`${renditionKey}:${startAt}:${windowSeconds}`, {
+      // Window duration is a capacity choice, not byte identity. A follower
+      // choosing a shorter tier must still adopt the leader's compatible window.
+      const releaseRendition = await renditionGate.acquire(`${renditionKey}:${startAt}`, {
         signal: switchSignal,
         onWait: () => {
           req.resolveJobContext?.markWaiting();
