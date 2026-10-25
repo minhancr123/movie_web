@@ -328,9 +328,13 @@ export default function PlaybackSection({
   const displayedEpisode = displayedEpisodeRef.current.episode;
   const episodeTransition = type === 'tv' && Boolean(displayedEpisodeRef.current.src) && displayedEpisode !== currentEpisode;
   const freshEpisodeRef = useRef<string | null>(null);
+  const providerCheckEpochRef = useRef(0);
   const nextEpisode = type === 'tv' ? nextPlayableEpisode(episodes, currentEpisode) : undefined;
   const advanceEpisode = useCallback(() => {
     if (!nextEpisode) return;
+    providerCheckEpochRef.current += 1;
+    seekEpochRef.current += 1;
+    resolveAbortRef.current?.abort();
     freshEpisodeRef.current = `${contentRef}:${season}:${nextEpisode.episodeNumber}`;
     setSwitchedEpisode(nextEpisode.episodeNumber);
     if (typeof window !== 'undefined') window.history.replaceState(null, '', nextEpisode.href);
@@ -551,10 +555,14 @@ export default function PlaybackSection({
   const initialStartAtRef = useRef<number>(0);
   const seedConsumedForRef = useRef<string | null>(null);
   const episodeSlug = season && currentEpisode ? `s${season}e${currentEpisode}` : 'full';
+  // History saves must not rebuild the auto-start callback and re-open the
+  // same episode while it is playing. Read the latest value through a ref.
+  const resumeHistoryRef = useRef(history);
+  resumeHistoryRef.current = history;
   const getResumeSeed = useCallback((): number => {
     if (freshEpisodeRef.current === `${contentRef}:${season}:${currentEpisode}`) return 0;
     try {
-      const saved = history.find((h) => h.slug === contentRef);
+      const saved = resumeHistoryRef.current.find((h) => h.slug === contentRef);
       if (!saved) return 0;
       const duration = runtimeMinutes && runtimeMinutes > 0 ? runtimeMinutes * 60 : 0;
       // Per-episode position first: the flat pair only belongs to the
@@ -571,7 +579,7 @@ export default function PlaybackSection({
     } catch {
       return 0;
     }
-  }, [history, contentRef, episodeSlug, runtimeMinutes, season, currentEpisode]);
+  }, [contentRef, episodeSlug, runtimeMinutes, season, currentEpisode]);
 
   const recoverPlayback = useCallback((reason: string) => {
     // A fatal HLS event and the no-progress watchdog can fire together. Only
@@ -1948,6 +1956,7 @@ export default function PlaybackSection({
   loadSourcesRef.current = loadSources;
 
   const checkProviderConnection = useCallback(async () => {
+    const checkEpoch = ++providerCheckEpochRef.current;
     if (authStatus === 'unauthenticated') {
       setPlaybackStatus('error');
       setErrorMessage('Vui lòng đăng nhập để bắt đầu phát video');
@@ -1960,6 +1969,7 @@ export default function PlaybackSection({
     setPlaybackStatus('checking_provider');
     try {
       const res = await providerAPI.getStatus();
+      if (checkEpoch !== providerCheckEpochRef.current) return;
       const torbox = res.data?.data?.torbox;
       setProviderAccess({ mode: torbox?.mode, canManage: torbox?.canManage });
       if (torbox && torbox.connected) {
@@ -1982,6 +1992,7 @@ export default function PlaybackSection({
         setPlaybackStatus('needs_provider');
       }
     } catch (err: any) {
+      if (checkEpoch !== providerCheckEpochRef.current) return;
       if (err.response?.status === 401) {
         setPlaybackStatus('error');
         setErrorMessage('Phiên đăng nhập hết hạn, vui lòng đăng nhập lại');
@@ -1999,7 +2010,8 @@ export default function PlaybackSection({
   }, [playbackStatus]);
 
   useEffect(() => {
-    checkProviderConnection();
+    void checkProviderConnection();
+    return () => { providerCheckEpochRef.current += 1; };
   }, [checkProviderConnection]);
 
   const handleConnectTorbox = async (e: React.FormEvent) => {
@@ -2620,7 +2632,10 @@ export default function PlaybackSection({
                       if (clickEvent.button !== 0) return;
                       clickEvent.preventDefault();
                       if (ep.episodeNumber === currentEpisode) return;
-                      freshEpisodeRef.current = null;
+                      providerCheckEpochRef.current += 1;
+                      seekEpochRef.current += 1;
+                      resolveAbortRef.current?.abort();
+                      freshEpisodeRef.current = `${contentRef}:${season}:${ep.episodeNumber}`;
                       setSwitchedEpisode(ep.episodeNumber);
                       // The address bar must stay truthful — a reload or a shared
                       // link opens this episode — but replaceState is not a

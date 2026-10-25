@@ -13,6 +13,8 @@ import {
 import PlaybackSection from '@/components/PlaybackSection';
 import RecommendationsRow from '@/components/RecommendationsRow';
 import SpatialShader from '@/components/SpatialShader';
+import WatchEpisodeLabel from '@/components/WatchEpisodeLabel';
+import { Suspense } from 'react';
 
 // No route-level revalidate: each fetch in lib/catalog.ts sets its own, and a
 // page-level value makes Next 14 treat this route as ISR-cacheable, which
@@ -131,9 +133,9 @@ export default async function WatchPage({ params, searchParams }: PageParams) {
                 {detail.title}
               </h1>
               {type === 'tv' && season && episode ? (
-                <p className="mt-0.5 font-mono text-label-md uppercase text-amber-gold">
-                  Mùa {season}, tập {episode}
-                </p>
+                <Suspense fallback={<p className="mt-0.5 font-mono text-label-md uppercase text-amber-gold">Mùa {season}, tập {episode}</p>}>
+                  <WatchEpisodeLabel season={season} episode={episode} />
+                </Suspense>
               ) : (
                 detail.year && (
                   <p className="mt-0.5 font-mono text-label-md uppercase text-cinema-subtle">

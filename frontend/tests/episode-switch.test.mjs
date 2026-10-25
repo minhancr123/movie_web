@@ -62,6 +62,22 @@ test('the resume seed is scoped to the episode, not to the mount', () => {
     'the mount-scoped boolean is gone');
 });
 
+test('an explicit episode click starts fresh and invalidates older asynchronous starts', () => {
+  const handler=source.slice(source.indexOf('clickEvent.preventDefault()'),source.indexOf('clickEvent.preventDefault()')+1600);
+  assert.match(handler,/freshEpisodeRef\.current = `\$\{contentRef\}:\$\{season\}:\$\{ep\.episodeNumber\}`/);
+  assert.match(handler,/providerCheckEpochRef\.current \+= 1/);
+  assert.match(handler,/seekEpochRef\.current \+= 1/);
+  assert.match(handler,/resolveAbortRef\.current\?\.abort\(\)/);
+  assert.match(source,/if \(freshEpisodeRef\.current === `\$\{contentRef\}:\$\{season\}:\$\{currentEpisode\}`\) return 0/);
+});
+
+test('periodic history saves cannot restart auto-resolution; stale provider checks are ignored', () => {
+  assert.match(source,/resumeHistoryRef\.current = history/);
+  assert.match(source,/const saved = resumeHistoryRef\.current\.find/);
+  assert.doesNotMatch(source,/\[history, contentRef, episodeSlug/);
+  assert.equal((source.match(/if \(checkEpoch !== providerCheckEpochRef\.current\) return/g)||[]).length,2);
+});
+
 test('the episode strip follows the episode that is on screen', () => {
   assert.match(source, /\}, \[currentEpisode, episodes\.length, episodeStrip, revealActiveEpisode\]\)/,
     'the reveal re-runs on the effective episode and on the delayed strip attachment');
