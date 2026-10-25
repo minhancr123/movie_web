@@ -33,7 +33,7 @@ export const getResolveStageLabels = (isProduction = false): Record<string, stri
     link: 'Đang lấy link tải',
     probe: 'Đang đọc thông tin file (Probe)',
     remux: 'Đang khởi động luồng (Remux)',
-    waiting_writer: 'Đang chờ slot writer (1 slot)',
+    waiting_writer: 'Đang chờ lượt xử lý video',
     buffer: 'Đang đệm những giây đầu',
     warm: 'Đang đệm thêm',
     published: 'Có sẵn bản hoàn chỉnh',

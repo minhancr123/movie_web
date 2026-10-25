@@ -1173,7 +1173,7 @@ export default function PlaybackSection({
           episode: currentEpisode ?? undefined,
         } : {}),
         capabilities: detectCapabilities(), sourceToken: token || undefined,
-        audioIndex: audio ?? undefined, startAt: at,
+        audioIndex: audio ?? undefined, startAt: at, background: true,
       }, controller.signal);
       const data = response.data?.data;
       if (controller.signal.aborted || epoch !== seekEpochRef.current || token !== activeTokenRef.current

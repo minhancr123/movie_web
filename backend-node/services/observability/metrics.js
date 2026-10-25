@@ -1,7 +1,7 @@
 import { adminTraffic } from '../admin/traffic.js';
 import promClient from 'prom-client';
 import { getResolveTimings, finishResolveStages } from '../playback/resolveProgress.js';
-import { writerSlotStatus } from '../playback/remuxService.js';
+import { writerSlotStatus, writerAdmissionQueue } from '../playback/remuxService.js';
 
 export const register = new promClient.Registry();
 promClient.collectDefaultMetrics({ register });
@@ -13,6 +13,10 @@ export const httpDuration = metric(promClient.Histogram, {
 export const remuxActiveCount = metric(promClient.Gauge, {
   name: 'remux_active_count', help: 'Active remux writers',
   collect() { this.set(writerSlotStatus().active ?? 0); },
+});
+export const remuxQueueDepth = metric(promClient.Gauge, {
+  name: 'remux_queue_depth', help: 'Resolve jobs waiting for an FFmpeg writer reservation',
+  collect() { this.set(writerAdmissionQueue.size); },
 });
 export const playbackResolveDuration = metric(promClient.Histogram, {
   name: 'playback_resolve_duration_seconds', help: 'Server resolve duration, not client first frame',

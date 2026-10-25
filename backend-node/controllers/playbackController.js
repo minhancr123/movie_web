@@ -1,3 +1,5 @@
+import { createRenditionGate } from '../services/playback/admissionQueue.js';
+const renditionGate = createRenditionGate();
 import { sourceListingFailure, incompatibleSourcesFailure } from '../services/playback/sourceAvailability.js';
 import { SEEK_BUCKET_SECONDS, bucketSeekStart, seekBufferFloor, startupTarget, sessionStartupTarget, hasPlayableBuffer } from '../services/playback/startupPolicy.js';
 import { isRecommendedDirectSource } from '../services/playback/directPlayVerdict.js';
@@ -660,6 +662,10 @@ const findAdoptableWriter = async (db, renditionKey, requestedStartAt, excludeSe
     if (!compatible) continue;
     try {
       if (isRemuxSessionLive(row.sessionId)) return row;
+      // The producer may finish before a follower acquires the key. Reuse
+      // those completed bytes while publication waits for the janitor tick.
+      const state = await readPlaylistState(row.sessionId);
+      if (state.ended && completedSessionCovers(origin, state.duration, requestedStartAt)) return row;
     } catch { /* not live in this process */ }
   }
   return null;
@@ -1820,6 +1826,8 @@ export const resolvePlayback = async (req, res) => {
         continue;
       }
 
+      const linkResolvedAt = Date.now();
+
       // 8. ffprobe decides direct vs remux; a probe failure tries the next source.
       // Measured: a cold resolve spent ~8.7 s before ffmpeg even started, and
       // the addon lookup accounts for ~0.2 s of it. Most of the rest is this
@@ -2224,6 +2232,15 @@ export const resolvePlayback = async (req, res) => {
         video: videoPlan,
         segmentSeconds: REMUX_SEGMENT_SECONDS,
       });
+      const releaseRendition = await renditionGate.acquire(`${renditionKey}:${startAt}:${windowSeconds}`, {
+        signal: switchSignal,
+        onWait: () => {
+          req.resolveJobContext?.markWaiting();
+          stage('waiting_writer', 'Đang dùng chung nguồn đang được chuẩn bị');
+        },
+      });
+      try {
+      throwIfSuperseded();
       stage('published', attemptTag);
       // Old published tails lack a measured origin and were labelled zero.
       const servePublished = async () => {
@@ -2308,9 +2325,10 @@ export const resolvePlayback = async (req, res) => {
             if (await findPublishedRendition(db, renditionKey)) {
               return await servePublished();
             }
-            if (!isRemuxSessionLive(adoptedId)) break;
             const adoptState = await readPlaylistState(adoptedId);
-            if (hasPlayableBuffer(adoptState, playlistMinForStartAt(startAt))) { servable = true; break; }
+            if ((isRemuxSessionLive(adoptedId) || adoptState.ended)
+              && hasPlayableBuffer(adoptState, playlistMinForStartAt(startAt))) { servable = true; break; }
+            if (!isRemuxSessionLive(adoptedId)) break;
             await new Promise((resolveSleep) => setTimeout(resolveSleep, 500));
           }
           if (servable) {
@@ -2396,6 +2414,25 @@ export const resolvePlayback = async (req, res) => {
           // box that fills up fails deploys, not just this film.
           durationSeconds: pricedRemuxSeconds(fullDurationSeconds, windowSeconds, startAt),
           windowSeconds,
+          queue: req.resolveJobContext ? {
+            signal: switchSignal,
+            priority: req.body?.background === true ? 2 : requestedStartAt > 0 ? 0 : 1,
+            onWait: ({ position, total }) => {
+              req.resolveJobContext.markWaiting();
+              stage('waiting_writer', `Vị trí ${position} trong ${total}`);
+            },
+            onAdmitted: async () => {
+              throwIfSuperseded();
+              // A queued link may have expired while another film held the slot.
+              if (Date.now() - linkResolvedAt > 15000) {
+                inputUrl = await torbox.getDownloadUrl(debridKey, {
+                  torrentId: prepared.torrentId, fileId: file.fileId, userId: String(req.user.userId),
+                });
+              }
+              stage('remux', attemptTag);
+              return inputUrl;
+            },
+          } : null,
         });
         // Lost the race while spawning: hand the slot straight back instead
         // of leaving an orphan writer for a departed film.
@@ -2659,6 +2696,7 @@ export const resolvePlayback = async (req, res) => {
           candidate: sanitizeCandidateForResponse(candidate),
         },
       });
+      } finally { releaseRendition(); }
     }
 
     // 8b. Torrent flow exhausted: fall back to Vimo direct HLS (Vietsub)

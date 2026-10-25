@@ -25,6 +25,13 @@ export const setResolveStage = (resolveId, stage, detail = '') => {
     stages.delete(stages.keys().next().value);
   }
   const prev = stages.get(resolveId);
+  // Queue position changes update presence/detail without restarting the
+  // phase timer or pushing the original wait out of the bounded history.
+  if (prev?.stage === stage && prev.finishedAt === null) {
+    prev.detail = String(detail ?? ''); prev.updatedAt = Date.now();
+    if (prev.history.length) prev.history[prev.history.length-1].detail = prev.detail;
+    return true;
+  }
   const history = prev?.history || [];
   history.push({ stage, detail: String(detail ?? ''), at: Date.now() });
   while (history.length > 30) history.shift();
@@ -94,4 +101,10 @@ export const getAllResolveTimings = (now = Date.now()) => {
     if (entry) result.push(summarize(id, entry, now));
   }
   return result;
+};
+
+/** Only an owned pending-job poll may renew an otherwise unchanged phase. */
+export const touchResolveStage = resolveId => {
+  const entry = stages.get(resolveId);
+  if (entry && entry.finishedAt === null) entry.updatedAt = Date.now();
 };

@@ -57,3 +57,14 @@ for (let i = 0; i < 600; i++) {
 assert.equal(getResolveStage('r-cap-probe-000000'), null);
 assert.equal(getResolveStage('r-cap-probe-000599')?.stage, 'rank');
 console.log('ok - resolve stage map capped');
+
+clearResolveStages();
+setResolveStage('r-stable-queue-0000001','waiting_writer','Vị trí 3 trong 4');
+const original=getResolveStage('r-stable-queue-0000001');
+const originalStart=original.timings[0].start;
+setResolveStage('r-stable-queue-0000001','waiting_writer','Vị trí 2 trong 3');
+const updated=getResolveStage('r-stable-queue-0000001');
+assert.equal(updated.timings.length,1);
+assert.equal(updated.timings[0].start,originalStart);
+assert.equal(updated.detail,'Vị trí 2 trong 3');
+console.log('ok - queue position updates preserve total waiting phase duration');

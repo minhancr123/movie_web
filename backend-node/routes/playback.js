@@ -1,3 +1,5 @@
+import { createResolveJobs } from '../services/playback/resolveJobs.js';
+import { getResolveStage as readResolveStage, touchResolveStage } from '../services/playback/resolveProgress.js';
 import express from 'express';
 import { observePlaybackResolve } from '../services/observability/metrics.js';
 import { googleCodeExchange } from '../controllers/authController.js';
@@ -61,7 +63,17 @@ router.use(authMiddleware);
 router.get('/session/:sessionId/timeline', playbackPollRateLimit, getPlaybackTimeline);
 router.get('/session/:sessionId/thumbnail', rateLimit({ max: 45, keyPrefix: 'rl:seek-thumbnail' }), getPlaybackThumbnail);
 
-router.post('/resolve', playbackRateLimit, observePlaybackResolve, resolvePlayback);
+const resolveJobs = createResolveJobs({ handler: resolvePlayback, observe: observePlaybackResolve, readStage: readResolveStage, touchStage: touchResolveStage });
+const resolveJobLimit = rateLimit({ max: 120, keyPrefix: 'rl:resolve-job' });
+router.post('/resolve', playbackRateLimit, (req, res, next) => {
+  // Tabs running an older frontend keep the original synchronous contract.
+  if (req.body?.asyncQueue !== true) {
+    return observePlaybackResolve(req, res, () => { void resolvePlayback(req, res).catch(next); });
+  }
+  return resolveJobs.start(req, res).catch(next);
+});
+router.get('/resolve-jobs/:jobId', resolveJobLimit, resolveJobs.poll);
+router.delete('/resolve-jobs/:jobId', resolveJobLimit, resolveJobs.cancel);
 router.post('/session/:sessionId/telemetry', rateLimit({ max: 30, keyPrefix: 'rl:telemetry' }), playbackTelemetry);
 router.post('/prewarm', playbackRateLimit, prewarmPlayback);
 router.post('/preload', playbackRateLimit, preloadPlayback);

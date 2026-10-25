@@ -1,3 +1,4 @@
+import { createAdmissionQueue, abortedResolve } from './admissionQueue.js';
 import fs from 'fs/promises';
 import path from 'path';
 import os from 'os';
@@ -1739,7 +1740,7 @@ export const assertVideoTranscodeAllowed = async (video) => {
   }
 };
 
-export const startRemuxSession = async ({ sessionId, inputUrl, audioCopy = false, audioStreamIndex = null, audioChannels = null, audioDelayMs = 0, video = null, durationSeconds = null, windowSeconds = 0 }) => {
+export const startRemuxSession = async ({ sessionId, inputUrl, audioCopy = false, audioStreamIndex = null, audioChannels = null, audioDelayMs = 0, video = null, durationSeconds = null, windowSeconds = 0, queue = null }) => {
   const id = safeId(sessionId);
   if (!id) throw new Error('sessionId không hợp lệ');
   // Policy guard FIRST, before writer-limit/disk checks, directories, and any
@@ -1771,7 +1772,9 @@ export const startRemuxSession = async ({ sessionId, inputUrl, audioCopy = false
     durationSeconds: pricedDuration,
     height: video?.height,
   });
-  const acquired = await acquireWriterReservation({ sessionId: id, needBytes: needBytesEarly });
+  const acquired = queue
+    ? await writerAdmissionQueue.acquire({ sessionId: id, needBytes: needBytesEarly }, queue)
+    : await acquireWriterReservation({ sessionId: id, needBytes: needBytesEarly });
   if (!acquired.admitted) throw acquired.error;
   // Tracks the CURRENT token through consume: a TTL-expired token re-takes
   // under a fresh id, and every release below must target that id — never
@@ -1779,6 +1782,10 @@ export const startRemuxSession = async ({ sessionId, inputUrl, audioCopy = false
   let activeReservationId = acquired.reservationId;
   let reservationConsumed = false;
   try {
+  if (queue?.signal?.aborted) throw abortedResolve();
+  const refreshedInput = await queue?.onAdmitted?.();
+  if (refreshedInput) inputUrl = refreshedInput;
+
 
   // Last gate before ffmpeg exists, and the only one that still can refuse.
   //
@@ -1834,6 +1841,7 @@ export const startRemuxSession = async ({ sessionId, inputUrl, audioCopy = false
   // above, and the 45s TTL may have released the token meanwhile. Spawning
   // on it blind would exceed the ceiling; consume re-validates (live token
   // converts, dead token re-takes a free slot or refuses with 503).
+  if (queue?.signal?.aborted) throw abortedResolve();
   const consumedId = consumeWriterReservation(activeReservationId, { limit: remuxWriterLimit() });
   if (!consumedId) {
     throw new RemuxBusyError(remuxWriterLimit());
@@ -2218,6 +2226,10 @@ export const acquireWriterReservation = async ({
 
 /** Live reservations (tests/observability). */
 export const reservedWriterCount = () => writerReservations.size;
+
+export const writerAdmissionQueue = createAdmissionQueue({
+  tryAcquire: acquireWriterReservation, release: releaseWriterReservation,
+});
 
 /**
  * Bytes already promised to admitted-but-unwritten jobs. Disk admission

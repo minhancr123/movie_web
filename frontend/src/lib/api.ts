@@ -1,3 +1,4 @@
+import { completeResolveRequest } from './resolve-job';
 import axios from 'axios';
 import { getDevicePlaybackCapabilities } from './capabilities';
 import { getSession } from 'next-auth/react';
@@ -211,9 +212,15 @@ export const playbackAPI = {
     sourceToken?: string;
     audioIndex?: number;
     excludeSourceTokens?: string[];
+    background?: boolean;
     resolveId?: string;
     startAt?: number;
-  }, signal?: AbortSignal) => enhancePlaybackPayload(data).then(payload => authClient.post('/playback/resolve', payload, { timeout: 120_000, ...(signal ? { signal } : {}) })),
+  }, signal?: AbortSignal) => enhancePlaybackPayload(data).then(payload => completeResolveRequest(
+    () => authClient.post('/playback/resolve', { ...payload, asyncQueue: true }, { timeout: 120_000, ...(signal ? { signal } : {}) }), {
+      signal,
+      poll: (id, pollSignal) => authClient.get(`/playback/resolve-jobs/${encodeURIComponent(id)}`, { signal: pollSignal, timeout: 10_000 }),
+      cancel: id => authClient.delete(`/playback/resolve-jobs/${encodeURIComponent(id)}`, { timeout: 3000 }),
+    })),
   prewarm: (data: {
     type: string;
     tmdbId: number;
