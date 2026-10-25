@@ -46,6 +46,26 @@ try {
   assert.ok(sourceFrames.length >= 90);
   assert.deepEqual(decoded(joined), sourceFrames, 'copying HEVC to HLS preserves every decoded frame');
   console.log('ok - HEVC Main 10 survives HLS remux with identical decoded frames');
+  const fractionalDir=path.join(dir,'fractional');fs.mkdirSync(fractionalDir);
+  const fractionalInput=path.join(fractionalDir,'source.mkv');
+  run(['-f','lavfi','-i','testsrc2=size=128x72:rate=24000/1001',
+    '-f','lavfi','-i','sine=frequency=440:sample_rate=48000','-t','12',
+    '-c:v','libx265','-pix_fmt','yuv420p10le','-x265-params',
+    'log-level=error:pools=1:frame-threads=1:bframes=0:keyint=90:min-keyint=90:scenecut=0','-c:a','aac','-y',fractionalInput]);
+  run(buildFfmpegArgs({inputUrl:fractionalInput,outputDir:fractionalDir,video:{mode:'copy',codec:'hevc',hasBFrames:0},audioCopy:true,readRate:0}));
+  const packetTimes=file=>{
+    const r=spawnSync('ffprobe',['-v','error','-select_streams','v','-show_packets','-show_entries','packet=pts_time,dts_time','-of','json',file],{encoding:'utf8',timeout:15000});
+    assert.equal(r.status,0,r.stderr);return JSON.parse(r.stdout).packets;
+  };
+  const before=packetTimes(fractionalInput),after=packetTimes(path.join(fractionalDir,'index.m3u8'));
+  assert.equal(after.length,before.length,'no packet dropped or repeated');
+  for(let i=1;i<after.length;i++){
+    assert(Number(after[i].dts_time)>Number(after[i-1].dts_time),'fragment boundaries must have strictly increasing decode timestamps');
+    const relative=Number(after[i].pts_time)-Number(after[0].pts_time);
+    const original=Number(before[i].pts_time)-Number(before[0].pts_time);
+    assert(Math.abs(relative-original)<.002,'preserve the source clock within 2ms, not an invented fixed cadence');
+  }
+  console.log('ok - fractional-rate HEVC keeps monotonic fragment timestamps and the source clock');
 } finally {
   fs.rmSync(dir, { recursive: true, force: true });
 }

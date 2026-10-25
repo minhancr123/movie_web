@@ -16,7 +16,15 @@ export const parsePlaybackEvent = body => {
     && body.playedSeconds + body.stalledSeconds <= 120) {
     return { ...base, playedSeconds: body.playedSeconds, stalledSeconds: body.stalledSeconds };
   }
-  if (body.type === 'error') return base;
+  if (body.type === 'error') {
+    const details = {};
+    if (['native', 'mse', 'direct'].includes(body.engine)) details.engine = body.engine;
+    for (const [field, max] of [['mediaErrorCode', 4], ['readyState', 4], ['networkState', 3]]) {
+      if (Number.isInteger(body[field]) && valid(body[field], max)) details[field] = body[field];
+    }
+    if (valid(body.localTime, 200000)) details.localTime = Math.round(body.localTime * 1000) / 1000;
+    return { ...base, ...details };
+  }
   return null;
 };
 const seen = new Map();
@@ -37,7 +45,10 @@ export const playbackTelemetry = async (req, res) => {
     if (!session) return res.status(404).json({ success: false });
     if (acceptPlaybackEvent(session.sessionId, event)) {
       if (event.type === 'sync_snapshot') console.info('[playback-sync]', JSON.stringify(playbackSyncSnapshot(session, event)));
-      else recordPlaybackEvent(session, event);
+      else {
+        if (event.type === 'error') console.info('[playback-media]', JSON.stringify({ contentRef: session.contentRef, ...event }));
+        recordPlaybackEvent(session, event);
+      }
     }
     return res.sendStatus(204);
   } catch { return res.status(503).json({ success: false }); }

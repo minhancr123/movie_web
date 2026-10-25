@@ -72,6 +72,9 @@ test('orchestrator dispatches registered adapters and never falls back to unsupp
 test('client metrics count measured frames, seek and rebuffer with event validation/dedup', async () => {
   assert.equal(telemetry.parsePlaybackEvent({eventId:'valid-event',type:'seek',seconds:Infinity}),null);
   assert.equal(telemetry.parsePlaybackEvent({eventId:'valid-event',type:'summary',playedSeconds:100,stalledSeconds:30}),null);
+  assert.deepEqual(telemetry.parsePlaybackEvent({eventId:'valid-event',type:'error',engine:'native',mediaErrorCode:3,readyState:1,networkState:2,localTime:12.5,url:'secret',message:'secret'}),
+    {eventId:'valid-event',type:'error',engine:'native',mediaErrorCode:3,readyState:1,networkState:2,localTime:12.5});
+  assert.deepEqual(telemetry.parsePlaybackEvent({eventId:'valid-event',type:'error',engine:'secret',mediaErrorCode:99,localTime:Infinity}),{eventId:'valid-event',type:'error'});
   const event=telemetry.parsePlaybackEvent({eventId:'valid-event',type:'first_frame',seconds:2});
   assert.equal(telemetry.acceptPlaybackEvent('own-session',event,1000),true);
   assert.equal(telemetry.acceptPlaybackEvent('own-session',event,1001),false);

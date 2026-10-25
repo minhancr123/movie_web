@@ -878,7 +878,9 @@ export const isTenBitVideo = (video) =>
   */
 // Build 8 preserves HEVC payloads: the generic filter_units rewrite damaged
 // otherwise decodable Main 10 SDR sources on the deployed FFmpeg pipeline.
-export const REMUX_BUILD = 8;
+// Build 9 infers duration for HEVC without decode-order reordering. Keep
+// B-frame duration hints: clearing those can lose the final delayed frame.
+export const REMUX_BUILD = 9;
 
 /** VBR targets for codec-transcode rungs (H.264, SDR). */
 export const transcodeKbpsForHeight = (height) => {
@@ -1073,6 +1075,11 @@ export const buildFfmpegArgs = ({ inputUrl, outputDir, audioCopy = false, segmen
   // Preserve the copied bitstream. Applying filter_units to every copy can
   // damage HEVC slice data even on SDR files without Dolby Vision metadata.
   ...(videoCopy ? ['-fps_mode:v', 'passthrough'] : []),
+  // This adjusts packet metadata, not HEVC NAL payloads or PTS/DTS. On the
+  // reproduced 23.976fps Matroska sample, stale duration hints made the first
+  // packet at fragment boundaries overlap its successor. Let MOV infer the
+  // duration from adjacent timestamps instead of carrying those rounded hints.
+  ...(videoCopy && video?.codec === 'hevc' && video.hasBFrames === 0 ? ['-bsf:v', 'setts=duration=0'] : []),
   '-max_interleave_delta', '0',
   '-max_muxing_queue_size', '2048',
   '-c:a',

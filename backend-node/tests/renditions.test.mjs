@@ -25,6 +25,7 @@ const a = buildRenditionId(base);
 const b = buildRenditionId({ ...base });
 assert.equal(a, b);
 assert.match(a, /^[a-f0-9]{32}$/);
+assert.notEqual(buildRenditionId({...base,video:{mode:'copy',codec:'hevc',hasBFrames:0}}),buildRenditionId({...base,video:{mode:'copy',codec:'hevc'}}),'HEVC duration recipe must not reuse earlier published bytes');
 console.log('ok - rendition id stable, format v' + RENDITION_FORMAT_VERSION);
 
 // Everything that changes bytes changes the id.

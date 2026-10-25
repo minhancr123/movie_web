@@ -63,6 +63,7 @@ export const buildRenditionId = ({
 } = {}) => {
   const norm = {
     v: RENDITION_FORMAT_VERSION,
+    ...(video?.mode !== 'transcode' && video?.codec === 'hevc' && video.hasBFrames === 0 ? { hevcPacketDuration: 'inferred-v1' } : {}),
     infoHash: String(infoHash || '').toLowerCase(),
     fileId: String(fileId ?? ''),
     audio: {

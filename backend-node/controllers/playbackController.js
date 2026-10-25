@@ -1840,7 +1840,7 @@ export const resolvePlayback = async (req, res) => {
       // Probes cached before startTime tracking predate the A/V-offset
       // telemetry and would keep it blind for the whole 7-day TTL: re-probe
       // once instead (the fresh doc then serves everyone).
-      if (probe && probe.video && !('startTime' in probe.video)) probe = null;
+      if (probe && probe.video && (!('startTime' in probe.video) || !('hasBFrames' in probe.video))) probe = null;
       if (!probe) {
       try {
         probe = await ffprobe(inputUrl);
@@ -2018,6 +2018,7 @@ export const resolvePlayback = async (req, res) => {
       // candidate is unplayable under this policy — try the next source
       // instead of letting the spawn guard be the one to say so. The spawn
       // guard stays as the backstop for every other caller.
+      videoPlan.hasBFrames = probe.video?.hasBFrames ?? null;
       if (videoPlan.mode === 'transcode' && !videoTranscode.allowed) {
         lastError = new VideoTranscodeForbiddenError(
           'Nguồn này cần chuyển mã video nhưng máy chủ đang tắt tính năng đó',

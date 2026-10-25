@@ -1,7 +1,7 @@
 export type PlaybackEvent =
   | { type: 'first_frame' | 'seek'; seconds: number }
   | { type: 'summary'; playedSeconds: number; stalledSeconds: number }
-  | { type: 'error' }
+  | { type: 'error'; mediaErrorCode?: number; engine?: 'native' | 'mse' | 'direct'; readyState?: number; networkState?: number; localTime?: number }
   | { type: 'sync_snapshot'; requestedStartAt: number; playerCurrentTime: number;
       absolutePlaybackTime: number; subtitleLookupTime: number; subtitleCueStart: number;
       subtitleDelaySeconds: number; presentationShiftMs: number; selectedAudioIndex: number;
@@ -43,7 +43,9 @@ export class PlaybackClock {
     }
     this.state = paused ? 'paused' : 'playing';
   }
-  error() { if (!this.failed) { this.failed = true; this.emit({ type: 'error' }); } }
+  error(details: Omit<Extract<PlaybackEvent, { type: 'error' }>, 'type'> = {}) {
+    if (!this.failed) { this.failed = true; this.emit({ type: 'error', ...details }); }
+  }
   flush() {
     this.tick();
     // Chunk a throttled/background tab's summary to the server's strict bound.

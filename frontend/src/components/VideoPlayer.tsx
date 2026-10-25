@@ -543,7 +543,12 @@ export default function VideoPlayer({ src, playbackStartedAt, movie, episode, au
         const pause = () => clock.pause();
         const waiting = () => { if (!video.paused) clock.wait(); };
         const seeking = () => { if (telemetrySeekAt.current !== null) clock.seek(); };
-        const error = () => clock.error();
+        const error = () => clock.error({
+            mediaErrorCode: video.error?.code ?? 0,
+            engine: hlsRef.current ? 'mse' : /\.m3u8(\?|#|$)/i.test(src) ? 'native' : 'direct',
+            readyState: video.readyState, networkState: video.networkState,
+            localTime: Number.isFinite(video.currentTime) ? video.currentTime : 0,
+        });
         const events: Array<[string, () => void]> = [['play', play], ['pause', pause], ['waiting', waiting],
             ['playing', frame], ['loadeddata', frame], ['seeked', frame], ['seeking', seeking], ['error', error]];
         events.forEach(([event, fn]) => video.addEventListener(event, fn));
