@@ -1,7 +1,7 @@
 import assert from 'node:assert/strict';
 import fs from 'node:fs/promises';
 import { remuxWindowSeconds, pricedRemuxSeconds, completedSessionCovers, budgetedWindowSeconds } from '../services/playback/remuxWindow.js';
-import { buildFfmpegArgs, estimateSessionBytes, admitRemuxDisk, sessionPath } from '../services/playback/remuxService.js';
+import { buildFfmpegArgs, estimateSessionBytes, admitRemuxDisk, sessionPath, spawnBeatsReuse } from '../services/playback/remuxService.js';
 import { publishRendition } from '../services/playback/renditions.js';
 
 assert.equal(remuxWindowSeconds(false, { PLAYBACK_REMUX_WINDOW_SECONDS: '600' }), 0, 'old clients keep full-film delivery');
@@ -20,6 +20,9 @@ assert(completedSessionCovers(900, 600, 1123), '18:43 exists inside 15:00 chunk'
 assert(!completedSessionCovers(900, 100, 1123), 'a finished 16:40 prefix cannot answer 18:43');
 assert(!completedSessionCovers(900, 600, 1500), 'next chunk request must not reuse the previous end');
 assert(!completedSessionCovers(900, 600, 800), 'seek backwards needs earlier bytes');
+assert(!spawnBeatsReuse({ sessionStartAt: 0, freshStartAt: 92, playableSeconds: 80, minPlayable: 8, headAt: 80, requestedAt: 92 }), 'target 12s past the head: wait for the writer');
+assert(spawnBeatsReuse({ sessionStartAt: 0, freshStartAt: 600, playableSeconds: 80, minPlayable: 8, headAt: 80, requestedAt: 600 }), 'far target still spawns a closer window');
+assert(spawnBeatsReuse({ sessionStartAt: 0, freshStartAt: 92, playableSeconds: 80, minPlayable: 8 }), 'no head context keeps the old position rule');
 const args = buildFfmpegArgs({ inputUrl: 'source', outputDir: '/tmp/window-fixture', video: { mode: 'copy', startAt: 1110 }, windowSeconds: 600 });
 assert.equal(args[args.indexOf('-ss') + 1], '1110');
 assert.equal(args[args.indexOf('-t') + 1], '600');

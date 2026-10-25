@@ -753,6 +753,8 @@ const findReusableRemuxSession = async (db, { userId, type, tmdbId, season, epis
           // below the floor answers the player with 409s until it gives up.
           playableSeconds: duration,
           minPlayable: PLAYLIST_MIN_SECONDS,
+          headAt: sessionHead,
+          requestedAt: requestedStartAt,
         })) {
           continue;
         }
@@ -1785,6 +1787,15 @@ export const resolvePlayback = async (req, res) => {
           progress: Number(prepared.progress || 0),
           candidate: sanitizeCandidateForResponse(candidate),
         });
+        trackPrewarmUntilReady({
+          debridKey,
+          magnet: candidate.magnet,
+          infoHash: candidate.infoHash,
+          torrentId: prepared.torrentId,
+          season, episode,
+          titleExpect: type === 'movie' ? titleExpectation(detail) : {},
+          userId: String(req.user.userId),
+        });
         return res.status(202).json({
           success: true,
           message: 'Nguồn đang được tải về TorBox, vui lòng thử lại sau ít phút',
@@ -2800,6 +2811,75 @@ export const resolvePlayback = async (req, res) => {
  * forget from the detail page: even if the viewer never presses play, the
  * only cost is a few API calls and one probe read.
  */
+/* ---------------------------------------------------------- prewarm waiter */
+// The one-shot prewarm used to answer {warmed:false, state:'downloading'} for
+// a torrent TorBox is still pulling and then forget it — a fresh title kept
+// paying the whole P2P latency again at the viewer's first resolve. A waiter
+// keeps polling cheaply (a torrent-list read) until TorBox reports ready,
+// then pays the one expensive read the warm path would have paid anyway
+// (download URL + ffprobe) and leaves the probe facts cached. It stops AT
+// the probe on purpose: a background remux would burn a writer slot and home
+// bandwidth for a viewer that may never press play.
+const PREWARM_WAIT_CONCURRENCY = Number(process.env.PREWARM_WAIT_CONCURRENCY) || 3;
+const PREWARM_WAIT_POLL_MS = 30_000;
+const PREWARM_WAIT_MAX_POLLS = 60;   // 30 minutes total, then give up quietly
+const PREWARM_WAIT_STALL_POLLS = 6;  // 3 minutes without progress → dead torrent
+const prewarmWaiters = new Map();    // infoHash -> { polls, lastProgress, stall, timer }
+
+const stopPrewarmWaiter = (infoHash) => {
+  const hash = String(infoHash).toLowerCase();
+  const waiter = prewarmWaiters.get(hash);
+  if (!waiter) return;
+  if (waiter.timer) clearTimeout(waiter.timer);
+  prewarmWaiters.delete(hash);
+};
+
+const trackPrewarmUntilReady = ({ debridKey, magnet, infoHash, torrentId, season, episode, titleExpect, userId }) => {
+  const hash = String(infoHash).toLowerCase();
+  if (prewarmWaiters.has(hash) || prewarmWaiters.size >= PREWARM_WAIT_CONCURRENCY) return false;
+  const waiter = { polls: 0, lastProgress: -1, stall: 0, timer: null };
+  prewarmWaiters.set(hash, waiter);
+  const tick = async () => {
+    let prepared;
+    try {
+      prepared = await torbox.prepareSource(debridKey, { magnet, infoHash, torrentId, assumeCached: true });
+    } catch {
+      // Transient TorBox API error: retry on the next tick; the poll ceiling
+      // still ends the waiter even if the provider stays down.
+      waiter.timer = setTimeout(tick, PREWARM_WAIT_POLL_MS);
+      return;
+    }
+    waiter.polls += 1;
+    const progress = Number(prepared.progress || 0);
+    if (prepared.state === 'ready') {
+      stopPrewarmWaiter(hash);
+      try {
+        const file = pickBestFile(prepared.files, { season, episode, ...titleExpect });
+        if (file) {
+          const inputUrl = await torbox.getDownloadUrl(debridKey, { torrentId: prepared.torrentId, fileId: file.fileId, userId });
+          const cacheKey = probeResultKey(hash, file.fileId);
+          const probe = await getCache(cacheKey) || await ffprobe(inputUrl);
+          await setCache(cacheKey, probe, PROBE_RESULT_TTL);
+          await rememberProbeFacts(hash, probe, file.fileId);
+          console.log(`[prewarm-waiter] sẵn sàng sau ${waiter.polls} lần hỏi: ${hash.slice(0, 10)}`);
+        }
+      } catch (error) {
+        console.warn(`[prewarm-waiter] ready nhưng probe lỗi ${hash.slice(0, 10)}: ${error.message}`);
+      }
+      return;
+    }
+    if (Math.abs(progress - waiter.lastProgress) < 0.01) waiter.stall += 1;
+    else { waiter.stall = 0; waiter.lastProgress = progress; }
+    if (waiter.polls >= PREWARM_WAIT_MAX_POLLS || waiter.stall >= PREWARM_WAIT_STALL_POLLS) {
+      stopPrewarmWaiter(hash);
+      return;
+    }
+    waiter.timer = setTimeout(tick, PREWARM_WAIT_POLL_MS);
+  };
+  waiter.timer = setTimeout(tick, PREWARM_WAIT_POLL_MS);
+  return true;
+};
+
 export const prewarmPlayback = async (req, res) => {
   const parsed = parseResolveBody(req.body);
   if (parsed.error) {
@@ -2881,8 +2961,19 @@ export const prewarmPlayback = async (req, res) => {
       return fail(res, 502, error.message || 'Không chuẩn bị được nguồn');
     }
     if (prepared.state !== 'ready') {
-      // Still useful: the torrent is now added and TorBox is pulling it.
-      return res.json({ success: true, data: { warmed: false, state: 'downloading' } });
+      // Still useful: the torrent is now added and TorBox is pulling it — and
+      // the waiter below keeps an eye on it so the next resolve finds the
+      // probe facts already cached instead of paying the P2P wait again.
+      const tracked = trackPrewarmUntilReady({
+        debridKey,
+        magnet: target.magnet,
+        infoHash: target.infoHash,
+        torrentId: prepared.torrentId,
+        season, episode,
+        titleExpect: type === 'movie' ? titleExpectation(detail) : {},
+        userId: String(req.user.userId),
+      });
+      return res.json({ success: true, data: { warmed: false, state: 'downloading', tracked: Boolean(tracked) } });
     }
 
     const file = pickBestFile(prepared.files, { season, episode, fileIdx: target.fileIdx, filename: target.filename, ...(type === 'movie' ? titleExpectation(detail) : {}) });
