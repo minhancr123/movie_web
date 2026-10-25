@@ -193,6 +193,7 @@ export default function PlaybackSection({
     const sid = sessionIdRef.current;
     if (!sid || playModeRef.current !== 'direct' || directRefreshInFlightRef.current) return false;
     directRefreshInFlightRef.current = true;
+    const refreshEpoch = seekEpochRef.current;
     try {
       const r = await playbackAPI.refreshSessionUrl(sid);
       const url = r.data?.data?.url;
@@ -201,7 +202,8 @@ export default function PlaybackSection({
       // A newer intent (seek, recovery resolve) may have replaced this
       // session while the refresh was in flight: never clobber it with the
       // old session's URL.
-      if (sessionIdRef.current !== sid || playModeRef.current !== 'direct') return false;
+      if (sessionIdRef.current !== sid || playModeRef.current !== 'direct'
+        || seekEpochRef.current !== refreshEpoch || pendingSeekRef.current !== null) return false;
       // Same position, new bytes: the player restores from targetAt on the
       // pipeline rebuild, exactly like every re-resolve.
       const at = Math.floor(playheadRef.current || 0);
@@ -647,6 +649,9 @@ export default function PlaybackSection({
           : null,
     });
     lastRecoveryPositionRef.current = recoverAt;
+    // Restore failure may happen before any destination frame is published.
+    // Keep the recovery destination until confirmed progress reaches it.
+    pendingSeekRef.current = recoverAt;
     const epoch = ++seekEpochRef.current;
     void startPlaybackResolutionRef
       .current(

@@ -11,7 +11,7 @@ const out = mkdtempSync(path.join(tmpdir(), 'playback-restore-'));
 execFileSync(process.execPath, [path.join(root, 'node_modules/typescript/bin/tsc'),
   'src/lib/playback-restore.ts', '--outDir', out, '--module', 'commonjs',
   '--target', 'es2020', '--moduleResolution', 'node', '--skipLibCheck'], { cwd: root });
-const { restoreBeforePlayback, restorePlayIntent, nativeSeekCovered } = await import(pathToFileURL(path.join(out, 'playback-restore.js')));
+const { restoreBeforePlayback, restorePlayIntent, nativeSeekCovered, pipelineRestoreTarget } = await import(pathToFileURL(path.join(out, 'playback-restore.js')));
 process.on('exit', () => rmSync(out, { recursive: true, force: true }));
 
 class Media extends EventTarget {
@@ -170,4 +170,13 @@ test('missing seeked fallback cannot release an unbuffered target, wrong prefix,
     assert.equal(ready, 0, mode);
     cancel();
   }
+});
+
+
+test('incidental pipeline rebuild resumes 107:42 instead of its 95-minute resolve seed', () => {
+  const previous = { delivery: 'same-session-origin-reload', requested: 5701, position: 6462.4 };
+  assert.equal(pipelineRestoreTarget(previous.delivery, 5701, previous, 5701), 6462.4);
+  assert.equal(pipelineRestoreTarget(previous.delivery, 6400, previous, 5701), 6400, 'explicit backwards seek wins');
+  assert.equal(pipelineRestoreTarget('new-reload-intent', 5701, previous, 5701), 5701, 'same URL resolved again has a new intent');
+  assert.equal(pipelineRestoreTarget('different-episode', 0, previous, 5701), 0);
 });

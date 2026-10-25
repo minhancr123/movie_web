@@ -27,7 +27,7 @@ import {
     type SubCue, type SubTrack,
 } from '@/lib/subtitles';
 import { computeResumeAt, pickDisplayDuration, decideSeekTarget, nextRemuxWindowAt, planResume, shouldDowngradeForDropped, subtitleLookupTime, classifyStartAt, toLocalSeekTarget } from '@/lib/playback-progress';
-import { restoreBeforePlayback, restorePlayIntent, nativeSeekCovered } from '@/lib/playback-restore';
+import { restoreBeforePlayback, restorePlayIntent, nativeSeekCovered, pipelineRestoreTarget, type PipelineCheckpoint } from '@/lib/playback-restore';
 import {
     useAudioEnhancer, DEFAULT_AUDIO_ENHANCER,
     type AudioEnhancerSettings,
@@ -510,6 +510,7 @@ export default function VideoPlayer({ src, playbackStartedAt, movie, episode, au
     // backstop for rebuilds that happen without events in between.
     const hasPlayedRef = useRef(false);
     const pipelineContentRef = useRef<string | null>(null);
+    const pipelineCheckpointRef = useRef<PipelineCheckpoint | null>(null);
     const pausedBeforeRebuildRef = useRef(false);
     const userPausedRef = useRef(false);
 
@@ -1421,10 +1422,20 @@ export default function VideoPlayer({ src, playbackStartedAt, movie, episode, au
             grantRestore = grantRestoreRef.current;
         }
         grantRestoreRef.current = null;
-        const targetAbsolute = grantRestore
-            ?? ((typeof targetAt === 'number' && Number.isFinite(targetAt) && targetAt >= 0)
-                ? targetAt
-                : historyResume);
+        const requestedTarget = typeof targetAt === 'number' && Number.isFinite(targetAt) && targetAt >= 0 ? targetAt : null;
+        const deliveryKey = JSON.stringify([contentKey, src, sessionStartAt, reloadKey]);
+        const targetAbsolute = grantRestore ?? pipelineRestoreTarget(deliveryKey, requestedTarget,
+            pipelineCheckpointRef.current, historyResume);
+        const checkpoint: PipelineCheckpoint = { delivery: deliveryKey, requested: requestedTarget,
+            position: targetAbsolute ?? sessionStartAt };
+        pipelineCheckpointRef.current = checkpoint;
+        const snapshotPipeline = () => {
+            // Source teardown/load may reset currentTime; only confirmed media
+            // progress can replace the checkpoint, never a pre-restore zero.
+            if (!restorePendingRef.current && Number.isFinite(video.currentTime)) {
+                checkpoint.position = sessionStartAt + video.currentTime;
+            }
+        };
         const restoreTargetLocal = targetAbsolute === null ? 0 : toLocalSeekTarget(targetAbsolute, sessionStartAt);
         const playAfterRestore = contentChanged || restorePlayIntent(hasPlayedRef.current, pausedBeforeRebuildRef.current,
             userPausedRef.current, seekTargetRef.current === null ? null : seekResumeIntentRef.current);
@@ -1572,6 +1583,7 @@ export default function VideoPlayer({ src, playbackStartedAt, movie, episode, au
             video.addEventListener('loadedmetadata', onLoaded);
             video.addEventListener('error', onSrcError);
             return () => {
+                snapshotPipeline();
                 cancelled = true;
                 pausedBeforeRebuildRef.current = restorePendingRef.current ? !playAfterRestore : video.paused;
                 cancelPositionRestore?.();
@@ -1903,6 +1915,7 @@ export default function VideoPlayer({ src, playbackStartedAt, movie, episode, au
         }
 
         return () => {
+            snapshotPipeline();
             cancelled = true;
             // Remember intent for the next pipeline: a paused teardown must
             // rebuild paused, a playing one may resume playing.

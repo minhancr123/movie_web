@@ -4,6 +4,14 @@ import { shouldAutoplayAfterRebuild } from './playback-progress';
 export const restorePlayIntent = (hadPlayed: boolean, paused: boolean, userPaused: boolean, seekIntent: boolean | null) =>
   seekIntent ?? (shouldAutoplayAfterRebuild(hadPlayed, paused) && !userPaused);
 
+/** An incidental rebuild must resume live playback, not the old resolve seed.
+ * A new URL/origin/reload intent or changed target remains authoritative. */
+export type PipelineCheckpoint = { delivery: string; requested: number | null; position: number };
+export const pipelineRestoreTarget = (delivery: string, requested: number | null,
+  previous: PipelineCheckpoint | null, history: number | null): number | null =>
+  previous?.delivery === delivery && previous.requested === requested && Number.isFinite(previous.position)
+    ? previous.position : requested ?? history;
+
 type RestoreMedia = Pick<HTMLVideoElement,
   'readyState' | 'currentTime' | 'seeking' | 'pause' | 'addEventListener' | 'removeEventListener'>
   & Partial<Pick<HTMLVideoElement, 'buffered' | 'requestVideoFrameCallback' | 'cancelVideoFrameCallback'>>;
