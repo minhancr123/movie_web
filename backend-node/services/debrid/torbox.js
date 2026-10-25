@@ -12,6 +12,8 @@
 
 import { cacheClient } from '../../config/redis.js';
 import crypto from 'node:crypto';
+import { createProviderCircuit } from './providerCircuit.js';
+const providerCircuit = createProviderCircuit();
 
 const BASE_URL = (process.env.TORBOX_BASE_URL || 'https://api.torbox.app/v1/api').replace(/\/+$/, '');
 const REQUEST_TIMEOUT_MS = 15000;
@@ -38,6 +40,15 @@ export class DebridError extends Error {
   }
 }
 
+const providerUnavailable = () => Object.assign(new DebridError(
+  'TorBox đang bảo trì hoặc tạm gián đoạn. Vui lòng thử lại sau.',
+  { status: 503, code: 'provider_unavailable' },
+), { retryAfterSeconds: providerCircuit.remainingSeconds() || 30 });
+const checkProviderAvailability = () => {
+  if (providerCircuit.remainingSeconds()) throw providerUnavailable();
+};
+const markProviderUnavailable = () => { providerCircuit.fail(); return providerUnavailable(); };
+
 /**
  * Did TorBox fail to ANSWER, rather than answer "no"?
  *
@@ -58,6 +69,7 @@ export const isTransientDebridError = (error) =>
 
 const request = async (path, key, { method = 'GET', params = {}, body, timeoutMs = REQUEST_TIMEOUT_MS } = {}) => {
   if (!key) throw new DebridError('Thiếu TorBox API key', { status: 401, code: 'no_token' });
+  checkProviderAvailability();
 
   const url = new URL(`${BASE_URL}${path}`);
   Object.entries(params).forEach(([name, value]) => {
@@ -89,8 +101,10 @@ const request = async (path, key, { method = 'GET', params = {}, body, timeoutMs
     try {
       payload = JSON.parse(raw);
     } catch {
-      /* upstream returned an HTML error page */
+      throw markProviderUnavailable();
     }
+
+    if (response.status >= 500 || !payload || typeof payload !== 'object' || Array.isArray(payload)) throw markProviderUnavailable();
 
     if (response.status === 403 && payload?.error === 'PLAN_RESTRICTED_FEATURE') {
       throw new DebridError('Gói TorBox hiện tại không hỗ trợ API phát phim. Vui lòng kiểm tra gói dịch vụ trong TorBox.', {
@@ -322,6 +336,7 @@ export const prepareSource = async (
   key,
   { magnet, infoHash, torrentId = null, assumeCached = false },
 ) => {
+  checkProviderAvailability();
   if (!magnet && !infoHash && torrentId === null) {
     throw new DebridError('Cần magnet hoặc infoHash', { status: 400, code: 'bad_request' });
   }
@@ -343,6 +358,8 @@ export const prepareSource = async (
       });
     }
 
+    checkProviderAvailability();
+
     // TorBox wants multipart/form-data here, not JSON.
     const form = new FormData();
     form.append('magnet', magnet);
@@ -363,8 +380,9 @@ export const prepareSource = async (
       try {
         added = JSON.parse(raw);
       } catch {
-        throw new DebridError(`TorBox trả về dữ liệu không hợp lệ khi thêm magnet (${response.status})`);
+        throw markProviderUnavailable();
       }
+      if (response.status >= 500 || !added || typeof added !== 'object') throw markProviderUnavailable();
       if (response.status === 403 && added?.error === 'PLAN_RESTRICTED_FEATURE') {
         throw new DebridError('Gói TorBox hiện tại không hỗ trợ API phát phim. Vui lòng kiểm tra gói dịch vụ trong TorBox.', {
           status: 403, code: 'plan_restricted',

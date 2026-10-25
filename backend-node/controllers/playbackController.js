@@ -1743,6 +1743,15 @@ export const resolvePlayback = async (req, res) => {
           `resolvePlayback prepare failed tmdb=${tmdbId} infoHash=${String(candidate.infoHash).slice(0, 12)}: ${error?.message}`,
         );
         lastError = error;
+        if (error?.code === 'provider_unavailable') {
+          // Sibling infohashes hit the same unavailable API. A pinned source
+          // stays pinned; automatic selection may use the existing CDN fallback.
+          if (sourceToken) return fail(res, 503, error.message, {
+            code: 'PROVIDER_UNAVAILABLE', retryable: false, retryAfterSeconds: error.retryAfterSeconds || 30,
+          });
+          transientPrepareFailure = false;
+          break;
+        }
         const transient = torbox.isTransientDebridError(error);
         if (transient && hadCachedCandidate) transientPrepareFailure = true;
         // Ask once more, and only against the cheap cached feed: a second
@@ -2750,6 +2759,12 @@ export const resolvePlayback = async (req, res) => {
         };
         return res.json({ success: true, data: vimoFallback.data });
       }
+
+    if (lastError?.code === 'provider_unavailable') {
+      return fail(res, 503, lastError.message, {
+        code: 'PROVIDER_UNAVAILABLE', retryable: false, retryAfterSeconds: lastError.retryAfterSeconds || 30,
+      });
+    }
 
     console.error(`resolvePlayback exhausted tmdb=${tmdbId} attempts=${attempts.length}`);
     // The message alone once cost an evening of guessing ("session is not

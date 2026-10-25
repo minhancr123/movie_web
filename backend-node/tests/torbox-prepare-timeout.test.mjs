@@ -226,6 +226,36 @@ if (!/if \(options\?\.serverRetry !== true\) busyRetriesRef\.current = 0;/.test(
   failures.push('retry-counter-not-reset-by-its-own-retry');
 }
 
+// A provider HTML maintenance page is account-wide, not five broken files.
+{
+  const realNow=Date.now;
+  Date.now=()=>realNow()+60000;
+  try {
+  let requests=0;
+  await withStubbedTorbox(async()=>{requests++;return {status:404,ok:false,text:async()=>'<html>maintenance token=key-abc</html>'};},async()=>{
+    await assert.rejects(()=>prepareSource('key-abc',{infoHash:HASH,magnet:'magnet:?xt=urn:btih:'+HASH}),e=>e.code==='provider_unavailable'&&e.status===503&&!e.message.includes('key-abc'));
+    await assert.rejects(()=>prepareSource('another-key',{infoHash:'b'.repeat(40)}),e=>e.code==='provider_unavailable');
+    assert.equal(requests,1,'cooldown prevents requests for sibling releases/accounts during this service failure');
+  });
+  } finally { Date.now=realNow; }
+}
+
+{
+  const realNow=Date.now;
+  Date.now=()=>realNow()+120000;
+  try {
+    let requests=0;
+    await withStubbedTorbox(async href=>{
+      requests++;
+      return href.includes('createtorrent') ? {status:404,ok:false,text:async()=>'<html>maintenance</html>'} : jsonResponse({success:true,data:[]});
+    },async()=>{
+      await assert.rejects(()=>prepareSource('key-abc',{infoHash:HASH,magnet:'magnet:?xt=urn:btih:'+HASH}),e=>e.code==='provider_unavailable');
+      await assert.rejects(()=>prepareSource('key-abc',{infoHash:'b'.repeat(40)}),e=>e.code==='provider_unavailable');
+      assert.equal(requests,2,'after cooldown, one fresh list/add probe is allowed; siblings still stop');
+    });
+  } finally { Date.now=realNow; }
+}
+
 if (failures.length) {
   console.error(`FAILED: ${failures.join(', ')}`);
   process.exit(1);
