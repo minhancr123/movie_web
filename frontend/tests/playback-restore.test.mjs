@@ -133,3 +133,41 @@ test('a Safari seeked event at metadata-only state settles when loadeddata bring
   media.readyState = 2; media.event('loadeddata');
   assert.equal(ready, 1); cancel();
 });
+
+test('MSE reaches the exact 14:52 destination with buffered data but no seeked event', async () => {
+  const media = new Media(); media.readyState = 1;
+  let ready = 0;
+  const cancel = restoreBeforePlayback(media, 1.11, { timeoutMs: 2000, ready: () => ready++, failed: () => assert.fail('stuck restore') });
+  media.position = 1.11; media.seeking = false; media.readyState = 4;
+  media.buffered = { length: 1, start: () => 0, end: () => 15.936 };
+  // No more media events: the bounded observer must still release the UI.
+  await new Promise(resolve => setTimeout(resolve, 550));
+  assert.equal(ready, 1);
+  cancel();
+});
+
+test('a decoded destination frame releases a missing-seeked restore, not an old keyframe', () => {
+  const media = new Media(); media.readyState = 1;
+  let callback; let ready = 0;
+  media.requestVideoFrameCallback = fn => { callback = fn; return 1; };
+  media.cancelVideoFrameCallback = () => {};
+  const cancel = restoreBeforePlayback(media, 35.39, { ready: () => ready++, failed: () => assert.fail() });
+  media.position = 35.39; media.seeking = false; media.readyState = 2;
+  callback(0, { mediaTime: 0 }); assert.equal(ready, 0);
+  callback(0, { mediaTime: 35.39 }); assert.equal(ready, 1);
+  cancel();
+});
+
+test('missing seeked fallback cannot release an unbuffered target, wrong prefix, or cancelled pipeline', async () => {
+  for (const mode of ['unbuffered', 'prefix', 'cancelled']) {
+    const media = new Media(); media.readyState = 1; let ready = 0;
+    const cancel = restoreBeforePlayback(media, 35.39, { ready: () => ready++, failed: () => assert.fail() });
+    media.position = mode === 'prefix' ? 0 : 35.39;
+    media.seeking = false; media.readyState = 4;
+    media.buffered = { length: 1, start: () => 0, end: () => mode === 'unbuffered' ? 10 : 40 };
+    if (mode === 'cancelled') cancel();
+    await new Promise(resolve => setTimeout(resolve, 450));
+    assert.equal(ready, 0, mode);
+    cancel();
+  }
+});

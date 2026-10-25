@@ -507,9 +507,6 @@ export default function VideoPlayer({ src, playbackStartedAt, movie, episode, au
     // events); pausedBeforeRebuildRef snapshots the element at teardown as a
     // backstop for rebuilds that happen without events in between.
     const hasPlayedRef = useRef(false);
-    // MANIFEST_PARSED restore guard (see the hls handler): the initial
-    // position restore runs once per source, not once per manifest reload.
-    const manifestParsedOnceRef = useRef(false);
     const pipelineContentRef = useRef<string | null>(null);
     const pausedBeforeRebuildRef = useRef(false);
     const userPausedRef = useRef(false);
@@ -1524,6 +1521,8 @@ export default function VideoPlayer({ src, playbackStartedAt, movie, episode, au
                 ready: finishPositionRestore,
                 failed: () => {
                     if (cancelled) return;
+                    clearSeekLock();
+                    setIsLoading(false);
                     const reason = 'Chưa tải được điểm cần xem; đang giữ nguyên vị trí tua.';
                     if (onPlaybackFailure) onPlaybackFailure(reason);
                     else setError(reason);
@@ -1614,13 +1613,16 @@ export default function VideoPlayer({ src, playbackStartedAt, movie, episode, au
             hls.loadSource(src);
             hls.attachMedia(video);
 
+            // Scope to THIS Hls instance: a new seek/source needs its own
+            // restore, while repeated manifests within this instance do not.
+            let manifestParsedOnce = false;
             hls.on(Hls.Events.MANIFEST_PARSED, () => {
                 // EVENT playlists re-emit MANIFEST_PARSED on reloads — e.g.
                 // when extracted subtitle tracks join the manifest minutes
                 // into playback. Re-running the restore below paused the
                 // video mid-stream (viewers read it as "bấm là dừng").
-                if (manifestParsedOnceRef.current) return;
-                manifestParsedOnceRef.current = true;
+                if (manifestParsedOnce) return;
+                manifestParsedOnce = true;
                 // Quality is picked upstream (source picker), so the player
                 // always stays on Auto here.
                 hls.currentLevel = -1;
@@ -1658,14 +1660,14 @@ export default function VideoPlayer({ src, playbackStartedAt, movie, episode, au
                     hls.startLoad(target);
                     awaitPositionRestore(target);
                 };
-                hls.on(Hls.Events.LEVEL_UPDATED, (_event, data) => {
+                const restoreFromCoverage = (details: { totalduration: number; live: boolean } | undefined) => {
                     if (pendingResume === null) return;
-                    const head = data?.details?.totalduration;
+                    const head = details?.totalduration;
                     if (typeof head !== 'number' || !Number.isFinite(head)) return;
                     const plan = planResume({
                         resumeAt: pendingResume,
                         head,
-                        finished: data.details?.live === false,
+                        finished: details?.live === false,
                         canSeekResolve: typeof onSeekToPosition === 'function',
                         alreadyResolved: resumeFiredKeyRef.current === `${movie.slug}|${episode.slug}|${Math.floor(targetAbsolute ?? (sessionStartAt + pendingResume))}`,
                     });
@@ -1678,6 +1680,8 @@ export default function VideoPlayer({ src, playbackStartedAt, movie, episode, au
                     } else if (plan.kind === 'unavailable') {
                         pendingResume = null;
                         clearResumeTimer();
+                        clearSeekLock();
+                        setIsLoading(false);
                         const reason = 'Phiên phát đã dừng trước điểm cần xem.';
                         if (onPlaybackFailure) onPlaybackFailure(reason);
                         else setError(reason);
@@ -1698,11 +1702,19 @@ export default function VideoPlayer({ src, playbackStartedAt, movie, episode, au
                     } else {
                         settleResumeAt(plan.at);
                     }
-                });
+                };
+                hls.on(Hls.Events.LEVEL_UPDATED, (_event, data) => restoreFromCoverage(data?.details));
+                // A single-media playlist can already be parsed before
+                // MANIFEST_PARSED reaches this listener. VOD emits no later
+                // LEVEL_UPDATED, so waiting only for that event deadlocks a
+                // decoded, buffered destination behind the seek overlay.
+                restoreFromCoverage(hls.levels.find(level => level.details)?.details);
                 // Bound the wait, but never seek into unavailable media.
                 resumeTimer = setTimeout(() => {
                     if (pendingResume === null) return;
                     pendingResume = null;
+                    clearSeekLock();
+                    setIsLoading(false);
                     const reason = 'Chưa tải được điểm cần xem; đang giữ nguyên vị trí tua.';
                     if (onPlaybackFailure) onPlaybackFailure(reason);
                     else setError(reason);
