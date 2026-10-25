@@ -64,8 +64,10 @@ export default function HeroWithResume({ fallback }: { fallback: HeroMovie[] }) 
     ? `Mùa ${resume.season} · Tập ${resume.currentEpisode}` : null;
 
   return (
-    <section className="relative mt-2 overflow-hidden rounded-3xl border border-white/5">
-      <div className="relative aspect-[21/10] w-full sm:aspect-[21/9]">
+    <section className="relative mt-2 overflow-hidden rounded-2xl border border-white/5">
+      {/* Dải ngang gọn: nổi bật nhưng không nuốt màn hình đầu — hero trending
+          nằm ngay dưới vẫn nhìn thấy. Ảnh cover theo chiều cao cố định. */}
+      <div className="relative h-[210px] w-full sm:h-[280px] lg:h-[320px]">
         <Image
           src={`${IMAGE_PREFIX}${detail.backdrop}`}
           alt={detail.title}
@@ -77,7 +79,7 @@ export default function HeroWithResume({ fallback }: { fallback: HeroMovie[] }) 
         <div className="absolute inset-0 bg-gradient-to-t from-[#0d0e11] via-[#0d0e11]/60 to-transparent" />
         <div className="absolute inset-0 bg-gradient-to-r from-[#0d0e11]/80 via-transparent to-transparent" />
 
-        <div className="absolute bottom-0 left-0 right-0 p-5 sm:p-10">
+        <div className="absolute bottom-0 left-0 right-0 p-4 sm:p-7">
           <div className="flex items-center gap-2">
             <span className="rounded bg-amber-primary px-2 py-0.5 font-mono text-[10px] font-bold uppercase tracking-widest text-black">
               Đang xem
@@ -88,19 +90,19 @@ export default function HeroWithResume({ fallback }: { fallback: HeroMovie[] }) 
               </span>
             )}
           </div>
-          <h2 className="mt-2 max-w-3xl font-syne text-2xl font-black leading-tight text-white drop-shadow-lg sm:text-4xl lg:text-5xl">
+          <h2 className="mt-1.5 max-w-3xl font-syne text-xl font-black leading-tight text-white drop-shadow-lg sm:text-3xl">
             {detail.title}
           </h2>
-          <p className="mt-2 hidden max-w-xl text-sm leading-relaxed text-white/70 sm:line-clamp-2">{detail.overview}</p>
+          <p className="mt-1.5 hidden max-w-xl text-xs leading-relaxed text-white/70 sm:line-clamp-1 md:line-clamp-2">{detail.overview}</p>
 
-          <div className="mt-4 flex flex-wrap items-center gap-3">
+          <div className="mt-3 flex flex-wrap items-center gap-3">
             <PrewarmWatchLink
               type={resume.mediaType as string}
               tmdbId={resume.tmdbId as number}
               season={resume.season ?? null}
               episode={Number(resume.currentEpisode) > 0 ? Number(resume.currentEpisode) : null}
               href={href}
-              className="inline-flex items-center gap-2 rounded-xl bg-amber-primary px-6 py-3 text-sm font-bold text-black shadow-lg shadow-amber-primary/30 transition-all hover:bg-amber-gold"
+              className="inline-flex items-center gap-2 rounded-xl bg-amber-primary px-5 py-2.5 text-sm font-bold text-black shadow-lg shadow-amber-primary/30 transition-all hover:bg-amber-gold"
             >
               <Play size={18} fill="currentColor" />
               Tiếp tục từ {fmt(pos)}
