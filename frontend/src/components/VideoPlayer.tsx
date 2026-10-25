@@ -26,7 +26,7 @@ import {
     type SubCue, type SubTrack,
 } from '@/lib/subtitles';
 import { computeResumeAt, pickDisplayDuration, decideSeekTarget, nextRemuxWindowAt, planResume, shouldDowngradeForDropped, subtitleLookupTime, classifyStartAt, toLocalSeekTarget } from '@/lib/playback-progress';
-import { restoreBeforePlayback, restorePlayIntent } from '@/lib/playback-restore';
+import { restoreBeforePlayback, restorePlayIntent, nativeSeekCovered } from '@/lib/playback-restore';
 import {
     useAudioEnhancer, DEFAULT_AUDIO_ENHANCER,
     type AudioEnhancerSettings,
@@ -1816,16 +1816,7 @@ export default function VideoPlayer({ src, playbackStartedAt, movie, episode, au
             });
         } else if (video.canPlayType('application/vnd.apple.mpegurl')) {
             const nativeCovered = () => {
-                if (restoreTargetLocal <= 0) return true;
-                if (video.readyState < 1) return false;
-                try {
-                    for (const ranges of [video.seekable, video.buffered]) {
-                        for (let i = 0; i < ranges.length; i++) {
-                            if (ranges.start(i) <= restoreTargetLocal && ranges.end(i) >= restoreTargetLocal + 0.5) return true;
-                        }
-                    }
-                } catch { /* Ranges may change during a media load. */ }
-                return false;
+                return nativeSeekCovered(video, restoreTargetLocal);
             };
             const onNativeError = () => {
                 cancelPositionRestore?.();
@@ -2718,6 +2709,7 @@ export default function VideoPlayer({ src, playbackStartedAt, movie, episode, au
                 ref={videoRef}
                 className={`w-full h-full ${videoScale === 'cover' ? 'object-cover' : videoScale === 'fill' ? 'object-fill' : 'object-contain'}`}
                 playsInline
+                preload="auto"
                 onClick={(e) => { e.stopPropagation(); togglePlay(); }}
                 onDoubleClick={(e) => { e.stopPropagation(); toggleFullscreen(); }}
             />

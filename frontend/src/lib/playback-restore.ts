@@ -7,6 +7,24 @@ export const restorePlayIntent = (hadPlayed: boolean, paused: boolean, userPause
 type RestoreMedia = Pick<HTMLVideoElement,
   'readyState' | 'currentTime' | 'seeking' | 'pause' | 'addEventListener' | 'removeEventListener'>;
 
+/** A finite element duration describes this HLS playlist, not the full-film UI.
+ * Native HLS may expose no seekable/buffered ranges until currentTime requests
+ * the destination. Do not wait for that download before issuing the seek.
+ */
+export const nativeSeekCovered = (video: Pick<HTMLVideoElement, 'readyState' | 'duration' | 'seekable' | 'buffered'>, target: number): boolean => {
+  if (target <= 0) return true;
+  if (video.readyState < 1) return false;
+  if (Number.isFinite(video.duration) && target + 0.5 <= video.duration) return true;
+  try {
+    for (const ranges of [video.seekable, video.buffered]) {
+      for (let i = 0; i < ranges.length; i++) {
+        if (ranges.start(i) <= target && ranges.end(i) >= target + 0.5) return true;
+      }
+    }
+  } catch { /* ranges can change while the native loader updates */ }
+  return false;
+};
+
 /** Metadata or a currentTime assignment alone does not prove a seek landed. */
 export const restoreBeforePlayback = (video: RestoreMedia, target: number, options: {
   covered?: () => boolean;

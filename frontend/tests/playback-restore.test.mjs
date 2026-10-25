@@ -11,7 +11,7 @@ const out = mkdtempSync(path.join(tmpdir(), 'playback-restore-'));
 execFileSync(process.execPath, [path.join(root, 'node_modules/typescript/bin/tsc'),
   'src/lib/playback-restore.ts', '--outDir', out, '--module', 'commonjs',
   '--target', 'es2020', '--moduleResolution', 'node', '--skipLibCheck'], { cwd: root });
-const { restoreBeforePlayback, restorePlayIntent } = await import(pathToFileURL(path.join(out, 'playback-restore.js')));
+const { restoreBeforePlayback, restorePlayIntent, nativeSeekCovered } = await import(pathToFileURL(path.join(out, 'playback-restore.js')));
 process.on('exit', () => rmSync(out, { recursive: true, force: true }));
 
 class Media extends EventTarget {
@@ -69,6 +69,19 @@ test('native HLS waits for target coverage and cancelling a pipeline removes cal
   head = 40; media.event('progress'); assert.deepEqual(media.assignments, [35.39]);
   cancel(); media.position = 35.39; media.seeking = false; media.event('seeked');
   assert.equal(ready, 0);
+});
+
+test('native HLS seeks a prepared playlist before downloading the destination, then waits for its frame',()=>{
+ const media=new Media();media.readyState=1;media.duration=900;
+ media.seekable=media.buffered={length:0};let ready=0;
+ const cancel=restoreBeforePlayback(media,688,{covered:()=>nativeSeekCovered(media,688),ready:()=>ready++,failed:()=>assert.fail()});
+ assert.deepEqual(media.assignments,[688],'request the remote destination without waiting for its buffered range');
+ assert.equal(ready,0);
+ media.position=688;media.seeking=false;media.event('seeked');assert.equal(ready,0);
+ media.readyState=2;media.event('loadeddata');assert.equal(ready,1);
+ cancel();
+ assert.equal(nativeSeekCovered({...media,duration:300},688),false,'short playlist is not the advertised full-film duration');
+ assert.equal(nativeSeekCovered({...media,duration:Infinity},688),false,'unknown live extent must not invent coverage');
 });
 
 test('synchronous currentTime changes still wait for the actual seeked event', () => {
