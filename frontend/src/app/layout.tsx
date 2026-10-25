@@ -6,6 +6,7 @@ import Footer from "@/components/Footer";
 import AuthProvider from "@/components/AuthProvider";
 import BottomNav from "@/components/BottomNav";
 import ServiceWorkerRegister from "@/components/ServiceWorkerRegister";
+import CommandPalette from "@/components/CommandPalette";
 
 const jakarta = Plus_Jakarta_Sans({
   subsets: ["latin", "vietnamese"],
@@ -148,6 +149,7 @@ export default function RootLayout({
             {children}
           </main>
           <BottomNav />
+        <CommandPalette />
           <Footer />
         </AuthProvider>
       </body>

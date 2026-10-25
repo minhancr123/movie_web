@@ -5,6 +5,7 @@ import CatalogCard from '@/components/CatalogCard';
 import CatalogRow from '@/components/CatalogRow';
 import ContinueWatchingRow from '@/components/ContinueWatchingRow';
 import HeroSection from '@/components/HeroSection';
+import HeroWithResume from '@/components/HeroWithResume';
 import RecommendationsRow from '@/components/RecommendationsRow';
 import SpatialShader from '@/components/SpatialShader';
 import SurpriseMe from '@/components/SurpriseMe';
@@ -55,7 +56,7 @@ export default async function Home() {
       </div>
 
       <div className="relative z-10">
-        {heroItems.length > 0 && <HeroSection movies={heroItems.map(toHeroMovie)} />}
+        {heroItems.length > 0 && <HeroWithResume fallback={heroItems.map(toHeroMovie)} />}
 
         <div className="mt-8">
           <ContinueWatchingRow />

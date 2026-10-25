@@ -2736,12 +2736,26 @@ export default function VideoPlayer({ src, playbackStartedAt, movie, episode, au
                 onDoubleClick={(e) => { e.stopPropagation(); toggleFullscreen(); }}
             />
 
-            {/* Loading Spinner */}
-            {isLoading && (
+            {/* Loading Spinner — but NOT while paused-with-source on Safari:
+                iOS blocks autoplay, the element sits at HAVE_METADATA and
+                loads nothing while paused, so the spinner used to spin
+                forever over a player that was actually waiting for a tap. */}
+            {isLoading && (isPlaying || !src ? (
                 <div className="absolute inset-0 flex items-center justify-center bg-black/50 z-20 backdrop-blur-sm">
                     <Loader2 className="w-12 h-12 text-amber-gold animate-spin" />
                 </div>
-            )}
+            ) : (
+                <div className="absolute inset-0 z-20 flex flex-col items-center justify-center gap-3 bg-black/50 backdrop-blur-sm">
+                    <button
+                        type="button"
+                        onClick={(e) => { e.stopPropagation(); void videoRef.current?.play().catch(() => {}); }}
+                        className="btn btn-primary btn-lg cursor-interaction"
+                    >
+                        ▶ Phát tiếp
+                    </button>
+                    <span className="text-small text-muted">Bấm để Safari bắt đầu tải và tiếp tục</span>
+                </div>
+            ))}
 
             {/* Far-seek indicator: a BLOCKING overlay over the whole player.
                 While it is up the element still holds the old position, so
