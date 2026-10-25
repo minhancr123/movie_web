@@ -4702,11 +4702,14 @@ export const resolveExternalPlayback = async (req, res) => {
       }
       attempts = selectFallbackAttempts(ranked.playable, MAX_ATTEMPTS, []);
       if (audioUnsupported.length) {
-        const playable = attempts.filter(hasDecodableAudio);
-        // Demote, never drop: an Atmos-only catalog still plays (silently on
-        // this client) rather than 502-ing on every source.
-        const demoted = attempts.filter((c) => !playable.includes(c));
-        if (playable.length) attempts = [...playable, ...demoted];
+        // Partition, never drop: decodable-cached first, then undecodable but
+        // CACHED (plays instantly, silent on this client), then everything
+        // uncached — a live-check 404 storm on dead uncached magnets must not
+        // stand between the viewer and a cached copy, even a silent one.
+        const decodableCached = attempts.filter((c) => hasDecodableAudio(c) && c.cached);
+        const undecodableCached = attempts.filter((c) => !hasDecodableAudio(c) && c.cached);
+        const rest = attempts.filter((c) => !c.cached);
+        if (decodableCached.length) attempts = [...decodableCached, ...undecodableCached, ...rest];
       }
     }
 
