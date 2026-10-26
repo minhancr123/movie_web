@@ -1,0 +1,121 @@
+--- a/CineVN-IOS/Player/NativePlayer.swift
++++ b/CineVN-IOS/Player/NativePlayer.swift
+@@ -1575,15 +1575,10 @@
+         localSeekGeneration = seekGeneration
+         let seekItem = player.currentItem
+         let targetTime = CMTime(seconds: max(0, targetSeconds), preferredTimescale: 600)
+-        // Hai chế độ seek:
+-        // - SNAPPY (±10s, thả tay tua): nhảy tới KEYFRAME gần nhất — hiện hình
+-        //   tức thì, lệch tối đa một GOP (~4-10s) không đáng kể với thao tác
+-        //   tay. Tolerance .zero ở đây là hiểu NHẦM chiều ngược: zero = ép đúng
+-        //   khung → decode đuổi từ keyframe TRƯỚC (tua LÙI đắt nhất) →
+-        //   "đang đệm" xoay nhiều vòng như phim Hope.
+-        // - PRECISE (chốt vị trí resume/far-seek): đúng giây đã cam kết.
+-        let toleranceBefore = precise ? CMTime.zero : CMTime.positiveInfinity
+-        let toleranceAfter = precise ? CMTime.zero : CMTime.positiveInfinity
++        // A scrub promises a specific timestamp. Unlimited tolerance can
++        // legally return the first keyframe while the UI claims minute 20.
++        let toleranceBefore = CMTime.zero
++        let toleranceAfter = CMTime.zero
+ 
+         player.seek(to: targetTime, toleranceBefore: toleranceBefore, toleranceAfter: toleranceAfter) { finished in
+             DispatchQueue.main.async {
+@@ -1598,7 +1593,8 @@
+                     if self.pendingSeekDisplayAt == nil
+                         || abs((self.pendingSeekDisplayAt ?? display) - display) < 0.01 {
+                         self.pendingSeekDisplayAt = nil
+-                        self.currentTime = display
++                        let actual = self.startOffset + player.currentTime().seconds
++                        self.currentTime = actual.isFinite ? actual : display
+                     }
+                 }
+                 if let item = player.currentItem { self.refreshBufferState(for: item) }
+--- a/CineVN-IOS/Player/PlayerScreen.swift
++++ b/CineVN-IOS/Player/PlayerScreen.swift
+@@ -412,12 +412,13 @@
+ 
+                 // Scrub HUD (thumbnail + time)
+                 if isScrubbing {
+-                    SeekHUD(
+-                        targetTime: scrubPosition,
+-                        delta: scrubDelta,
+-                        thumbnail: thumbnailStore?.currentImage,
+-                        speedMultiplier: scrubRate
+-                    )
++                    Group {
++                        if let store = thumbnailStore {
++                            ObservedSeekPreview(store: store, target: scrubPosition, delta: scrubDelta, rate: scrubRate)
++                        } else {
++                            SeekHUD(targetTime: scrubPosition, delta: scrubDelta, thumbnail: nil, speedMultiplier: scrubRate)
++                        }
++                    }
+                     .zIndex(5)
+                     .allowsHitTesting(false)
+                 }
+@@ -1813,3 +1814,15 @@
+         return String(format: "%d:%02d", mins, secs)
+     }
+ }
++
++
++/// Observe async thumbnail arrivals even after the user's finger stops moving.
++private struct ObservedSeekPreview: View {
++    @ObservedObject var store: SeekThumbnailStore
++    let target: Double
++    let delta: Double
++    let rate: Double
++    var body: some View {
++        SeekHUD(targetTime: target, delta: delta, thumbnail: store.currentImage, speedMultiplier: rate)
++    }
++}
+--- a/CineVN-IOS/Player/SeekThumbnailStore.swift
++++ b/CineVN-IOS/Player/SeekThumbnailStore.swift
+@@ -31,7 +31,7 @@
+         lastRequestedSecond = seconds
+         guard available else { return }
+ 
+-        let bucket = Int(seconds / Double(bucketSeconds)) * bucketSeconds
++        let bucket = max(0, Int(seconds / Double(bucketSeconds)) * bucketSeconds)
+         // Kéo liên tục về một hướng: nạp SẴN bucket kế tiếp phía đó để ảnh hiện
+         // NGAY khi tay tới, thay vì chờ fetch đúng lúc đó.
+         let direction = bucket > lastBucket ? bucketSeconds : -bucketSeconds
+@@ -44,6 +44,7 @@
+             currentImage = cached
+             return
+         }
++        currentImage = nil // Never display a previous bucket under the new timestamp.
+         guard !inFlight else { return }
+         let elapsed = Date().timeIntervalSince(lastFetchAt)
+         if elapsed < minFetchInterval {
+@@ -64,14 +65,20 @@
+     /// hiện lên màn hình nếu tay người dùng vẫn đang ở gần đó (fetch prefetch
+     /// cho bucket KHÁC không được giật ảnh đang hiển thị).
+     private func fetchBucket(_ bucket: Int, showWhenNear origin: Double? = nil) async {
+-        guard !inFlight else { return }
++        guard bucket >= 0, !inFlight else { return }
+         guard let request = APIService.shared.thumbnailRequest(sessionId: sessionId, at: Double(bucket)) else {
+             available = false
+             return
+         }
+         inFlight = true
+         lastFetchAt = Date()
+-        defer { inFlight = false }
++        defer {
++            inFlight = false
++            let latest = max(0, Int(lastRequestedSecond / Double(bucketSeconds)) * bucketSeconds)
++            if latest != bucket, available, cache[latest] == nil {
++                Task { await self.preview(at: self.lastRequestedSecond) }
++            }
++        }
+ 
+         do {
+             let (data, response) = try await URLSession.shared.data(for: request)
+@@ -83,7 +90,7 @@
+             guard (200..<300).contains(http.statusCode), let image = UIImage(data: data) else { return }
+             cache[bucket] = image
+             trimCache()
+-            if let origin, abs(lastRequestedSecond - origin) < Double(bucketSeconds) {
++            if origin != nil, Int(lastRequestedSecond / Double(bucketSeconds)) * bucketSeconds == bucket {
+                 currentImage = image
+             }
+         } catch {
