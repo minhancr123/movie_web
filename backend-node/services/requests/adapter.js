@@ -10,7 +10,7 @@ import { ffprobe } from '../playback/remuxService.js';
 import { assertUrlShape, isPrivateAddress } from '../security/safeFetch.js';
 import { lookup } from 'node:dns/promises';
 import { cached, CACHE_TTL } from '../../config/redis.js';
-import { findRequestMatch, readyProbe } from './policy.js';
+import { findRequestMatch, readyProbe, matchesRequestedEpisode } from './policy.js';
 import { credentialScope } from './library.js';
 
 const caps = { hevc: true, hevcMain10: true, av1: true, hdr: true, eac3: true, maxHeight: 2160, preferredMaxHeight: 1080 };
@@ -89,6 +89,7 @@ export const createRuntimeRequestAdapter = db => ({
       file = pickBestFile(prepared.files, { filename: candidate.filename, fileIdx: candidate.fileIdx,
         expectedTitles: titles(detail), expectedYear: detail.year, season: row.season, episode: row.episode });
       if (!file || !matchesTitle(file.name || file.path, titles(detail), detail.year).matched) return null;
+      if (detail.mediaType === 'tv' && !matchesRequestedEpisode(file.name || file.path, row.season, row.episode)) return null;
       url = await torbox.getDownloadUrl(key, { torrentId: prepared.torrentId, fileId: file.fileId, userId: 'request-worker-'+credentialScope(key).slice(0,16) });
     }
     const checked = await readable(url); if (!checked) return null;

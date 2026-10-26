@@ -195,6 +195,7 @@ export const updateRequestStatus = async (req, res) => {
     if (mediaType !== undefined) set.mediaType = mediaType;
     const resetAutomation = tmdbId !== undefined || mediaType !== undefined || status === 'pending';
     if (resetAutomation) set.automation = initialAutomation();
+    if (resetAutomation && status === undefined) set.status = 'pending';
     if (status !== undefined) set.status = status;
     if (adminNote !== undefined) set.adminNote = adminNote;
     if (tmdbId !== undefined) {
@@ -271,6 +272,6 @@ export const controlRequestAutomation = async (req,res) => {
   const changed=await getDB().collection('movie_requests').updateOne({_id:new ObjectId(req.params.id),status:'pending'},
     {$set:set,$unset:{'automation.lease':'','automation.leaseUntil':''}});
   if(!changed.matchedCount)return res.status(409).json({success:false,message:'Chỉ xử lý tự động yêu cầu đang chờ.'});
-  if(req.body.enabled) await getDB().collection('movie_request_jobs').updateOne({_id:new ObjectId(req.params.id),state:{$ne:'downloading'}},{$unset:{source:'',failedHashes:''}});
+  if(req.body.enabled) await getDB().collection('movie_request_jobs').updateOne({_id:new ObjectId(req.params.id),...(req.body.season!==undefined||req.body.episode!==undefined?{}:{state:{$ne:'downloading'}})},{$unset:{source:'',failedHashes:''}});
   res.json({success:true});
 };

@@ -42,7 +42,8 @@ export function createRequestWorker({ db, adapter, now = Date.now, enabled = tru
       await requests.updateOne({ _id: row._id, status: 'pending', 'automation.lease': lease }, { $set: { tmdbId: detail.tmdbId, mediaType: detail.mediaType } });
       const key = await adapter.key(row);
       const scope = adapter.scope?.(key) || null;
-      const source = job?.source && (job.credentialScope || null) === scope && job.tmdbId === detail.tmdbId && job.mediaType === detail.mediaType ? job.source : null;
+      const source = job?.source && (job.credentialScope || null) === scope && job.tmdbId === detail.tmdbId && job.mediaType === detail.mediaType
+        && (job.season ?? null) === (row.season ?? null) && (job.episode ?? null) === (row.episode ?? null) ? job.source : null;
       let candidate = source;
       if (!candidate) {
         const found = await adapter.discover(detail, row, key);
@@ -58,6 +59,7 @@ export function createRequestWorker({ db, adapter, now = Date.now, enabled = tru
           }
         }
         await jobs.updateOne({ _id: row._id }, { $set: { source: adapter.persist(candidate), credentialScope: scope, tmdbId: detail.tmdbId, mediaType: detail.mediaType,
+          season: row.season ?? null, episode: row.episode ?? null,
           progress: 0, lastProgressAt: new Date(now()),
           state: !candidate.cached && candidate.kind !== 'direct' ? 'downloading' : 'preparing', ...(!candidate.cached && candidate.kind !== 'direct' ? { downloadStartedAt: new Date(now()) } : {}) } }, { upsert: true });
         job = { progress: 0, lastProgressAt: new Date(now()) };

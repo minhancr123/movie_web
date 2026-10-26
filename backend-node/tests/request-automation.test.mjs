@@ -1,6 +1,6 @@
 import test from 'node:test';import assert from 'node:assert/strict';
 import {createRequestWorker} from '../services/requests/worker.js';
-import {findRequestMatch,readyProbe,initialAutomation} from '../services/requests/policy.js';
+import {findRequestMatch,readyProbe,initialAutomation,matchesRequestedEpisode} from '../services/requests/policy.js';
 import {requestDb} from './helpers/requestDb.mjs';
 const initial=()=>({_id:'req',title:'Test Film',status:'pending',userId:'u',requesters:[{id:'u'},{id:'v'}],createdAt:new Date(0),automation:initialAutomation()});
 const base=()=>({detail:async()=>({tmdbId:123,mediaType:'movie'}),key:async()=> 'test-key',discover:async()=>[{infoHash:'a'.repeat(40),cached:true}],persist:x=>({...x}),prepare:async()=>({state:'ready'}),verify:async()=>true,publish:async()=>{}});
@@ -52,4 +52,19 @@ test('pausing during an in-flight probe prevents publication and completion',asy
 test('three recent uncached submissions exhaust the daily budget without another provider call',async()=>{
  const db=requestDb([initial()]),adapter=base();for(let i=0;i<3;i++)await db.collection('movie_request_downloads').updateOne({_id:'d'+i},{$set:{createdAt:new Date()}},{upsert:true});
  adapter.discover=async()=>[{infoHash:'uncached',cached:false,sizeBytes:1e9}];let prepare=0;adapter.prepare=async()=>{prepare++;return{state:'ready'}};await createRequestWorker({db,adapter}).tick();assert.equal(prepare,0);assert.equal((await db.collection('movie_requests').findOne({_id:'req'})).automation.state,'waiting_slot');
+});
+test('episode verification rejects a different season, episode, or an ambiguous filename',()=>{
+ assert.equal(matchesRequestedEpisode('Series.S01E04.1080p.mkv',1,4),true);
+ assert.equal(matchesRequestedEpisode('Series.1x04.mkv',1,4),true);
+ assert.equal(matchesRequestedEpisode('Series.S01E04.mkv',1,1),false);
+ assert.equal(matchesRequestedEpisode('Series.S02E04.mkv',1,4),false);
+ assert.equal(matchesRequestedEpisode('Series.S01E040.mkv',1,4),false);
+ assert.equal(matchesRequestedEpisode('Series.mkv',1,4),false);
+});
+test('retargeting an episode cannot reuse the previous episode download',async()=>{
+ const row={...initial(),season:1,episode:4},db=requestDb([row]),adapter=base();let picked;
+ adapter.detail=async()=>({tmdbId:123,mediaType:'tv'});
+ await db.collection('movie_request_jobs').updateOne({_id:'req'},{$set:{state:'downloading',tmdbId:123,mediaType:'tv',season:1,episode:1,source:{infoHash:'old',cached:true}}},{upsert:true});
+ adapter.discover=async()=>[{infoHash:'new',cached:true}];adapter.prepare=async c=>{picked=c.infoHash;return{state:'ready'}};
+ await createRequestWorker({db,adapter}).tick();assert.equal(picked,'new');
 });
