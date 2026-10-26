@@ -33,7 +33,7 @@ test('the worker purges caches it does not own, which is how the April one dies'
   assert.match(sw, /const OWN_CACHES = new Set/, 'owned cache names are declared');
   assert.match(sw, /names\.filter\(\(name\) => !OWN_CACHES\.has\(name\)\)/,
     'activate deletes every foreign cache, not just its own predecessor');
-  assert.match(sw, /VERSION = 'cinevn-v3'/, 'cache names are versioned, so a change purges');
+  assert.match(sw, /VERSION = 'cinevn-v4'/, 'cache names are versioned, so a change purges');
   assert.match(sw, /SKIP_WAITING/, 'it honours the page asking to take over');
 });
 
@@ -79,7 +79,7 @@ test('the worker is registered, and its updates are applied', () => {
   // A registered worker that never reloads is worse than none: tabs keep running
   // the bundle from install time, so after a deploy they quietly execute code
   // that is no longer deployed. That is indistinguishable from the bug.
-  assert.match(register, /navigator\.serviceWorker\.register\('\/sw\.js\?rev=cinevn-v3', \{ scope: '\/', updateViaCache: 'none' \}\)/);
+  assert.match(register, /navigator\.serviceWorker\.register\('\/sw\.js\?rev=cinevn-v4', \{ scope: '\/', updateViaCache: 'none' \}\)/);
   assert.match(register, /updatefound/, 'an installing worker is observed');
   assert.match(register, /navigator\.serviceWorker\.controller/, 'a replacement is told from a first install');
   // The handler that reloads, and the wiring that calls it. Checked as two

@@ -37,7 +37,7 @@ export default function ServiceWorkerRegister() {
 
     const register = async () => {
       try {
-        const registration = await navigator.serviceWorker.register('/sw.js?rev=cinevn-v3', { scope: '/', updateViaCache: 'none' });
+        const registration = await navigator.serviceWorker.register('/sw.js?rev=cinevn-v4', { scope: '/', updateViaCache: 'none' });
 
         // A worker already waiting was installed by an earlier visit.
         if (registration.waiting) {
