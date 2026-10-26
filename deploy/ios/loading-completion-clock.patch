@@ -1,0 +1,154 @@
+--- a/CineVN-IOS/Player/NativePlayer.swift
++++ b/CineVN-IOS/Player/NativePlayer.swift
+@@ -14,6 +14,9 @@
+     @Published var currentTime: Double = 0
+     @Published var duration: Double = 0
+     @Published var isBuffering: Bool = false
++    @Published private(set) var isAdvancing = false
++    private var lastClockSample: Double?
++    private var lastClockAdvanceAt = Date.distantPast
+     @Published var playbackRate: Float = 1.0
+     @Published var isAudioOnlyFallback: Bool = false
+     @Published var startOffset: Double = 0
+@@ -84,6 +87,7 @@
+     private var timeControlObserver: NSKeyValueObservation?
+     private var bufferStateWork: DispatchWorkItem?
+     private var localSeekGeneration = UUID()
++    private var localSeekInFlight = false
+     private var heartbeatTimer: Timer?
+     private var videoCheckTimer: Timer?
+     private var currentSessionId: String?
+@@ -138,6 +142,7 @@
+         timeControlObserver?.invalidate()
+         bufferStateWork?.cancel()
+         localSeekGeneration = UUID()
++        localSeekInFlight = false
+         heartbeatTimer?.invalidate()
+         heartbeatTimer = nil
+         videoCheckTimer?.invalidate()
+@@ -151,6 +156,8 @@
+         }
+ 
+         player?.pause()
++        isAdvancing = false
++        lastClockSample = nil
+         isPlaying = false
+         currentTime = startOffset
+         duration = 0
+@@ -312,14 +319,30 @@
+             let interval = CMTime(seconds: 0.25, preferredTimescale: CMTimeScale(NSEC_PER_SEC))
+             timeObserver = avPlayer.addPeriodicTimeObserver(forInterval: interval, queue: .main) { [weak self] time in
+             guard let self = self else { return }
+-            let rel = time.seconds.isFinite ? max(0, time.seconds) : 0
++            let observedTime = self.player?.currentTime().seconds ?? time.seconds
++            let rel = observedTime.isFinite ? max(0, observedTime) : 0
+             let clock = self.startOffset + rel
+             // The movie clock is always the observed AVPlayer clock. Seek
+             // intent belongs to the loading/preview UI, never progress/history.
+             self.currentTime = clock
+-            if let pending = self.pendingSeekDisplayAt, abs(clock - pending) <= 0.5,
+-               self.player?.currentItem?.status == .readyToPlay {
+-                self.pendingSeekDisplayAt = nil
++            let delta = self.lastClockSample.map { clock - $0 } ?? 0
++            self.lastClockSample = clock
++            let nearIntent = self.pendingSeekDisplayAt.map { abs(clock - $0) <= 2 } ?? true
++            let advancing = (self.player?.rate ?? 0) > 0 && delta > 0.01 && delta < 2
++                && !self.localSeekInFlight && self.pendingSeekFireTask == nil && nearIntent
++            if advancing {
++                self.lastClockAdvanceAt = Date()
++                self.isAdvancing = true
++                self.bufferStateWork?.cancel()
++                self.isBuffering = false
++                // The clock can pass the exact target between observer ticks.
++                // Forward progress beyond it also proves restoration landed.
++                if let pending = self.pendingSeekDisplayAt, clock >= pending - 0.5,
++                   self.pendingSeekFireTask == nil {
++                    self.pendingSeekDisplayAt = nil
++                }
++            } else if Date().timeIntervalSince(self.lastClockAdvanceAt) > 1 {
++                self.isAdvancing = false
+             }
+             self.updateBufferedTime()
+             self.checkNextWindowPreparation()
+@@ -538,6 +561,8 @@
+     func holdRestorationTarget(_ seconds: Double) {
+         lastRestorationTarget = seconds
+         pendingSeekDisplayAt = seconds
++        isAdvancing = false
++        lastClockSample = nil
+     }
+ 
+     /// Cửa sổ remux (playlist EVENT) hết segment mà phim còn dài — playlist
+@@ -1456,6 +1481,8 @@
+     func pause() {
+         seekShouldResume = false
+         player?.pause()
++        isAdvancing = false
++        lastClockSample = nil
+         isPlaying = false
+         stopStallWatchdogTimer()
+         // Pause là thời điểm hợp lệ để lưu tiến độ ngay.
+@@ -1485,6 +1512,8 @@
+         // hồ UI không chờ completion (completion có thể đến sau nhịp bấm).
+         seekShouldResume = resumeAfterSeek ?? (pendingSeekDisplayAt != nil ? seekShouldResume : isPlaying)
+         pendingSeekDisplayAt = target
++        isAdvancing = false
++        lastClockSample = nil
+ 
+         // ĐÓNG GÓP cú tua THẬT: bấm nhanh 5 lần = 5 chu kỳ đệm + 5 khung hình
+         // lóe nếu mỗi tap một seek AVPlayer. Ý định cộng dồn tức thì, còn máy
+@@ -1573,6 +1602,7 @@
+         guard let player = player else { return }
+         let seekGeneration = UUID()
+         localSeekGeneration = seekGeneration
++        localSeekInFlight = true
+         let seekItem = player.currentItem
+         let resumeWhenLanded = seekShouldResume
+         let targetTime = CMTime(seconds: max(0, targetSeconds), preferredTimescale: 600)
+@@ -1584,6 +1614,7 @@
+         player.seek(to: targetTime, toleranceBefore: toleranceBefore, toleranceAfter: toleranceAfter) { finished in
+             DispatchQueue.main.async {
+                 guard self.localSeekGeneration == seekGeneration, player.currentItem === seekItem else { return }
++                self.localSeekInFlight = false
+                 if finished {
+                     // Đồng hồ UI là THỜI GIAN TUYỆT ĐỐI (displayAt). Chỉ ghi khi
+                     // completion này còn là intent mới nhất: seek bị HỦY bởi tap
+@@ -1715,6 +1746,7 @@
+         timeControlObserver?.invalidate()
+         bufferStateWork?.cancel()
+         localSeekGeneration = UUID()
++        localSeekInFlight = false
+         heartbeatTimer?.invalidate()
+         heartbeatTimer = nil
+         videoCheckTimer?.invalidate()
+--- a/CineVN-IOS/Player/PlayerScreen.swift
++++ b/CineVN-IOS/Player/PlayerScreen.swift
+@@ -600,7 +600,7 @@
+             if !playing {
+                 pauseCinematicTask = Task {
+                     try? await Task.sleep(nanoseconds: 4_000_000_000)
+-                    guard !Task.isCancelled, !player.isPlaying, !showControls else { return }
++                    guard !Task.isCancelled, !player.isPlaying, !showControls, !loadingRequested, !loadingIndicatorVisible else { return }
+                     withAnimation(.easeInOut(duration: 0.4)) {
+                         pauseCinematicVisible = true
+                     }
+@@ -1761,7 +1761,8 @@
+ 
+     /// Text hộp đệm: kèm tốc độ tải thật khi đo được.
+     private var loadingRequested: Bool {
+-        player.errorMessage == nil && (isFarSeeking || player.pendingSeekDisplayAt != nil || player.isBuffering)
++        player.errorMessage == nil && !player.isAdvancing
++            && (isFarSeeking || player.pendingSeekDisplayAt != nil || player.isBuffering)
+     }
+ 
+     private var bufferingText: String {
+@@ -1779,6 +1780,9 @@
+             && !player.isPlaying
+             && player.errorMessage == nil
+             && !player.isBuffering
++            && !loadingRequested
++            && !loadingIndicatorVisible
++            && player.pendingSeekDisplayAt == nil
+             && !isFarSeeking
+             && !isScrubbing
+             && !player.isAudioOnlyFallback
