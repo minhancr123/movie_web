@@ -155,6 +155,8 @@ export interface MovieRequestItem {
   requesters?: { id: string; name: string; at: string }[];
   requestCount?: number;
   status: 'pending' | 'completed' | 'rejected';
+  mediaType?: 'movie' | 'tv';
+  automation?: { enabled?: boolean; state?: string; progress?: number; message?: string; attempts?: number; lastCheckedAt?: string; nextAttemptAt?: string; verifiedAt?: string };
   note?: string;
   adminNote?: string;
   createdAt: string;
@@ -170,6 +172,7 @@ export interface TmdbMatch {
 }
 
 export const movieRequestAPI = {
+  controlAutomation: (id: string, enabled: boolean, episode?: {season:number;episode:number}) => authClient.patch(`/movie-requests/${id}/automation`, { enabled, ...episode }),
   create: (data: { title: string; tmdbId?: string | number; note?: string }) =>
     authClient.post<{ success: boolean; message: string; request: MovieRequestItem }>('/movie-requests', data),
 
@@ -180,7 +183,7 @@ export const movieRequestAPI = {
       pagination: { total: number; page: number; limit: number; pages: number };
     }>('/movie-requests', { params }),
 
-  updateStatus: (id: string, data: { status?: 'pending' | 'completed' | 'rejected'; adminNote?: string; tmdbId?: number }) =>
+  updateStatus: (id: string, data: { status?: 'pending' | 'completed' | 'rejected'; adminNote?: string; tmdbId?: number; mediaType?: 'movie' | 'tv' }) =>
     authClient.put<{ success: boolean; message: string; request: MovieRequestItem }>(`/movie-requests/${id}`, data),
 
   checkTmdb: (id: string) =>

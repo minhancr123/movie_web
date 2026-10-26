@@ -42,10 +42,10 @@ export default function MovieRequestsManager() {
     }
   };
 
-  const handleAttachTmdb = async (id: string, tmdbId: number) => {
+  const handleAttachTmdb = async (id: string, tmdbId: number, mediaType: 'movie' | 'tv') => {
     setSubmitting(true);
     try {
-      await movieRequestAPI.updateStatus(id, { tmdbId });
+      await movieRequestAPI.updateStatus(id, { tmdbId, mediaType });
       setTmdbMatches(null);
       fetchRequests(pagination.page);
     } catch (err: any) {
@@ -57,8 +57,8 @@ export default function MovieRequestsManager() {
 
   const requesterCount = (req: MovieRequestItem) => req.requesters?.length ?? req.requestCount ?? 1;
 
-  const fetchRequests = async (page = 1, status = statusFilter) => {
-    setLoading(true);
+  const fetchRequests = async (page = 1, status = statusFilter, quiet = false) => {
+    if (!quiet) setLoading(true);
     try {
       const res = await movieRequestAPI.getAll({ 
         page, 
@@ -79,6 +79,20 @@ export default function MovieRequestsManager() {
     fetchRequests(1, statusFilter);
   }, [statusFilter]);
 
+
+  useEffect(() => {
+    const timer = setInterval(() => { if (!document.hidden) void fetchRequests(pagination.page, statusFilter, true); }, 15000);
+    return () => clearInterval(timer);
+  }, [pagination.page, statusFilter]);
+  const controlAutomation = async (id: string, enabled: boolean, episode?: {season:number;episode:number}) => {
+    setSubmitting(true);
+    try { await movieRequestAPI.controlAutomation(id, enabled, episode); await fetchRequests(pagination.page); }
+    catch (err: any) { setError(err.response?.data?.message || 'Không cập nhật được xử lý tự động.'); }
+    finally { setSubmitting(false); }
+  };
+  const autoLabels: Record<string,string> = { queued:'Đã xếp hàng', searching:'Đang tìm nguồn', waiting_source:'Chờ nguồn mới',
+    waiting_slot:'Chờ lượt tải', downloading:'Đang tải trên TorBox', verifying:'Đang kiểm tra nguồn', ready:'Có thể xem',
+    waiting_provider:'Chờ dịch vụ nguồn', needs_match:'Cần xác định phim/tập', paused:'Đã tạm dừng' };
   const handleUpdateStatus = async (id: string, status: 'completed' | 'rejected') => {
     setSubmitting(true);
     try {
@@ -106,6 +120,7 @@ export default function MovieRequestsManager() {
 
   return (
     <div className="space-y-6">
+      <div className="rounded-xl border border-amber-400/20 bg-amber-400/5 p-4 text-sm leading-relaxed text-zinc-300">Yêu cầu được tự tìm nguồn và tải nền trên TorBox. Ưu tiên nguồn có sẵn; giới hạn 1 phim tải mới mỗi lần, 3 lượt/ngày, dưới 20 GiB. Chỉ báo có phim khi nguồn đã qua kiểm tra.</div>
       {/* Filters */}
       <div className="flex flex-wrap gap-2">
         {['pending', 'completed', 'rejected', 'all'].map((s) => (
@@ -144,7 +159,7 @@ export default function MovieRequestsManager() {
               {tmdbMatches.results.map((m) => (
                 <button
                   key={`${m.tmdbId}-${m.mediaType}`}
-                  onClick={() => handleAttachTmdb(tmdbMatches.id, m.tmdbId)}
+                  onClick={() => handleAttachTmdb(tmdbMatches.id, m.tmdbId, m.mediaType)}
                   disabled={submitting}
                   className="flex items-center gap-3 rounded-xl border border-white/10 bg-white/5 p-2 text-left hover:border-amber-primary/40 hover:bg-white/10 transition-all disabled:opacity-50"
                 >
@@ -195,9 +210,9 @@ export default function MovieRequestsManager() {
                     <td className="px-6 py-4">
                       <p className="text-sm font-bold text-white group-hover:text-amber-gold transition-colors">{req.title}</p>
                       {req.tmdbId ? (
-                        <a href={`https://www.themoviedb.org/movie/${req.tmdbId}`} target="_blank" rel="noreferrer" className="mt-1 inline-block text-[10px] font-bold text-emerald-400 hover:text-emerald-300">
+                        <><a href={`https://www.themoviedb.org/${req.mediaType || 'movie'}/${req.tmdbId}`} target="_blank" rel="noreferrer" className="mt-1 inline-block text-[10px] font-bold text-emerald-400 hover:text-emerald-300">
                           TMDB {String(req.tmdbId)} ↗
-                        </a>
+                        </a><button disabled={checkingId===req._id} className="ml-2 text-[10px] text-zinc-400 hover:text-amber-300" onClick={()=>void handleCheckTmdb(req._id)}>Xác định lại phim</button></>
                       ) : (
                         <button onClick={() => handleCheckTmdb(req._id)} disabled={checkingId === req._id} className="mt-1 flex items-center gap-1 text-[10px] font-bold text-cinema-subtle hover:text-amber-gold transition-colors disabled:opacity-50">
                           {checkingId === req._id ? <Loader2 size={10} className="animate-spin" /> : <Search size={10} />} Tìm trên TMDB
@@ -221,11 +236,22 @@ export default function MovieRequestsManager() {
                     </td>
                     <td className="px-6 py-4">
                       {getStatusBadge(req.status)}
+                      {req.automation && <div className="mt-2 max-w-[280px] space-y-1 text-xs">
+                        <p className={req.automation.state==='ready'?'font-bold text-emerald-300':'font-medium text-amber-300'}>{autoLabels[req.automation.state || 'queued'] || 'Đang xử lý'}{req.automation.state==='downloading'?` · ${Math.round(req.automation.progress || 0)}%`:''}</p>
+                        {req.automation.state==='downloading'&&<progress className="h-1.5 w-full accent-amber-400" max={100} value={req.automation.progress || 0}/>}
+                        <p className="text-zinc-400">{req.automation.message}</p>
+                        {req.automation.lastCheckedAt&&<p className="text-[10px] text-zinc-500">Kiểm tra: {new Date(req.automation.lastCheckedAt).toLocaleString('vi-VN')}</p>}
+                        {req.status==='pending'&&req.automation.enabled!==false&&req.automation.nextAttemptAt&&<p className="text-[10px] text-zinc-500">Lần tiếp: {new Date(req.automation.nextAttemptAt).toLocaleString('vi-VN')}</p>}
+                      </div>}
+                      {req.mediaType==='tv'&&req.status==='pending'&&req.automation?.state==='needs_match'&&<form className="mt-2 flex flex-wrap gap-2" onSubmit={e=>{e.preventDefault();const f=new FormData(e.currentTarget);void controlAutomation(req._id,true,{season:Number(f.get('season')),episode:Number(f.get('episode'))});}}><input aria-label="Mùa" name="season" type="number" min={0} max={999} defaultValue={1} required className="w-16 rounded bg-white/5 p-2"/><input aria-label="Tập" name="episode" type="number" min={1} max={999} defaultValue={1} required className="w-16 rounded bg-white/5 p-2"/><button disabled={submitting} className="rounded bg-amber-400/10 p-2 text-amber-300">Tìm tập này</button></form>}
+                      {req.status==='completed'&&req.tmdbId&&<a className="mt-2 block text-xs font-bold text-emerald-300" href={`/xem-phim/${req.mediaType || 'movie'}/${req.tmdbId}/phim`}>Mở phim ↗</a>}
+
                       {req.adminNote && (
                         <p className="mt-1 text-[10px] text-green-400/70 italic max-w-[200px] truncate">Admin: {req.adminNote}</p>
                       )}
                     </td>
                     <td className="px-6 py-4">
+                      {req.status==='pending'&&<div className="mb-3 flex flex-wrap gap-2"><button disabled={submitting} className="rounded-lg bg-amber-400/10 px-3 py-2 text-xs font-semibold text-amber-300 disabled:opacity-50" onClick={()=>void controlAutomation(req._id,true)}>Tìm lại ngay</button><button disabled={submitting} className="rounded-lg bg-white/5 px-3 py-2 text-xs text-zinc-300 disabled:opacity-50" onClick={()=>void controlAutomation(req._id,req.automation?.enabled===false)}>{req.automation?.enabled===false?'Tiếp tục tự xử lý':'Tạm dừng tự xử lý'}</button></div>}
                       {editingId === req._id ? (
                         <div className="flex flex-col gap-2">
                           <input 
@@ -237,7 +263,7 @@ export default function MovieRequestsManager() {
                           />
                           <div className="flex gap-2">
                             <button 
-                              onClick={() => handleUpdateStatus(req._id, 'completed')}
+                              disabled={req.automation?.state!=='ready'} onClick={() => handleUpdateStatus(req._id, 'completed')}
                               className="text-[10px] bg-green-600 hover:bg-green-500 text-white px-2 py-1 rounded font-bold transition-all"
                             >Xong</button>
                             <button 

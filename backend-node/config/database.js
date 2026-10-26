@@ -74,6 +74,9 @@ const createIndexes = async () => {
       ['analytics_events', { type: 1, occurredAt: -1 }],
       ['analytics_events', { movieSlug: 1, occurredAt: -1 }],
       ['notifications', { userId: 1, createdAt: -1 }],
+      ['notifications', { requestId: 1, userId: 1, type: 1 }, { unique: true, partialFilterExpression: { type: 'request_completed', requestId: { $type: 'objectId' } } }],
+      ['movie_requests', { status: 1, 'automation.nextAttemptAt': 1 }],
+      ['requested_sources', { credentialScope: 1, imdbId: 1, mediaType: 1 }],
       ['favorite_sync_events', { userId: 1, occurredAt: -1 }],
       ['watch_history_sync_events', { userId: 1, occurredAt: -1 }],
       // Sync/analytics rows are write-only breadcrumbs: cap them instead of

@@ -302,6 +302,8 @@ const startServer = async () => {
 
     // Start listening
     await listenHttpServer(httpServer, PORT, listener.host);
+    const { startMovieRequestWorker } = await import('./services/requests/start.js');
+    startMovieRequestWorker();
     console.log(`🚀 Server is running on http://localhost:${PORT}`);
     console.log(`📁 Environment: ${process.env.NODE_ENV}`);
   } catch (error) {

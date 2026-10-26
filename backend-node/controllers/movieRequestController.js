@@ -1,3 +1,5 @@
+import { initialAutomation } from '../services/requests/policy.js';
+import { notifyRequestCompleted } from '../services/requests/notifications.js';
 import { getDB } from '../config/database.js';
 import { ObjectId } from 'mongodb';
 import { search as tmdbSearch } from '../services/tmdb.js';
@@ -80,6 +82,8 @@ export const createRequest = async (req, res) => {
       requesters: [requester],
       requestCount: 1,
       status: 'pending',
+      automation: initialAutomation(),
+      mediaType: ['movie','tv'].includes(req.body.mediaType) ? req.body.mediaType : 'movie',
       note: note || '',
       adminNote: '',
       createdAt: new Date(),
@@ -169,7 +173,7 @@ export const getMyRequests = async (req, res) => {
 export const updateRequestStatus = async (req, res) => {
   try {
     const { id } = req.params;
-    const { status, adminNote, tmdbId } = req.body;
+    const { status, adminNote, tmdbId, mediaType } = req.body;
 
     if (status !== undefined && !['pending', 'completed', 'rejected'].includes(status)) {
       return res.status(400).json({ success: false, message: 'Trạng thái không hợp lệ.' });
@@ -183,7 +187,14 @@ export const updateRequestStatus = async (req, res) => {
     }
 
     const db = getDB();
+    const current = await db.collection('movie_requests').findOne({ _id: new ObjectId(id) });
+    if (!current) return res.status(404).json({ success: false, message: 'Không tìm thấy yêu cầu.' });
+    if (status === 'completed' && (current.automation?.state !== 'ready' || tmdbId !== undefined || mediaType !== undefined)) return res.status(409).json({ success: false, message: 'Nguồn chưa qua kiểm tra. Hãy cho hệ thống tìm và kiểm tra trước khi báo có phim.' });
+    if (mediaType !== undefined && !['movie','tv'].includes(mediaType)) return res.status(400).json({ success: false, message: 'Loại phim không hợp lệ.' });
     const set = { updatedAt: new Date() };
+    if (mediaType !== undefined) set.mediaType = mediaType;
+    const resetAutomation = tmdbId !== undefined || mediaType !== undefined || status === 'pending';
+    if (resetAutomation) set.automation = initialAutomation();
     if (status !== undefined) set.status = status;
     if (adminNote !== undefined) set.adminNote = adminNote;
     if (tmdbId !== undefined) {
@@ -206,36 +217,9 @@ export const updateRequestStatus = async (req, res) => {
       return res.status(404).json({ success: false, message: 'Không tìm thấy yêu cầu.' });
     }
 
-    // A completed request tells every requester the film landed. One
-    // notification per user per request (requestId keyed) so a status
-    // flip-flop never spams; missing requesters (legacy rows) just skip.
-    let notified = 0;
-    if (status === 'completed') {
-      const request = updated;
-      const roster = Array.isArray(request.requesters) ? request.requesters : [];
-      const legacyOnly = roster.length === 0 && request.userId ? [{ id: request.userId, name: request.username }] : roster;
-      const targets = [...new Map(legacyOnly.filter(u => u?.id).map(u => [String(u.id), u])).values()];
-      if (targets.length) {
-        const existing = await db.collection('notifications')
-          .find({ requestId: request._id, type: 'request_completed' })
-          .project({ userId: 1 }).toArray();
-        const already = new Set(existing.map(n => String(n.userId)));
-        const fresh = targets.filter(u => !already.has(String(u.id)));
-        if (fresh.length) {
-          await db.collection('notifications').insertMany(fresh.map(u => ({
-            userId: u.id,
-            type: 'request_completed',
-            title: 'Phim bạn yêu cầu đã có',
-            message: `“${request.title}” đã lên CineVN${request.tmdbId ? ` — tìm trong mục tìm kiếm để xem ngay` : ''}.`,
-            requestId: request._id,
-            tmdbId: request.tmdbId || null,
-            isRead: false,
-            createdAt: new Date(),
-          })));
-          notified = fresh.length;
-        }
-      }
-    }
+    if (status === 'rejected' || resetAutomation) await db.collection('movie_request_jobs').updateOne({ _id: new ObjectId(id) },
+      { $set: { state: status === 'rejected' ? 'cancelled' : 'retargeted' }, $unset: { source: '', failedHashes: '' } });
+    const notified = status === 'completed' ? await notifyRequestCompleted(db, updated) : 0;
 
     res.json({
       success: true,
@@ -273,4 +257,20 @@ export const checkTmdbMatch = async (req, res) => {
     console.error('[checkTmdbMatch] error:', error);
     res.status(500).json({ success: false, message: 'Không tra cứu được TMDB lúc này.' });
   }
+};
+
+/** Explicit retry/pause never silently changes completed/rejected requests. */
+export const controlRequestAutomation = async (req,res) => {
+  if (!ObjectId.isValid(req.params.id) || typeof req.body?.enabled !== 'boolean') return res.status(400).json({success:false,message:'Trạng thái không hợp lệ.'});
+  const set = { 'automation.enabled':req.body.enabled, 'automation.state':req.body.enabled?'queued':'paused',
+    'automation.nextAttemptAt':new Date(), 'automation.priority':1, updatedAt:new Date() };
+  for(const field of ['season','episode']) if(req.body[field]!==undefined){
+    if(!Number.isInteger(req.body[field])||req.body[field]<(field==='season'?0:1)||req.body[field]>999)return res.status(400).json({success:false,message:'Mùa/tập không hợp lệ.'});
+    set[field]=req.body[field];
+  }
+  const changed=await getDB().collection('movie_requests').updateOne({_id:new ObjectId(req.params.id),status:'pending'},
+    {$set:set,$unset:{'automation.lease':'','automation.leaseUntil':''}});
+  if(!changed.matchedCount)return res.status(409).json({success:false,message:'Chỉ xử lý tự động yêu cầu đang chờ.'});
+  if(req.body.enabled) await getDB().collection('movie_request_jobs').updateOne({_id:new ObjectId(req.params.id),state:{$ne:'downloading'}},{$unset:{source:'',failedHashes:''}});
+  res.json({success:true});
 };

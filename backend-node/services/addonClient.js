@@ -1,3 +1,4 @@
+import { requestedCandidates } from './requests/library.js';
 /**
  * Stremio-protocol addon client.
  *
@@ -777,7 +778,8 @@ const getAioCandidates = params => shareDiscovery(`aio:${aiostreamsCacheScope(JS
 const getNativeCandidates = params => shareDiscovery(`native:${aiostreamsCacheScope(JSON.stringify([
   configuredAddons(), toStremioId(params)]))}`, () => fetchNativeCandidates(params));
 
-export const getStreamCandidates = async params => {
+const getConfiguredStreamCandidates = async params => {
+  if (params.requestDiscovery === true) return mergeStreamCandidates(await Promise.all([getAioCandidates(params), getNativeCandidates(params)]));
   const provider = process.env.STREAM_SOURCE_PROVIDER;
   if (provider === 'hybrid') return collectDiscovery([() => getNativeCandidates(params), () => getAioCandidates(params)], 2200, params.sourceToken || null);
   if (provider === 'aiostreams') {
@@ -785,6 +787,11 @@ export const getStreamCandidates = async params => {
     if (aio.candidates.length) return aio;
   }
   return getNativeCandidates(params);
+};
+
+export const getStreamCandidates = async params => {
+  const [normal, library] = await Promise.all([getConfiguredStreamCandidates(params), requestedCandidates(params)]);
+  return library.length ? mergeStreamCandidates([{ candidates: library, errors: [] }, normal]) : normal;
 };
 
 export default {

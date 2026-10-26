@@ -5,7 +5,7 @@ import {
   getRequests,
   getMyRequests,
   updateRequestStatus,
-  checkTmdbMatch
+  checkTmdbMatch, controlRequestAutomation
 } from '../controllers/movieRequestController.js';
 
 const router = express.Router();
@@ -32,6 +32,7 @@ router.post('/', authMiddleware, createRequest);
  * @route   PUT /api/movie-requests/:id
  * @desc    Update movie request status (Admin only)
  */
+router.patch('/:id/automation', adminMiddleware, controlRequestAutomation);
 router.put('/:id', adminMiddleware, updateRequestStatus);
 router.get('/:id/tmdb', adminMiddleware, checkTmdbMatch);
 
