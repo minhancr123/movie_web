@@ -692,15 +692,15 @@ export async function collectDiscovery(feeds, graceMs = 2200, preferredToken = n
   } finally { clearTimeout(timer); }
 }
 
-const fetchAioCandidates = async ({ imdbId, mediaType, season, episode, debridKey }) => {
-  const aioScope = aiostreamsCacheScope(JSON.stringify([process.env.AIOSTREAMS_USER_DATA || '', debridKey || '']));
+const fetchAioCandidates = async ({ imdbId, mediaType, season, episode, debridKey, requestDiscovery = false }) => {
+  const aioScope = aiostreamsCacheScope(JSON.stringify([process.env.AIOSTREAMS_USER_DATA || '', debridKey || '', requestDiscovery]));
   if (Date.now() < (aioRetryAfter.get(aioScope) || 0)) return { candidates: [], errors: [] };
   const media = toStremioId({ imdbId, mediaType, season, episode });
   if (!media) return { candidates: [], errors: [] };
   try {
-    const userData = aiostreamsUserDataForKey(debridKey);
+    const userData = aiostreamsUserDataForKey(debridKey, undefined, { requestDiscovery });
     const result = await cached(`aio:streams:v2:${aioScope}:${media.type}:${media.id}`, STREAM_CACHE_TTL, async () => {
-      const rows = await fetchAioStreams(media, { env: { ...process.env, AIOSTREAMS_USER_DATA: userData } });
+      const rows = await fetchAioStreams(media, { env: { ...process.env, AIOSTREAMS_USER_DATA: userData }, timeoutMs: requestDiscovery ? 15000 : 8000 });
       const candidates = rows.map(row => normalizeStream(row, 'AIOStreams')).filter(Boolean);
       if (!candidates.length) throw new Error('No usable metadata');
       return mergeStreamCandidates([{ candidates }]);
@@ -774,7 +774,7 @@ const fetchNativeCandidates = async ({ imdbId, mediaType, season, episode }) => 
 };
 
 const getAioCandidates = params => shareDiscovery(`aio:${aiostreamsCacheScope(JSON.stringify([
-  process.env.AIOSTREAMS_USER_DATA || '', params.debridKey || '', toStremioId(params)]))}`, () => fetchAioCandidates(params));
+  process.env.AIOSTREAMS_USER_DATA || '', params.debridKey || '', toStremioId(params), params.requestDiscovery === true]))}`, () => fetchAioCandidates(params));
 const getNativeCandidates = params => shareDiscovery(`native:${aiostreamsCacheScope(JSON.stringify([
   configuredAddons(), toStremioId(params)]))}`, () => fetchNativeCandidates(params));
 

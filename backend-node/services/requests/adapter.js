@@ -51,7 +51,7 @@ export const createRuntimeRequestAdapter = db => ({
   },
   async key(row) { try { return (await getDecryptedKey(db, row.userId, 'torbox')).key; } catch { return null; } },
   async discover(detail, row, key) {
-    const args = { type: detail.mediaType, tmdbId: detail.tmdbId, detail, season: row.season ?? null, episode: row.episode ?? null };
+    const args = { type: detail.mediaType, tmdbId: detail.tmdbId, detail, season: row.season ?? null, episode: row.episode ?? null, requestDiscovery: true };
     const [ya,vimo,streams] = await Promise.all([
       resolveYaStreamSource(args), resolveVimoSource(args),
       detail.imdbId ? getStreamCandidates({ imdbId: detail.imdbId, mediaType: detail.mediaType, season: row.season, episode: row.episode,

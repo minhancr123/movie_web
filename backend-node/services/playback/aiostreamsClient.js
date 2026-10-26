@@ -8,12 +8,21 @@ export const aiostreamsCacheScope = (config = process.env.AIOSTREAMS_USER_DATA |
 /** Only the fixed internal AIO peer receives this request-scoped credential.
  * The operator's saved profile contains no account key. Never persist output.
  */
-export const aiostreamsUserDataForKey = (debridKey, base = process.env.AIOSTREAMS_USER_DATA || '') => {
+export const aiostreamsUserDataForKey = (debridKey, base = process.env.AIOSTREAMS_USER_DATA || '', { requestDiscovery = false } = {}) => {
   const config = JSON.parse(Buffer.from(base, 'base64').toString('utf8'));
-  if (!config.cinevnAccountScoped) return base;
-  if (typeof debridKey !== 'string' || !debridKey) throw new Error('AIOStreams account connection is missing');
-  delete config.cinevnAccountScoped;
-  config.services = [{ id: 'torbox', enabled: true, credentials: { apiKey: debridKey } }];
+  if (config.cinevnAccountScoped) {
+    if (typeof debridKey !== 'string' || !debridKey) throw new Error('AIOStreams account connection is missing');
+    delete config.cinevnAccountScoped;
+    config.services = [{ id: 'torbox', enabled: true, credentials: { apiKey: debridKey } }];
+  }
+  if (requestDiscovery) {
+    config.excludedStreamExpressions = (config.excludedStreamExpressions || []).filter(x =>
+      String(x.expression || '').replace(/\s+/g, '') !== "uncached(type(streams,'debrid'))");
+    const existing = new Set((config.presets || []).map(x => x.type));
+    config.presets = [...(config.presets || []), ...(config.cinevnRequestPresets || []).filter(x => !existing.has(x.type))]
+      .map(x => ({ ...x, options: { ...x.options, timeout: 8000 } }));
+  }
+  delete config.cinevnRequestPresets;
   if (process.env.TMDB_API_KEY) config.tmdbApiKey = process.env.TMDB_API_KEY;
   if (process.env.TMDB_READ_TOKEN) config.tmdbAccessToken = process.env.TMDB_READ_TOKEN;
   return Buffer.from(JSON.stringify(config)).toString('base64');

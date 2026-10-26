@@ -63,3 +63,11 @@ try {
   cacheClient.disconnect();
 }
 console.log('OK AIOStreams fallback and cooldown');
+const filtering = Buffer.from(JSON.stringify({cinevnAccountScoped:true,services:[],presets:[{type:'torrentio',options:{timeout:3000}}],cinevnRequestPresets:[{type:'knaben',enabled:true,options:{timeout:8000}}],excludedStreamExpressions:[{expression:"uncached(type(streams, 'debrid'))",enabled:true},{expression:'size(streams) > 999',enabled:true}]})).toString('base64');
+const foreground=JSON.parse(Buffer.from(aiostreamsUserDataForKey('key',filtering),'base64'));
+const background=JSON.parse(Buffer.from(aiostreamsUserDataForKey('key',filtering,{requestDiscovery:true}),'base64'));
+assert.equal(foreground.presets.length,1);assert.equal(foreground.excludedStreamExpressions.length,2);
+assert.equal(background.presets.length,2);assert.equal(background.excludedStreamExpressions.length,1);
+assert.equal(background.presets[0].options.timeout,8000);assert.ok(!('cinevnRequestPresets' in foreground));
+assert.notEqual(aiostreamsCacheScope(JSON.stringify(background)),aiostreamsCacheScope(JSON.stringify(foreground)));
+console.log('OK background uncached discovery keeps foreground filters and scope isolated');

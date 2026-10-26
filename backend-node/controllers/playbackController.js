@@ -1376,7 +1376,7 @@ export const resolvePlayback = async (req, res) => {
     if (!sourceToken && !vimoToken && !yastreamToken && isVietnamese) {
       try {
         stage('vietsub-lookup');
-        const vietsubData = await cached(`playback:vietsub:${type}:${tmdbId}:${season}:${episode}`, 12 * 60 * 60, async () => {
+        const vietsubData = await cached(`playback:vietsub:v2:${type}:${tmdbId}:${season}:${episode}`, 12 * 60 * 60, async () => {
             const yaSource = await resolveYaStreamSource({ type, tmdbId, season, episode, detail }).catch(() => null);
             if (yaSource?.streams?.length > 0) return { yastream: yaSource, vimo: null };
 
@@ -1415,7 +1415,7 @@ export const resolvePlayback = async (req, res) => {
         let yaSource = null;
         try {
           const vietsubData = await cached(
-            `playback:vietsub:${type}:${tmdbId}:${season}:${episode}`,
+            `playback:vietsub:v2:${type}:${tmdbId}:${season}:${episode}`,
             12 * 60 * 60,
             () => null,
           );
@@ -1490,7 +1490,7 @@ export const resolvePlayback = async (req, res) => {
     if (!candidates.length && !yastreamToken && !vimoToken) {
       // If we don't have torrents and we aren't already resolving a direct source,
       // check if we have any direct sources available before failing.
-      const vietsubData = await cached(`playback:vietsub:${type}:${tmdbId}:${season}:${episode}`, 12 * 60 * 60, async () => {
+      const vietsubData = await cached(`playback:vietsub:v2:${type}:${tmdbId}:${season}:${episode}`, 12 * 60 * 60, async () => {
           const yaSource = await resolveYaStreamSource({ type, tmdbId, season, episode, detail }).catch(() => null);
           const vimoSource = await resolveVimoSource({ type, tmdbId, season, episode, detail }).catch(() => null);
           return { yastream: yaSource, vimo: vimoSource };
@@ -3233,7 +3233,7 @@ export const listPlaybackSources = async (req, res) => {
       let vietsubData = null;
       try {
         vietsubData = await cached(
-          `playback:vietsub:${type}:${tmdbId}:${season}:${episode}`,
+          `playback:vietsub:v2:${type}:${tmdbId}:${season}:${episode}`,
           12 * 60 * 60,
           async () => {
             const [yaSource, vimoSource] = await Promise.all([

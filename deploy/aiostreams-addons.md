@@ -76,3 +76,29 @@ before it can be enabled. AIO is used for discovery, not as a video relay.
   for all, probable/verified direct, and processing-required sources.
 
 Reference: https://docs.aiostreams.viren070.me/configuration/options/
+
+## Background movie requests and Vietnamese coverage
+
+Foreground playback keeps the cached-only QuackStart filter. Background requests
+remove only the `uncached(type(streams, 'debrid'))` exclusion in a separate
+request-scoped profile/cache. They retain title/year/episode validation and
+resource limits. Supported Knaben, Peerflix and Sootio presets are added under
+`cinevnRequestPresets`, not to foreground presets. Background addon deadlines
+are 8 seconds, with a 15-second AIO request deadline.
+
+Generate this addition without replacing the current foreground profile using
+`aiostreams_profile.py STATUS OUTPUT --requests-only --current CURRENT`.
+Private current/output JSON and base64 environment values must not be committed.
+
+The Vietnamese adapter also queries the fixed KKPhim and NguonC public catalogue
+APIs in parallel for Vietnamese titles and background requests. It accepts exact
+normalized aliases with matching years, rejects conflicting TMDB/IMDb IDs,
+validates detailed metadata and selects the requested episode. Unknown later
+season mappings and ambiguous matches are skipped. Only HTTPS HLS URLs resolving
+to public addresses are returned; embed pages, custom headers and proxy bypasses
+are not implemented. Lookups cache for ten minutes. Existing YaStream and Vimo
+remain available. OPhim was not enabled in this direct branch because the
+checked endpoints returned HTTP 404.
+
+References: https://github.com/hoangtamthai/yastream and
+https://github.com/henryhnguy/vietstream-nuvio-addon (provider API schemas).

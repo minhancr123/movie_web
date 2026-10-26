@@ -1,3 +1,5 @@
+import { cached } from '../../config/redis.js';
+import { lookupVietnameseCatalogues } from './vietnameseCatalogues.js';
 import { safeFetchJson } from '../security/safeFetch.js';
 import { normalizeTitle, scoreMeta, MIN_MATCH_SCORE } from './vimoMatch.js';
 
@@ -12,7 +14,7 @@ const baseUrl = () =>
     .replace(/\/manifest\.json$/i, '')
     .replace(/\/+$/, '');
 
-export const resolveYaStreamSource = async ({ type, tmdbId, season = null, episode = null, detail = {} }) => {
+const resolveRemoteYaStream = async ({ type, tmdbId, season = null, episode = null, detail = {} }) => {
   const titles = [detail?.name, detail?.englishTitle, detail?.originalTitle, detail?.title].filter(Boolean);
   const year = Number.isInteger(detail?.year) ? detail.year : null;
   
@@ -47,6 +49,17 @@ export const resolveYaStreamSource = async ({ type, tmdbId, season = null, episo
     console.warn(`[yastream] lookup failed: ${error.message}`);
     return null;
   }
+};
+
+export const resolveYaStreamSource = async args => {
+  const useCatalogues = args.detail?.originalLanguage === 'vi' || args.requestDiscovery === true;
+  const [remote, native] = await Promise.all([
+    resolveRemoteYaStream(args),
+    useCatalogues ? cached(`vn-catalogues:v1:${args.type}:${args.tmdbId}:${args.season ?? ''}:${args.episode ?? ''}`, 600,
+      () => lookupVietnameseCatalogues({ ...args, detail: { ...args.detail, tmdbId: args.tmdbId } })) : [],
+  ]);
+  const streams = [...native, ...(remote?.streams || [])];
+  return streams.length ? { name: 'Vietsub', origin: 'yastream', streams } : null;
 };
 
 export default { resolveYaStreamSource };
