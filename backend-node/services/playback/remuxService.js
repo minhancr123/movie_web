@@ -1021,7 +1021,7 @@ export const buildVideoArgs = (video, encoder) => {
   };
 };
 
-export const buildFfmpegArgs = ({ inputUrl, outputDir, audioCopy = false, segmentSeconds = REMUX_SEGMENT_SECONDS, audioStreamIndex = null, audioChannels = null, audioDelayMs = 0, video = null, encoder = null, readRate = process.env.REMUX_READ_RATE, initialBurstSeconds = process.env.REMUX_INITIAL_BURST_SECONDS, windowSeconds = 0 }) => {
+export const buildFfmpegArgs = ({ inputUrl, outputDir, audioCopy = false, segmentSeconds = REMUX_SEGMENT_SECONDS, audioStreamIndex = null, audioChannels = null, audioDelayMs = 0, video = null, encoder = null, readRate = process.env.REMUX_READ_RATE, initialBurstSeconds = process.env.REMUX_INITIAL_BURST_SECONDS, windowSeconds = 0, resumeStartNumber = null }) => {
   // Explicit output-side audio delay, chained onto any existing audio filter
   // before the stereo fold. Byte-identical to the old command when 0, which is
   // what every caller passes: a container mux offset is NOT a defect to correct
@@ -1120,7 +1120,15 @@ export const buildFfmpegArgs = ({ inputUrl, outputDir, audioCopy = false, segmen
   '-hls_playlist_type',
   'event',
   '-hls_flags',
-  'independent_segments',
+  // append_list + start_number: một writer chết giữa chừng được hồi sinh NỐI
+  // TIẾP playlist cũ (cùng thư mục, đánh số tiếp) — hls.js chỉ thấy playlist
+  // dài thêm, người xem không phải recover.
+  Number.isFinite(resumeStartNumber) && resumeStartNumber >= 0
+    ? `independent_segments+append_list`
+    : 'independent_segments',
+  ...(Number.isFinite(resumeStartNumber) && resumeStartNumber >= 0
+    ? ['-start_number', String(resumeStartNumber)]
+    : []),
   '-hls_list_size',
   '0',
   '-hls_fmp4_init_filename',
@@ -1772,7 +1780,7 @@ export const assertVideoTranscodeAllowed = async (video) => {
   }
 };
 
-export const startRemuxSession = async ({ sessionId, inputUrl, audioCopy = false, audioStreamIndex = null, audioChannels = null, audioDelayMs = 0, video = null, durationSeconds = null, windowSeconds = 0, queue = null }) => {
+export const startRemuxSession = async ({ sessionId, inputUrl, audioCopy = false, audioStreamIndex = null, audioChannels = null, audioDelayMs = 0, video = null, durationSeconds = null, windowSeconds = 0, queue = null, resumeStartNumber = null }) => {
   const id = safeId(sessionId);
   if (!id) throw new Error('sessionId không hợp lệ');
   // Policy guard FIRST, before writer-limit/disk checks, directories, and any
@@ -1867,7 +1875,7 @@ export const startRemuxSession = async ({ sessionId, inputUrl, audioCopy = false
   if (windowSeconds > 0) await fs.writeFile(path.join(outputDir, '.windowed'), String(windowSeconds));
 
   const encoder = video?.mode === 'transcode' ? await detectVideoEncoder() : null;
-  const args = buildFfmpegArgs({ inputUrl, outputDir, audioCopy, audioStreamIndex, audioChannels, audioDelayMs, video, encoder, windowSeconds });
+  const args = buildFfmpegArgs({ inputUrl, outputDir, audioCopy, audioStreamIndex, audioChannels, audioDelayMs, video, encoder, windowSeconds, resumeStartNumber });
   // Consume the reservation NOW, synchronously, immediately before the spawn:
   // disk checks, cache cleanup, mkdir and encoder detection all awaited
   // above, and the 45s TTL may have released the token meanwhile. Spawning
@@ -1908,6 +1916,8 @@ export const startRemuxSession = async ({ sessionId, inputUrl, audioCopy = false
     abandonedAt: undefined,
   };
   sessions.set(id, session);
+  // Cho auto-respawn: mọi thứ dựng lại writer này trừ inputUrl.
+  session.spawnParams = { audioCopy, audioStreamIndex, audioChannels, audioDelayMs, video, durationSeconds, windowSeconds };
   // Consumed: the live writer now holds the slot via activeWriterCount, so
   // the reservation token goes back (idempotent with the finally below).
   reservationConsumed = true;
@@ -2076,6 +2086,66 @@ export const isLinkExpiryDeath = ({ exitCode = null, stderrTail = '' } = {}) => 
   if (exitCode === 0 || exitCode === null || exitCode === undefined) return false;
   if (typeof exitCode !== 'number') return false;
   return LINK_DEATH_PATTERN.test(String(stderrTail || ''));
+};
+
+/* ------------------------------------------------- writer auto-respawn */
+// Writer chết giữa cửa sổ (link TorBox hết hạn, CDN nghẽn, ffmpeg 255...) mà
+// playlist chưa ENDLIST: hồi sinh writer MỚI với link MỚI, nối tiếp đúng chỗ
+// cũ bằng append_list — thay vì để người xem chờ client phát hiện + resolve
+// lại toàn bộ phiên. Tối đa 2 lần mỗi session.
+const respawnCounts = new Map();
+const RESPAWN_CAP = 2;
+
+export const respawnSessionWriter = async ({ sessionId, inputUrl }) => {
+  const id = safeId(sessionId);
+  const dead = sessions.get(id);
+  if (dead && dead.exitCode === undefined) return { respawned: false, reason: 'still-running' };
+  if (dead && !dead.spawnParams) return { respawned: false, reason: 'no-params' };
+  const params = dead?.spawnParams;
+  const dir = path.join(TRANSCODE_ROOT, id);
+  let text = '';
+  try {
+    text = await fs.readFile(path.join(dir, 'index.m3u8'), 'utf8');
+  } catch {
+    return { respawned: false, reason: 'no-playlist' };
+  }
+  if (text.includes('#EXT-X-ENDLIST')) return { respawned: false, reason: 'complete' };
+  const count = respawnCounts.get(id) || 0;
+  if (count >= RESPAWN_CAP) return { respawned: false, reason: 'respawn-cap' };
+  const written = [...text.matchAll(/#EXTINF:([\d.]+)/g)].reduce((s, m) => s + Number(m[1] || 0), 0);
+  let nextNumber = 0;
+  try {
+    for (const name of await fs.readdir(dir)) {
+      const m = name.match(/^seg_(\d{5,})\.m4s$/);
+      if (m) nextNumber = Math.max(nextNumber, Number(m[1]) + 1);
+    }
+  } catch {
+    return { respawned: false, reason: 'no-dir' };
+  }
+  if (nextNumber === 0) return { respawned: false, reason: 'no-segments' };
+
+  sessions.delete(id);
+  await fs.rm(path.join(dir, '.interrupted'), { force: true }).catch(() => {});
+  respawnCounts.set(id, count + 1);
+  const originAt = Number(params.video?.startAt) > 0 ? Number(params.video.startAt) : 0;
+  const continueAt = originAt + Math.floor(written);
+  const remaining = params.windowSeconds > 0
+    ? Math.max(60, Math.round(params.windowSeconds - written))
+    : 0;
+  console.log(`[remux] respawn id=${id.slice(0, 8)} tiếp tục ở ${continueAt}s (đã ghi ${Math.round(written)}s, seg tiếp ${nextNumber}, lần ${count + 1}/${RESPAWN_CAP})`);
+  await startRemuxSession({
+    sessionId: id,
+    inputUrl,
+    audioCopy: params.audioCopy,
+    audioStreamIndex: params.audioStreamIndex,
+    audioChannels: params.audioChannels,
+    audioDelayMs: params.audioDelayMs,
+    video: { ...params.video, startAt: continueAt },
+    durationSeconds: params.durationSeconds,
+    windowSeconds: remaining,
+    resumeStartNumber: nextNumber,
+  });
+  return { respawned: true };
 };
 
 export const stopRemuxSession = async (sessionId) => {

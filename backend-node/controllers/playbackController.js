@@ -65,6 +65,7 @@ import {
   seekOriginProbeEnabled,
   seekStartEnabled,
   spawnBeatsReuse,
+  respawnSessionWriter,
   planCandidateDelivery,
   cachedSeekOrigin,
   waitForPlaylist,
@@ -4196,11 +4197,31 @@ export const getPlaybackSession = async (req, res) => {
       // writer younger than the amnesty reads as ALIVE, so neither the kill
       // below nor the client's recovery loop can trigger around a writer that
       // is still opening its input.
-      const writerHealthy = state.ended || isYoungWriter(live) || (live
+      let liveForHealth = live;
+      // Hồi sinh writer tại CHỖ: poll của người xem chính là tín hiệu còn
+      // người xem — writer chết giữa cửa sổ được thay bằng writer mới nối
+      // tiếp playlist (link TorBox mới), thay vì báo writerAlive=false và
+      // đẩy người xem vào vòng recover phía client.
+      if (!state.ended && live && live.exitCode !== undefined) {
+        try {
+          const owner = session.userIdStr || String(req.user.userId);
+          const { key } = await getDecryptedKey(db, owner, session.provider || PROVIDER);
+          const freshUrl = await torbox.getDownloadUrl(key, {
+            torrentId: session.torrentId,
+            fileId: session.fileId,
+            userId: owner,
+          });
+          const result = await respawnSessionWriter({ sessionId: effectiveSessionId, inputUrl: freshUrl });
+          if (result.respawned) liveForHealth = getRemuxSession(effectiveSessionId);
+        } catch (error) {
+          console.warn(`[remux-respawn] ${session.sessionId.slice(0, 8)} thất bại: ${error.message}`);
+        }
+      }
+      const writerHealthy = state.ended || isYoungWriter(liveForHealth) || (liveForHealth
         ? shouldReuseRemuxSession({
             playlistComplete: false,
             hasLiveSession: true,
-            liveExitCode: live.exitCode,
+            liveExitCode: liveForHealth.exitCode,
             playlistFresh: ageMs <= SESSION_STALE_MS,
             playlistGrowing: false,
           })
