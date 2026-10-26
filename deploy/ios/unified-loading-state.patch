@@ -1,0 +1,86 @@
+--- a/CineVN-IOS/Player/NativePlayer.swift
++++ b/CineVN-IOS/Player/NativePlayer.swift
+@@ -114,7 +114,7 @@
+     // liên tiếp: mỗi lần bấm phải cộng vào Ý ĐỊNH mới nhất, không phải con số
+     // cũ trên đồng hồ; và completion của seek bị HỦY (tap sau supersede) không
+     // được phép giật currentTime về đích của nó — đó là hiện tượng "tua ghost".
+-    private var pendingSeekDisplayAt: Double?
++    @Published private(set) var pendingSeekDisplayAt: Double?
+     private var pendingSeekFireTask: DispatchWorkItem?
+     private var lastSeekFireAt = Date.distantPast
+ 
+--- a/CineVN-IOS/Player/PlayerScreen.swift
++++ b/CineVN-IOS/Player/PlayerScreen.swift
+@@ -102,6 +102,7 @@
+ 
+     // Far seek / resolve states
+     @State private var isFarSeeking = false
++    @State private var loadingIndicatorVisible = false
+     @State private var farSeekStatus: String? = nil
+ 
+     // Scrub (kéo thanh thời gian + pan ngang)
+@@ -435,23 +436,6 @@
+                     .allowsHitTesting(false)
+                 }
+ 
+-                // Far seek spinner
+-                if isFarSeeking, let status = farSeekStatus {
+-                    VStack(spacing: 10) {
+-                        ProgressView()
+-                            .progressViewStyle(CircularProgressViewStyle(tint: .white))
+-                            .scaleEffect(1.3)
+-                        Text(status)
+-                            .font(.subheadline.weight(.semibold))
+-                            .foregroundColor(.white)
+-                            .multilineTextAlignment(.center)
+-                    }
+-                    .padding(18)
+-                    .background(Color.black.opacity(0.85))
+-                    .cornerRadius(14)
+-                    .zIndex(6)
+-                }
+-
+                 // Audio-only fallback (hev1 trong MP4)
+                 if player.isAudioOnlyFallback {
+                     VStack(spacing: 12) {
+@@ -489,12 +473,12 @@
+                 }
+ 
+                 // Buffering indicator
+-                if player.isBuffering && player.errorMessage == nil && !isFarSeeking && !isScrubbing {
++                if loadingIndicatorVisible && player.errorMessage == nil && !isScrubbing {
+                     VStack(spacing: 12) {
+                         ProgressView()
+                             .progressViewStyle(CircularProgressViewStyle(tint: .white))
+                             .scaleEffect(1.2)
+-                        Text(bufferingText)
++                        Text("Đang tải phim…")
+                             .font(.caption)
+                             .foregroundColor(.white.opacity(0.8))
+ 
+@@ -625,6 +609,14 @@
+                     pauseCinematicVisible = false
+                 }
+             }
++        }
++        // Resolving, restoring a seek and buffering are one loading operation.
++        // Keep the same overlay through handoffs; hide only after a stable gap.
++        .task(id: loadingRequested) {
++            let requested = loadingRequested
++            try? await Task.sleep(nanoseconds: requested ? 350_000_000 : 500_000_000)
++            guard !Task.isCancelled, loadingRequested == requested else { return }
++            loadingIndicatorVisible = requested
+         }
+         .onChange(of: player.isBuffering) { _, buffering in
+             handleBufferingChange(buffering: buffering)
+@@ -1772,6 +1764,10 @@
+     }
+ 
+     /// Text hộp đệm: kèm tốc độ tải thật khi đo được.
++    private var loadingRequested: Bool {
++        player.errorMessage == nil && (isFarSeeking || player.pendingSeekDisplayAt != nil || player.isBuffering)
++    }
++
+     private var bufferingText: String {
+         if let mbps = player.bufferMbps, mbps >= 0.5 {
+             return "Đang đệm · ~\(Int(mbps.rounded())) Mbps"
