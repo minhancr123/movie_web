@@ -74,3 +74,5 @@ const big = `1\n00:00:01,000 --> 00:00:02,000\n${'x'.repeat(UPLOAD_MAX_BYTES)}\n
 assert.throws(() => toVttDocument(big, 'big.srt'), /quá lớn/);
 
 console.log('ok - SRT parses messily, VTT converts, garbage rejected with sentences');
+
+assert.throws(() => normalizeAddonSubtitle('WEBVTT\n\n00:00:00.000 --> 00:00:12.000\nThe daily SubDL download limit has been reached.'), error => error.code === 'SUBTITLE_DOWNLOAD_LIMIT');

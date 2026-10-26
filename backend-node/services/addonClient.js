@@ -392,6 +392,12 @@ export const buildSubtitleUrl = (addon, type, id, { videoHash, videoSize } = {})
 
 const fetchSubtitlesFromAddon = async (addon, type, id, hints = {}) => {
   const host = new URL(addon).host;
+  const quotaKey = `subtitle:quota:${crypto.createHash('sha256').update(addon).digest('hex').slice(0, 24)}`;
+  if (await getCache(quotaKey)) {
+    const error = new Error('Dịch vụ phụ đề đã hết lượt tải trong ngày');
+    error.code = 'SUBTITLE_DOWNLOAD_LIMIT';
+    throw error;
+  }
   const url = buildSubtitleUrl(addon, type, id, hints);
   const listingTimeout = new URL(addon).hostname === 'api3.subdl.com' ? 20000 : SUBTITLE_REQUEST_TIMEOUT_MS;
   const payload = await safeFetchJson(url, { timeoutMs: listingTimeout });
@@ -414,7 +420,12 @@ const fetchSubtitlesFromAddon = async (addon, type, id, hints = {}) => {
     await setCache(`playback:sub:${token}`, { body }, SUBTITLE_CACHE_TTL + 86400);
     return { ...track, url: `/api/playback/subtitles/vtt/${token}` };
   }));
-  return settled.filter((item) => item.status === 'fulfilled').map((item) => item.value);
+  const available = settled.filter((item) => item.status === 'fulfilled').map((item) => item.value);
+  const warnings = [...new Set(settled.filter(item => item.status === 'rejected')
+    .map(item => item.reason?.code).filter(Boolean))];
+  if (warnings.includes('SUBTITLE_DOWNLOAD_LIMIT')) await setCache(quotaKey, true, 15 * 60);
+  if (warnings.length) available.warnings = warnings;
+  return available;
 };
 
 /** Fast external subtitle lookup; no debrid URL or ffmpeg scan is involved. */
@@ -433,7 +444,7 @@ export const getSubtitleCandidates = async ({
   // 2160p release of the same title shared one cached list, so switching source
   // handed back subtitles timed for the other file.
   const fileKey = videoHash ? `:${videoHash}` : '';
-  const cacheKey = `addon:subtitles:v3:${stremio.type}:${stremio.id}${fileKey}`;
+  const cacheKey = `addon:subtitles:v4:${stremio.type}:${stremio.id}${fileKey}`;
   const result = await cached(cacheKey, SUBTITLE_CACHE_TTL, async () => {
     const addons = configuredSubtitleAddons();
     const hints = { videoHash, videoSize };
@@ -445,9 +456,10 @@ export const getSubtitleCandidates = async ({
     const seen = new Set();
     settled.forEach((result, index) => {
       if (result.status === 'rejected') {
-        errors.push(`${new URL(addons[index]).host}: ${result.reason?.message || 'lỗi không rõ'}`);
+        errors.push(`${new URL(addons[index]).host}: ${result.reason?.code || result.reason?.message || 'lỗi không rõ'}`);
         return;
       }
+      for (const warning of result.value.warnings || []) errors.push(`${new URL(addons[index]).host}: ${warning}`);
       for (const subtitle of result.value) {
         if (seen.has(subtitle.url)) continue;
         seen.add(subtitle.url);

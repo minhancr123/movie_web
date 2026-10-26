@@ -1,7 +1,7 @@
 # Breaking Bad S02E07: missing Vietnamese and repeated window loads
 
 Measured against the LAN backend:
-- SubDL returned 5 Vietnamese and 5 English tracks in 14.6 seconds. The old
+- SubDL listed 5 Vietnamese and 5 English tracks in 14.6 seconds. The old
   5-second list deadline discarded them, then cached the partial inventory 6h.
 - Nhamsub returned a data-URI placeholder, not a usable HTTPS subtitle. Other
   responding addons returned English/other languages, not Vietnamese.
@@ -37,3 +37,15 @@ Limits: this reduces the frequency and preparation cost of HLS handoffs; it is
 not a claim of gapless HLS playback or that MKV becomes direct-playable in AVPlayer.
 Online Vietnamese subtitles still need release/timeline validation by the existing
 alignment machinery. A language being available is not proof of perfect sync.
+
+Follow-up download verification: all five Vietnamese SubDL action URLs returned
+one-cue quota notices, not actual dialogue (daily download limit reached). They
+must not be offered as valid subtitles. The normalizer now emits a structured
+SUBTITLE_DOWNLOAD_LIMIT warning; partial discovery retries after 60s and the
+player inventory explains the missing Vietnamese track. Fixing the timeout alone
+cannot restore a provider account's exhausted download quota.
+
+Live verification after the first repair: owned S02E07 inventory HTTP 200 in
+19.7s; English embedded 60s window published 6 cues successfully, finishing 31.7s
+after request start (about 12s after inventory). Vietnamese remains unavailable
+from this exhausted account; no translation or fake track was substituted.

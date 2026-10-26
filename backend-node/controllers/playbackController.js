@@ -3557,6 +3557,9 @@ export const getPlaybackSubtitles = async (req, res) => {
       videoSize: ownedSession?.videoSize ?? null,
     }).catch((error) => ({ subtitles: [], errors: [error.message] }));
     const externalSubs = externalResult.subtitles || [];
+    const availabilityNote = externalResult.errors?.some(error => String(error).includes('SUBTITLE_DOWNLOAD_LIMIT'))
+      && !externalSubs.some(track => /^(vi|vie|vit)$/i.test(track.language))
+      ? 'Chưa tải được phụ đề Việt: dịch vụ phụ đề đã hết lượt tải trong ngày. Bạn có thể dùng track khác hoặc thử lại sau.' : '';
 
     const subtitleWindow = subtitleWindowAt(positionSeconds ?? ownedSession?.startAt ?? 0, {
       kbps: ownedSession?.durationSeconds > 0 ? Number(ownedSession.videoSize || 0) * 8 / ownedSession.durationSeconds / 1000 : 0,
@@ -3741,9 +3744,9 @@ export const getPlaybackSubtitles = async (req, res) => {
         data: {
           audio: probeSummary.audio,
           tracks: combinedTracks,
-          note: embeddedTracks.length > 0
+          note: availabilityNote || (embeddedTracks.length > 0
             ? 'Đã tích hợp phụ đề gốc nhúng trong file và phụ đề online'
-            : 'Phụ đề online đã sẵn sàng; không cần quét toàn bộ file phim',
+            : 'Phụ đề online đã sẵn sàng; không cần quét toàn bộ file phim'),
           jobId: null,
           probe: probeSummary,
           source: embeddedTracks.length > 0 ? 'mixed' : 'external',
@@ -3764,7 +3767,7 @@ export const getPlaybackSubtitles = async (req, res) => {
         data: {
           audio: [],
           tracks: [],
-          note: 'Không tìm thấy phụ đề online; mở menu để thử track nhúng',
+          note: availabilityNote || 'Không tìm thấy phụ đề online; mở menu để thử track nhúng',
           jobId: null,
           probe: { audio: [], subtitles: [] },
           source: 'external',
@@ -3841,7 +3844,7 @@ export const getPlaybackSubtitles = async (req, res) => {
 
     const audio = audioInfo(probe.audio);
     const hasSubs = (probe.subtitles || []).length > 0;
-    const note = !hasSubs ? 'File này không nhúng phụ đề nào' : '';
+    const note = availabilityNote || (!hasSubs ? 'File này không nhúng phụ đề nào' : '');
     // Full probe picture so the menu can explain itself (e.g. "4 image
     // subs + 1 text sub" instead of a bare lonely track list).
     const probeSummary = {

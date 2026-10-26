@@ -131,6 +131,11 @@ export const uploadKey = ({ userId, tmdbId, season = null, episode = null }) =>
 
 /** Addon converters may return VTT with ASS-style hours or an expiry notice. */
 export const normalizeAddonSubtitle = (text) => {
+  if (/daily.{0,30}(download.{0,10})?limit.{0,30}(reached|exceeded)|download limit has been reached/i.test(String(text))) {
+    const error = new Error('Dịch vụ phụ đề đã hết lượt tải trong ngày');
+    error.code = 'SUBTITLE_DOWNLOAD_LIMIT';
+    throw error;
+  }
   if (/This subtitle action expired/i.test(String(text))) {
     throw new Error('Liên kết phụ đề hết hạn');
   }
