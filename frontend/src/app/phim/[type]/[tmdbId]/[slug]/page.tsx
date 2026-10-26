@@ -1,3 +1,4 @@
+import { formatRuntimeMinutes } from '@/lib/display-text';
 import Image from 'next/image';
 import Link from 'next/link';
 import { notFound, redirect } from 'next/navigation';
@@ -202,7 +203,7 @@ export default async function CatalogDetailPage({ params, searchParams }: PagePa
             {detail.runtime && (
               <span className="flex items-center gap-2">
                 <Clock size={16} className="text-amber-gold" />
-                {detail.runtime} phút
+                {formatRuntimeMinutes(detail.runtime)}
               </span>
             )}
             {detail.voteAverage > 0 && (

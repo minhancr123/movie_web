@@ -27,7 +27,7 @@ test('search treats regex metacharacters as text', () => {
   assert.equal(pattern.test('aliceeeeeetest@exampleXcom admin 1 anything'), false);
 });
 test('admin list projections never expose account secrets or playback capabilities', () => {
-  assert.deepEqual(Object.keys(USER_FIELDS).sort(), ['authProvider','createdAt','email','lastLogin','registration','role','updatedAt','username']);
+  assert.deepEqual(Object.keys(USER_FIELDS).sort(), ['authProvider','bannedAt','createdAt','email','isBanned','lastLogin','registration','role','updatedAt','username']);
   for (const key of ['password','passwordHash','apiKey','connections','sourceToken','directUrl','infoHash','mediaGrant','videoHash','sourceFileName']) {
     assert.equal(USER_FIELDS[key], undefined); assert.equal(SESSION_FIELDS[key], undefined);
   }

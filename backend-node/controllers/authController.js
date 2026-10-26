@@ -150,6 +150,7 @@ export const login = async (req, res) => {
       });
     }
 
+    if (user.isBanned === true) return res.status(403).json({ success: false, code: 'ACCOUNT_BANNED', message: 'Tài khoản đã bị khóa. Vui lòng liên hệ quản trị viên.' });
     // Generate JWT
     const token = signAccountToken(
       {
@@ -292,6 +293,7 @@ export const googleLogin = async (req, res) => {
     // Check if user exists
     let user = await db.collection('users').findOne({ email });
     let isNewUser = false;
+    if (user?.isBanned === true) return res.status(403).json({ success: false, code: 'ACCOUNT_BANNED', message: 'Tài khoản đã bị khóa. Vui lòng liên hệ quản trị viên.' });
 
     if (!user) {
       // Create new user

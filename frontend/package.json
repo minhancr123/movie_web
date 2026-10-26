@@ -5,7 +5,7 @@
   "scripts": {
     "dev": "next dev",
     "dev:clean": "node -e \"require('fs').rmSync('.next',{recursive:true,force:true})\" && next dev",
-    "test": "node --test tests/auth-request-context.test.mjs tests/dev-cache-reset.test.mjs tests/audio-enhancer.test.mjs tests/ambilight.test.mjs tests/autoplay.test.mjs tests/intro-route-scope.test.mjs tests/playback-progress.test.mjs tests/playback-restore.test.mjs tests/prepared-window.test.mjs tests/subtitles.test.mjs tests/api-base.test.mjs tests/episode-list.test.mjs tests/fullscreen-ambilight.test.mjs tests/css-fullscreen.test.mjs tests/media-buffering.test.mjs tests/source-preferences.test.mjs tests/episode-switch.test.mjs tests/episode-resume.test.mjs tests/prewarm-payload.test.mjs tests/pwa.test.mjs tests/resolve-retry.test.mjs tests/resolve-job.test.mjs tests/playback-extras.test.mjs tests/subtitle-sync.test.mjs tests/subtitle-alignment.test.mjs tests/native-subtitles.test.mjs && node --test tests/playback-telemetry.test.mjs && node --test tests/source-delivery.test.mjs",
+    "test": "node --test tests/display-text.test.mjs tests/auth-request-context.test.mjs tests/dev-cache-reset.test.mjs tests/audio-enhancer.test.mjs tests/ambilight.test.mjs tests/autoplay.test.mjs tests/intro-route-scope.test.mjs tests/playback-progress.test.mjs tests/playback-restore.test.mjs tests/prepared-window.test.mjs tests/subtitles.test.mjs tests/api-base.test.mjs tests/episode-list.test.mjs tests/fullscreen-ambilight.test.mjs tests/css-fullscreen.test.mjs tests/media-buffering.test.mjs tests/source-preferences.test.mjs tests/episode-switch.test.mjs tests/episode-resume.test.mjs tests/prewarm-payload.test.mjs tests/pwa.test.mjs tests/resolve-retry.test.mjs tests/resolve-job.test.mjs tests/playback-extras.test.mjs tests/subtitle-sync.test.mjs tests/subtitle-alignment.test.mjs tests/native-subtitles.test.mjs && node --test tests/playback-telemetry.test.mjs && node --test tests/source-delivery.test.mjs",
     "test:routes": "node --test tests/continue-watching-route.test.mjs",
     "test:dev-cache": "node --test tests/dev-cache-reset.test.mjs",
     "test:e2e": "playwright test --browser chromium",
@@ -25,7 +25,8 @@
     "react-dom": "19.3.0",
     "sharp": "^0.34.4",
     "socket.io-client": "^4.8.3",
-    "swr": "^2.4.0"
+    "swr": "^2.4.0",
+    "html-entities": "^2.6.0"
   },
   "devDependencies": {
     "@playwright/test": "^1.55.1",

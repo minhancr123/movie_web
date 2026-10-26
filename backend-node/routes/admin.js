@@ -1,6 +1,9 @@
 import express from 'express';
 import { ObjectId } from 'mongodb';
 import os from 'node:os';
+import { accountStatus, canModerateAccount } from '../services/security/accountStatus.js';
+import { cached, CACHE_TTL } from '../config/redis.js';
+import * as tmdb from '../services/tmdb.js';
 import { statfs } from 'node:fs/promises';
 import { getDB } from '../config/database.js';
 import { cacheClient } from '../config/redis.js';
@@ -8,7 +11,7 @@ import { getServerHealth } from '../services/admin/serverHealth.js';
 import { adminMiddleware } from '../middleware/auth.js';
 import { getSiteSetting, setSiteSetting } from '../services/siteSettings.js';
 import { adminTraffic } from '../services/admin/traffic.js';
-import { getCatalogLimit, setCatalogLimit, validCatalogLimit, parseAdminList, literalSearch, USER_FIELDS, SESSION_FIELDS } from '../services/admin/policy.js';
+import { getCatalogLimit, setCatalogLimit, validCatalogLimit, parseAdminList, literalSearch, adminUserFilters, USER_FIELDS, SESSION_FIELDS } from '../services/admin/policy.js';
 
 const router = express.Router();
 router.get('/site-settings/hover-trailer', async (_req, res) => {
@@ -72,7 +75,7 @@ router.get('/stats', route(async (_req, res) => {
   } });
 }));
 router.get('/users', route(async (req, res) => {
-  const { page, limit, search, role } = parseAdminList(req.query), query = {};
+  const { page, limit, search, role } = parseAdminList(req.query), query = adminUserFilters(req.query);
   // Older Google-created accounts have no explicit role; their effective role
   // is user, exactly as the token issuer and admin table already treat them.
   if (role) query.role = role === 'user' ? { $in: ['user', null] } : 'admin';
@@ -80,6 +83,19 @@ router.get('/users', route(async (req, res) => {
   const collection = getDB().collection('users');
   const [total, data] = await Promise.all([collection.countDocuments(query), collection.find(query, { projection: USER_FIELDS }).sort({ createdAt: -1, _id: -1 }).skip((page - 1) * limit).limit(limit).toArray()]);
   res.json({ success: true, data, pagination: { page, limit, total, pages: Math.max(1, Math.ceil(total / limit)) } });
+}));
+router.patch('/users/:id/status', route(async (req, res) => {
+  if (!/^[a-f0-9]{24}$/i.test(req.params.id) || typeof req.body?.isBanned !== 'boolean') return res.status(400).json({ success: false, message: 'Tài khoản hoặc trạng thái không hợp lệ.' });
+  const db = getDB(), id = new ObjectId(req.params.id);
+  const user = await db.collection('users').findOne({ _id: id }, { projection: { role: 1 } });
+  if (!user) return res.status(404).json({ success: false, message: 'Không tìm thấy tài khoản.' });
+  if (!canModerateAccount(req.user.userId, user)) return res.status(403).json({ success: false, message: 'Không thể khóa tài khoản quản trị viên hoặc tài khoản của chính bạn.' });
+  const isBanned = req.body.isBanned;
+  await db.collection('users').updateOne({ _id: id }, { $set: { isBanned, bannedAt: isBanned ? new Date() : null, updatedAt: new Date() } });
+  accountStatus.invalidate(id);
+  if (isBanned) await db.collection('playback_sessions').updateMany({ userIdStr: String(id) }, { $set: { expiresAt: new Date() } });
+  await audit(req, isBanned ? 'ban-account' : 'unban-account', { userId: String(id) });
+  res.json({ success: true, data: { isBanned } });
 }));
 router.get('/users/:id/activity', route(async (req, res) => {
   if (!/^[a-f0-9]{24}$/i.test(req.params.id)) return res.status(400).json({ success: false, message: 'Mã tài khoản không hợp lệ.' });
@@ -101,6 +117,19 @@ router.get('/sessions', route(async (req, res) => {
   const query = req.query.scope === 'all' ? {} : { expiresAt: { $gt: new Date() } };
   const collection = getDB().collection('playback_sessions');
   const [total, data] = await Promise.all([collection.countDocuments(query), collection.find(query, { projection: SESSION_FIELDS }).sort({ createdAt: -1, _id: -1 }).skip((page - 1) * limit).limit(limit).toArray()]);
+  for (const row of data) row.type = row.type || row.mediaType || 'movie';
+  const titles = new Map();
+  const identities = [...new Set(data.filter(row => row.tmdbId).map(row => `${row.type || 'movie'}:${row.tmdbId}`))];
+  await Promise.all(Array.from({ length: Math.min(4, identities.length) }, async () => {
+    while (identities.length) {
+      const key = identities.shift(), [type, rawId] = key.split(':');
+      try {
+        const detail = await cached(`catalog:detail:${type}:${rawId}:v3`, CACHE_TTL.DETAIL, () => tmdb.getDetail(type, Number(rawId)), tmdb.STALE_OPTS);
+        if (detail?.title) titles.set(key, detail.title);
+      } catch { /* Keep the TMDB identity when the catalog is unavailable. */ }
+    }
+  }));
+  for (const row of data) row.title = titles.get(`${row.type || 'movie'}:${row.tmdbId}`) || null;
   res.json({ success: true, data, pagination: { page, limit, total, pages: Math.max(1, Math.ceil(total / limit)) } });
 }));
 router.get('/audit', route(async (_req, res) => {

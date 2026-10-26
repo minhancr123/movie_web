@@ -4,6 +4,7 @@ import { User, Send, Clock, Trash2, Edit2, X, AlertCircle } from 'lucide-react';
 import { useSession } from 'next-auth/react';
 import { commentsAPI } from '@/lib/api';
 import Link from 'next/link';
+import { commentText } from '@/lib/display-text';
 import Image from 'next/image';
 
 interface Comment {
@@ -103,7 +104,7 @@ export default function CommentsSection({ slug }: CommentsSectionProps) {
 
     const handleEdit = (comment: Comment) => {
         setEditingId(comment._id);
-        setEditContent(comment.content);
+        setEditContent(commentText(comment.content));
     };
 
     const submitEdit = async (commentId: string) => {
@@ -262,7 +263,7 @@ export default function CommentsSection({ slug }: CommentsSectionProps) {
                                             </div>
                                         ) : (
                                             <p className="text-cinema-muted text-sm leading-relaxed whitespace-pre-wrap break-words">
-                                                {comment.content}
+                                                {commentText(comment.content)}
                                             </p>
                                         )}
 

@@ -1,3 +1,4 @@
+import { enforceAccountStatus } from '../services/security/accountStatus.js';
 import jwt from 'jsonwebtoken';
 import { MEDIA_GRANT_QUERY, verifyMediaGrant } from '../services/playback/mediaGrant.js';
 
@@ -25,7 +26,7 @@ export const authMiddleware = (req, res, next) => {
       });
     }
     req.user = decoded; // { userId, email, username, role }
-    next();
+    return enforceAccountStatus(req, res, next);
   } catch (error) {
     return res.status(401).json({
       success: false,
@@ -101,7 +102,7 @@ export const mediaAuthMiddleware = (req, res, next) => {
       // path above (with its scope check), never pass as user identity.
       if (decoded?.pur !== 'media') {
         req.user = decoded;
-        return next();
+        return enforceAccountStatus(req, res, next);
       }
     }
 
