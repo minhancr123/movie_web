@@ -17,7 +17,7 @@ execFileSync(
     { cwd: root, stdio: 'pipe' },
 );
 
-const { startPlaybackWithMutedFallback } = await import(
+const { startPlaybackWithMutedFallback, loadingPresentation } = await import(
     pathToFileURL(path.join(outDir, 'autoplay.js')).href
 );
 process.on('exit', () => rmSync(outDir, { recursive: true, force: true }));
@@ -54,4 +54,12 @@ test('a failed muted retry restores the original audible preference', async () =
     const video = { muted: false, play: async () => { throw namedError('NotAllowedError'); } };
     assert.equal(await startPlaybackWithMutedFallback(video), 'blocked');
     assert.equal(video.muted, false);
+});
+
+test('a previously playing seek shows buffering rather than a fabricated Safari permission prompt', () => {
+ assert.equal(loadingPresentation({loading:true,blocked:false,hasPlayed:true,paused:true}),'spinner');
+ assert.equal(loadingPresentation({loading:true,blocked:false,hasPlayed:true,paused:false}),'spinner');
+ assert.equal(loadingPresentation({loading:true,blocked:true,hasPlayed:true,paused:true}),'permission-play');
+ assert.equal(loadingPresentation({loading:true,blocked:false,hasPlayed:false,paused:true}),'initial-play');
+ assert.equal(loadingPresentation({loading:false,blocked:false,hasPlayed:true,paused:true}),'none');
 });

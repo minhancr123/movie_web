@@ -5,6 +5,7 @@ import { createPortal } from 'react-dom';
 import { enterCssFullscreen } from '@/lib/css-fullscreen';
 import { observeBuffering } from '@/lib/media-buffering';
 import { prepareWindowAt } from '@/lib/prepared-window';
+import { loadingPresentation } from '@/lib/autoplay';
 import Hls from 'hls.js';
 import { SeekPreview, TimelineSkip, NextEpisodePrompt, RememberedIntroSkip } from './PlaybackExtras';
 import SubtitleSyncGuide from './SubtitleSyncGuide';
@@ -1390,6 +1391,7 @@ export default function VideoPlayer({ src, playbackStartedAt, movie, episode, au
         const contentChanged = pipelineContentRef.current !== null && pipelineContentRef.current !== contentKey;
         pipelineContentRef.current = contentKey;
         setError(null);
+        setAutoplayBlocked(false);
         setIsLoading(true);
         // Fresh pipeline, no picture yet: poster covers the black gap below
         // until the first frame lands (set in the RAF loop).
@@ -1500,13 +1502,8 @@ export default function VideoPlayer({ src, playbackStartedAt, movie, episode, au
                 }
                 return;
             }
-            // Audible-only start. By the time the async resolve (TorBox +
-            // manifest) finishes, the click that opened the film is no longer
-            // an active browser gesture, so audible play() rejects with
-            // NotAllowedError. There is deliberately no muted fallback: a
-            // paused first frame with a tap-to-play prompt beats silent video,
-            // and the tap itself is a gesture, so play() then succeeds audible.
-            video.muted = false;
+            // Preserve the element's mute state across a seek/rebuild. Unmuting
+            // without a user gesture can revoke autoplay permission in WebKit.
             void video.play().then(
                 () => {
                     if (cancelled) return;
@@ -2795,26 +2792,25 @@ export default function VideoPlayer({ src, playbackStartedAt, movie, episode, au
                 onDoubleClick={(e) => { e.stopPropagation(); toggleFullscreen(); }}
             />
 
-            {/* Loading Spinner — but NOT while paused-with-source on Safari:
-                iOS blocks autoplay, the element sits at HAVE_METADATA and
-                loads nothing while paused, so the spinner used to spin
-                forever over a player that was actually waiting for a tap. */}
-            {isLoading && (isPlaying || !src ? (
-                <div className="absolute inset-0 flex items-center justify-center bg-black/50 z-20 backdrop-blur-sm">
+            {/* A playing seek internally pauses the element while loading. Only
+                a real NotAllowedError may label this as permission-blocked. */}
+            {loadingPresentation({ loading: isLoading, blocked: autoplayBlocked,
+                hasPlayed: hasPlayedRef.current, paused: !isPlaying }) === 'spinner' && (
+                <div role="status" aria-label="Đang tải video" className="absolute inset-0 flex items-center justify-center bg-black/50 z-20 backdrop-blur-sm">
                     <Loader2 className="w-12 h-12 text-amber-gold animate-spin" />
                 </div>
-            ) : (
+            )}
+            {isLoading && !isPlaying && (autoplayBlocked || !hasPlayedRef.current) && (
                 <div className="absolute inset-0 z-20 flex flex-col items-center justify-center gap-3 bg-black/50 backdrop-blur-sm">
-                    <button
-                        type="button"
+                    <button type="button"
                         onClick={(e) => { e.stopPropagation(); void videoRef.current?.play().catch(() => {}); }}
-                        className="btn btn-primary btn-lg cursor-interaction"
-                    >
-                        ▶ Phát tiếp
+                        className="btn btn-primary btn-lg cursor-interaction">
+                        ▶ {autoplayBlocked ? 'Phát tiếp' : 'Bắt đầu phát'}
                     </button>
-                    <span className="text-small text-muted">Bấm để Safari bắt đầu tải và tiếp tục</span>
+                    <span className="text-small text-muted">{autoplayBlocked
+                        ? 'Trình duyệt cần bạn chạm để tiếp tục phát.' : 'Nhấn để bắt đầu xem phim.'}</span>
                 </div>
-            ))}
+            )}
 
             {/* Far-seek indicator: a BLOCKING overlay over the whole player.
                 While it is up the element still holds the old position, so

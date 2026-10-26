@@ -36,3 +36,13 @@ export const startPlaybackWithMutedFallback = async (
         return errorName(error) === 'AbortError' ? 'aborted' : 'blocked';
     }
 };
+
+/** An internal pause during a playing seek is buffering, not an autoplay denial. */
+export function loadingPresentation({ loading, blocked, hasPlayed, paused }: {
+  loading: boolean; blocked: boolean; hasPlayed: boolean; paused: boolean;
+}): 'none' | 'spinner' | 'initial-play' | 'permission-play' {
+  if (!loading) return 'none';
+  if (paused && blocked) return 'permission-play';
+  if (paused && !hasPlayed) return 'initial-play';
+  return 'spinner';
+}
