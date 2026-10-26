@@ -1,4 +1,5 @@
 import Link from 'next/link';
+import Image from 'next/image';
 import { notFound } from 'next/navigation';
 import type { Metadata } from 'next';
 import { ArrowLeft, ListVideo } from 'lucide-react';
@@ -166,21 +167,27 @@ export default async function WatchPage({ params, searchParams }: PageParams) {
         </div>
 
         {missingEpisode ? (
-          <div className="glass-panel rounded-2xl p-8 text-center shadow-glass-card">
-            <div className="mb-4 flex justify-center"><SeasonPicker seasons={seasonOptions} current={season} /></div>
-            <p className="font-syne text-headline-sm text-white">Chọn tập để xem</p>
-            <p className="mx-auto mt-2 max-w-md text-sm text-cinema-subtle">
-              Phim bộ cần số mùa/tập để tìm đúng file trên TorBox. Mở trang phim và
-              bấm vào tập bạn muốn xem.
-            </p>
-            <Link
-              href={catalogHref(detail)}
-              className="glass-button mt-5 inline-flex items-center gap-2 rounded-full px-6 py-3 font-mono text-label-lg uppercase text-white transition-all hover:-translate-y-1"
-            >
-              <ArrowLeft size={18} />
-              Danh sách tập
-            </Link>
-          </div>
+          <section id="episodes" className="glass-panel rounded-2xl p-5 shadow-glass-card">
+            <div className="mb-5 flex flex-wrap items-center justify-between gap-3">
+              <div>
+                <h2 className="text-lg font-bold text-white">{season ? `Mùa ${season} · Chọn tập để xem` : 'Chọn mùa và tập để xem'}</h2>
+                <p className="mt-1 text-sm text-cinema-subtle">Phim chỉ bắt đầu phát sau khi bạn chọn một tập.</p>
+              </div>
+              <SeasonPicker seasons={seasonOptions} current={season} />
+            </div>
+            {episodes.length ? (
+              <div className="grid grid-cols-2 gap-3 sm:grid-cols-3 lg:grid-cols-4">
+                {episodes.map(ep => <Link key={ep.episodeNumber} href={ep.href}
+                  className="overflow-hidden rounded-xl border border-white/10 bg-white/5 transition hover:border-amber-primary/60 hover:bg-amber-primary/10">
+                  <div className="relative aspect-video bg-black/30">
+                    {ep.still && <Image src={ep.still} alt={ep.name} fill sizes="(max-width: 640px) 45vw, 240px" className="object-cover" />}
+                    <span className="absolute bottom-2 left-2 rounded bg-black/75 px-2 py-1 text-xs font-bold text-white">Tập {ep.episodeNumber}</span>
+                  </div>
+                  <div className="p-3"><p className="line-clamp-2 text-sm font-semibold text-white">{ep.name || `Tập ${ep.episodeNumber}`}</p></div>
+                </Link>)}
+              </div>
+            ) : <p className="py-6 text-sm text-cinema-subtle">{season ? 'Chưa tải được danh sách tập của mùa này. Bạn thử tải lại hoặc chọn mùa khác.' : 'Chọn một mùa để xem danh sách tập.'}</p>}
+          </section>
         ) : (
           <PlaybackSection
             key={`${type}:${tmdbId}:s${season}`}

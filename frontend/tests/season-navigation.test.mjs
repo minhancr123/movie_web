@@ -19,7 +19,7 @@ execFileSync(
     { cwd: root, stdio: 'pipe' },
 );
 
-const { nextSeasonNumber, firstAvailableEpisode, isLastEpisode } = await import(pathToFileURL(path.join(outDir, 'season-navigation.js')).href);
+const { nextSeasonNumber, firstAvailableEpisode, isLastEpisode, seasonBrowseHref } = await import(pathToFileURL(path.join(outDir, 'season-navigation.js')).href);
 
 test('next season follows catalog numbering rather than assuming contiguous seasons', () => {
  assert.equal(nextSeasonNumber([{seasonNumber:3},{seasonNumber:1},{seasonNumber:0}],1),3);
@@ -36,5 +36,9 @@ test('cross-season advance is only possible at the actual last catalog episode',
  assert.equal(isLastEpisode([{episodeNumber:1},{episodeNumber:7}],1),false);
  assert.equal(isLastEpisode([{episodeNumber:1},{episodeNumber:7}],8),false);
  assert.equal(isLastEpisode([],null),false);
+});
+test('manual season changes land on the episode chooser, not an autoplay episode', () => {
+ assert.equal(seasonBrowseHref('/xem-phim/tv/1396/phim?s=2&e=1&restart=1'),'/xem-phim/tv/1396/phim?s=2#episodes');
+ assert.equal(seasonBrowseHref('/xem-phim/tv/1396/phim?s=5&e=7'),'/xem-phim/tv/1396/phim?s=5#episodes');
 });
 rmSync(outDir,{recursive:true,force:true});

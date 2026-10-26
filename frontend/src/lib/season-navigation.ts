@@ -11,3 +11,11 @@ export const firstAvailableEpisode = <T extends { episodeNumber: number; airDate
 export const isLastEpisode = (episodes: { episodeNumber: number }[], current: number | null): boolean =>
   current !== null && episodes.some(item => item.episodeNumber === current)
     && !episodes.some(item => item.episodeNumber > current);
+
+/** Browsing a season must never carry an episode or an autoplay restart flag. */
+export const seasonBrowseHref = (href: string): string => {
+  const target = new URL(href, 'https://cinevn.me');
+  target.searchParams.delete('e');
+  target.searchParams.delete('restart');
+  return target.pathname + target.search + '#episodes';
+};

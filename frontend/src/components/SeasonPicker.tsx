@@ -1,6 +1,7 @@
 'use client';
 
 import { useId, useState } from 'react';
+import { seasonBrowseHref } from '@/lib/season-navigation';
 export type SeasonOption = { seasonNumber: number; episodeCount: number; href: string };
 
 export default function SeasonPicker({ seasons, current }: { seasons: SeasonOption[]; current: number | null }) {
@@ -17,7 +18,7 @@ export default function SeasonPicker({ seasons, current }: { seasons: SeasonOpti
           setPending(true);
           // A season owns a different episode inventory and playback state.
           // A document navigation releases the old player and its source tokens.
-          window.location.assign(selected.href);
+          window.location.assign(seasonBrowseHref(selected.href));
         }}
         className="max-w-full rounded-lg border border-amber-primary/40 bg-[#242124] px-3 py-2 text-sm font-semibold text-amber-gold focus:outline-none focus:ring-2 focus:ring-amber-primary disabled:opacity-60">
         {current === null && <option value="">Chọn mùa phim</option>}

@@ -1,0 +1,396 @@
+--- a/Player/PlayerScreen.swift
++++ b/Player/PlayerScreen.swift
+@@ -78,6 +78,9 @@
+     /// Danh sách tập (phim bộ) — vuốt lên hoặc nút "Tập phim" để mở panel chọn.
+     var episodeList: [PlayerEpisodeItem] = []
+     var seasonLabel: String = ""
++    var availableSeasons: [SeasonSummary] = []
++    var onLoadSeasonEpisodes: ((Int) async throws -> [PlayerEpisodeItem])? = nil
++    var onPlaySeasonEpisode: ((Int, Int) async -> (URL, PlaybackSession, PlayerEpisodeInfo)?)? = nil
+     var onPlayEpisode: ((Int) async -> (URL, PlaybackSession, PlayerEpisodeInfo)?)? = nil
+     /// AirPlay vừa bật — resolve playlist ĐẦY ĐỦ cả phim (player nhận như Mac/
+     /// TV đọc playlist trực tiếp: cửa sổ 5 phút sẽ hiện sai thời lượng).
+@@ -176,6 +179,9 @@
+         onPlayNextEpisode: (() async -> (URL, PlaybackSession, PlayerEpisodeInfo)?)? = nil,
+         episodeList: [PlayerEpisodeItem] = [],
+         seasonLabel: String = "",
++        availableSeasons: [SeasonSummary] = [],
++        onLoadSeasonEpisodes: ((Int) async throws -> [PlayerEpisodeItem])? = nil,
++        onPlaySeasonEpisode: ((Int, Int) async -> (URL, PlaybackSession, PlayerEpisodeInfo)?)? = nil,
+         onPlayEpisode: ((Int) async -> (URL, PlaybackSession, PlayerEpisodeInfo)?)? = nil,
+         onAirPlayFullResolve: ((Double) async -> (URL, PlaybackSession)?)? = nil,
+         onMinimize: (() -> Void)? = nil,
+@@ -198,6 +204,9 @@
+         self.onPlayNextEpisode = onPlayNextEpisode
+         self.episodeList = episodeList
+         self.seasonLabel = seasonLabel
++        self.availableSeasons = availableSeasons
++        self.onLoadSeasonEpisodes = onLoadSeasonEpisodes
++        self.onPlaySeasonEpisode = onPlaySeasonEpisode
+         self.onPlayEpisode = onPlayEpisode
+         self.onAirPlayFullResolve = onAirPlayFullResolve
+         self.onMinimize = onMinimize
+@@ -573,7 +582,14 @@
+             case .episodes:
+                 PlayerEpisodePanel(
+                     episodes: episodeList,
+-                    seasonLabel: seasonLabel,
++                    seasonLabel: "Mùa \(currentEpisodeInfo?.season ?? context.season ?? 1)",
++                    currentSeason: currentEpisodeInfo?.season ?? context.season ?? 1,
++                    seasons: availableSeasons,
++                    loadSeason: onLoadSeasonEpisodes,
++                    onSelectSeasonEpisode: { season, number in
++                        activePanel = nil
++                        Task { await playSeasonEpisode(season, number) }
++                    },
+                     currentEpisode: currentEpisodeInfo?.episode ?? episodeInfo?.episode ?? 1,
+                     onSelect: { number in
+                         activePanel = nil
+@@ -1657,6 +1673,21 @@
+         }
+     }
+ 
++    @MainActor
++    private func playSeasonEpisode(_ season: Int, _ number: Int) async {
++        guard let onPlaySeasonEpisode else { await playEpisode(number); return }
++        isFarSeeking = true
++        farSeekStatus = "Đang chuyển tới mùa \(season), tập \(number)…"
++        player.pause()
++        if let result = await onPlaySeasonEpisode(season, number) {
++            loadNewSession(url: result.0, session: result.1, newEpisodeInfo: result.2, startAt: 0)
++        } else {
++            showToastCenter("Chưa mở được tập đã chọn. Bạn có thể thử lại.")
++        }
++        isFarSeeking = false
++        farSeekStatus = nil
++    }
++
+     /// Chuyển tới tập bất kỳ (panel vuốt-up) — giữ nguồn hiện tại.
+     @MainActor
+     private func playEpisode(_ number: Int) async {
+--- a/Player/PlayerPanels.swift
++++ b/Player/PlayerPanels.swift
+@@ -416,29 +416,66 @@
+ struct PlayerEpisodePanel: View {
+     let episodes: [PlayerEpisodeItem]
+     let seasonLabel: String
++    var currentSeason: Int = 1
++    var seasons: [SeasonSummary] = []
++    var loadSeason: ((Int) async throws -> [PlayerEpisodeItem])? = nil
++    var onSelectSeasonEpisode: ((Int, Int) -> Void)? = nil
+     let currentEpisode: Int
+     var onSelect: (Int) -> Void
++
++    @State private var browsedSeason: Int?
++    @State private var loadedEpisodes: [PlayerEpisodeItem]?
++    @State private var isLoading = false
++    @State private var loadError: String?
++    @State private var reloadID = UUID()
++    private var displayedSeason: Int { browsedSeason ?? currentSeason }
++    private var activeEpisode: Int { displayedSeason == currentSeason ? currentEpisode : -1 }
+ 
+     var body: some View {
+         ScrollView {
+             VStack(alignment: .leading, spacing: 14) {
+                 HStack {
+-                    Text(seasonLabel)
++                    Text("Mùa \(displayedSeason) · Chọn tập")
+                         .font(.headline)
+                         .foregroundColor(.white)
+                     Spacer()
+-                    Text("\(episodes.count) tập")
++                    Text("\((loadedEpisodes ?? episodes).count) tập")
+                         .font(.caption)
+                         .foregroundColor(Constants.cinemaMuted)
+                 }
+                 .padding(.top, 8)
+ 
++                if seasons.count > 1 {
++                    ScrollView(.horizontal, showsIndicators: false) {
++                        HStack(spacing: 8) {
++                            ForEach(seasons) { season in
++                                Button("Mùa \(season.seasonNumber)") { browsedSeason = season.seasonNumber }
++                                    .font(.subheadline.weight(.semibold))
++                                    .padding(.horizontal, 14).padding(.vertical, 9)
++                                    .foregroundStyle(displayedSeason == season.seasonNumber ? Color.black : Color.white)
++                                    .background(displayedSeason == season.seasonNumber ? Constants.amberPrimary : Constants.surfaceCard)
++                                    .clipShape(RoundedRectangle(cornerRadius: 9))
++                            }
++                        }
++                    }
++                }
++                Text("Chọn mùa để xem danh sách. Phim chỉ chuyển khi bạn chọn một tập.")
++                    .font(.caption).foregroundStyle(Constants.cinemaMuted)
++                if isLoading {
++                    ProgressView("Đang tải danh sách tập…").tint(Constants.amberPrimary)
++                } else if let loadError {
++                    Text(loadError).font(.subheadline).foregroundStyle(Constants.cinemaMuted)
++                    Button("Thử lại") { reloadID = UUID() }
++                } else if (loadedEpisodes ?? episodes).isEmpty {
++                    Text("Mùa này chưa có tập phim.").foregroundStyle(Constants.cinemaMuted)
++                } else {
+                 LazyVStack(spacing: 10) {
+-                    ForEach(episodes) { ep in
++                    ForEach(loadedEpisodes ?? episodes) { ep in
+                         Button {
+-                            if ep.number != currentEpisode {
++                            if ep.number != activeEpisode {
+                                 Haptics.light()
+-                                onSelect(ep.number)
++                                if let onSelectSeasonEpisode { onSelectSeasonEpisode(displayedSeason, ep.number) }
++                                else { onSelect(ep.number) }
+                             }
+                         } label: {
+                             HStack(spacing: 12) {
+@@ -455,19 +492,19 @@
+                                         .foregroundColor(.black)
+                                         .padding(.horizontal, 7)
+                                         .padding(.vertical, 3)
+-                                        .background(ep.number == currentEpisode ? Constants.amberPrimary : Color.black.opacity(0.75))
++                                        .background(ep.number == activeEpisode ? Constants.amberPrimary : Color.black.opacity(0.75))
+                                         .cornerRadius(6)
+                                         .padding(4)
+                                 }
+ 
+                                 VStack(alignment: .leading, spacing: 3) {
+                                     Text(ep.name.isEmpty ? "Tập \(ep.number)" : ep.name)
+-                                        .font(.system(size: 14, weight: ep.number == currentEpisode ? .bold : .medium))
+-                                        .foregroundColor(ep.number == currentEpisode ? Constants.amberPrimary : .white)
++                                        .font(.system(size: 14, weight: ep.number == activeEpisode ? .bold : .medium))
++                                        .foregroundColor(ep.number == activeEpisode ? Constants.amberPrimary : .white)
+                                         .lineLimit(2)
+                                         .multilineTextAlignment(.leading)
+ 
+-                                    if ep.number == currentEpisode {
++                                    if ep.number == activeEpisode {
+                                         HStack(spacing: 4) {
+                                             Image(systemName: "play.fill")
+                                                 .font(.system(size: 9))
+@@ -481,22 +518,39 @@
+                             }
+                             .padding(10)
+                             .background(
+-                                ep.number == currentEpisode
++                                ep.number == activeEpisode
+                                     ? Constants.amberPrimary.opacity(0.1)
+                                     : Constants.surfaceCard
+                             )
+                             .cornerRadius(12)
+                             .overlay(
+                                 RoundedRectangle(cornerRadius: 12)
+-                                    .stroke(ep.number == currentEpisode ? Constants.amberPrimary.opacity(0.4) : Color.clear, lineWidth: 1)
++                                    .stroke(ep.number == activeEpisode ? Constants.amberPrimary.opacity(0.4) : Color.clear, lineWidth: 1)
+                             )
+                         }
+-                        .disabled(ep.number == currentEpisode)
+-                    }
+-                }
++                        .disabled(ep.number == activeEpisode)
++                    }
++                }
++            }
+             }
+             .padding(.horizontal, 18)
+             .padding(.bottom, 24)
++        }
++        .task(id: "\(displayedSeason):\(reloadID)") {
++            guard let loadSeason else { return }
++            let requestedSeason = displayedSeason
++            isLoading = true
++            loadError = nil
++            loadedEpisodes = nil
++            do {
++                let rows = try await loadSeason(requestedSeason)
++                guard !Task.isCancelled, displayedSeason == requestedSeason else { return }
++                loadedEpisodes = rows
++            } catch {
++                guard !Task.isCancelled, displayedSeason == requestedSeason else { return }
++                loadError = "Chưa tải được danh sách tập. Hãy thử lại hoặc chọn mùa khác."
++            }
++            isLoading = false
+         }
+         .background(Constants.surfaceDark.ignoresSafeArea())
+         .presentationDetents([.medium, .large])
+--- a/Player/PlaybackCoordinator.swift
++++ b/Player/PlaybackCoordinator.swift
+@@ -26,6 +26,9 @@
+     var onPlayNextEpisode: (() async -> (URL, PlaybackSession, PlayerEpisodeInfo)?)? = nil
+     var episodeList: [PlayerEpisodeItem] = []
+     var seasonLabel: String = ""
++    var availableSeasons: [SeasonSummary] = []
++    var onLoadSeasonEpisodes: ((Int) async throws -> [PlayerEpisodeItem])? = nil
++    var onPlaySeasonEpisode: ((Int, Int) async -> (URL, PlaybackSession, PlayerEpisodeInfo)?)? = nil
+     var onPlayEpisode: ((Int) async -> (URL, PlaybackSession, PlayerEpisodeInfo)?)? = nil
+     var onAirPlayFullResolve: ((Double) async -> (URL, PlaybackSession)?)? = nil
+ }
+@@ -86,6 +89,9 @@
+                     onPlayNextEpisode: ctx.onPlayNextEpisode,
+                     episodeList: ctx.episodeList,
+                     seasonLabel: ctx.seasonLabel,
++                    availableSeasons: ctx.availableSeasons,
++                    onLoadSeasonEpisodes: ctx.onLoadSeasonEpisodes,
++                    onPlaySeasonEpisode: ctx.onPlaySeasonEpisode,
+                     onPlayEpisode: ctx.onPlayEpisode,
+                     onAirPlayFullResolve: ctx.onAirPlayFullResolve,
+                     onMinimize: { coordinator.minimize() },
+--- a/Views/MovieDetailView.swift
++++ b/Views/MovieDetailView.swift
+@@ -139,6 +139,13 @@
+                     PlayerEpisodeItem(number: ep.episodeNumber, name: ep.name, stillPath: ep.still)
+                 },
+                 seasonLabel: "Mùa \(model.selectedSeason)",
++                availableSeasons: model.seasons,
++                onLoadSeasonEpisodes: { season in
++                    try await model.episodesForSeason(season).map { PlayerEpisodeItem(number: $0.episodeNumber, name: $0.name, stillPath: $0.still) }
++                },
++                onPlaySeasonEpisode: { season, number in
++                    await model.playEpisode(number, season: season)
++                },
+                 onPlayEpisode: { number in
+                     await model.playEpisode(number)
+                 },
+@@ -316,7 +323,7 @@
+             .background(Constants.surfaceCard)
+             .cornerRadius(10)
+         }
+-        .disabled(model.isResolving)
++        .disabled(model.isResolving || model.requiresEpisodeSelection)
+         .opacity(model.isResolving ? 0.5 : 1)
+         .accessibilityHint("Mở danh sách nguồn; chọn một nguồn để phát phim")
+     }
+@@ -353,7 +360,7 @@
+                 } label: {
+                     HStack {
+                         Image(systemName: "play.fill")
+-                        Text("Xem phim")
++                        Text(model.requiresEpisodeSelection ? "Chọn tập bên dưới" : "Xem phim")
+                     }
+                     .font(.headline)
+                     .foregroundColor(.black)
+@@ -362,6 +369,8 @@
+                     .background(Constants.amberPrimary)
+                     .cornerRadius(10)
+                 }
++                .disabled(model.requiresEpisodeSelection)
++                .opacity(model.requiresEpisodeSelection ? 0.6 : 1)
+             }
+ 
+             Button {
+@@ -456,10 +465,11 @@
+                     ForEach(model.episodes) { episode in
+                         EpisodeCell(
+                             episode: episode,
+-                            isSelected: model.selectedEpisode == episode.episodeNumber
++                            isSelected: !model.requiresEpisodeSelection && model.selectedEpisode == episode.episodeNumber
+                         ) {
+                             Haptics.light()
+                             model.selectedEpisode = episode.episodeNumber
++                            model.requiresEpisodeSelection = false
+                         }
+                     }
+                 }
+--- a/Views/MovieDetailViewModel.swift
++++ b/Views/MovieDetailViewModel.swift
+@@ -21,6 +21,7 @@
+     @Published var isLoadingEpisodes = false
+     @Published var selectedSeason = 1
+     @Published var selectedEpisode = 1
++    @Published var requiresEpisodeSelection = false
+     @Published var recommendationItems: [CatalogItem] = []
+     @Published var overviewExpanded = false
+ 
+@@ -235,8 +236,12 @@
+         guard season != selectedSeason else { return }
+         selectedSeason = season
+         selectedEpisode = 1
++        requiresEpisodeSelection = true
++        currentSourceToken = nil
++        currentAudioIndex = nil
++        sourcesPrefetchTask?.cancel()
++        prefetchedSources = nil
+         await loadEpisodes()
+-        prefetchSources() // nguồn theo mùa/tập — làm mới prefetch luôn
+     }
+ 
+     /// Tải trước danh sách nguồn phát (chạy nền khi trang chi tiết vừa mở) —
+@@ -273,18 +278,21 @@
+         }
+     }
+ 
++    func episodesForSeason(_ number: Int) async throws -> [EpisodeItem] {
++        guard let item, item.mediaType == "tv" else { return [] }
++        if let cached = episodeCache[number] { return cached }
++        let data = try await APIService.shared.getSeason(tmdbId: item.tmdbId, season: number)
++        episodeCache[number] = data.episodes
++        return data.episodes
++    }
++
+     private func loadEpisodes() async {
+-        guard let item, item.mediaType == "tv" else { return }
+-        if let cached = episodeCache[selectedSeason] {
+-            episodes = cached
+-            return
+-        }
++        let requestedSeason = selectedSeason
++        episodes = []
+         isLoadingEpisodes = true
+-        let season = try? await APIService.shared.getSeason(tmdbId: item.tmdbId, season: selectedSeason)
+-        if let season {
+-            episodeCache[selectedSeason] = season.episodes
+-            episodes = season.episodes
+-        }
++        let loaded = try? await episodesForSeason(requestedSeason)
++        guard selectedSeason == requestedSeason else { return }
++        episodes = loaded ?? []
+         isLoadingEpisodes = false
+     }
+ 
+@@ -327,7 +335,7 @@
+     /// Resolve nguồn và mở player. `startAt` ghi đè vị trí bắt đầu (nút Tiếp tục);
+     /// không truyền thì dùng vị trí resume lần đầu.
+     func play(sourceToken: String? = nil, forceRemux: Bool = false, startAt: Double? = nil) async {
+-        guard let item, !isResolving else { return }
++        guard let item, !isResolving, !requiresEpisodeSelection else { return }
+         currentSourceToken = sourceToken
+         isResolving = true
+         automaticFallbackNotice = nil
+@@ -625,24 +633,31 @@
+     }
+ 
+     /// Phát tập BẤT KỲ (panel chọn tập trong player) — giữ nguồn hiện tại.
+-    func playEpisode(_ number: Int) async -> (URL, PlaybackSession, PlayerEpisodeInfo)? {
++    func playEpisode(_ number: Int, season targetSeason: Int? = nil) async -> (URL, PlaybackSession, PlayerEpisodeInfo)? {
+         guard let item, item.mediaType == "tv" else { return nil }
+-        guard episodes.contains(where: { $0.episodeNumber == number }) else { return nil }
+-        selectedEpisode = number
+-
+-        do {
++        let requestedSeason = targetSeason ?? selectedSeason
++        do {
++            let inventory = try await episodesForSeason(requestedSeason)
++            guard inventory.contains(where: { $0.episodeNumber == number }) else { return nil }
++            let changedSeason = requestedSeason != selectedSeason
+             let session = try await APIService.shared.resolvePlayback(
+                 type: item.mediaType,
+                 tmdbId: item.tmdbId,
+-                season: selectedSeason,
++                season: requestedSeason,
+                 episode: number,
+-                sourceToken: currentSourceToken,
++                sourceToken: changedSeason ? nil : currentSourceToken,
+                 capabilities: PlaybackSettings.shared.resolveCapabilities,
+                 startAt: 0,
+-                audioIndex: currentAudioIndex,
++                audioIndex: changedSeason ? nil : currentAudioIndex,
+                 resolveId: UUID().uuidString
+             )
+             let url = try APIService.shared.playbackURL(for: session)
++            selectedSeason = requestedSeason
++            selectedEpisode = number
++            requiresEpisodeSelection = false
++            episodes = inventory
++            currentSourceToken = session.sourceToken
++            if changedSeason { currentAudioIndex = nil; prefetchedSources = nil }
+             playbackURL = url
+             playbackSession = session
+             if let info = playerEpisodeInfo {
