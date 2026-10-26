@@ -1,0 +1,208 @@
+--- a/CineVN-IOS/Views/MovieDetailView.swift
++++ b/CineVN-IOS/Views/MovieDetailView.swift
+@@ -264,7 +264,7 @@
+             .layoutPriority(1)
+             Spacer()
+             Button {
+-                Task { await model.play(sourceToken: model.currentSourceToken, startAt: resume.seconds) }
++                Task { await model.resumeWatching() }
+             } label: {
+                 Text("Tiếp tục")
+                     .font(.subheadline.weight(.bold))
+--- a/CineVN-IOS/Views/MovieDetailViewModel.swift
++++ b/CineVN-IOS/Views/MovieDetailViewModel.swift
+@@ -343,9 +343,31 @@
+ 
+         let generation = UUID()
+         resolveGeneration = generation
++        let season = item.mediaType == "tv" ? selectedSeason : nil
++        let episode = item.mediaType == "tv" ? selectedEpisode : nil
+         resolveWorkTask = Task {
+-            await performResolve(item: item, forceRemux: forceRemux, startAt: startAt, generation: generation)
+-        }
++            await performResolve(item: item, season: season, episode: episode, sourceToken: sourceToken, forceRemux: forceRemux, startAt: startAt, generation: generation)
++        }
++    }
++
++    /// Resume identity and time belong to the same history entry, independent
++    /// of whichever season the detail page is currently browsing.
++    func resumeWatching() async {
++        guard let item, let entry = resumeEntry, entry.isResumable, !isResolving else { return }
++        if item.mediaType == "tv" {
++            guard let season = entry.seasonNumber, let episode = entry.episodeNumber,
++                  season > 0, episode > 0 else {
++                errorMessage = "Chưa xác định được tập đang xem dở. Vui lòng chọn tập trong danh sách."
++                showError = true
++                return
++            }
++            selectedSeason = season
++            selectedEpisode = episode
++            requiresEpisodeSelection = false
++            currentSourceToken = nil
++            currentAudioIndex = nil
++        }
++        await play(startAt: entry.currentTime)
+     }
+ 
+     /// Hủy resolve đang chạy (nút X trên trạng thái loading).
+@@ -362,7 +384,7 @@
+     private var resolveGeneration = UUID()
+     private var activeResolveId: String?
+ 
+-    private func performResolve(item: CatalogItem, forceRemux: Bool, startAt: Double?, generation: UUID) async {
++    private func performResolve(item: CatalogItem, season: Int?, episode: Int?, sourceToken: String?, forceRemux: Bool, startAt: Double?, generation: UUID) async {
+         guard generation == resolveGeneration else { return }
+         let capabilities: ClientCapabilities = forceRemux ? .forceRemux : PlaybackSettings.shared.resolveCapabilities
+ 
+@@ -370,8 +392,6 @@
+ 
+         let resolveId = UUID().uuidString
+         activeResolveId = resolveId
+-        let season = item.mediaType == "tv" ? selectedSeason : nil
+-        let episode = item.mediaType == "tv" ? selectedEpisode : nil
+ 
+         // Poll stage của resolve đang chạy để hiển thị tiến độ thật từ server.
+         let stageTask = Task { [weak self] in
+@@ -396,7 +416,7 @@
+                 tmdbId: item.tmdbId,
+                 season: season,
+                 episode: episode,
+-                sourceToken: currentSourceToken,
++                sourceToken: sourceToken,
+                 capabilities: capabilities,
+                 startAt: resumeAt,
+                 resolveId: resolveId
+@@ -404,6 +424,10 @@
+ 
+             let url = try APIService.shared.playbackURL(for: session)
+             guard !Task.isCancelled, generation == resolveGeneration else { return }
++            if let season, let episode {
++                selectedSeason = season
++                selectedEpisode = episode
++            }
+             playbackURL = url
+             playbackSession = session
+             currentSourceToken = session.sourceToken ?? currentSourceToken
+--- a/CineVN-IOS/Player/NativePlayer.swift
++++ b/CineVN-IOS/Player/NativePlayer.swift
+@@ -81,6 +81,9 @@
+     private var presentationSizeObserver: NSKeyValueObservation?
+     private var emptyBufferObserver: NSKeyValueObservation?
+     private var keepUpObserver: NSKeyValueObservation?
++    private var timeControlObserver: NSKeyValueObservation?
++    private var bufferStateWork: DispatchWorkItem?
++    private var localSeekGeneration = UUID()
+     private var heartbeatTimer: Timer?
+     private var videoCheckTimer: Timer?
+     private var currentSessionId: String?
+@@ -131,6 +134,9 @@
+         presentationSizeObserver?.invalidate()
+         emptyBufferObserver?.invalidate()
+         keepUpObserver?.invalidate()
++        timeControlObserver?.invalidate()
++        bufferStateWork?.cancel()
++        localSeekGeneration = UUID()
+         heartbeatTimer?.invalidate()
+         heartbeatTimer = nil
+         videoCheckTimer?.invalidate()
+@@ -247,7 +253,7 @@
+         // Observe player item status
+         statusObserver = playerItem.observe(\.status, options: [.initial, .new]) { [weak self] item, _ in
+             DispatchQueue.main.async {
+-                guard let self = self else { return }
++                guard let self = self, self.player?.currentItem === item else { return }
+                 switch item.status {
+                 case .readyToPlay:
+                     if item.duration.seconds.isFinite && item.duration.seconds > 0 {
+@@ -283,20 +289,18 @@
+             }
+         }
+ 
+-        // Observe buffer state to handle network stalls gracefully
++        // One current-item state machine owns the spinner. Brief AVFoundation
++        // empty/keep-up oscillations after seeks must not flash the overlay.
+         emptyBufferObserver = playerItem.observe(\.isPlaybackBufferEmpty, options: [.new]) { [weak self] item, _ in
++            DispatchQueue.main.async { self?.refreshBufferState(for: item) }
++        }
++        keepUpObserver = playerItem.observe(\.isPlaybackLikelyToKeepUp, options: [.new]) { [weak self] item, _ in
++            DispatchQueue.main.async { self?.refreshBufferState(for: item) }
++        }
++        timeControlObserver = player?.observe(\.timeControlStatus, options: [.initial, .new]) { [weak self] player, _ in
+             DispatchQueue.main.async {
+-                if item.isPlaybackBufferEmpty {
+-                    self?.isBuffering = true
+-                }
+-            }
+-        }
+-
+-        keepUpObserver = playerItem.observe(\.isPlaybackLikelyToKeepUp, options: [.new]) { [weak self] item, _ in
+-            DispatchQueue.main.async {
+-                if item.isPlaybackLikelyToKeepUp {
+-                    self?.isBuffering = false
+-                }
++                guard let item = player.currentItem else { return }
++                self?.refreshBufferState(for: item)
+             }
+         }
+ 
+@@ -1542,8 +1546,34 @@
+         }
+     }
+ 
++    private func refreshBufferState(for item: AVPlayerItem) {
++        guard player?.currentItem === item else { return }
++        bufferStateWork?.cancel()
++        guard let player else { return }
++        if player.timeControlStatus == .playing || item.status == .failed {
++            isBuffering = false
++            return
++        }
++        let waiting = item.status == .unknown || player.timeControlStatus == .waitingToPlayAtSpecifiedRate
++            || (isPlaying && item.isPlaybackBufferEmpty)
++        guard waiting else {
++            isBuffering = false
++            return
++        }
++        let work = DispatchWorkItem { [weak self, weak item] in
++            guard let self, let item, self.player?.currentItem === item,
++                  self.player?.timeControlStatus != .playing else { return }
++            self.isBuffering = true
++        }
++        bufferStateWork = work
++        DispatchQueue.main.asyncAfter(deadline: .now() + 0.45, execute: work)
++    }
++
+     private func performLocalSeek(to targetSeconds: Double, displayAt: Double? = nil, precise: Bool = false, completion: (() -> Void)? = nil) {
+         guard let player = player else { return }
++        let seekGeneration = UUID()
++        localSeekGeneration = seekGeneration
++        let seekItem = player.currentItem
+         let targetTime = CMTime(seconds: max(0, targetSeconds), preferredTimescale: 600)
+         // Hai chế độ seek:
+         // - SNAPPY (±10s, thả tay tua): nhảy tới KEYFRAME gần nhất — hiện hình
+@@ -1557,6 +1587,7 @@
+ 
+         player.seek(to: targetTime, toleranceBefore: toleranceBefore, toleranceAfter: toleranceAfter) { finished in
+             DispatchQueue.main.async {
++                guard self.localSeekGeneration == seekGeneration, player.currentItem === seekItem else { return }
+                 if finished {
+                     // Đồng hồ UI là THỜI GIAN TUYỆT ĐỐI (displayAt). Chỉ ghi khi
+                     // completion này còn là intent mới nhất: seek bị HỦY bởi tap
+@@ -1570,6 +1601,7 @@
+                         self.currentTime = display
+                     }
+                 }
++                if let item = player.currentItem { self.refreshBufferState(for: item) }
+                 completion?()
+             }
+         }
+@@ -1674,6 +1706,9 @@
+         presentationSizeObserver = nil
+         emptyBufferObserver?.invalidate()
+         keepUpObserver?.invalidate()
++        timeControlObserver?.invalidate()
++        bufferStateWork?.cancel()
++        localSeekGeneration = UUID()
+         heartbeatTimer?.invalidate()
+         heartbeatTimer = nil
+         videoCheckTimer?.invalidate()

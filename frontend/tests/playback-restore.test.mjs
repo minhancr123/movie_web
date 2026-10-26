@@ -180,3 +180,24 @@ test('incidental pipeline rebuild resumes 107:42 instead of its 95-minute resolv
   assert.equal(pipelineRestoreTarget('new-reload-intent', 5701, previous, 5701), 5701, 'same URL resolved again has a new intent');
   assert.equal(pipelineRestoreTarget('different-episode', 0, previous, 5701), 0);
 });
+
+
+test('a buffered paused decoder can be primed once without completing the restore early', async () => {
+  const media = new Media(); media.readyState = 1;
+  let primed = 0, ready = 0;
+  const cancel = restoreBeforePlayback(media, 28.664, {
+    prime: () => primed++, ready: () => ready++, failed: () => assert.fail(),
+  });
+  media.position = 28.664;
+  // A buffer hole at the destination must not trigger playback.
+  media.buffered = { length: 1, start: () => 40, end: () => 124 };
+  await new Promise(resolve => setTimeout(resolve, 850));
+  assert.equal(primed, 0);
+  media.buffered = { length: 1, start: () => 20, end: () => 124 };
+  media.event('progress'); media.event('progress');
+  assert.equal(primed, 1);
+  assert.equal(ready, 0, 'metadata and play intent are not a decoded destination');
+  media.seeking = false; media.readyState = 2; media.event('seeked');
+  assert.equal(ready, 1);
+  cancel();
+});

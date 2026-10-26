@@ -38,6 +38,8 @@ export const nativeSeekCovered = (video: Pick<HTMLVideoElement, 'readyState' | '
 export const restoreBeforePlayback = (video: RestoreMedia, target: number, options: {
   covered?: () => boolean;
   ready: () => void;
+  /** Resume decoding at an already-buffered seek target; does not settle UI. */
+  prime?: () => void;
   failed: () => void;
   timeoutMs?: number;
 }) => {
@@ -47,6 +49,8 @@ export const restoreBeforePlayback = (video: RestoreMedia, target: number, optio
   let decodedTarget = false;
   let stableSince: number | null = null;
   let frameCallback: number | undefined;
+  let assignedAt = 0;
+  let primed = false;
   const events = ['loadedmetadata', 'loadeddata', 'progress', 'seeked', 'canplay', 'timeupdate'];
   let timer: ReturnType<typeof setTimeout>;
   let poll: ReturnType<typeof setInterval>;
@@ -65,12 +69,29 @@ export const restoreBeforePlayback = (video: RestoreMedia, target: number, optio
         cleanup(); options.ready(); return;
       }
       assigned = true;
+      assignedAt = performance.now();
       try { video.currentTime = target; } catch { assigned = false; return; }
       // Some browsers update currentTime before dispatching seeking/seeked.
       // Do not treat that synchronous property change as a decoded frame.
       return;
     }
     if (event?.type === 'seeked') seekFinished = true;
+    // Some decoders retain HAVE_METADATA while a paused seek is pending,
+    // even after the destination has arrived. Let the existing play intent
+    // drive decoding once, without treating play() as proof the seek landed.
+    if (!primed && options.prime && Math.abs(video.currentTime - target) <= 0.5
+        && performance.now() - assignedAt >= 750) {
+      try {
+        const ranges = video.buffered;
+        for (let i = 0; ranges && i < ranges.length; i++) {
+          if (ranges.start(i) <= target && ranges.end(i) >= target + 0.5) {
+            primed = true;
+            options.prime();
+            break;
+          }
+        }
+      } catch { /* the next poll rechecks mutable ranges */ }
+    }
     // WebKit can still present the old frame while the seek is in progress.
     if (video.seeking || video.readyState < 2 || Math.abs(video.currentTime - target) > 0.5) {
       stableSince = null;

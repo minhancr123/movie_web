@@ -1541,6 +1541,7 @@ export default function VideoPlayer({ src, playbackStartedAt, movie, episode, au
             cancelPositionRestore = restoreBeforePlayback(video, target, {
                 covered,
                 ready: finishPositionRestore,
+                prime: playAfterRestore ? startPlayback : undefined,
                 failed: () => {
                     if (cancelled) return;
                     clearSeekLock();
