@@ -7,9 +7,10 @@ export const findRequestMatch = (title, items = []) => {
   return exact.length === 1 ? exact[0] : null;
 };
 export const readyProbe = (probe, expectedMinutes) => {
-  const streams = probe?.streams || [], duration = Number(probe?.format?.duration);
-  return streams.some(s => s.codec_type === 'video' && ['h264','hevc','av1','vp9'].includes(s.codec_name))
-    && streams.some(s => s.codec_type === 'audio') && duration > 60
+  // remuxService.ffprobe returns normalized metadata, not ffprobe's raw JSON.
+  const duration = Number(probe?.duration);
+  return ['h264','hevc','av1','vp9'].includes(probe?.video?.codec)
+    && Array.isArray(probe?.audio) && probe.audio.some(s => Boolean(s.codec)) && duration > 60
     && (!(expectedMinutes > 0) || Math.abs(duration - expectedMinutes * 60) <= Math.max(180, expectedMinutes * 60 * 0.12));
 };
 export const retryAt = (state, now = Date.now()) => new Date(now + ({ downloading: 30000, waiting_slot: 60000,

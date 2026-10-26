@@ -30,7 +30,7 @@ test('title matching requires a unique exact alias and video checks include audi
  assert.equal(findRequestMatch('Film (2024)',[{title:'Film',year:2023,mediaType:'movie',tmdbId:1}]),null);
  assert.equal(findRequestMatch('Film',[{title:'Film',mediaType:'movie',tmdbId:1},{title:'Film',mediaType:'tv',tmdbId:2}]),null);
  assert.equal(findRequestMatch('Mien ky uc',[{title:'Miền ký ức',mediaType:'movie',tmdbId:3}]).tmdbId,3);
- const probe={format:{duration:5400},streams:[{codec_type:'video',codec_name:'h264'},{codec_type:'audio',codec_name:'aac'}]};assert.equal(readyProbe(probe,90),true);assert.equal(readyProbe(probe,150),false);assert.equal(readyProbe({...probe,streams:[probe.streams[0]]},90),false);
+ const probe={format:'matroska,webm',duration:5400,video:{codec:'h264'},audio:[{codec:'aac'}]};assert.equal(readyProbe(probe,90),true);assert.equal(readyProbe(probe,150),false);assert.equal(readyProbe({...probe,audio:[]},90),false);assert.equal(readyProbe({...probe,video:null},90),false);
 });
 test('notification delivery retries after a transient failure without repeating publication',async()=>{
  const db=requestDb([initial()]),adapter=base();let sends=0,published=0;adapter.publish=async()=>published++;
