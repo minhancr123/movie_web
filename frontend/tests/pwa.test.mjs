@@ -33,7 +33,7 @@ test('the worker purges caches it does not own, which is how the April one dies'
   assert.match(sw, /const OWN_CACHES = new Set/, 'owned cache names are declared');
   assert.match(sw, /names\.filter\(\(name\) => !OWN_CACHES\.has\(name\)\)/,
     'activate deletes every foreign cache, not just its own predecessor');
-  assert.match(sw, /VERSION = 'cinevn-v2'/, 'cache names are versioned, so a change purges');
+  assert.match(sw, /VERSION = 'cinevn-v3'/, 'cache names are versioned, so a change purges');
   assert.match(sw, /SKIP_WAITING/, 'it honours the page asking to take over');
 });
 
@@ -140,4 +140,64 @@ test('iOS can add it to the home screen', () => {
     assert.ok(layout.includes(tag), `${tag} is required for an iOS home-screen app`);
   }
   assert.match(layout, /rel="manifest"/, 'the manifest is linked');
+});
+
+// Execute the actual worker instead of treating its source text as behavior.
+async function workerRequest(request, fetchFn, offline = '<h1>offline</h1>') {
+  const { runInNewContext } = await import('node:vm');
+  const handlers = {}, writes = [];
+  const context = {
+    self: { location: { origin: 'https://cinevn.me' }, addEventListener: (name, fn) => { handlers[name] = fn; } },
+    URL, Response, Request: class { constructor(original, options) { Object.assign(this, original, options); } },
+    fetch: fetchFn,
+    caches: { match: async () => offline ? new Response(offline) : undefined, open: async () => ({ match: async () => undefined, put: (...args) => writes.push(args) }) },
+  };
+  runInNewContext(sw, context);
+  let result;
+  handlers.fetch({ request, respondWith: value => { result = value; } });
+  return { response: result ? await result : undefined, writes };
+}
+const navigation = () => ({ url:'https://cinevn.me/phim/movie/791523/wildwood',method:'GET',mode:'navigate',destination:'document',headers:new Headers(),signal:{aborted:false} });
+
+test('one transient navigation failure retries before showing the offline document',async()=>{
+  let attempts=0;
+  const {response}=await workerRequest(navigation(),async request=>{if(++attempts===1)throw new Error('connection reset');assert.equal(request.cache,'reload');return new Response('actual film');});
+  assert.equal(attempts,2);assert.equal(await response.text(),'actual film');
+});
+test('persistent connection failure returns an uncached 503 document, never a cached 200 success',async()=>{
+  let attempts=0;const {response}=await workerRequest(navigation(),async()=>{attempts++;throw Error('offline');});
+  assert.equal(attempts,2);assert.equal(response.status,503);assert.equal(response.headers.get('cache-control'),'no-store');assert.equal(response.headers.get('x-cinevn-offline'),'1');assert.match(await response.text(),/offline/);
+});
+test('RSC, prefetch and arbitrary same-origin data never use the image cache',async()=>{
+  for(const request of [
+    {...navigation(),mode:'cors',destination:'',url:'https://cinevn.me/phim/movie/791523/wildwood?_rsc=test'},
+    {...navigation(),mode:'cors',destination:'',headers:new Headers({RSC:'1'})},
+    {...navigation(),mode:'cors',destination:'',headers:new Headers({'Next-Router-State-Tree':'tree'})},
+    {...navigation(),mode:'cors',destination:'',headers:new Headers({Accept:'text/x-component'})},
+    {...navigation(),mode:'cors',destination:'',url:'https://cinevn.me/data.json'},
+  ]) { const result=await workerRequest(request,()=>{throw Error('worker must pass through');});assert.equal(result.response,undefined);assert.equal(result.writes.length,0); }
+});
+
+const offline = readFileSync(path.join(root,'public/offline.html'),'utf8');
+async function offlinePage({ fetchFn = async()=>new Response(null,{headers:{'content-type':'text/html'}}), storage = new Map() } = {}) {
+  const {runInNewContext}=await import('node:vm');const timers=[],events={},replaced=[],elements={};
+  const target='https://cinevn.me/phim/movie/791523/wildwood?s=1&e=4';
+  const context={URL,AbortController,Date,JSON,Math,location:{href:target,replace:value=>replaced.push(value)},
+    document:{visibilityState:'visible',addEventListener:(name,fn)=>events[name]=fn,getElementById:id=>elements[id] ||= {textContent:'',addEventListener:(name,fn)=>events[id+':'+name]=fn}},
+    window:{addEventListener:(name,fn)=>events[name]=fn},fetch:fetchFn,
+    sessionStorage:{getItem:key=>storage.get(key),setItem:(key,value)=>storage.set(key,value)},
+    setTimeout:(fn,ms)=>{const item={fn,ms,cleared:false};timers.push(item);return item;},clearTimeout:item=>{if(item)item.cleared=true;}};
+  runInNewContext(offline.match(/<script>([\s\S]*?)<\/script>/)[1],context);
+  return {timers,events,replaced,elements,target,storage,run:()=>timers.findLast(x=>!x.cleared&&x.ms!==5000).fn()};
+}
+test('offline page probes the original route and automatically returns there when it recovers',async()=>{
+  let healthy=false;const requests=[];const page=await offlinePage({fetchFn:async(url,options)=>{requests.push({url,options});return new Response(null,{status:healthy?200:503,headers:{'content-type':'text/html'}});}});
+  await page.run();assert.equal(page.replaced.length,0);healthy=true;await page.run();assert.deepEqual(page.replaced,[page.target]);
+  assert.ok(requests.every(x=>x.url===page.target&&x.options.method==='HEAD'&&x.options.cache==='no-store'));
+});
+test('offline recovery cannot enter an automatic reload loop across document loads',async()=>{
+  const storage=new Map();for(let i=0;i<3;i++){const page=await offlinePage({storage});await page.run();assert.equal(page.replaced.length,i<2?1:0);}
+});
+test('manual retry keeps the movie URL and query instead of sending the viewer home',async()=>{
+  const page=await offlinePage();page.events['retry:click']();assert.deepEqual(page.replaced,[page.target]);assert.doesNotMatch(offline,/class="badge">4|Không có mạng để tải trang/);
 });

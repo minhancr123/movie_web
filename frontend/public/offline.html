@@ -3,7 +3,7 @@
   <head>
     <meta charset="utf-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1" />
-    <title>Offline — CineVN</title>
+    <title>Chưa tải được trang — CineVN</title>
     <link rel="icon" href="/favicon.ico" sizes="any" />
     <style>
       :root { color-scheme: dark; }
@@ -26,7 +26,7 @@
       }
       h1 { font-size: 1.35rem; margin: 0 0 0.35rem; }
       p { margin: 0 0 1.25rem; color: #a3a3a3; font-size: 0.9rem; max-width: 30ch; }
-      a {
+      button {
         display: inline-block;
         padding: 0.7rem 1.4rem;
         border-radius: 9999px;
@@ -34,18 +34,74 @@
         color: #0a0a0a;
         font-weight: 700;
         text-decoration: none;
+        border: 0;
+        font: inherit;
+        font-weight: 700;
+        cursor: pointer;
       }
     </style>
   </head>
   <body>
     <div>
-      <div class="badge">4<span style="font-size: 2rem">0</span>4</div>
-      <h1>Mất kết nối</h1>
-      <p>
-        Không có mạng để tải trang này. Video đã tải vẫn xem được; phần còn lại cần mạng
-        để tải nguồn phát.
+      <div class="badge" aria-hidden="true">↻</div>
+      <h1>Chưa tải được trang</h1>
+      <p id="recovery-status" role="status">
+        Kết nối tới CineVN tạm gián đoạn. Trang sẽ tự thử lại khi kết nối phục hồi.
       </p>
-      <a href="/">Thử lại</a>
+      <button id="retry" type="button">Thử lại trang này</button>
     </div>
+    <script>
+      (() => {
+        const target = new URL(location.href);
+        if (target.pathname === '/offline.html') { target.pathname = '/'; target.search = ''; }
+        const status = document.getElementById('recovery-status');
+        const key = 'cinevn-offline-recovery:' + target.pathname + target.search;
+        let busy = false, timer, attempts = 0, stopped = false;
+        const reloadTarget = () => location.replace(target.href);
+        document.getElementById('retry').addEventListener('click', reloadTarget);
+        async function check() {
+          if (busy || stopped || document.visibilityState === 'hidden') return;
+          clearTimeout(timer);
+          busy = true;
+          const controller = new AbortController();
+          const timeout = setTimeout(() => controller.abort(), 5000);
+          try {
+            // Probe the original page, not merely a health endpoint: the API
+            // can be healthy while this particular document still fails.
+            const response = await fetch(target.href, { method: 'HEAD', cache: 'no-store', credentials: 'same-origin', signal: controller.signal });
+            if (response.ok && response.headers.get('content-type')?.includes('text/html') && !response.headers.has('x-cinevn-offline')) {
+              let budget;
+              try {
+                budget = JSON.parse(sessionStorage.getItem(key) || 'null');
+                if (!budget || Date.now() - budget.started > 120000) budget = { started: Date.now(), count: 0 };
+                if (budget.count >= 2) {
+                  stopped = true;
+                  status.textContent = 'Trang vẫn chưa tải ổn định. Bạn có thể bấm thử lại bên dưới.';
+                  return;
+                }
+                sessionStorage.setItem(key, JSON.stringify({ ...budget, count: budget.count + 1 }));
+              } catch {
+                // Without a persistent budget, automatic reload could loop.
+                stopped = true;
+                status.textContent = 'Kết nối đã phục hồi. Bấm thử lại để mở trang.';
+                return;
+              }
+              stopped = true;
+              reloadTarget();
+              return;
+            }
+          } catch { /* A later bounded probe can recover a temporary outage. */ }
+          finally {
+            clearTimeout(timeout);
+            busy = false;
+            if (!stopped) timer = setTimeout(check, Math.min(30000, 3000 * 2 ** Math.min(attempts++, 4)));
+          }
+        }
+        window.addEventListener('online', check);
+        window.addEventListener('focus', check);
+        document.addEventListener('visibilitychange', check);
+        timer = setTimeout(check, 1500);
+      })();
+    </script>
   </body>
 </html>

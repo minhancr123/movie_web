@@ -18,7 +18,7 @@
  */
 
 /** Bump on any behavioural change: the old cache is purged on activate. */
-const VERSION = 'cinevn-v2';
+const VERSION = 'cinevn-v3';
 const SHELL_CACHE = `cinevn-shell-${VERSION}`;
 const ASSET_CACHE = `cinevn-assets-${VERSION}`;
 const OWN_CACHES = new Set([SHELL_CACHE, ASSET_CACHE]);
@@ -43,6 +43,27 @@ const isImmutableAsset = (url) => url.pathname.startsWith('/_next/static/');
  * nothing for. respondWith only accepts a Response, so this has to be one.
  */
 const offlineResponse = () => new Response('', { status: 504, statusText: 'Offline' });
+
+const isRouterRequest = (request, url) => url.searchParams.has('_rsc')
+  || request.headers.get('rsc') === '1'
+  || request.headers.has('next-router-state-tree')
+  || request.headers.get('accept')?.includes('text/x-component');
+
+async function navigationResponse(request) {
+  try { return await fetch(request); }
+  catch {
+    // One failed connection is not proof the device is offline. Retry once,
+    // without an HTTP cache hit, before replacing the actual document.
+    if (!request.signal?.aborted) {
+      try { return await fetch(new Request(request, { cache: 'reload' })); } catch { /* bounded retry */ }
+    }
+    const page = await caches.match('/offline.html');
+    return new Response(page ? await page.text() : 'Trang tam thoi khong tai duoc. Vui long thu lai.', {
+      status: 503,
+      headers: { 'Content-Type': 'text/html; charset=utf-8', 'Cache-Control': 'no-store', 'X-CineVN-Offline': '1' },
+    });
+  }
+}
 
 self.addEventListener('install', (event) => {
   event.waitUntil(
@@ -81,6 +102,9 @@ self.addEventListener('fetch', (event) => {
 
   const url = new URL(request.url);
   if (isUncacheable(url)) return;
+  // App Router flight/prefetch responses depend on headers and router state.
+  // They are not images and must never enter a URL-only stale cache.
+  if (isRouterRequest(request, url)) return;
 
   // Hashed build output: cache-first. The name changes when the bytes change,
   // so there is nothing to revalidate.
@@ -102,14 +126,14 @@ self.addEventListener('fetch', (event) => {
   // failure that made "which build am I running?" unanswerable from the page.
   if (request.mode === 'navigate') {
     event.respondWith(
-      fetch(request).catch(() => caches.match('/offline.html').then(
-        (hit) => hit || offlineResponse(),
-      )),
+      navigationResponse(request).catch(() => offlineResponse()),
     );
     return;
   }
 
-  // Same-origin images and icons: stale-while-revalidate.
+  // Only images use stale-while-revalidate. Other HTML/data/scripts go straight
+  // to the browser network stack, rather than becoming permanent stale entries.
+  if (request.destination !== 'image') return;
   event.respondWith(
     caches.open(ASSET_CACHE).then(async (cache) => {
       const hit = await cache.match(request);

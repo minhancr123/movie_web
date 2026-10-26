@@ -24,8 +24,10 @@ export default function ServiceWorkerRegister() {
     if (process.env.NODE_ENV !== 'production') return;
 
     let reloading = false;
+    let hadController = Boolean(navigator.serviceWorker.controller);
 
     const onControllerChange = () => {
+      if (!hadController) { hadController = true; return; }
       if (reloading) return;
       reloading = true;
       window.location.reload();
