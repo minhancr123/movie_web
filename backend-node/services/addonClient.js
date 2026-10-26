@@ -393,7 +393,8 @@ export const buildSubtitleUrl = (addon, type, id, { videoHash, videoSize } = {})
 const fetchSubtitlesFromAddon = async (addon, type, id, hints = {}) => {
   const host = new URL(addon).host;
   const url = buildSubtitleUrl(addon, type, id, hints);
-  const payload = await safeFetchJson(url, { timeoutMs: SUBTITLE_REQUEST_TIMEOUT_MS });
+  const listingTimeout = new URL(addon).hostname === 'api3.subdl.com' ? 20000 : SUBTITLE_REQUEST_TIMEOUT_MS;
+  const payload = await safeFetchJson(url, { timeoutMs: listingTimeout });
   const tracks = normalizeSubtitlePayload(payload, host);
   // Every addon's sidecars are fetched and re-serialized up front, not just
   // SubDL's: OpenSubtitles relays serve raw .ssa the browser cannot parse and
@@ -432,8 +433,8 @@ export const getSubtitleCandidates = async ({
   // 2160p release of the same title shared one cached list, so switching source
   // handed back subtitles timed for the other file.
   const fileKey = videoHash ? `:${videoHash}` : '';
-  const cacheKey = `addon:subtitles:v2:${stremio.type}:${stremio.id}${fileKey}`;
-  return cached(cacheKey, SUBTITLE_CACHE_TTL, async () => {
+  const cacheKey = `addon:subtitles:v3:${stremio.type}:${stremio.id}${fileKey}`;
+  const result = await cached(cacheKey, SUBTITLE_CACHE_TTL, async () => {
     const addons = configuredSubtitleAddons();
     const hints = { videoHash, videoSize };
     const settled = await Promise.allSettled(
@@ -456,6 +457,9 @@ export const getSubtitleCandidates = async ({
     subtitles.sort((a, b) => subtitlePriority(a.language) - subtitlePriority(b.language));
     return { subtitles: subtitles.slice(0, MAX_SUBTITLES), errors };
   });
+  // A partial outage must not hide an entire language for six hours.
+  if (result.errors?.length) await setCache(cacheKey, result, 60);
+  return result;
 };
 
 /* ------------------------------------------------------------ id formatting */

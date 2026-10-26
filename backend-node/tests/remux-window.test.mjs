@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict';
 import fs from 'node:fs/promises';
-import { remuxWindowSeconds, loadAdjustedWindowSeconds, pricedRemuxSeconds, completedSessionCovers, budgetedWindowSeconds } from '../services/playback/remuxWindow.js';
+import { remuxWindowSeconds, loadAdjustedWindowSeconds, pricedRemuxSeconds, completedSessionCovers, budgetedWindowSeconds, remuxWindowByteBudget } from '../services/playback/remuxWindow.js';
 import { buildFfmpegArgs, estimateSessionBytes, admitRemuxDisk, sessionPath, spawnBeatsReuse } from '../services/playback/remuxService.js';
 import { publishRendition } from '../services/playback/renditions.js';
 
@@ -56,3 +56,9 @@ try {
   assert.deepEqual(await publishRendition({ renditionId: 'a4'.repeat(16), sessionId: id }), { ok: false, reason: 'bounded-window' });
 } finally { await fs.rm(sessionPath(id, '.'), { recursive: true, force: true }); }
 console.log('OK bounded VOD admission, exact seek coverage, FFmpeg cap and publication guard');
+
+assert.equal(remuxWindowByteBudget({}),1024**3);
+assert.equal(remuxWindowByteBudget({PLAYBACK_REMUX_WINDOW_MAX_MB:'3072'}),3*1024**3);
+assert.equal(remuxWindowByteBudget({PLAYBACK_REMUX_WINDOW_MAX_MB:'999999'}),4*1024**3);
+assert.equal(remuxWindowByteBudget({PLAYBACK_REMUX_WINDOW_MAX_MB:'-1'}),1024**3);
+assert(budgetedWindowSeconds(59000,900,remuxWindowByteBudget({PLAYBACK_REMUX_WINDOW_MAX_MB:'3072'}))>350);

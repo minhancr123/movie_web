@@ -1,12 +1,5 @@
-/**
- * isReadyTrack must not gate embedded tracks on having a URL.
- *
- * An embedded track is extracted from the playing file: its `url` is
- * absent while the extraction job is still running. isReadyTrack
- * returning false for it caused bestViTrack to always pick the first
- * online Vietnamese sidecar (a different release → permanent sub drift)
- * and prevented the auto-upgrade-to-embedded path from ever firing.
- */
+/** Pending embedded tracks remain selectable in the menu, but auto-selection
+ * waits for their published URL and upgrades them after extraction completes. */
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import { execFileSync } from 'node:child_process';
@@ -51,7 +44,7 @@ test('pickBestViTrack prefers matched over first-seen Vietnamese', () => {
   assert.equal(pickBestViTrack([generic, matched])?.id, 'vi-2', 'matched sidecar wins even when listed second');
   assert.equal(pickBestViTrack([generic])?.id, 'vi-1', 'falls back to first Vietnamese when nothing matched');
   const embedded = { id: 'a'.repeat(40) + ':3', language: 'vi', label: 'Embedded', url: '', ready: false, source: 'embedded' };
-  assert.equal(pickBestViTrack([generic, matched, embedded])?.id, embedded.id, 'embedded still outranks matched');
+  assert.equal(pickBestViTrack([generic, matched, embedded])?.id, matched.id, 'pending embedded must not hide ready dialogue');
 });
 test('pickBestViTrack ranks a suggested track above popularity, below proof', () => {
   const generic = { id: 'vi-1', language: 'vi', label: 'Tiếng Việt 1', url: 'http://example/a.vtt', ready: true };
@@ -60,11 +53,11 @@ test('pickBestViTrack ranks a suggested track above popularity, below proof', ()
   const embedded = { id: 'a'.repeat(40) + ':3', language: 'vi', label: 'Embedded', url: '', ready: false, source: 'embedded' };
   assert.equal(pickBestViTrack([generic, suggested])?.id, 'vi-9', 'suggested beats the popularity pick');
   assert.equal(pickBestViTrack([suggested, matched])?.id, 'vi-2', 'proof still beats suggestion');
-  assert.equal(pickBestViTrack([suggested, embedded])?.id, embedded.id, 'embedded still wins overall');
+  assert.equal(pickBestViTrack([suggested, embedded])?.id, suggested.id, 'pending extraction must not hide ready dialogue');
 });
 
-// Embedded without URL must be considered ready (extraction pending, not absent).
-assert.equal(isReadyTrack({ id: 'a'.repeat(40) + ':3', language: 'vi', label: 'Tiếng Việt', ready: false, url: '' }), true, 'embedded track with no URL is still ready');
+// Availability in the inventory is not readiness to display.
+assert.equal(isReadyTrack({ id: 'a'.repeat(40) + ':3', language: 'vi', label: 'Tiếng Việt', ready: false, url: '' }), false, 'embedded track with no URL is not display-ready');
 // Embedded with URL is obviously ready.
 assert.equal(isReadyTrack({ id: 'a'.repeat(40) + ':3', language: 'vi', label: 'Tiếng Việt', ready: true, url: 'http://example/sub.vtt', source: 'embedded' }), true, 'embedded track with URL is ready');
 // Online track still needs a URL.
@@ -112,4 +105,11 @@ test('weak timing evidence does not displace readable Vietnamese or an exact mat
   assert.equal(pickValidatedViTrack([current, other], cues, scores, current.id), undefined);
   assert.equal(pickValidatedViTrack([{ ...current, matched: true }, other], cues,
     { other: { confident: true, matchRate: 0.9, offset: 0 } }, current.id)?.id, current.id);
+});
+
+test('ready sidecars display while embedded extraction runs, then upgrade on publication',()=>{
+ const sidecar={id:'vi-online',language:'vie',label:'Việt',url:'https://example/sub.vtt',ready:true};
+ const embedded={id:'a'.repeat(40)+':1',language:'vie',label:'Việt nhúng',url:'',ready:false,source:'embedded'};
+ assert.equal(pickAutoSubtitle([sidecar,embedded]).id,sidecar.id);
+ assert.equal(pickAutoSubtitle([sidecar,{...embedded,ready:true,url:'/api/sub.vtt'}]).id,embedded.id);
 });

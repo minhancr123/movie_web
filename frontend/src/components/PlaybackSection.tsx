@@ -23,7 +23,7 @@ import EpisodeResumeDialog from '@/components/EpisodeResumeDialog';
 import MovieRequestForm from '@/components/MovieRequestForm';
 import SeasonPicker, { type SeasonOption } from '@/components/SeasonPicker';
 import { isLastEpisode, firstAvailableEpisode } from '@/lib/season-navigation';
-import { preparedWindowCovers, restoreRequestedPosition } from '@/lib/prepared-window';
+import { preparedWindowCovers, restoreRequestedPosition, preparationMatches } from '@/lib/prepared-window';
 import CinemaLayer, { type CinemaMode } from '@/components/CinemaLayer';
 
 /** Mirrors PLAYBACK_STARTUP_BUFFER_SECONDS on the server, for the wait copy. */
@@ -1121,6 +1121,7 @@ export default function PlaybackSection({
   const pendingSeekRef = useRef<number | null>(null);
   const stagedWindowRef = useRef<{ at: number; token: string; audio: number | null; preparedAt: number; viewerId: string; data: any } | null>(null);
   const stagedAbortRef = useRef<AbortController | null>(null);
+  const preparingWindowRef = useRef<{ at: number; token: string; audio: number | null; epoch: number; promise: Promise<void> } | null>(null);
   const stagedExpiryRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const discardStagedWindow = useCallback(() => {
     if (stagedExpiryRef.current) clearTimeout(stagedExpiryRef.current);
@@ -1237,11 +1238,14 @@ export default function PlaybackSection({
   // while a session beginning at the target warms up. The player debounces
   // scrub ticks and shows its own indicator; here each call fires exactly
   // one resolve, and stale responses are dropped by the epoch check above.
-  const prepareNextWindow = useCallback(async (displaySeconds: number) => {
+  const prepareNextWindow = useCallback((displaySeconds: number) => {
     const at = Math.floor(displaySeconds);
     const token = activeTokenRef.current;
     const audio = activeAudioIndexRef.current;
     const epoch = seekEpochRef.current;
+    const existing = preparingWindowRef.current;
+    if (existing && existing.epoch === epoch && preparationMatches(existing, at, token, audio)) return existing.promise;
+    const work = (async () => {
     const stagingViewerId = `prepare-${Date.now().toString(36)}-${Math.random().toString(36).slice(2)}`;
     stagedAbortRef.current?.abort();
     const controller = new AbortController();
@@ -1287,6 +1291,10 @@ export default function PlaybackSection({
     } finally {
       if (!retained && preparedId) void playbackAPI.leave(preparedId, stagingViewerId).catch(() => {});
     }
+    })();
+    preparingWindowRef.current = { at, token, audio, epoch, promise: work };
+    void work.finally(() => { if (preparingWindowRef.current?.promise === work) preparingWindowRef.current = null; });
+    return work;
   }, [type, tmdbId, season, currentEpisode, discardStagedWindow]);
 
   useEffect(() => () => {
@@ -1294,8 +1302,14 @@ export default function PlaybackSection({
     discardStagedWindow();
   }, [type, tmdbId, season, currentEpisode, discardStagedWindow]);
 
-  const requestSeekPosition = useCallback((displaySeconds: number) => {
+  const requestSeekPosition = useCallback(async (displaySeconds: number) => {
     const at = Math.max(0, displaySeconds);
+    const preparation = preparingWindowRef.current;
+    if (preparation && preparation.epoch === seekEpochRef.current && preparationMatches(preparation, at, activeTokenRef.current, activeAudioIndexRef.current)) {
+      const previousIntent = seekEpochRef.current;
+      await preparation.promise;
+      if (previousIntent !== seekEpochRef.current) return;
+    }
     lastRequestedStartAtRef.current = at;
     pendingSeekRef.current = at;
     // A newer seek supersedes a pending audio switch (and vice versa in

@@ -1,6 +1,7 @@
 import { createRenditionGate } from '../services/playback/admissionQueue.js';
 import { selectAdoptableSession } from '../services/playback/sessionAdoption.js';
 const renditionGate = createRenditionGate();
+import { retrySubtitleTracksIndividually } from '../services/playback/subtitleInventory.js';
 import { sourceListingFailure, incompatibleSourcesFailure } from '../services/playback/sourceAvailability.js';
 import { SEEK_BUCKET_SECONDS, bucketSeekStart, seekBufferFloor, startupTarget, sessionStartupTarget, hasPlayableBuffer, initialStartupFloor, sessionPlaylistFloor } from '../services/playback/startupPolicy.js';
 import { isRecommendedDirectSource } from '../services/playback/directPlayVerdict.js';
@@ -3557,7 +3558,9 @@ export const getPlaybackSubtitles = async (req, res) => {
     }).catch((error) => ({ subtitles: [], errors: [error.message] }));
     const externalSubs = externalResult.subtitles || [];
 
-    const subtitleWindow = subtitleWindowAt(positionSeconds ?? ownedSession?.startAt ?? 0);
+    const subtitleWindow = subtitleWindowAt(positionSeconds ?? ownedSession?.startAt ?? 0, {
+      kbps: ownedSession?.durationSeconds > 0 ? Number(ownedSession.videoSize || 0) * 8 / ownedSession.durationSeconds / 1000 : 0,
+    });
     const embeddedTracks = [];
     let embeddedNeedsRefill = false;
     // Derive from the ownership-checked session. It was previously read off the
@@ -3855,7 +3858,7 @@ export const getPlaybackSubtitles = async (req, res) => {
     // Fast path: inventory is cached per torrent file — repeat opens
     // return instantly without touching TorBox or ffmpeg again. v3: file identity and response
     // shape carries the probe summary + per-track readiness.
-    const inventoryKey = `playback:subs:v6:${pickedScope}:w${subtitleWindow.startAt}`;
+    const inventoryKey = `playback:subs:v7:${pickedScope}:w${subtitleWindow.startAt}:${subtitleWindow.durationSeconds}`;
     const cachedInventory = await getCache(inventoryKey);
     if (cachedInventory?.done && cachedInventory.tracks?.every(t => t.source !== 'embedded'
       || t.coverageRanges?.some(([a, b]) => a <= subtitleWindow.startAt && b >= subtitleWindow.startAt + subtitleWindow.durationSeconds))) {
@@ -4001,8 +4004,8 @@ async function runSubtitleExtractionJob({ jobId, inventoryKey, pickedHash, input
       }
     }
   } catch (error) {
-    console.error(`subtitle extraction batch ${jobId} failed, retrying per-track:`, redactSecrets(error.message));
-    for (const p of pending) {
+    console.error(`subtitle extraction batch ${jobId} failed:`, redactSecrets(error.message));
+    for (const p of retrySubtitleTracksIndividually(error) ? pending : []) {
       try {
         await extractSubtitleTrack(inputUrl, p.streamIndex, p.outPath, window);
         await publish(p.trackId, p.outPath);

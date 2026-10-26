@@ -220,13 +220,19 @@ const SUBS_BATCH_CONCURRENCY = 1;
 let subsBatchActive = 0;
 const subsBatchQueue = [];
 const acquireSubsBatch = () =>
-  new Promise((resolve) => {
+  new Promise((resolve, reject) => {
     if (subsBatchActive < SUBS_BATCH_CONCURRENCY) {
       subsBatchActive += 1;
       resolve();
       return;
     }
-    subsBatchQueue.push(resolve);
+    const ready = () => { clearTimeout(timer); resolve(); };
+    const timer = setTimeout(() => {
+      const index = subsBatchQueue.indexOf(ready);
+      if (index >= 0) subsBatchQueue.splice(index, 1);
+      reject(new Error('Hết thời gian chờ lượt phụ đề'));
+    }, 15000);
+    subsBatchQueue.push(ready);
   });
 const releaseSubsBatch = () => {
   const next = subsBatchQueue.shift();
@@ -302,7 +308,7 @@ export const extractSubtitleTracks = async (inputUrl, jobs, window = {}) => {
         ...(duration ? ['-to', String(start + duration)] : []),
         '-c:s', 'webvtt', '-f', 'webvtt', '-y', job.temp);
     }
-    await run(FFMPEG_BIN, args, { timeoutMs: SUBS_BATCH_TIMEOUT_MS });
+    await run(FFMPEG_BIN, args, { timeoutMs: duration > 0 && duration <= 60 ? 45000 : SUBS_BATCH_TIMEOUT_MS });
     return await Promise.all(temporary.map(async job => {
       const text = await fs.readFile(job.temp, 'utf8').catch(() => '');
       if (!/^WEBVTT(?:\s|$)/.test(text)) return { ...job, ok: false };

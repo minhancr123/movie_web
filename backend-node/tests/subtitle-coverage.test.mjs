@@ -5,6 +5,7 @@ import os from 'node:os';
 import path from 'node:path';
 import {
   subtitleWindowAt,
+  retrySubtitleTracksIndividually,
   subtitleSidecarName,
   trySliceWindowFromCoverage, withSubtitleCoverage, subtitleWindowStatus,
 } from '../services/playback/subtitleInventory.js';
@@ -106,4 +107,11 @@ test('quiet extracted coverage is valid, while a header alone proves no coverage
     assert.equal((await subtitleWindowStatus(file, mkWindow(0))).fullCoverage, true);
     assert.equal((await trySliceWindowFromCoverage(dir, SCOPE, 0, mkWindow(120))).fullCoverage, false);
   } finally { await fs.rm(dir, { recursive: true, force: true }); }
+});
+
+test('high bitrate subtitle scans stay bounded near the current playhead',()=>{
+ assert.deepEqual(subtitleWindowAt(800,{kbps:59000}),{startAt:780,durationSeconds:60});
+ assert.deepEqual(subtitleWindowAt(800,{kbps:6000}),{startAt:720,durationSeconds:300});
+ assert.equal(retrySubtitleTracksIndividually(new Error('/usr/bin/ffmpeg quá 45s không phản hồi')),false);
+ assert.equal(retrySubtitleTracksIndividually(new Error('Invalid subtitle codec')),true);
 });

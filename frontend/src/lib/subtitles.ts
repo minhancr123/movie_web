@@ -57,16 +57,10 @@ export const isViTrack = (t: { language: string }): boolean =>
 export const isEnTrack = (t: { language: string }): boolean =>
   t.language.toLowerCase().startsWith('en');
 
-/**
- * True for a track whose timing is usable right now.
- * Embedded tracks (extracted from the playing file) are usable even
- * while the extraction job is still running — `ready` is only false
- * during the initial scan, and `isEmbeddedTrack` alone tells us the
- * timing will match the picture once it lands. Online sidecars need
- * `url` to be present.
- */
+/** A pending embedded extraction is present in the menu, but cannot display yet.
+ * Auto-selection can upgrade it when its URL becomes available. */
 export const isReadyTrack = (t: { ready?: boolean; url: string; source?: string; id: string }): boolean =>
-  t.ready === false && !isEmbeddedTrack(t) ? false : !!t.url || isEmbeddedTrack(t);
+  t.ready !== false && Boolean(t.url);
 
 /** Server-verified file match: sidecar timed for the exact playing file. */
 export const isMatchedTrack = (t: { matched?: boolean }): boolean => t.matched === true;

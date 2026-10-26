@@ -23,7 +23,11 @@ export const pricedRemuxSeconds = (duration, windowSeconds, startAt = 0) => {
     ? Math.min(windowSeconds, remaining) : windowSeconds;
 };
 /** Keep high-bitrate chunks smaller too, leaving margin for audio/VBR peaks. */
-export const budgetedWindowSeconds = (kbps, requested, maxBytes = 1024 ** 3) => {
+export const remuxWindowByteBudget = (env = process.env) => {
+  const mb = Number(env.PLAYBACK_REMUX_WINDOW_MAX_MB);
+  return Math.min(4096, Math.max(256, Number.isFinite(mb) && mb > 0 ? mb : 1024)) * 1024 ** 2;
+};
+export const budgetedWindowSeconds = (kbps, requested, maxBytes = remuxWindowByteBudget()) => {
   if (!requested) return 0;
   if (!(Number(kbps) > 0)) return requested;
   const seconds = Math.min(requested, Math.floor(maxBytes * 0.85 * 8 / (kbps * 1000)));

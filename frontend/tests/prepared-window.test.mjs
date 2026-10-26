@@ -1,7 +1,7 @@
 import test from 'node:test';import assert from 'node:assert/strict';
 import fs from 'node:fs';import vm from 'node:vm';import ts from 'typescript';
 const ctx={exports:{}};vm.runInNewContext(ts.transpileModule(fs.readFileSync(new URL('../src/lib/prepared-window.ts',import.meta.url),'utf8'),{compilerOptions:{module:ts.ModuleKind.CommonJS,target:ts.ScriptTarget.ES2020}}).outputText,ctx);
-const {prepareWindowAt,preparedWindowCovers,restoreRequestedPosition}=ctx.exports;
+const {prepareWindowAt,preparedWindowCovers,restoreRequestedPosition,preparationMatches}=ctx.exports;
 test('prepares near the planned edge, never the growing prefix or final film edge',()=>{
  assert.equal(prepareWindowAt(900,25,7200,600),null);
  assert.equal(prepareWindowAt(900,570,7200,600),1499);
@@ -20,4 +20,12 @@ test('restores the exact fractional intent, not the integer decode bucket',()=>{
  assert.equal(restoreRequestedPosition(1502,1502.4),1502.4);
  assert.equal(restoreRequestedPosition(undefined,1502.4),1502.4);
  assert.equal(restoreRequestedPosition(300,0),300);
+});
+
+test('short high-bitrate windows prepare early and retain matching work at their boundary',()=>{
+ assert.equal(prepareWindowAt(0,80,2700,122),121);
+ assert.equal(preparationMatches({at:121,token:'a',audio:0},122.2,'a',0),true);
+ assert.equal(preparationMatches({at:121,token:'a',audio:0},300,'a',0),false);
+ assert.equal(preparationMatches({at:121,token:'a',audio:0},122,'b',0),false);
+ assert.equal(preparationMatches({at:121,token:'a',audio:0},122,'a',1),false);
 });

@@ -22,12 +22,13 @@ export const needsEmbeddedInventory = ({ externalOnly, ownedSession, probeFacts,
 };
 
 // Overlap leaves time to prepare the next slice while the current one plays.
-export const subtitleWindowAt = value => {
+export const subtitleWindowAt = (value, { kbps = 0 } = {}) => {
   const at = Math.max(0, Math.min(86400, Number(value) || 0));
-  return { startAt: Math.floor(at / 120) * 120, durationSeconds: 300 };
+  const heavy = Number(kbps) >= 20000;
+  return { startAt: Math.floor(at / (heavy ? 30 : 120)) * (heavy ? 30 : 120), durationSeconds: heavy ? 60 : 300 };
 };
 export const subtitleSidecarName = (scope, index, window) =>
-  `v6-${scope}-w${window.startAt}-${index}.vtt`;
+  `v7-${scope}-w${window.startAt}-${index}.vtt`;
 export const isCompletedSubtitle = async file => {
   try { return /^WEBVTT(?:\s|$)/.test(await fs.readFile(file, 'utf8')); }
   catch { return false; }
@@ -83,7 +84,7 @@ export const trySliceWindowFromCoverage = async (subsRoot, scope, index, window)
   const start = window.startAt;
   const end = start + window.durationSeconds;
   const names = await fs.readdir(subsRoot).catch(() => []);
-  const prefix = `v6-${scope}-w`;
+  const prefix = `v7-${scope}-w`;
   const suffix = `-${index}.vtt`;
   const sources = [];
   for (const name of names) {
@@ -124,3 +125,7 @@ export const trimSubtitleWindow = (text, window) => {
     return times && seconds(times[2]) > window.startAt && seconds(times[1]) < end;
   }).join('\n\n') + '\n\n';
 };
+
+/** A transport timeout affects every track in the same remote file. */
+export const retrySubtitleTracksIndividually = error =>
+  !/quá \d+s|timed? ?out|timeout|ECONNRESET|ENETUNREACH|chờ lượt phụ đề/i.test(String(error?.message || ''));

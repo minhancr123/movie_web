@@ -2,7 +2,7 @@
 export function prepareWindowAt(origin: number, localTime: number, fullDuration: number, windowSeconds: number, finishedEnd?: number): number | null {
   const end = Number.isFinite(finishedEnd) && Number(finishedEnd) > 0 ? Number(finishedEnd) : windowSeconds;
   if (![origin, localTime, fullDuration, end].every(Number.isFinite) || windowSeconds <= 0 || end < 3 || fullDuration <= 0) return null;
-  if (origin + end >= fullDuration - 2 || localTime < end - Math.min(30, end / 3)) return null;
+  if (origin + end >= fullDuration - 2 || localTime < end - Math.min(45, end / 2)) return null;
   return Math.max(0, origin + end - 1);
 }
 
@@ -18,3 +18,7 @@ export function restoreRequestedPosition(returned: unknown, requested: number): 
   const value = typeof returned === 'number' && Number.isFinite(returned) && returned >= 0 ? returned : requested;
   return Math.abs(value - requested) < 1 ? requested : value;
 }
+
+/** A boundary should adopt its in-flight preparation, not abort and redo it. */
+export const preparationMatches = (prepared: {at:number;token:string;audio:number|null}, at:number, token:string, audio:number|null): boolean =>
+  Number.isFinite(at) && Math.abs(prepared.at - at) <= 4 && prepared.token === token && prepared.audio === audio;
