@@ -20,6 +20,7 @@ const VideoPlayer = dynamic(() => import('@/components/VideoPlayer'), {
 import { nextPlayableEpisode, fallbackPlaybackNotice } from '@/lib/playback-extras';
 import { episodeResumePosition, readEpisodeHistory } from '@/lib/episode-resume';
 import EpisodeResumeDialog from '@/components/EpisodeResumeDialog';
+import MovieRequestForm from '@/components/MovieRequestForm';
 import { preparedWindowCovers, restoreRequestedPosition } from '@/lib/prepared-window';
 import CinemaLayer, { type CinemaMode } from '@/components/CinemaLayer';
 
@@ -146,6 +147,8 @@ export default function PlaybackSection({
 
   const [playbackStatus, setPlaybackStatus] = useState<PlaybackStatus>('idle');
   const [errorMessage, setErrorMessage] = useState<string>('');
+  const [sourceMissing, setSourceMissing] = useState(false);
+  const [showMovieRequest, setShowMovieRequest] = useState(false);
   const [downloadProgress, setDownloadProgress] = useState<number>(0);
   const [playUrl, setPlayUrl] = useState<string>('');
   const playUrlRef = useRef<string>('');
@@ -1362,6 +1365,8 @@ export default function PlaybackSection({
     clearStagePoll();
     stage404sRef.current = 0;
     setErrorMessage('');
+    setSourceMissing(false);
+    setShowMovieRequest(false);
     setResolveElapsed(0);
     setResolveStageLabel('');
     // A server-asked retry continues the SAME resolve: resetting here would let
@@ -1836,6 +1841,7 @@ export default function PlaybackSection({
       const status = err.response?.status;
       const code = err.response?.data?.code;
       const message = err.response?.data?.message || err.message || 'Không thể chuẩn bị nguồn phát';
+      setSourceMissing(code === 'SOURCE_NOT_FOUND' || (status === 404 && message === 'Không tìm thấy nguồn phát cho nội dung này'));
 
       // Provider entitlement is independent of the selected release. Retrying
       // another source cannot fix it, including on resume or a preserved seek.
@@ -2211,8 +2217,8 @@ export default function PlaybackSection({
           <div className="w-12 h-12 rounded-full bg-wine-accent/15 flex items-center justify-center text-amber-gold mb-3">
             <AlertCircle size={24} />
           </div>
-          <h3 className="text-base font-bold text-white mb-1">Không thể phát nội dung</h3>
-          <p className="text-sm text-cinema-subtle max-w-md mb-5">{errorMessage || 'Đã xảy ra lỗi khi chuẩn bị nguồn phát.'}</p>
+          <h3 className="text-base font-bold text-white mb-1">{sourceMissing ? 'Chưa có nguồn phát' : 'Không thể phát nội dung'}</h3>
+          <p className="text-sm text-cinema-subtle max-w-md mb-5">{sourceMissing ? 'Hiện chưa tìm thấy nguồn phát cho phim này. Bạn có thể gửi yêu cầu để CineVN tiếp tục tìm nguồn.' : (errorMessage || 'Đã xảy ra lỗi khi chuẩn bị nguồn phát.')}</p>
           <div className="flex flex-wrap items-center justify-center gap-3">
             <button
               onClick={() => {
@@ -2225,7 +2231,11 @@ export default function PlaybackSection({
               <RefreshCw size={14} />
               <span>Thử lại</span>
             </button>
-            <button
+            {sourceMissing ? (
+              <button onClick={() => setShowMovieRequest(true)} className="inline-flex items-center gap-2 px-4 py-2 rounded-lg bg-amber-primary hover:bg-amber-500 text-black text-sm font-semibold transition">
+                <Film size={16} /> Yêu cầu phim
+              </button>
+            ) : <button
               onClick={() => {
                 if (typeof window !== 'undefined') {
                   localStorage.removeItem(selectedSourceKey);
@@ -2241,8 +2251,14 @@ export default function PlaybackSection({
             >
               {isLoadingSources ? <Loader2 size={14} className="animate-spin" /> : <Layers size={14} />}
               <span>Chọn nguồn khác</span>
-            </button>
+            </button>}
           </div>
+          {sourceMissing && showMovieRequest && (
+            <div className="w-full max-w-xl mt-5 text-left">
+              <MovieRequestForm initialTitle={title} tmdbId={tmdbId} mediaType={type}
+                onCancel={() => setShowMovieRequest(false)} />
+            </div>
+          )}
         </div>
 
         {/* Danh sách nguồn phát thay thế */}

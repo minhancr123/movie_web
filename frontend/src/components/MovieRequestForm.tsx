@@ -7,11 +7,13 @@ import { Send, Film, X, CheckCircle2, AlertCircle, Loader2 } from 'lucide-react'
 
 interface MovieRequestFormProps {
   initialTitle?: string;
+  tmdbId?: number;
+  mediaType?: 'movie' | 'tv';
   onSuccess?: () => void;
   onCancel?: () => void;
 }
 
-export default function MovieRequestForm({ initialTitle = '', onSuccess, onCancel }: MovieRequestFormProps) {
+export default function MovieRequestForm({ initialTitle = '', tmdbId, mediaType, onSuccess, onCancel }: MovieRequestFormProps) {
   const [title, setTitle] = useState(initialTitle);
   const [note, setNote] = useState('');
   const [isSubmitting, setIsSubmitting] = useState(false);
@@ -26,7 +28,7 @@ export default function MovieRequestForm({ initialTitle = '', onSuccess, onCance
     setIsSubmitting(true);
     setError(null);
     try {
-      const res = await movieRequestAPI.create({ title, note });
+      const res = await movieRequestAPI.create({ title, note, ...(title.trim() === initialTitle.trim() ? { tmdbId, mediaType } : {}) });
       setSuccessMessage(res.data?.message || '');
       setSuccess(true);
       if (onSuccess) setTimeout(onSuccess, 2000);

@@ -173,7 +173,7 @@ export interface TmdbMatch {
 
 export const movieRequestAPI = {
   controlAutomation: (id: string, enabled: boolean, episode?: {season:number;episode:number}) => authClient.patch(`/movie-requests/${id}/automation`, { enabled, ...episode }),
-  create: (data: { title: string; tmdbId?: string | number; note?: string }) =>
+  create: (data: { title: string; tmdbId?: string | number; mediaType?: 'movie' | 'tv'; note?: string }) =>
     authClient.post<{ success: boolean; message: string; request: MovieRequestItem }>('/movie-requests', data),
 
   getAll: (params?: { page?: number; limit?: number; status?: string }) =>
