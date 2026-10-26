@@ -1,6 +1,7 @@
 import { getDB } from '../config/database.js';
 import { ObjectId } from 'mongodb';
 import { search as tmdbSearch } from '../services/tmdb.js';
+import { movieRequestMatches } from '../services/movieRequestMatches.js';
 
 /** Collapse whitespace/case so "Dune  2" and "dune 2" dedupe to one row. */
 const normalizeTitle = (title) =>
@@ -266,17 +267,7 @@ export const checkTmdbMatch = async (req, res) => {
     if (!request) return res.status(404).json({ success: false, message: 'Không tìm thấy yêu cầu.' });
 
     const payload = await tmdbSearch(request.title);
-    const results = (payload?.results || [])
-      .filter(r => r.media_type === 'movie' || r.media_type === 'tv')
-      .slice(0, 6)
-      .map(r => ({
-        tmdbId: r.id,
-        mediaType: r.media_type,
-        title: r.title || r.name || '',
-        year: (r.release_date || r.first_air_date || '').slice(0, 4) || null,
-        poster: r.poster_path ? `https://image.tmdb.org/t/p/w92${r.poster_path}` : null,
-        popularity: r.popularity || 0,
-      }));
+    const results = movieRequestMatches(payload);
     res.json({ success: true, data: { title: request.title, attachedTmdbId: request.tmdbId || null, results } });
   } catch (error) {
     console.error('[checkTmdbMatch] error:', error);
