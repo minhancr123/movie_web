@@ -4519,6 +4519,7 @@ export const refreshPlaybackUrl = async (req, res) => {
         torrentId: session.torrentId,
         fileId: session.fileId,
         userId: String(req.user.userId),
+        forceRefresh: true,
       });
     } catch (error) {
       if (error instanceof DebridError && ['invalid_token', 'plan_restricted'].includes(error.code)) {

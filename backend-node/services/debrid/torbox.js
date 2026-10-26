@@ -444,13 +444,13 @@ export const prepareSource = async (
  * and a page reload during playback should not spend a fresh call. The cache key
  * includes userId because the link is account-scoped.
  */
-export const getDownloadUrl = async (key, { torrentId, fileId, userId }) => {
+export const getDownloadUrl = async (key, { torrentId, fileId, userId, forceRefresh = false }) => {
   if (torrentId === undefined || torrentId === null) {
     throw new DebridError('Thiếu torrentId', { status: 400, code: 'bad_request' });
   }
 
   const cacheKey = `torbox:link:${userId || 'anon'}:${torrentId}:${fileId ?? 'auto'}`;
-  const hit = await cacheClient.get(cacheKey).catch(() => null);
+  const hit = forceRefresh ? null : await cacheClient.get(cacheKey).catch(() => null);
   if (hit) return hit;
 
   const payload = await request('/torrents/requestdl', key, {

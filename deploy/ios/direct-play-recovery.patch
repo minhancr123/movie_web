@@ -1,0 +1,208 @@
+--- a/Player/PlayerScreen.swift
++++ b/Player/PlayerScreen.swift
+@@ -128,6 +128,12 @@
+ 
+     // Fallback auto
+     @State private var autoFallbackDone = false
++    @State private var directRefreshAttempted = false
++    @State private var recoveryTask: Task<Void, Never>?
++    @State private var recoveryGeneration = UUID()
++
++    private var effectiveDirectPlay: Bool { currentSession.map { $0.mode == "direct" } ?? directPlay }
++
+ 
+     // Pause overlay: chỉ hiện sau khi video đã phát được (tránh nhấp nháy lúc load/seek).
+     @State private var hasStartedPlayback = false
+@@ -483,7 +489,7 @@
+                             .foregroundColor(.white.opacity(0.8))
+ 
+                         // Direct Play chậm (đệm nhiều lần) → gợi ý chuyển Remux.
+-                        if directPlay, stallCount >= 2, onFallbackToRemux != nil, !autoFallbackDone {
++                        if effectiveDirectPlay, stallCount >= 2, onFallbackToRemux != nil, !autoFallbackDone {
+                             Button {
+                                 autoFallbackDone = true
+                                 Task { await triggerRemuxFallback() }
+@@ -530,7 +536,7 @@
+                 }
+ 
+                 // Error
+-                if let message = player.errorMessage {
++                if let message = player.errorMessage, !isFarSeeking {
+                     errorCard(message)
+                 }
+ 
+@@ -605,6 +611,12 @@
+         }
+         .onChange(of: player.isBuffering) { _, buffering in
+             handleBufferingChange(buffering: buffering)
++        }
++        .onChange(of: player.errorMessage) { _, message in
++            if message != nil, effectiveDirectPlay, settings.autoFallbackToRemuxOnFailure,
++               !isFarSeeking, !autoFallbackDone {
++                recoverPlayback(manual: false)
++            }
+         }
+         .onChange(of: player.isAudioOnlyFallback) { _, audioOnly in
+             // Chế độ auto: nguồn Direct hỏng hình (hev1) → tự chuyển Remux một lần.
+@@ -725,6 +737,9 @@
+     }
+ 
+     private func teardown() {
++        recoveryGeneration = UUID()
++        recoveryTask?.cancel()
++        recoveryTask = nil
+         discardPreparedWindow()
+         controlsTimer?.invalidate()
+         countdownTask?.cancel()
+@@ -1143,14 +1158,7 @@
+                 .foregroundColor(.white.opacity(0.8))
+             HStack(spacing: 12) {
+                 Button("Thử lại") {
+-                    // Load lại trực tiếp với url hiện tại — đủ cho lỗi mạng thoáng qua.
+-                    player.load(
+-                        url: url,
+-                        sessionId: sessionId,
+-                        directPlay: directPlay,
+-                        initialDuration: initialDuration,
+-                        startOffset: startOffset
+-                    )
++                    recoverPlayback(manual: true)
+                 }
+                 .buttonStyle(.borderedProminent)
+                 .tint(Constants.amberPrimary)
+@@ -1165,7 +1173,7 @@
+                 }
+             }
+ 
+-            if directPlay, onFallbackToRemux != nil {
++            if effectiveDirectPlay, onFallbackToRemux != nil {
+                 Button {
+                     autoFallbackDone = true
+                     Task { await triggerRemuxFallback() }
+@@ -1457,14 +1465,56 @@
+         farSeekStatus = nil
+     }
+ 
++    /// One fresh URL attempt, then one remux attempt. Never reload the stale URL.
++    @MainActor
++    private func recoverPlayback(manual: Bool) {
++        guard recoveryTask == nil, !isFarSeeking else { return }
++        if manual { directRefreshAttempted = false; autoFallbackDone = false }
++        let generation = UUID()
++        recoveryGeneration = generation
++        let startAt = max(player.currentTime, pendingSeekAfterLoad ?? 0)
++        let ownedSession = currentSession?.sessionId ?? sessionId
++        recoveryTask = Task { @MainActor in
++            defer {
++                if recoveryGeneration == generation { recoveryTask = nil; isFarSeeking = false; farSeekStatus = nil }
++            }
++            if effectiveDirectPlay, !directRefreshAttempted, let ownedSession {
++                directRefreshAttempted = true
++                isFarSeeking = true
++                farSeekStatus = "Đang lấy lại đường phát…"
++                do {
++                    let fresh = try await APIService.shared.refreshPlaybackURL(sessionId: ownedSession)
++                    guard !Task.isCancelled, recoveryGeneration == generation else { return }
++                    pendingSeekAfterLoad = startAt > 0 ? startAt : nil
++                    player.load(url: fresh, sessionId: ownedSession, directPlay: true,
++                                initialDuration: player.duration, startOffset: 0)
++                    if startAt > 0 { player.holdRestorationTarget(startAt) }
++                    player.loadExternalTracks(type: context.mediaType, tmdbId: context.tmdbId,
++                        season: currentEpisodeInfo?.season ?? context.season,
++                        episode: currentEpisodeInfo?.episode ?? context.episode,
++                        sourceToken: currentSession?.sourceToken ?? context.sourceToken,
++                        sessionId: ownedSession, positionSeconds: startAt, allowEmbedded: false)
++                    return
++                } catch {
++                    guard !Task.isCancelled, recoveryGeneration == generation else { return }
++                }
++                isFarSeeking = false
++            }
++            guard !Task.isCancelled, recoveryGeneration == generation, !autoFallbackDone,
++                  manual || settings.autoFallbackToRemuxOnFailure else { return }
++            autoFallbackDone = true
++            await triggerRemuxFallback()
++        }
++    }
++
+     /// Nguồn Direct chậm (stall liên tục) hoặc hỏng hình (hev1) → resolve lại
+     /// phiên Remux HLS từ vị trí đang xem, load liền không cần mở lại player.
+     @MainActor
+     private func triggerRemuxFallback() async {
+         guard let onFallbackToRemux, !isFarSeeking else { return }
+-        let startAt = player.currentTime
++        let startAt = max(player.currentTime, pendingSeekAfterLoad ?? 0)
+         isFarSeeking = true
+-        farSeekStatus = "Nguồn Direct chậm — đang chuyển sang Remux HLS..."
++        farSeekStatus = "Đang chuyển sang cách phát ổn định hơn…"
+         player.pause()
+ 
+         // Resolve có thể treo (server busy) — timeout 45s thì quay lại nguồn cũ.
+@@ -1479,8 +1529,10 @@
+             return first
+         }
+ 
++        guard !Task.isCancelled else { isFarSeeking = false; farSeekStatus = nil; return }
+         if let result {
+             loadNewSession(url: result.0, session: result.1, startAt: max(startAt, result.1.startOffset ?? 0))
++            autoFallbackDone = true
+         } else {
+             player.play()
+         }
+@@ -1506,7 +1558,7 @@
+             stallCount += 1
+         }
+ 
+-        if directPlay, stallCount >= 3, !autoFallbackDone,
++        if effectiveDirectPlay, stallCount >= 3, !autoFallbackDone,
+            settings.autoFallbackToRemuxOnFailure, onFallbackToRemux != nil {
+             autoFallbackDone = true
+             settings.penalizeDirect()
+@@ -1532,6 +1584,7 @@
+         // UI nghĩ đang ở startAt → lệch toàn bộ thời lượng hiển thị.
+         discardPreparedWindow()
+         currentSession = session
++        directRefreshAttempted = false
+         let serverOffset = session.startOffset ?? 0
+         let actualOffset = serverOffset.isFinite ? max(0, serverOffset) : 0
+         pendingSeekAfterLoad = PlaybackWindowPolicy.restorationTarget(requested: startAt, origin: actualOffset)
+--- a/Services/APIService.swift
++++ b/Services/APIService.swift
+@@ -425,6 +425,25 @@
+         return session
+     }
+     
++    /// Same owned file/session, with the provider URL cache explicitly bypassed.
++    func refreshPlaybackURL(sessionId: String) async throws -> URL {
++        struct Payload: Decodable { let url: String }
++        struct Envelope: Decodable { let success: Bool; let data: Payload? }
++        guard !sessionId.isEmpty else { throw APIError.serverError("Phiên phát không còn hợp lệ.") }
++        var request = URLRequest(url: URL(string: "\(baseURL)/playback/session/\(sessionId)/refresh")!)
++        request.httpMethod = "POST"
++        request.timeoutInterval = 8
++        if let token = accessToken { request.setValue("Bearer \(token)", forHTTPHeaderField: "Authorization") }
++        let (data, response) = try await session.data(for: request)
++        try Task.checkCancellation()
++        guard let http = response as? HTTPURLResponse, (200..<300).contains(http.statusCode),
++              let envelope = try? JSONDecoder().decode(Envelope.self, from: data), envelope.success,
++              let value = envelope.data?.url, let url = URL(string: value), url.scheme == "https" else {
++            throw APIError.serverError("Chưa cấp lại được đường phát. Đang thử cách phát khác.")
++        }
++        return url
++    }
++
+     // MARK: - Subtitles & Audio Tracks
+     
+     func fetchSubtitles(
+--- a/Views/MovieDetailViewModel.swift
++++ b/Views/MovieDetailViewModel.swift
+@@ -587,7 +587,8 @@
+                 capabilities: .forceRemux,
+                 startAt: startAt,
+                 audioIndex: currentAudioIndex,
+-                resolveId: UUID().uuidString
++                resolveId: UUID().uuidString,
++                timeoutSeconds: 30
+             )
+             let url = try APIService.shared.playbackURL(for: session)
+             playbackURL = url
