@@ -1,3 +1,4 @@
+import { requestIdentity } from '../services/requests/identity.js';
 import { initialAutomation } from '../services/requests/policy.js';
 import { notifyRequestCompleted } from '../services/requests/notifications.js';
 import { getDB } from '../config/database.js';
@@ -18,7 +19,9 @@ const REQUESTERS_CAP = 50;
  */
 export const createRequest = async (req, res) => {
   try {
-    const { title, tmdbId, note } = req.body;
+    const { title, note } = req.body;
+    const identity = requestIdentity(req.body);
+    const tmdbId = identity?.tmdbId || null;
     const { userId, username, email } = req.user;
 
     if (!title || typeof title !== 'string' || title.trim().length === 0) {
@@ -83,7 +86,7 @@ export const createRequest = async (req, res) => {
       requestCount: 1,
       status: 'pending',
       automation: initialAutomation(),
-      mediaType: ['movie','tv'].includes(req.body.mediaType) ? req.body.mediaType : 'movie',
+      mediaType: identity?.mediaType || (['movie','tv'].includes(req.body.mediaType) ? req.body.mediaType : 'movie'),
       note: note || '',
       adminNote: '',
       createdAt: new Date(),

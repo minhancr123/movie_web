@@ -1,3 +1,4 @@
+import { requestIdentity } from '../services/requests/identity.js';
 import test from 'node:test';import assert from 'node:assert/strict';
 import {createRequestWorker} from '../services/requests/worker.js';
 import {findRequestMatch,readyProbe,initialAutomation,matchesRequestedEpisode} from '../services/requests/policy.js';
@@ -67,4 +68,13 @@ test('retargeting an episode cannot reuse the previous episode download',async()
  await db.collection('movie_request_jobs').updateOne({_id:'req'},{$set:{state:'downloading',tmdbId:123,mediaType:'tv',season:1,episode:1,source:{infoHash:'old',cached:true}}},{upsert:true});
  adapter.discover=async()=>[{infoHash:'new',cached:true}];adapter.prepare=async c=>{picked=c.infoHash;return{state:'ready'}};
  await createRequestWorker({db,adapter}).tick();assert.equal(picked,'new');
+});
+
+test('request links identify the exact movie without requiring an admin search', () => {
+ assert.deepEqual(requestIdentity({note:'https://cinevn.me/phim/movie/791523/wildwood'}),{tmdbId:791523,mediaType:'movie'});
+ assert.deepEqual(requestIdentity({note:'Xem https://cinevn.me/xem-phim/tv/220542/duoc-su?s=1&e=4'}),{tmdbId:220542,mediaType:'tv'});
+ assert.deepEqual(requestIdentity({note:'https://www.themoviedb.org/movie/791523-wildwood'}),{tmdbId:791523,mediaType:'movie'});
+ assert.deepEqual(requestIdentity({tmdbId:123,mediaType:'tv',note:'https://cinevn.me/phim/movie/791523/wildwood'}),{tmdbId:123,mediaType:'tv'});
+ assert.deepEqual(requestIdentity({note:'https://cinevn.me/phim/movie/1/a https://cinevn.me/phim/movie/2/b'}),{ambiguous:true});
+ for (const note of ['https://cinevn.me.evil.test/phim/movie/791523/wildwood','https://cinevn.me@evil.test/phim/movie/791523/wildwood','https://evil.test/movie/1','https://cinevn.me/phim/movie/0/a','Wildwood']) assert.equal(requestIdentity({note}),null);
 });

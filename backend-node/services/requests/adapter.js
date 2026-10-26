@@ -12,6 +12,7 @@ import { lookup } from 'node:dns/promises';
 import { cached, CACHE_TTL } from '../../config/redis.js';
 import { findRequestMatch, readyProbe, matchesRequestedEpisode } from './policy.js';
 import { credentialScope } from './library.js';
+import { requestIdentity } from './identity.js';
 
 const caps = { hevc: true, hevcMain10: true, av1: true, hdr: true, eac3: true, maxHeight: 2160, preferredMaxHeight: 1080 };
 const titles = detail => [detail.title, detail.originalTitle, detail.englishTitle].filter(Boolean);
@@ -39,7 +40,9 @@ async function readable(url) {
 export const createRuntimeRequestAdapter = db => ({
   scope: credentialScope,
   async detail(row) {
-    let id = Number(row.tmdbId), type = row.mediaType || 'movie';
+    const identity = requestIdentity(row);
+    if (identity?.ambiguous) return null;
+    let id = identity?.tmdbId, type = identity?.mediaType || row.mediaType || 'movie';
     if (!id) {
       const list = await tmdb.search(row.title);
       const match = findRequestMatch(row.title, list.items);
