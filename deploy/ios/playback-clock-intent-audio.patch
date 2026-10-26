@@ -1,0 +1,213 @@
+--- a/CineVN-IOS/Player/NativePlayer.swift
++++ b/CineVN-IOS/Player/NativePlayer.swift
+@@ -115,6 +115,7 @@
+     // cũ trên đồng hồ; và completion của seek bị HỦY (tap sau supersede) không
+     // được phép giật currentTime về đích của nó — đó là hiện tượng "tua ghost".
+     @Published private(set) var pendingSeekDisplayAt: Double?
++    private(set) var seekShouldResume = false
+     private var pendingSeekFireTask: DispatchWorkItem?
+     private var lastSeekFireAt = Date.distantPast
+ 
+@@ -264,8 +265,8 @@
+                     self.isBuffering = false
+                     self.updateResolutionFromSize(item.presentationSize)
+                     self.loadEmbeddedMediaTracks(for: item)
+-                    self.play()
+                     self.onItemReady?()
++                    if self.pendingSeekDisplayAt == nil { self.play() }
+ 
+                     // Verify that video track is genuinely decoding (detect hev1 QuickTime audio-only icon fallback)
+                     if directPlay {
+@@ -313,16 +314,12 @@
+             guard let self = self else { return }
+             let rel = time.seconds.isFinite ? max(0, time.seconds) : 0
+             let clock = self.startOffset + rel
+-            if let pending = self.pendingSeekDisplayAt {
+-                // Đang có seek chưa hạ cánh: bỏ qua tick cũ (clock vẫn nằm ở
+-                // vị trí TRƯỚC khi tua). Chỉ nhận lại đồng hồ khi nó tới gần
+-                // đích — lúc đó xoá intent và mọi tick sau đó là thật.
+-                if abs(clock - pending) <= 1.5 {
+-                    self.pendingSeekDisplayAt = nil
+-                    self.currentTime = clock
+-                }
+-            } else {
+-                self.currentTime = clock
++            // The movie clock is always the observed AVPlayer clock. Seek
++            // intent belongs to the loading/preview UI, never progress/history.
++            self.currentTime = clock
++            if let pending = self.pendingSeekDisplayAt, abs(clock - pending) <= 0.5,
++               self.player?.currentItem?.status == .readyToPlay {
++                self.pendingSeekDisplayAt = nil
+             }
+             self.updateBufferedTime()
+             self.checkNextWindowPreparation()
+@@ -541,7 +538,6 @@
+     func holdRestorationTarget(_ seconds: Double) {
+         lastRestorationTarget = seconds
+         pendingSeekDisplayAt = seconds
+-        currentTime = seconds
+     }
+ 
+     /// Cửa sổ remux (playlist EVENT) hết segment mà phim còn dài — playlist
+@@ -1448,6 +1444,9 @@
+     // MARK: - Playback Controls
+ 
+     func play() {
++        // Reactivate the movie audio session after route/interruption changes.
++        do { try AVAudioSession.sharedInstance().setActive(true) }
++        catch { showToast("Chưa khôi phục được âm thanh. Thử bấm Phát lại.") }
+         player?.play()
+         isPlaying = true
+         startStallWatchdogTimer()
+@@ -1455,6 +1454,7 @@
+     }
+ 
+     func pause() {
++        seekShouldResume = false
+         player?.pause()
+         isPlaying = false
+         stopStallWatchdogTimer()
+@@ -1479,12 +1479,12 @@
+         seekCoalesced(to: seconds, completion: completion)
+     }
+ 
+-    func seekCoalesced(to seconds: Double, immediate: Bool = false, precise: Bool = false, completion: (() -> Void)? = nil) {
++    func seekCoalesced(to seconds: Double, immediate: Bool = false, precise: Bool = false, resumeAfterSeek: Bool? = nil, completion: (() -> Void)? = nil) {
+         let target = max(0, seconds)
+         // Ghi Ý ĐỊNH ngay: các lần bấm ±10s kế tiếp cộng dồn từ đây, và đồng
+         // hồ UI không chờ completion (completion có thể đến sau nhịp bấm).
++        seekShouldResume = resumeAfterSeek ?? (pendingSeekDisplayAt != nil ? seekShouldResume : isPlaying)
+         pendingSeekDisplayAt = target
+-        currentTime = target
+ 
+         // ĐÓNG GÓP cú tua THẬT: bấm nhanh 5 lần = 5 chu kỳ đệm + 5 khung hình
+         // lóe nếu mỗi tap một seek AVPlayer. Ý định cộng dồn tức thì, còn máy
+@@ -1574,6 +1574,7 @@
+         let seekGeneration = UUID()
+         localSeekGeneration = seekGeneration
+         let seekItem = player.currentItem
++        let resumeWhenLanded = seekShouldResume
+         let targetTime = CMTime(seconds: max(0, targetSeconds), preferredTimescale: 600)
+         // A scrub promises a specific timestamp. Unlimited tolerance can
+         // legally return the first keyframe while the UI claims minute 20.
+@@ -1594,11 +1595,20 @@
+                         || abs((self.pendingSeekDisplayAt ?? display) - display) < 0.01 {
+                         self.pendingSeekDisplayAt = nil
+                         let actual = self.startOffset + player.currentTime().seconds
+-                        self.currentTime = actual.isFinite ? actual : display
++                        if actual.isFinite { self.currentTime = actual }
+                     }
+                 }
++                let actual = self.startOffset + player.currentTime().seconds
++                let expected = displayAt ?? targetSeconds
++                if finished, actual.isFinite, abs(actual - expected) <= 1 {
++                    if resumeWhenLanded && self.seekShouldResume { self.play() }
++                    completion?()
++                } else {
++                    self.pendingSeekDisplayAt = nil
++                    if actual.isFinite { self.currentTime = actual }
++                    self.errorMessage = "Chưa tua được tới vị trí đã chọn. Vui lòng thử lại hoặc đổi nguồn."
++                }
+                 if let item = player.currentItem { self.refreshBufferState(for: item) }
+-                completion?()
+             }
+         }
+     }
+@@ -1633,11 +1643,11 @@
+     }
+ 
+     func seekForward(seconds: Double = 10) {
+-        seek(to: currentTime + seconds)
++        seek(to: (pendingSeekDisplayAt ?? currentTime) + seconds)
+     }
+ 
+     func seekBackward(seconds: Double = 10) {
+-        seek(to: max(0, currentTime - seconds))
++        seek(to: max(0, (pendingSeekDisplayAt ?? currentTime) - seconds))
+     }
+ 
+     func setPlaybackRate(_ rate: Float) {
+--- a/CineVN-IOS/Player/PlayerScreen.swift
++++ b/CineVN-IOS/Player/PlayerScreen.swift
+@@ -144,6 +144,7 @@
+     /// Far-seek nhưng server trả phiên DÙNG LẠI đầy đủ (startOffset 0): nạp
+     /// từ 0 rồi seek cục bộ tới vị trí yêu cầu khi player sẵn sàng.
+     @State private var pendingSeekAfterLoad: Double?
++    @State private var resumeAfterRestoration = true
+     @State private var nextWindowTask: Task<(URL, PlaybackSession, Date)?, Never>?
+     @State private var nextWindowTarget: Double?
+     @State private var airPlayFullSwitched = false
+@@ -695,7 +696,7 @@
+             // (seekable toàn bộ) → seek cục bộ chốt vị trí ngay, không chờ play.
+             if let pending = pendingSeekAfterLoad {
+                 pendingSeekAfterLoad = nil
+-                player.seekCoalesced(to: pending, immediate: true, precise: true)
++                player.seekCoalesced(to: pending, immediate: true, precise: true, resumeAfterSeek: resumeAfterRestoration)
+             }
+         }
+         player.onSwitchAudioTrack = { idx in
+@@ -912,11 +913,8 @@
+                             requestThumbnail(for: position)
+                         },
+                         onScrubEnded: { position in
+-                            player.seekCoalesced(to: position, immediate: true)
+-                            if wasPlayingBeforeScrub {
+-                                wasPlayingBeforeScrub = false
+-                                player.play()
+-                            }
++                            player.seekCoalesced(to: position, immediate: true, resumeAfterSeek: wasPlayingBeforeScrub)
++                            wasPlayingBeforeScrub = false
+                             resetControlsTimer()
+                         }
+                     )
+@@ -1295,11 +1293,8 @@
+         isScrubbing = false
+         panStartTime = nil
+         scrubRate = 1
+-        player.seekCoalesced(to: target, immediate: true)
+-        if wasPlayingBeforeScrub {
+-            wasPlayingBeforeScrub = false
+-            player.play()
+-        }
++        player.seekCoalesced(to: target, immediate: true, resumeAfterSeek: wasPlayingBeforeScrub)
++        wasPlayingBeforeScrub = false
+         resetControlsTimer()
+     }
+ 
+@@ -1433,6 +1428,7 @@
+     private func handleFarSeek(to target: Double) async {
+         guard !isFarSeeking else { return }
+         isFarSeeking = true
++        resumeAfterRestoration = player.pendingSeekDisplayAt != nil ? player.seekShouldResume : player.isPlaying
+         farSeekStatus = "Đang tải từ \(formatTime(target))..."
+         scrubPosition = target
+         player.pause()
+--- a/CineVN-IOS/Player/PlayerGestureLayer.swift
++++ b/CineVN-IOS/Player/PlayerGestureLayer.swift
+@@ -110,14 +110,24 @@
+                     return
+                 }
+                 swipeUpConsumed = false
+-                horizontalPan = abs(velocity.x) > abs(velocity.y)
+-                verticalPan = !horizontalPan
++                horizontalPan = false
++                verticalPan = false
+                 panIsRightSide = recognizer.location(in: view).x > view.bounds.width / 2
+                 if verticalPan {
+                     parent.onPanVertical(0, panIsRightSide)
+                 }
+             case .changed:
+                 if swipeUpConsumed { return }
++                // Lock only after a clear movement. A diagonal start must
++                // not turn a seek into an accidental system-volume gesture.
++                if !horizontalPan && !verticalPan {
++                    if abs(translation.x) >= 16 && abs(translation.x) > abs(translation.y) * 1.4 {
++                        horizontalPan = true
++                    } else if abs(translation.y) >= 24 && abs(translation.y) > abs(translation.x) * 1.8 {
++                        verticalPan = true
++                        parent.onPanVertical(0, panIsRightSide)
++                    } else { return }
++                }
+                 if horizontalPan {
+                     parent.onPanHorizontal(translation.x)
+                 } else if verticalPan {
