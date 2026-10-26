@@ -1,0 +1,208 @@
+--- a/CineVN-IOS/Player/NativePlayer.swift
++++ b/CineVN-IOS/Player/NativePlayer.swift
+@@ -120,6 +120,7 @@
+     // được phép giật currentTime về đích của nó — đó là hiện tượng "tua ghost".
+     @Published private(set) var pendingSeekDisplayAt: Double?
+     private(set) var seekShouldResume = false
++    var isResolvingSeek = false
+     private var pendingSeekFireTask: DispatchWorkItem?
+     private var lastSeekFireAt = Date.distantPast
+ 
+@@ -1469,6 +1470,16 @@
+     // MARK: - Playback Controls
+ 
+     func play() {
++        if let pending = pendingSeekDisplayAt {
++            seekShouldResume = true
++            isPlaying = true
++            // Play during a restore means play AT THE COMMITTED TARGET,
++            // never resume whichever old frame happens to remain loaded.
++            if !isResolvingSeek && !localSeekInFlight && pendingSeekFireTask == nil {
++                seekCoalesced(to: pending, immediate: true, resumeAfterSeek: true)
++            }
++            return
++        }
+         // Reactivate the movie audio session after route/interruption changes.
+         do { try AVAudioSession.sharedInstance().setActive(true) }
+         catch { showToast("Chưa khôi phục được âm thanh. Thử bấm Phát lại.") }
+@@ -1478,8 +1489,10 @@
+         tickHousekeeping()
+     }
+ 
+-    func pause() {
+-        seekShouldResume = false
++    func pause() { pause(preserveSeekIntent: false) }
++
++    func pause(preserveSeekIntent: Bool) {
++        if !preserveSeekIntent { seekShouldResume = false }
+         player?.pause()
+         isAdvancing = false
+         lastClockSample = nil
+@@ -1508,6 +1521,10 @@
+ 
+     func seekCoalesced(to seconds: Double, immediate: Bool = false, precise: Bool = false, resumeAfterSeek: Bool? = nil, completion: (() -> Void)? = nil) {
+         let target = max(0, seconds)
++        // Invalidate callbacks as soon as a newer intent arrives, including
++        // the debounce period before its AVPlayer seek is submitted.
++        localSeekGeneration = UUID()
++        localSeekInFlight = false
+         // Ghi Ý ĐỊNH ngay: các lần bấm ±10s kế tiếp cộng dồn từ đây, và đồng
+         // hồ UI không chờ completion (completion có thể đến sau nhịp bấm).
+         seekShouldResume = resumeAfterSeek ?? (pendingSeekDisplayAt != nil ? seekShouldResume : isPlaying)
+@@ -1520,6 +1537,7 @@
+         // player chỉ tua MỘT lần khi tay ngừng bấm (~0.3s). Thả tay thanh tua /
+         // skip-intro / chốt vị trí sau load thì immediate — không chờ đợi.
+         pendingSeekFireTask?.cancel()
++        pendingSeekFireTask = nil
+         if immediate {
+             fireSeek(to: target, precise: precise, completion: completion)
+             return
+@@ -1539,6 +1557,10 @@
+         // thường (đang nạp đoạn mới), không phải stall — nudge trong khoảng
+         // này tạo vòng "đang đệm" lặp.
+         lastSeekFireAt = Date()
++        if isResolvingSeek {
++            onFarSeekRequested?(target)
++            return
++        }
+         item.cancelPendingSeeks()
+ 
+         if isDirectPlayMode {
+@@ -1604,7 +1626,6 @@
+         localSeekGeneration = seekGeneration
+         localSeekInFlight = true
+         let seekItem = player.currentItem
+-        let resumeWhenLanded = seekShouldResume
+         let targetTime = CMTime(seconds: max(0, targetSeconds), preferredTimescale: 600)
+         // A scrub promises a specific timestamp. Unlimited tolerance can
+         // legally return the first keyframe while the UI claims minute 20.
+@@ -1632,7 +1653,7 @@
+                 let actual = self.startOffset + player.currentTime().seconds
+                 let expected = displayAt ?? targetSeconds
+                 if finished, actual.isFinite, abs(actual - expected) <= 1 {
+-                    if resumeWhenLanded && self.seekShouldResume { self.play() }
++                    if self.seekShouldResume { self.play() }
+                     completion?()
+                 } else {
+                     self.pendingSeekDisplayAt = nil
+--- a/CineVN-IOS/Player/PlayerScreen.swift
++++ b/CineVN-IOS/Player/PlayerScreen.swift
+@@ -101,6 +101,8 @@
+     @State private var currentEpisodeInfo: PlayerEpisodeInfo?
+ 
+     // Far seek / resolve states
++    @State private var queuedFarSeekTarget: Double?
++    @State private var scrubIntentCaptured = false
+     @State private var isFarSeeking = false
+     @State private var loadingIndicatorVisible = false
+     @State private var farSeekStatus: String? = nil
+@@ -905,7 +907,12 @@
+                         onScrubChanged: { position in
+                             scrubPosition = position
+                             scrubDelta = position - player.currentTime
+-                            // Tạm dừng hình khi kéo — resume sau khi thả tay.
++                            // Capture the user's intent once, including a seek
++                            // already waiting for a replacement source.
++                            if !scrubIntentCaptured {
++                                wasPlayingBeforeScrub = player.isPlaying || (loadingRequested && resumeAfterRestoration)
++                                scrubIntentCaptured = true
++                            }
+                             if player.isPlaying {
+                                 wasPlayingBeforeScrub = true
+                                 player.pause()
+@@ -915,6 +922,7 @@
+                         onScrubEnded: { position in
+                             player.seekCoalesced(to: position, immediate: true, resumeAfterSeek: wasPlayingBeforeScrub)
+                             wasPlayingBeforeScrub = false
++                            scrubIntentCaptured = false
+                             resetControlsTimer()
+                         }
+                     )
+@@ -1266,7 +1274,7 @@
+             scrubStartCurrentTime = player.currentTime
+             panStartTime = Date()
+             // Tạm dừng hình trong lúc kéo — video chạy vị trí cũ dưới HUD gây rối mắt.
+-            wasPlayingBeforeScrub = player.isPlaying
++            wasPlayingBeforeScrub = player.isPlaying || (loadingRequested && resumeAfterRestoration)
+             if wasPlayingBeforeScrub { player.pause() }
+             lastScrubTick = Int(scrubStartCurrentTime / 30)
+         }
+@@ -1426,32 +1434,54 @@
+ 
+     @MainActor
+     private func handleFarSeek(to target: Double) async {
+-        guard !isFarSeeking else { return }
++        // Serialize resolver work, but never drop the user's latest target.
++        if isFarSeeking {
++            queuedFarSeekTarget = target
++            return
++        }
+         isFarSeeking = true
+         resumeAfterRestoration = player.pendingSeekDisplayAt != nil ? player.seekShouldResume : player.isPlaying
+-        farSeekStatus = "Đang tải từ \(formatTime(target))..."
+-        scrubPosition = target
+-        player.pause()
+-        var prepared: (URL, PlaybackSession)?
+-        if let task = nextWindowTask, let planned = nextWindowTarget, abs(planned-target) <= 30 {
+-            let result = await task.value
+-            nextWindowTask = nil
+-            nextWindowTarget = nil
+-            player.nextWindowPrepared = false
+-            if let result, Date().timeIntervalSince(result.2) < 45, target >= (result.1.startOffset ?? 0) {
+-                prepared = (result.0, result.1)
+-            } else if let result, result.1.sessionId != (currentSession?.sessionId ?? sessionId) {
+-                await APIService.shared.leaveSession(sessionId: result.1.sessionId)
+-            }
+-        } else { discardPreparedWindow() }
+-        if let result = prepared {
+-            loadNewSession(url: result.0, session: result.1, startAt: target)
+-        } else if let onFarSeek, let result = await onFarSeek(target) {
+-            // The server's startOffset is a decode origin, not the requested playhead.
+-            loadNewSession(url: result.0, session: result.1, startAt: target)
+-        }
+-        isFarSeeking = false
+-        farSeekStatus = nil
++        player.pause(preserveSeekIntent: true)
++        player.isResolvingSeek = true
++        defer { player.isResolvingSeek = false; isFarSeeking = false; farSeekStatus = nil; queuedFarSeekTarget = nil }
++        var requested = target
++        while !Task.isCancelled {
++            queuedFarSeekTarget = nil
++            farSeekStatus = "Đang tải từ \(formatTime(requested))..."
++            scrubPosition = requested
++            var prepared: (URL, PlaybackSession)?
++            if let task = nextWindowTask, let planned = nextWindowTarget, abs(planned-requested) <= 30 {
++                let result = await task.value
++                nextWindowTask = nil
++                nextWindowTarget = nil
++                player.nextWindowPrepared = false
++                if let result, Date().timeIntervalSince(result.2) < 45, requested >= (result.1.startOffset ?? 0) {
++                    prepared = (result.0, result.1)
++                } else if let result, result.1.sessionId != (currentSession?.sessionId ?? sessionId) {
++                    await APIService.shared.leaveSession(sessionId: result.1.sessionId)
++                }
++            } else { discardPreparedWindow() }
++            let result: (URL, PlaybackSession)?
++            if let prepared { result = prepared }
++            else if let onFarSeek { result = await onFarSeek(requested) }
++            else { result = nil }
++            if let latest = queuedFarSeekTarget, abs(latest - requested) > 0.25 {
++                if let result, result.1.sessionId != (currentSession?.sessionId ?? sessionId) {
++                    await APIService.shared.leaveSession(sessionId: result.1.sessionId)
++                }
++                requested = queuedFarSeekTarget ?? latest
++                continue
++            }
++            guard !Task.isCancelled else { return }
++            if let result {
++                player.isResolvingSeek = false
++                loadNewSession(url: result.0, session: result.1, startAt: requested)
++            } else {
++                player.cancelPendingSeeks()
++                player.errorMessage = "Chưa tải được đoạn đã chọn. Vui lòng thử lại."
++            }
++            return
++        }
+     }
+ 
+     @MainActor
