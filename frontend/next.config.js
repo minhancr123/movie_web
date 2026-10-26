@@ -6,6 +6,14 @@
 const nextConfig = {
   output: 'standalone',
   reactStrictMode: true, // Recommended for Next.js
+  async headers() {
+    // These mutable entry points must not inherit a CDN's month-long JS cache.
+    return ['/sw.js', '/offline.html'].map(source => ({ source, headers: [
+      { key: 'Cache-Control', value: 'no-store, no-cache, max-age=0, must-revalidate' },
+      { key: 'CDN-Cache-Control', value: 'no-store' },
+      { key: 'Cloudflare-CDN-Cache-Control', value: 'no-store' },
+    ] }));
+  },
   images: {
     // Self-hosted standalone (no Vercel image quota): let Next optimize with
     // sharp — AVIF/WebP and right-sized hero backdrops instead of shipping

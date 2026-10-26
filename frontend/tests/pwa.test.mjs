@@ -79,7 +79,7 @@ test('the worker is registered, and its updates are applied', () => {
   // A registered worker that never reloads is worse than none: tabs keep running
   // the bundle from install time, so after a deploy they quietly execute code
   // that is no longer deployed. That is indistinguishable from the bug.
-  assert.match(register, /navigator\.serviceWorker\.register\('\/sw\.js', \{ scope: '\/' \}\)/);
+  assert.match(register, /navigator\.serviceWorker\.register\('\/sw\.js\?rev=cinevn-v3', \{ scope: '\/', updateViaCache: 'none' \}\)/);
   assert.match(register, /updatefound/, 'an installing worker is observed');
   assert.match(register, /navigator\.serviceWorker\.controller/, 'a replacement is told from a first install');
   // The handler that reloads, and the wiring that calls it. Checked as two
@@ -200,4 +200,11 @@ test('offline recovery cannot enter an automatic reload loop across document loa
 });
 test('manual retry keeps the movie URL and query instead of sending the viewer home',async()=>{
   const page=await offlinePage();page.events['retry:click']();assert.deepEqual(page.replaced,[page.target]);assert.doesNotMatch(offline,/class="badge">4|Không có mạng để tải trang/);
+});
+
+// Mutable worker/offline documents bypass both browser and shared CDN caches.
+test('worker registration and offline shell use the same cache-busting revision',async()=>{
+ const version=/const VERSION = '([^']+)'/.exec(sw)[1];assert.ok(register.includes('/sw.js?rev='+version));assert.match(sw,/offline\.html\?rev=\$\{VERSION\}/);
+ const config=(await import('../next.config.js')).default;const rules=await config.headers();
+ for(const resource of ['/sw.js','/offline.html']){const rule=rules.find(x=>x.source===resource);assert.ok(rule);assert.ok(rule.headers.some(x=>x.key==='Cache-Control'&&x.value.includes('no-store')));assert.ok(rule.headers.some(x=>x.key==='Cloudflare-CDN-Cache-Control'&&x.value==='no-store'));}
 });

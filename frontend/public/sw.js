@@ -19,6 +19,7 @@
 
 /** Bump on any behavioural change: the old cache is purged on activate. */
 const VERSION = 'cinevn-v3';
+const OFFLINE_PAGE = `/offline.html?rev=${VERSION}`;
 const SHELL_CACHE = `cinevn-shell-${VERSION}`;
 const ASSET_CACHE = `cinevn-assets-${VERSION}`;
 const OWN_CACHES = new Set([SHELL_CACHE, ASSET_CACHE]);
@@ -57,7 +58,7 @@ async function navigationResponse(request) {
     if (!request.signal?.aborted) {
       try { return await fetch(new Request(request, { cache: 'reload' })); } catch { /* bounded retry */ }
     }
-    const page = await caches.match('/offline.html');
+    const page = await caches.match(OFFLINE_PAGE);
     return new Response(page ? await page.text() : 'Trang tam thoi khong tai duoc. Vui long thu lai.', {
       status: 503,
       headers: { 'Content-Type': 'text/html; charset=utf-8', 'Cache-Control': 'no-store', 'X-CineVN-Offline': '1' },
@@ -68,7 +69,7 @@ async function navigationResponse(request) {
 self.addEventListener('install', (event) => {
   event.waitUntil(
     caches.open(SHELL_CACHE)
-      .then((cache) => cache.addAll(['/offline.html', '/manifest.json', '/icon-192.png', '/icon.png']))
+      .then((cache) => cache.addAll([OFFLINE_PAGE, '/manifest.json', '/icon-192.png', '/icon.png']))
       // An offline page that cannot be cached must not block installation.
       .catch(() => undefined),
   );
