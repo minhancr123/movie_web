@@ -21,6 +21,8 @@ import { nextPlayableEpisode, fallbackPlaybackNotice } from '@/lib/playback-extr
 import { episodeResumePosition, readEpisodeHistory } from '@/lib/episode-resume';
 import EpisodeResumeDialog from '@/components/EpisodeResumeDialog';
 import MovieRequestForm from '@/components/MovieRequestForm';
+import SeasonPicker, { type SeasonOption } from '@/components/SeasonPicker';
+import { isLastEpisode, firstAvailableEpisode } from '@/lib/season-navigation';
 import { preparedWindowCovers, restoreRequestedPosition } from '@/lib/prepared-window';
 import CinemaLayer, { type CinemaMode } from '@/components/CinemaLayer';
 
@@ -55,7 +57,7 @@ const formatResolveStage = (stage: string, detail: string): string => {
  * a different cut, mistimed subtitles, and a spinner on a cold CDN.
  */
 const RETRYABLE_503_CODES = new Set(['REMUX_BUSY', 'REMUX_NO_SPACE', 'SOURCE_PREPARE_TIMEOUT']);
-import { providerAPI, playbackAPI } from '@/lib/api';
+import { providerAPI, playbackAPI, API_URL } from '@/lib/api';
 import { detectCapabilities } from '@/lib/capabilities';
 import { groupPlaybackSources, type GroupableSource } from '@/lib/source-groups';
 import { filterPlaybackSources, pickFallbackSource, audioIndexForSource, isSourceActiveToken, type SourceFilter, type DeliveryState } from '@/lib/source-delivery';
@@ -76,6 +78,9 @@ interface PlaybackSectionProps {
   episodes?: PlayerEpisode[];
   activeEpisode?: number | null;
   seasonLabel?: string;
+  seasons?: SeasonOption[];
+  nextSeason?: SeasonOption | null;
+  startFromBeginning?: boolean;
   /** Real poster URL — saved into watch history so rows can render artwork. */
   poster?: string;
   /** Full-length runtime in minutes (catalog detail): lets the first resolve
@@ -139,6 +144,9 @@ export default function PlaybackSection({
   episodes = [],
   activeEpisode = null,
   seasonLabel = '',
+  seasons = [],
+  nextSeason = null,
+  startFromBeginning = false,
   poster = '',
   runtimeMinutes = null,
 }: PlaybackSectionProps) {
@@ -335,7 +343,7 @@ export default function PlaybackSection({
   }
   const displayedEpisode = displayedEpisodeRef.current.episode;
   const episodeTransition = type === 'tv' && Boolean(displayedEpisodeRef.current.src) && displayedEpisode !== currentEpisode;
-  const freshEpisodeRef = useRef<string | null>(null);
+  const freshEpisodeRef = useRef<string | null>(startFromBeginning ? `${contentRef}:${season}:${episode}` : null);
   const providerCheckEpochRef = useRef(0);
   const [episodeResumeChoice, setEpisodeResumeChoice] = useState<{ episode: PlayerEpisode; position: number } | null>(null);
   const selectEpisode = (ep: PlayerEpisode, fromStart: boolean) => {
@@ -348,15 +356,48 @@ export default function PlaybackSection({
     if (typeof window !== 'undefined') window.history.replaceState(null, '', ep.href);
   };
   const nextEpisode = type === 'tv' ? nextPlayableEpisode(episodes, currentEpisode) : undefined;
+  const [nextSeasonEpisode, setNextSeasonEpisode] = useState<{href: string; season: number; episode: number} | null>(null);
+  const atSeasonEnd = type === 'tv' && isLastEpisode(episodes, currentEpisode);
+  const nextSeasonNumber = nextSeason?.seasonNumber;
+  const nextSeasonHref = nextSeason?.href;
+  useEffect(() => {
+    setNextSeasonEpisode(null);
+    if (!atSeasonEnd || !nextSeasonNumber || !nextSeasonHref) return;
+    const controller = new AbortController();
+    const timer = setTimeout(() => controller.abort(), 8000);
+    // Fetch in the background only near the season boundary; never delay startup.
+    void fetch(`${API_URL}/catalog/tv/${tmdbId}/season/${nextSeasonNumber}`, { signal: controller.signal })
+      .then(response => response.ok ? response.json() : null)
+      .then(payload => {
+        if (controller.signal.aborted || !payload?.success) return;
+        const first = firstAvailableEpisode<{episodeNumber:number;airDate?:string|null}>(payload.data?.episodes || []);
+        if (!first) return;
+        const href = new URL(nextSeasonHref, window.location.origin);
+        href.searchParams.set('e', String(first.episodeNumber));
+        href.searchParams.set('restart', '1');
+        setNextSeasonEpisode({ href: href.pathname + href.search, season: nextSeasonNumber, episode: first.episodeNumber });
+      }).catch(() => {}).finally(() => clearTimeout(timer));
+    return () => { controller.abort(); clearTimeout(timer); };
+  }, [atSeasonEnd, tmdbId, nextSeasonNumber, nextSeasonHref]);
+  useEffect(() => {
+    if (!startFromBeginning) return;
+    const href = new URL(window.location.href);
+    href.searchParams.delete('restart');
+    window.history.replaceState(null, '', href.pathname + href.search + href.hash);
+  }, [startFromBeginning]);
+  const canAdvanceSeason = atSeasonEnd && Boolean(nextSeasonEpisode);
   const advanceEpisode = useCallback(() => {
-    if (!nextEpisode) return;
+    if (!nextEpisode) {
+      if (canAdvanceSeason && nextSeasonEpisode) window.location.assign(nextSeasonEpisode.href);
+      return;
+    }
     providerCheckEpochRef.current += 1;
     seekEpochRef.current += 1;
     resolveAbortRef.current?.abort();
     freshEpisodeRef.current = `${contentRef}:${season}:${nextEpisode.episodeNumber}`;
     setSwitchedEpisode(nextEpisode.episodeNumber);
     if (typeof window !== 'undefined') window.history.replaceState(null, '', nextEpisode.href);
-  }, [nextEpisode, contentRef, season]);
+  }, [nextEpisode, contentRef, season, canAdvanceSeason, nextSeasonEpisode]);
   useEffect(() => {
     setSwitchedEpisode(null);
     setEpisodeResumeChoice(null);
@@ -2213,6 +2254,7 @@ export default function PlaybackSection({
   if (playbackStatus === 'error') {
     return (
       <div className="w-full space-y-4">
+        {type === 'tv' && <SeasonPicker seasons={seasons} current={season} />}
         <div className="aspect-video w-full rounded-xl bg-surface-dark flex flex-col items-center justify-center border border-wine-accent/30 p-6 text-center">
           <div className="w-12 h-12 rounded-full bg-wine-accent/15 flex items-center justify-center text-amber-gold mb-3">
             <AlertCircle size={24} />
@@ -2484,8 +2526,8 @@ export default function PlaybackSection({
           <VideoPlayer
             playbackStartedAt={playbackRequestAtRef.current}
             suspended={episodeTransition}
-            onNextEpisode={nextEpisode && !episodeTransition && !episodeResumeChoice ? advanceEpisode : undefined}
-            nextEpisodeLabel={nextEpisode ? `Tập ${nextEpisode.episodeNumber} · ${nextEpisode.name}` : undefined}
+            onNextEpisode={(nextEpisode || canAdvanceSeason) && !episodeTransition && !episodeResumeChoice ? advanceEpisode : undefined}
+            nextEpisodeLabel={nextEpisode ? `Tập ${nextEpisode.episodeNumber} · ${nextEpisode.name}` : canAdvanceSeason && nextSeasonEpisode ? `Mùa ${nextSeasonEpisode.season} · Tập ${nextSeasonEpisode.episode}` : undefined}
             onCinemaChange={setCinemaMode}
             onVideoReady={setVideoEl}
             fullscreenTargetRef={fullscreenTargetRef}
@@ -2659,7 +2701,8 @@ export default function PlaybackSection({
                   </span>
                 )}
               </div>
-              <div className="flex shrink-0 items-center gap-2 sm:gap-3">
+              <div className="flex flex-wrap shrink-0 items-center gap-2 sm:gap-3">
+                <SeasonPicker seasons={seasons} current={season} />
                 <span className="font-mono text-[11px] text-cyan-accent whitespace-nowrap">
                   {isProd ? `${episodes.length} tập` : `${episodes.length} tập (Stitch Pro)`}
                 </span>

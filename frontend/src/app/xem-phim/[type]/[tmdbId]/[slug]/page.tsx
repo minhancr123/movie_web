@@ -11,6 +11,8 @@ import {
   type PlayerEpisode,
 } from '@/lib/catalog';
 import PlaybackSection from '@/components/PlaybackSection';
+import SeasonPicker from '@/components/SeasonPicker';
+import { nextSeasonNumber } from '@/lib/season-navigation';
 import RecommendationsRow from '@/components/RecommendationsRow';
 import SpatialShader from '@/components/SpatialShader';
 import WatchEpisodeLabel from '@/components/WatchEpisodeLabel';
@@ -22,7 +24,7 @@ import { Suspense } from 'react';
 
 interface PageParams {
   params: Promise<{ type: string; tmdbId: string; slug: string }>;
-  searchParams: Promise<{ s?: string; e?: string }>;
+  searchParams: Promise<{ s?: string; e?: string; restart?: string }>;
 }
 
 const parseType = (type: string): MediaType | null =>
@@ -102,6 +104,13 @@ export default async function WatchPage({ params, searchParams }: PageParams) {
     }
   }
 
+  const seasonOptions = (detail.seasons || []).filter(item => item.seasonNumber > 0 && item.episodeCount > 0)
+    .sort((a, b) => a.seasonNumber - b.seasonNumber)
+    .map(item => ({ seasonNumber: item.seasonNumber, episodeCount: item.episodeCount,
+      href: watchHref(detail, item.seasonNumber, 1) }));
+  const followingSeason = nextSeasonNumber(seasonOptions, season);
+  const nextSeason = seasonOptions.find(item => item.seasonNumber === followingSeason) || null;
+
   return (
     <div className="relative mx-auto -mt-8 max-w-5xl overflow-x-clip px-4 pb-8 pt-8">
       {/* Realtime WebGL cinematic shader background (Stitch player pro) */}
@@ -158,6 +167,7 @@ export default async function WatchPage({ params, searchParams }: PageParams) {
 
         {missingEpisode ? (
           <div className="glass-panel rounded-2xl p-8 text-center shadow-glass-card">
+            <div className="mb-4 flex justify-center"><SeasonPicker seasons={seasonOptions} current={season} /></div>
             <p className="font-syne text-headline-sm text-white">Chọn tập để xem</p>
             <p className="mx-auto mt-2 max-w-md text-sm text-cinema-subtle">
               Phim bộ cần số mùa/tập để tìm đúng file trên TorBox. Mở trang phim và
@@ -173,6 +183,10 @@ export default async function WatchPage({ params, searchParams }: PageParams) {
           </div>
         ) : (
           <PlaybackSection
+            key={`${type}:${tmdbId}:s${season}`}
+            seasons={seasonOptions}
+            nextSeason={nextSeason}
+            startFromBeginning={resolvedSearchParams.restart === '1'}
             type={type}
             tmdbId={tmdbId}
             season={season}
