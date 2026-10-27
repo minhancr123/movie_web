@@ -35,3 +35,12 @@ test('capability hints call the browser decoder API; absence never claims measur
  let calls=0;const caps=load('capabilities',{...globals,navigator:{mediaCapabilities:{decodingInfo:async()=>{calls++;return{supported:true,smooth:true,powerEfficient:true};}}}});
  const result=await caps.getDevicePlaybackCapabilities();assert(calls>0);assert.equal(result.smoothMaxHeight,1080);assert.equal(result.decodingSmooth,true);
 });
+
+test('seek trace is bounded, resets latest intent and never invents native frame/network phases',()=>{
+ let now=0;const {SeekTrace}=load('seek-trace');const trace=new SeekTrace(()=>now);
+ trace.begin();now=5;trace.mark('seek_commit');now=25;trace.mark('resolve_start');
+ trace.begin();now=50;trace.mark('target_decode_ready');
+ const result=trace.finish();assert.equal(result.seek_intent,0);assert.equal(result.target_decode_ready,25);
+ assert.equal(result.resolve_start,undefined);assert.equal(result.first_target_frame_rendered,undefined);
+ assert.equal(trace.finish(),null);
+});

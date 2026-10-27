@@ -524,6 +524,13 @@ check('grant-expired-mid-playback-rotates', async () => {
   assert.equal(grant.getStableGrant(`s:${SID_A}`, Date.now()), fresh.token);
 });
 
+check('published segment URLs never bypass authentication', () => {
+  const res = fakeRes(); let called = false;
+  auth.mediaAuthMiddleware({method:'GET',path:`/hls/r/${'a'.repeat(32)}/seg_00001.m4s`,
+    params:{renditionId:'a'.repeat(32)},query:{},headers:{}},res,()=>{called=true;});
+  assert.equal(called,false);assert.equal(res._code,401);
+});
+
 await Promise.all(pending);
 await manifestTmp.fs.rm(manifestTmp.dir, { recursive: true, force: true });
 

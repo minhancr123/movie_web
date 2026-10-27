@@ -1,3 +1,4 @@
+import { safeFetchText } from '../security/safeFetch.js';
 /**
  * Vimo Stream addon bridge (Vietnamese direct-HLS catalog).
  *
@@ -34,39 +35,22 @@ const baseUrl = () =>
 
 export const isVimoEnabled = () => process.env.VIMO_ENABLED !== '0';
 
-/**
- * Liveness check for a stream URL before it reaches the player.
- *
- * The addon API happily lists URLs whose files are already gone (rotated
- * hosts, purged date directories, expired signatures), and a dead URL costs
- * the viewer minutes of spinner plus a retry storm — while a live check
- * costs one ranged request. So: ask for the first kilobyte, read nothing,
- * and judge by status alone. 200/206 means the bytes exist; anything else
- * (403/404/5xx, network failure, timeout) means they do not.
- *
- * The body is cancelled unread: without that, a host ignoring Range would
- * stream a whole film into a socket nobody drains.
+/** Verify a public, bounded HLS response before returning an addon URL.
+ * Public-IP pinning and redirect revalidation prevent provider-controlled
+ * URLs from reaching internal services. A successful HTTP status alone is
+ * insufficient: HTML/quota/error pages must not reach the media element.
  */
 const VERIFY_TIMEOUT_MS = 6000;
 
 export const verifyVimoStream = async (url) => {
   if (typeof url !== 'string' || !/^https?:\/\//i.test(url)) return false;
-  const controller = new AbortController();
-  const timer = setTimeout(() => controller.abort(), VERIFY_TIMEOUT_MS);
   try {
-    const response = await fetch(url, {
-      method: 'GET',
-      headers: { Range: 'bytes=0-1023', accept: '*/*' },
-      signal: controller.signal,
-      redirect: 'follow',
+    const body = await safeFetchText(url, {
+      timeoutMs: VERIFY_TIMEOUT_MS, maxBytes: 256 * 1024,
+      headers: { accept: 'application/vnd.apple.mpegurl,application/x-mpegURL' },
     });
-    try { await response.body?.cancel(); } catch { /* best-effort */ }
-    return response.status === 200 || response.status === 206;
-  } catch {
-    return false;
-  } finally {
-    clearTimeout(timer);
-  }
+    return body.replace(/^\uFEFF/, '').trimStart().startsWith('#EXTM3U');
+  } catch { return false; }
 };
 
 /* ------------------------------------------------------------ matching */

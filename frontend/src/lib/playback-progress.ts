@@ -377,7 +377,7 @@ export const pickFailoverStartAt = (args: {
   // survive (pendingSeekRef is null when no seek is in flight, so 0 here
   // unambiguously means "the viewer asked for the start").
   const n = Number(args.pendingSeek);
-  if (Number.isFinite(n) && n >= 0) return Math.floor(n);
+  if (args.pendingSeek != null && Number.isFinite(n) && n >= 0) return Math.floor(n);
   return sanePlayhead(args.playhead) ?? 0;
 };
 

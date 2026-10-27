@@ -1120,15 +1120,7 @@ export const buildFfmpegArgs = ({ inputUrl, outputDir, audioCopy = false, segmen
   '-hls_playlist_type',
   'event',
   '-hls_flags',
-  // append_list + start_number: một writer chết giữa chừng được hồi sinh NỐI
-  // TIẾP playlist cũ (cùng thư mục, đánh số tiếp) — hls.js chỉ thấy playlist
-  // dài thêm, người xem không phải recover.
-  Number.isFinite(resumeStartNumber) && resumeStartNumber >= 0
-    ? `independent_segments+append_list`
-    : 'independent_segments',
-  ...(Number.isFinite(resumeStartNumber) && resumeStartNumber >= 0
-    ? ['-start_number', String(resumeStartNumber)]
-    : []),
+  'independent_segments',
   '-hls_list_size',
   '0',
   '-hls_fmp4_init_filename',
@@ -1780,9 +1772,15 @@ export const assertVideoTranscodeAllowed = async (video) => {
   }
 };
 
-export const startRemuxSession = async ({ sessionId, inputUrl, audioCopy = false, audioStreamIndex = null, audioChannels = null, audioDelayMs = 0, video = null, durationSeconds = null, windowSeconds = 0, queue = null, resumeStartNumber = null }) => {
+export const startRemuxSession = async ({ sessionId, inputUrl, audioCopy = false, audioStreamIndex = null, audioChannels = null, audioDelayMs = 0, video = null, durationSeconds = null, windowSeconds = 0, queue = null, resumeStartNumber = null, writerMode = 'fresh' }) => {
   const id = safeId(sessionId);
   if (!id) throw new Error('sessionId không hợp lệ');
+  // In-place append is not safe for the current timestamp/init-map layout.
+  // Reject before admission, deletion or spawn. Recovery must use a NEW id.
+  if (writerMode !== 'fresh' || resumeStartNumber != null) {
+    throw Object.assign(new Error('In-place remux recovery requires a new session'), { code: 'UNSAFE_REMUX_RESUME' });
+  }
+
   // Policy guard FIRST, before writer-limit/disk checks, directories, and any
   // spawn: when video encoding is off, no caller (resolve, seek, recovery,
   // audio switch, or a future direct call) may open a video encoder. Audio
@@ -1869,8 +1867,9 @@ export const startRemuxSession = async ({ sessionId, inputUrl, audioCopy = false
   }
 
   const outputDir = path.join(TRANSCODE_ROOT, id);
-  await fs.rm(outputDir, { recursive: true, force: true });
-  await fs.mkdir(outputDir, { recursive: true });
+  await fs.mkdir(TRANSCODE_ROOT, { recursive: true });
+  // Atomic fresh allocation; never erase a directory already published to readers.
+  await fs.mkdir(outputDir);
   // A cleanly ended chunk is still not a full film or a full tail.
   if (windowSeconds > 0) await fs.writeFile(path.join(outputDir, '.windowed'), String(windowSeconds));
 
@@ -2088,65 +2087,13 @@ export const isLinkExpiryDeath = ({ exitCode = null, stderrTail = '' } = {}) => 
   return LINK_DEATH_PATTERN.test(String(stderrTail || ''));
 };
 
-/* ------------------------------------------------- writer auto-respawn */
-// Writer chết giữa cửa sổ (link TorBox hết hạn, CDN nghẽn, ffmpeg 255...) mà
-// playlist chưa ENDLIST: hồi sinh writer MỚI với link MỚI, nối tiếp đúng chỗ
-// cũ bằng append_list — thay vì để người xem chờ client phát hiện + resolve
-// lại toàn bộ phiên. Tối đa 2 lần mỗi session.
-const respawnCounts = new Map();
-const RESPAWN_CAP = 2;
-
-export const respawnSessionWriter = async ({ sessionId, inputUrl }) => {
-  const id = safeId(sessionId);
-  const dead = sessions.get(id);
-  if (dead && dead.exitCode === undefined) return { respawned: false, reason: 'still-running' };
-  if (dead && !dead.spawnParams) return { respawned: false, reason: 'no-params' };
-  const params = dead?.spawnParams;
-  const dir = path.join(TRANSCODE_ROOT, id);
-  let text = '';
-  try {
-    text = await fs.readFile(path.join(dir, 'index.m3u8'), 'utf8');
-  } catch {
-    return { respawned: false, reason: 'no-playlist' };
-  }
-  if (text.includes('#EXT-X-ENDLIST')) return { respawned: false, reason: 'complete' };
-  const count = respawnCounts.get(id) || 0;
-  if (count >= RESPAWN_CAP) return { respawned: false, reason: 'respawn-cap' };
-  const written = [...text.matchAll(/#EXTINF:([\d.]+)/g)].reduce((s, m) => s + Number(m[1] || 0), 0);
-  let nextNumber = 0;
-  try {
-    for (const name of await fs.readdir(dir)) {
-      const m = name.match(/^seg_(\d{5,})\.m4s$/);
-      if (m) nextNumber = Math.max(nextNumber, Number(m[1]) + 1);
-    }
-  } catch {
-    return { respawned: false, reason: 'no-dir' };
-  }
-  if (nextNumber === 0) return { respawned: false, reason: 'no-segments' };
-
-  sessions.delete(id);
-  await fs.rm(path.join(dir, '.interrupted'), { force: true }).catch(() => {});
-  respawnCounts.set(id, count + 1);
-  const originAt = Number(params.video?.startAt) > 0 ? Number(params.video.startAt) : 0;
-  const continueAt = originAt + Math.floor(written);
-  const remaining = params.windowSeconds > 0
-    ? Math.max(60, Math.round(params.windowSeconds - written))
-    : 0;
-  console.log(`[remux] respawn id=${id.slice(0, 8)} tiếp tục ở ${continueAt}s (đã ghi ${Math.round(written)}s, seg tiếp ${nextNumber}, lần ${count + 1}/${RESPAWN_CAP})`);
-  await startRemuxSession({
-    sessionId: id,
-    inputUrl,
-    audioCopy: params.audioCopy,
-    audioStreamIndex: params.audioStreamIndex,
-    audioChannels: params.audioChannels,
-    audioDelayMs: params.audioDelayMs,
-    video: { ...params.video, startAt: continueAt },
-    durationSeconds: params.durationSeconds,
-    windowSeconds: remaining,
-    resumeStartNumber: nextNumber,
-  });
-  return { respawned: true };
-};
+/* In-place append is deliberately disabled until timestamp/init continuity
+ * is proven by media integration tests. The existing client recovery path
+ * creates a fresh owned session and restores its absolute playhead. No state
+ * maps, upstream refreshes, directory mutation or writer can be created here. */
+export const respawnSessionWriter = async () => ({
+  respawned: false, reason: 'new-session-required',
+});
 
 export const stopRemuxSession = async (sessionId) => {
   const id = safeId(sessionId);

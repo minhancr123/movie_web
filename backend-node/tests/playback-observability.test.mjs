@@ -122,3 +122,11 @@ test('metrics endpoint is private even when the trusted proxy supplies a public 
   } finally {server.closeAllConnections();await new Promise(r=>server.close(r));}
 });
 test.after(async()=>{cacheClient.disconnect();await fs.rm(scratch,{recursive:true,force:true});});
+
+test('seek trace accepts only bounded phases and strips arbitrary identifying fields',()=>{
+ const parsed=telemetry.parsePlaybackEvent({type:'seek_trace',eventId:'trace_test_123',engine:'native',reused:true,
+  token:'secret',userId:'private',phases:{seek_intent:0,resolve_start:12,unknown:'secret',manifest_received:Infinity}});
+ assert.deepEqual(parsed.phases,{seek_intent:0,resolve_start:12});
+ assert.equal(parsed.token,undefined);assert.equal(parsed.userId,undefined);
+ assert.equal(telemetry.parsePlaybackEvent({type:'seek_trace',eventId:'trace_test_123',engine:'bogus',reused:true,phases:{seek_intent:0}}),null);
+});

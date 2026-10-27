@@ -26,7 +26,7 @@ export const independentSubtitleTimes = (sourceTime: number, primaryDelay: numbe
 export function measureSubtitleAlignment(target: SubCue[], reference: SubCue[],
   track: Pick<SubTrack, 'coverageRanges' | 'windowStart' | 'windowSeconds'>): SubtitleAlignment | null {
   if (!target.length || !reference.length) return null;
-  const maxOffset = 5;
+  const maxOffset = 15;
   const ranges = track.coverageRanges?.length ? track.coverageRanges
     : typeof track.windowStart === 'number' && typeof track.windowSeconds === 'number'
       ? [[track.windowStart, track.windowStart + track.windowSeconds]]

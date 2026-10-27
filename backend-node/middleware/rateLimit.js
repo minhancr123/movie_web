@@ -58,6 +58,9 @@ export const rateLimit = ({ windowMs = 60_000, max = 120, keyPrefix = 'rl', skip
 
 export const catalogRateLimit = rateLimit({ windowMs: 60_000, max: 120, keyPrefix: 'rl:catalog', limitProvider: getCatalogLimit });
 export const playbackRateLimit = rateLimit({ windowMs: 60_000, max: 30, keyPrefix: 'rl:playback' });
+// Listing/sidecar refreshes must not consume the budget for a committed seek.
+export const sourceDiscoveryRateLimit = rateLimit({ windowMs: 60_000, max: 15, keyPrefix: 'rl:source-discovery' });
+export const subtitleInventoryRateLimit = rateLimit({ windowMs: 60_000, max: 20, keyPrefix: 'rl:subtitle-inventory' });
 // HLS playback is inherently chatty: a 4s-segment stream pulls ~15 segments a
 // minute plus playlist refreshes, so asset serving needs its own headroom.
 // Resolve stays at 30/min because each call can create a TorBox torrent.

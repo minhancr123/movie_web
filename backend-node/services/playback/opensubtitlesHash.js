@@ -31,7 +31,7 @@ const sumChunk = (buffer) => {
   return total;
 };
 
-const fetchRange = async (url, start, end) => {
+const fetchRange = async (url, start, end, fileSize) => {
   const controller = new AbortController();
   const timer = setTimeout(() => controller.abort(), REQUEST_TIMEOUT_MS);
   try {
@@ -42,9 +42,28 @@ const fetchRange = async (url, start, end) => {
     // 206 means the server honoured the range. A 200 would hand back the whole
     // file, which is exactly what this must never do.
     if (response.status !== 206) {
+      await response.body?.cancel();
       throw new Error(`server không hỗ trợ range request (HTTP ${response.status})`);
     }
-    return Buffer.from(await response.arrayBuffer());
+    const expected = end - start + 1;
+    if (response.headers.get('content-range') !== `bytes ${start}-${end}/${fileSize}`) {
+      await response.body?.cancel();
+      throw new Error('invalid content-range');
+    }
+    const reader = response.body?.getReader();
+    if (!reader) throw new Error('missing range body');
+    const chunks = []; let size = 0;
+    try {
+      while (true) {
+        const {done, value} = await reader.read();
+        if (done) break;
+        size += value.length;
+        if (size > expected) throw new Error('oversized range body');
+        chunks.push(Buffer.from(value));
+      }
+    } finally { await reader.cancel().catch(() => {}); }
+    if (size !== expected) throw new Error('incomplete range body');
+    return Buffer.concat(chunks);
   } finally {
     clearTimeout(timer);
   }
@@ -60,8 +79,8 @@ export const computeOpenSubtitlesHash = async (url, size) => {
   if (!Number.isFinite(fileSize) || fileSize < CHUNK_SIZE * 2) return null;
 
   const [head, tail] = await Promise.all([
-    fetchRange(url, 0, CHUNK_SIZE - 1),
-    fetchRange(url, fileSize - CHUNK_SIZE, fileSize - 1),
+    fetchRange(url, 0, CHUNK_SIZE - 1, fileSize),
+    fetchRange(url, fileSize - CHUNK_SIZE, fileSize - 1, fileSize),
   ]);
 
   if (head.length < CHUNK_SIZE || tail.length < CHUNK_SIZE) {
@@ -76,3 +95,21 @@ export const computeOpenSubtitlesHash = async (url, size) => {
 };
 
 export default { computeOpenSubtitlesHash };
+
+// Bounded in-flight work; completed values belong to the caller's scoped TTL cache.
+const inFlightHashes = new Map();
+export const singleflightFileHash = (identity, compute) => {
+  if (inFlightHashes.has(identity)) return inFlightHashes.get(identity);
+  if (inFlightHashes.size >= 64) return Promise.resolve(null);
+  const work = Promise.resolve().then(compute).finally(() => inFlightHashes.delete(identity));
+  inFlightHashes.set(identity, work);
+  return work;
+};
+
+export const publishFileHash = async (db, doc, hash) => {
+  if (!hash) return;
+  await db.collection('playback_sessions').updateOne({
+    sessionId: doc.sessionId, userIdStr: doc.userIdStr,
+    infoHash: doc.infoHash, fileId: doc.fileId, expiresAt: { $gt: new Date() },
+  }, { $set: { videoHash: hash.videoHash, videoSize: hash.videoSize } });
+};

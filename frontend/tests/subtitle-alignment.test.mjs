@@ -66,3 +66,13 @@ test('short or incompatible cue grids do not certify a Vietnamese match', () => 
   const target=cues.slice(0,30).map(c=>({...c,end:c.end+3}));
   assert.equal(measure(target,cues.slice(0,30),{}).confident,false,'different cue durations are weak evidence');
 });
+
+
+test('external/external cue timing can prove ±10s; language text never supplies the match',()=>{
+ const reference=cues.slice(0,60);
+ for(const offset of [-10,10]){
+  const target=shifted(reference,offset).map(c=>({...c,text:'bản dịch khác ngôn ngữ'}));
+  const result=measure(target,reference,{});
+  assert.equal(result.confident,true);assert.ok(Math.abs(result.offset-offset)<0.01);
+ }
+});

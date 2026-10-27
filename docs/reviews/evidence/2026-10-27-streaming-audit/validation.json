@@ -1,0 +1,36 @@
+{
+  "baseline": "24f7a662d706751e48c75e7d749ccfb2eef0816b",
+  "node": "v24.21.0",
+  "ffmpeg": "6.0 (isolated /tmp tool install; first attempt with 4.4 rejected fps_mode:v)",
+  "frontend": {
+    "typecheck": "PASS",
+    "tests": {
+      "passed": 188,
+      "failed": 0,
+      "skipped": 0
+    },
+    "build": "PASS"
+  },
+  "backend": {
+    "npm_test": "FAIL: playback-sync-real.test.mjs subtitle/source clock mismatch -61ms",
+    "baseline_reproduction": "Same -61ms failure with baseline remuxService; no tolerance or timestamp changes made",
+    "primary_node_test_suites": "83/83 and 18/18 passed before sync failure",
+    "remainder": "20 remaining package commands run separately, all exit 0",
+    "audit_tests": "4/4 PASS, 0 skip",
+    "observability_and_extras": "11/11 PASS",
+    "media_grants": "PASS",
+    "required_media_integration": "PASS, 2 published segments preserved/hash+HTTP200, retained prefix decode, new namespace decode; unsafe append not exercised because disabled"
+  },
+  "deploy_manifest_tests": {
+    "passed": 64,
+    "failed": 0
+  },
+  "physical_iPhone_acceptance": "PENDING; no native build/install or physical test in this audit",
+  "production": "NOT deployed, NOT modified, NOT probed in this audit; current live SHA not verified",
+  "limitations": [
+    "No real-provider/staging credentials used",
+    "No 30-sample iPhone seek benchmark",
+    "Hash benchmark is isolated optional-work gating, not TTFF",
+    "Full backend suite is not green; baseline A/V failure remains open"
+  ]
+}

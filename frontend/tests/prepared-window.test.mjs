@@ -1,7 +1,7 @@
 import test from 'node:test';import assert from 'node:assert/strict';
 import fs from 'node:fs';import vm from 'node:vm';import ts from 'typescript';
-const ctx={exports:{}};vm.runInNewContext(ts.transpileModule(fs.readFileSync(new URL('../src/lib/prepared-window.ts',import.meta.url),'utf8'),{compilerOptions:{module:ts.ModuleKind.CommonJS,target:ts.ScriptTarget.ES2020}}).outputText,ctx);
-const {prepareWindowAt,preparedWindowCovers,restoreRequestedPosition,preparationMatches}=ctx.exports;
+const ctx={exports:{},setTimeout,clearTimeout};vm.runInNewContext(ts.transpileModule(fs.readFileSync(new URL('../src/lib/prepared-window.ts',import.meta.url),'utf8'),{compilerOptions:{module:ts.ModuleKind.CommonJS,target:ts.ScriptTarget.ES2020}}).outputText,ctx);
+const {prepareWindowAt,preparedWindowCovers,restoreRequestedPosition,preparationMatches,waitForPreparation}=ctx.exports;
 test('prepares near the planned edge, never the growing prefix or final film edge',()=>{
  assert.equal(prepareWindowAt(900,25,7200,600),null);
  assert.equal(prepareWindowAt(900,570,7200,600),1499);
@@ -28,4 +28,13 @@ test('short high-bitrate windows prepare early and retain matching work at their
  assert.equal(preparationMatches({at:121,token:'a',audio:0},300,'a',0),false);
  assert.equal(preparationMatches({at:121,token:'a',audio:0},122,'b',0),false);
  assert.equal(preparationMatches({at:121,token:'a',audio:0},122,'a',1),false);
+});
+
+
+test('foreground waits only a bounded budget; rejected and already-ready preparations settle',async()=>{
+ const start=performance.now();
+ await waitForPreparation(new Promise(()=>{}),20);
+ assert.ok(performance.now()-start<200);
+ await waitForPreparation(Promise.resolve(),20);
+ await waitForPreparation(Promise.reject(new Error('background failed')),20);
 });

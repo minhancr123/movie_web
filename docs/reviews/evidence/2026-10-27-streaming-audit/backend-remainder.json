@@ -1,0 +1,82 @@
+[
+  {
+    "command": "node tests/vietsub-picker.test.mjs",
+    "exit": 0
+  },
+  {
+    "command": "node tests/torbox-prepare-timeout.test.mjs",
+    "exit": 0
+  },
+  {
+    "command": "node tests/reuse-rendition-url.test.mjs",
+    "exit": 0
+  },
+  {
+    "command": "node tests/resolve-no-tdz.test.mjs",
+    "exit": 0
+  },
+  {
+    "command": "node --test tests/startup-policy.test.mjs",
+    "exit": 0
+  },
+  {
+    "command": "node tests/tmdb-proxy-fallback.test.mjs",
+    "exit": 0
+  },
+  {
+    "command": "node tests/redis-separation.test.mjs",
+    "exit": 0
+  },
+  {
+    "command": "node tests/media-grant.test.mjs",
+    "exit": 0
+  },
+  {
+    "command": "node tests/transcode-janitor-renditions-guard.test.mjs",
+    "exit": 0
+  },
+  {
+    "command": "node tests/remux-atomic-admission.test.mjs",
+    "exit": 0
+  },
+  {
+    "command": "node tests/rendition-lease-pin.test.mjs",
+    "exit": 0
+  },
+  {
+    "command": "node tests/playback-integration.test.mjs",
+    "exit": 0
+  },
+  {
+    "command": "node tests/production-health.test.mjs",
+    "exit": 0
+  },
+  {
+    "command": "node tests/sentry-observability.test.mjs",
+    "exit": 0
+  },
+  {
+    "command": "node tests/aiostreams-client.test.mjs",
+    "exit": 0
+  },
+  {
+    "command": "node tests/remux-window.test.mjs",
+    "exit": 0
+  },
+  {
+    "command": "node tests/file-selection.test.mjs",
+    "exit": 0
+  },
+  {
+    "command": "node tests/playback-extras.test.mjs",
+    "exit": 0
+  },
+  {
+    "command": "node --test tests/playback-observability.test.mjs",
+    "exit": 0
+  },
+  {
+    "command": "node --test tests/direct-discovery.test.mjs",
+    "exit": 0
+  }
+]

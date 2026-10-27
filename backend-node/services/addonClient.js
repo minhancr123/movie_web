@@ -1,3 +1,4 @@
+import { boundedSettled } from './playback/bounded-settled.js';
 import { requestedCandidates } from './requests/library.js';
 /**
  * Stremio-protocol addon client.
@@ -408,7 +409,7 @@ const fetchSubtitlesFromAddon = async (addon, type, id, hints = {}) => {
   // VTT tokens every track becomes CORS-free, SSA included, and one that
   // barely parses (<3 cues) is dropped instead of pinning the sync
   // measurement floor and reading as a broken track.
-  const settled = await Promise.allSettled(tracks.map(async (track) => {
+  const settled = await boundedSettled(tracks, 4, async (track) => {
     const raw = await safeFetchText(track.url, { timeoutMs: SUBTITLE_REQUEST_TIMEOUT_MS });
     // Re-serialize also normalizes ASS-converted 0:12:00 timestamps to VTT's
     // 00:12:00, which the current production player understands.
@@ -419,7 +420,7 @@ const fetchSubtitlesFromAddon = async (addon, type, id, hints = {}) => {
     const token = crypto.randomBytes(32).toString('hex');
     await setCache(`playback:sub:${token}`, { body }, SUBTITLE_CACHE_TTL + 86400);
     return { ...track, url: `/api/playback/subtitles/vtt/${token}` };
-  }));
+  });
   const available = settled.filter((item) => item.status === 'fulfilled').map((item) => item.value);
   const warnings = [...new Set(settled.filter(item => item.status === 'rejected')
     .map(item => item.reason?.code).filter(Boolean))];

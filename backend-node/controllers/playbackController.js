@@ -65,7 +65,6 @@ import {
   seekOriginProbeEnabled,
   seekStartEnabled,
   spawnBeatsReuse,
-  respawnSessionWriter,
   planCandidateDelivery,
   cachedSeekOrigin,
   waitForPlaylist,
@@ -125,7 +124,7 @@ import {
 } from '../services/playback/mediaGrant.js';
 import { planAdmission } from '../services/playback/deliveryPlan.js';
 import { getDecryptedKey } from '../services/providers/connectionStore.js';
-import { computeOpenSubtitlesHash } from '../services/playback/opensubtitlesHash.js';
+import { computeOpenSubtitlesHash, singleflightFileHash, publishFileHash } from '../services/playback/opensubtitlesHash.js';
 import { selectEmbeddedSubtitleTracks, needsEmbeddedInventory, subtitleWindowAt, subtitleSidecarName, isCompletedSubtitle, trySliceWindowFromCoverage, subtitleWindowStatus, subtitleCoverageFromText } from '../services/playback/subtitleInventory.js';
 import * as opensubtitles from '../services/playback/opensubtitles.js';
 import { resolveVimoSource, getVimoStreams, verifyVimoStream } from '../services/playback/vimoClient.js';
@@ -1922,11 +1921,11 @@ export const resolvePlayback = async (req, res) => {
       // range requests, and a failure only costs hash-accurate subtitles — the
       // addon still answers on IMDb id alone. Started here but NOT awaited:
       // the range check and delivery planning below run while these bytes are
-      // in flight; the value is awaited at the first place it is consumed.
+      // in flight; publication to the matching session is deferred.
       let fileHash = await getCache(fileHashKey(candidate.infoHash, file.fileId));
       let fileHashPromise = null;
       if (!fileHash) {
-        fileHashPromise = computeOpenSubtitlesHash(inputUrl, file.size)
+        fileHashPromise = singleflightFileHash(`${fileIdentity(candidate.infoHash, file.fileId)}:${file.size}`, () => computeOpenSubtitlesHash(inputUrl, file.size))
           .then(async (hash) => {
             if (hash) {
               await setCache(fileHashKey(candidate.infoHash, file.fileId), hash, PROBE_FACTS_TTL);
@@ -2139,13 +2138,16 @@ export const resolvePlayback = async (req, res) => {
         }
       }
 
-      // First consumer of the subtitle hash: the session rows below. Range
-      // check + delivery planning above have overlapped most (often all) of
-      // its two range requests by now.
-      if (fileHashPromise) fileHash = await fileHashPromise;
+      // File hash improves subtitle matching, not video readiness. Bind the
+      // eventual update to the exact owner/session/file and never retain URLs.
+      const saveCandidateSession = async (doc) => {
+        await saveSession(db, doc);
+        if (fileHashPromise) void fileHashPromise.then(hash => publishFileHash(db, doc, hash))
+          .catch(() => { /* optional subtitle metadata must not fail playback */ });
+      };
 
       if (decision.mode === 'direct') {
-        await saveSession(db, {
+        await saveCandidateSession({
           sessionId,
           userId: toObjectIdOrRaw(req.user.userId),
           userIdStr: String(req.user.userId),
@@ -2269,7 +2271,7 @@ export const resolvePlayback = async (req, res) => {
         // exact bytes shares one CDN edge object. The per-user session record
         // still governs history, subtitles and polling.
         const stablePlaylistUrl = `/api/playback/hls/r/${renditionKey}/index.m3u8`;
-        await saveSession(db, {
+        await saveCandidateSession({
           sessionId: pubSessionId,
           userId: toObjectIdOrRaw(req.user.userId),
           userIdStr: String(req.user.userId),
@@ -2354,7 +2356,7 @@ export const resolvePlayback = async (req, res) => {
           }
           if (servable) {
             registerAdoptedViewer(adoptedId, String(req.user.userId));
-            await saveSession(db, {
+            await saveCandidateSession({
               sessionId,
               userId: toObjectIdOrRaw(req.user.userId),
               userIdStr: String(req.user.userId),
@@ -2652,7 +2654,7 @@ export const resolvePlayback = async (req, res) => {
 
       // Duration honesty: computed once above (shared with the published
       // short circuit) — ffprobe of a slow upstream URL often yields nothing.
-      await saveSession(db, {
+      await saveCandidateSession({
         sessionId,
         userId: toObjectIdOrRaw(req.user.userId),
         userIdStr: String(req.user.userId),
@@ -3862,7 +3864,7 @@ export const getPlaybackSubtitles = async (req, res) => {
     // Fast path: inventory is cached per torrent file — repeat opens
     // return instantly without touching TorBox or ffmpeg again. v3: file identity and response
     // shape carries the probe summary + per-track readiness.
-    const inventoryKey = `playback:subs:v7:${pickedScope}:w${subtitleWindow.startAt}:${subtitleWindow.durationSeconds}`;
+    const inventoryKey = `playback:subs:v8:${pickedScope}:w${subtitleWindow.startAt}:${subtitleWindow.durationSeconds}:${ownedSession?.videoHash || 'imdb'}`;
     const cachedInventory = await getCache(inventoryKey);
     if (cachedInventory?.done && cachedInventory.tracks?.every(t => t.source !== 'embedded'
       || t.coverageRanges?.some(([a, b]) => a <= subtitleWindow.startAt && b >= subtitleWindow.startAt + subtitleWindow.durationSeconds))) {
@@ -4197,26 +4199,9 @@ export const getPlaybackSession = async (req, res) => {
       // writer younger than the amnesty reads as ALIVE, so neither the kill
       // below nor the client's recovery loop can trigger around a writer that
       // is still opening its input.
-      let liveForHealth = live;
-      // Hồi sinh writer tại CHỖ: poll của người xem chính là tín hiệu còn
-      // người xem — writer chết giữa cửa sổ được thay bằng writer mới nối
-      // tiếp playlist (link TorBox mới), thay vì báo writerAlive=false và
-      // đẩy người xem vào vòng recover phía client.
-      if (!state.ended && live && live.exitCode !== undefined) {
-        try {
-          const owner = session.userIdStr || String(req.user.userId);
-          const { key } = await getDecryptedKey(db, owner, session.provider || PROVIDER);
-          const freshUrl = await torbox.getDownloadUrl(key, {
-            torrentId: session.torrentId,
-            fileId: session.fileId,
-            userId: owner,
-          });
-          const result = await respawnSessionWriter({ sessionId: effectiveSessionId, inputUrl: freshUrl });
-          if (result.respawned) liveForHealth = getRemuxSession(effectiveSessionId);
-        } catch (error) {
-          console.warn(`[remux-respawn] ${session.sessionId.slice(0, 8)} thất bại: ${error.message}`);
-        }
-      }
+      // Never mutate a published playlist during recovery. Report writer
+      // health so the client can restore into a fresh owned session.
+      const liveForHealth = live;
       const writerHealthy = state.ended || isYoungWriter(liveForHealth) || (liveForHealth
         ? shouldReuseRemuxSession({
             playlistComplete: false,
@@ -4837,7 +4822,7 @@ export const serveHlsAsset = async (req, res) => {
  * to a fresh remux through the normal recovery path.
  *
  * Manifests embed a rendition-scoped grant and stay `private, no-store`;
- * segments are immutable and caches may ignore the media_grant query.
+ * segments are immutable but private; a shared edge needs its own authorization.
  */
 export const serveRenditionAsset = async (req, res) => {
   try {
@@ -4846,34 +4831,7 @@ export const serveRenditionAsset = async (req, res) => {
 
     if (!isAllowedAsset(asset)) return fail(res, 404, 'Không tìm thấy tài nguyên');
 
-    // Published-rendition SEGMENTS are immutable content addressed by an
-    // unguessable content-hash path, byte-identical for every entitled
-    // viewer, and sent `Cache-Control: immutable` precisely so a CDN can
-    // share one edge object across viewers. Authenticating every segment
-    // with a per-viewer grant in the query forced a per-viewer cache key,
-    // defeating that sharing — the manifest stays session-bound and
-    // no-store, and a rendition is only reachable while some live session
-    // vouches for it at resolve time. Manifests fall through to the full
-    // auth path below.
-    if (asset !== 'index.m3u8' && !asset.endsWith('.m3u8')) {
-      // Error answers must never be negative-cached at an edge: a rendition
-      // re-remux after eviction reuses the SAME content-hash id, so a cached
-      // 404 would outlive the bytes coming back. Success below overwrites
-      // this with the immutable header.
-      res.setHeader('Cache-Control', 'no-store');
-      const state = await readRenditionState(renditionId);
-      if (!state.exists || !state.ended) return fail(res, 404, 'Bản hoàn chỉnh không còn');
-      const segPath = path.resolve(renditionPath(renditionId, asset));
-      try {
-        await fs.stat(segPath);
-      } catch {
-        return fail(res, 404, 'Tài nguyên chưa sẵn sàng');
-      }
-      const segExt = asset.endsWith('.m4s') ? '.m4s' : '.mp4';
-      res.setHeader('Content-Type', ASSET_CONTENT_TYPES[segExt]);
-      res.setHeader('Cache-Control', 'public, max-age=31536000, immutable');
-      return res.sendFile(segPath);
-    }
+    res.setHeader('Cache-Control', 'private, no-store');
 
     // P1: rendition access is bound to the session that authorized it — a
     // bare rid bearer with no live session behind it opens nothing. Pre-fix
@@ -4950,14 +4908,14 @@ export const serveRenditionAsset = async (req, res) => {
           }
         }
       }
-      // Children are served WITHOUT an embedded grant (segments above are
-      // public-immutable), so the manifest body is the raw playlist: every
-      // viewer's player fetches byte-identical segment URLs, which is what
-      // lets a CDN share one edge object per segment across viewers.
-      void token;
-      return await serveManifestResponse(res, filePath, null);
+      if (!token) return fail(res, 403, 'Chưa tạo được quyền phát tài nguyên');
+      return await serveManifestResponse(res, filePath, token);
     }
-    return fail(res, 404, 'Tài nguyên chưa sẵn sàng');
+    const extension = asset.endsWith('.m4s') ? '.m4s' : '.mp4';
+    res.setHeader('Content-Type', ASSET_CONTENT_TYPES[extension]);
+    // Browser reuse is safe; shared edge caching requires separate edge auth.
+    res.setHeader('Cache-Control', 'private, max-age=31536000, immutable');
+    return res.sendFile(filePath);
   } catch (error) {
     console.error('serveRenditionAsset error:', error.message);
     return fail(res, 500, 'Lỗi server');

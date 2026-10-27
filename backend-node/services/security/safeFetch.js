@@ -37,40 +37,16 @@ export class SsrfError extends Error {
  * Written against the address families rather than a regex blocklist, because
  * `0x7f.1`, `2130706433`, and `::ffff:127.0.0.1` all mean localhost.
  */
+const reserved = new net.BlockList();
+for (const [ip,prefix] of [['0.0.0.0',8],['10.0.0.0',8],['127.0.0.0',8],['169.254.0.0',16],
+  ['172.16.0.0',12],['192.168.0.0',16],['192.0.0.0',24],['100.64.0.0',10],['198.18.0.0',15],
+  ['192.0.2.0',24],['198.51.100.0',24],['203.0.113.0',24],['224.0.0.0',3]]) reserved.addSubnet(ip,prefix,'ipv4');
+for (const [ip,prefix] of [['::',96],['::1',128],['fc00::',7],['fe80::',10],['ff00::',8],['2001:db8::',32]]) reserved.addSubnet(ip,prefix,'ipv6');
+// Node normalizes mapped IPv4, including expanded/hex IPv6 spellings, and
+// checks them against IPv4 subnets. String prefix checks miss those aliases.
 export const isPrivateAddress = (address) => {
-  const version = net.isIP(address);
-  if (!version) return true; // not an IP at all -> refuse
-
-  if (version === 4) {
-    const parts = address.split('.').map(Number);
-    const [a, b] = parts;
-
-    if (a === 0) return true; // 0.0.0.0/8 "this network"
-    if (a === 10) return true; // private
-    if (a === 127) return true; // loopback
-    if (a === 169 && b === 254) return true; // link-local incl. cloud metadata
-    if (a === 172 && b >= 16 && b <= 31) return true; // private
-    if (a === 192 && b === 168) return true; // private
-    if (a === 192 && b === 0) return true; // IETF protocol assignments
-    if (a === 100 && b >= 64 && b <= 127) return true; // CGNAT
-    if (a === 198 && (b === 18 || b === 19)) return true; // benchmarking
-    if (a >= 224) return true; // multicast + reserved + broadcast
-    return false;
-  }
-
-  const lower = address.toLowerCase();
-  if (lower === '::' || lower === '::1') return true; // unspecified / loopback
-  if (lower.startsWith('fe8') || lower.startsWith('fe9') || lower.startsWith('fea') || lower.startsWith('feb')) {
-    return true; // fe80::/10 link-local
-  }
-  if (/^f[cd]/.test(lower)) return true; // fc00::/7 unique-local
-  if (lower.startsWith('ff')) return true; // multicast
-
-  // IPv4-mapped (::ffff:a.b.c.d) inherits the IPv4 verdict.
-  const mapped = /^::ffff:(\d+\.\d+\.\d+\.\d+)$/i.exec(address);
-  if (mapped) return isPrivateAddress(mapped[1]);
-
-  return false;
+  const family = net.isIP(address);
+  return !family || reserved.check(address, family === 4 ? 'ipv4' : 'ipv6');
 };
 
 /** Scheme / port / credential checks, before any DNS work. */
@@ -125,7 +101,7 @@ const resolvePublicAddresses = async (hostname) => {
  * Uses node:http(s) rather than fetch because we must dictate the socket target
  * while keeping the original Host/SNI — fetch offers no hook for that.
  */
-const requestOnce = ({ url, port, address, family, method, headers, timeoutMs }) =>
+const requestOnce = ({ url, port, address, family, method, headers, timeoutMs, maxBytes }) =>
   new Promise((resolve, reject) => {
     const transport = url.protocol === 'https:' ? https : http;
 
@@ -146,9 +122,9 @@ const requestOnce = ({ url, port, address, family, method, headers, timeoutMs })
         let size = 0;
         res.on('data', (chunk) => {
           size += chunk.length;
-          if (size > MAX_BODY_BYTES) {
+          if (size > maxBytes) {
             req.destroy();
-            reject(new SsrfError('Phản hồi vượt quá 4MB'));
+            reject(new SsrfError('Phản hồi vượt quá giới hạn dung lượng'));
             return;
           }
           chunks.push(chunk);
@@ -164,6 +140,8 @@ const requestOnce = ({ url, port, address, family, method, headers, timeoutMs })
       }
     );
 
+    const deadline = setTimeout(() => req.destroy(new SsrfError('Quá thời gian tải phản hồi')), timeoutMs);
+    req.once('close', () => clearTimeout(deadline));
     req.on('timeout', () => {
       req.destroy();
       reject(new SsrfError(`Quá ${timeoutMs / 1000}s không phản hồi`));
@@ -176,12 +154,20 @@ const requestOnce = ({ url, port, address, family, method, headers, timeoutMs })
  * GET a user-supplied URL safely, following redirects with full re-validation.
  * Returns `{ status, headers, body }`; the caller parses.
  */
-export const safeFetchText = async (rawUrl, { timeoutMs = 10000, headers = {} } = {}) => {
+export const safeFetchText = async (rawUrl, { timeoutMs = 10000, headers = {}, maxBytes = MAX_BODY_BYTES } = {}) => {
   let target = rawUrl;
+  const deadline = Date.now() + timeoutMs;
+  maxBytes = Math.max(1, Math.min(MAX_BODY_BYTES, maxBytes));
 
   for (let hop = 0; hop <= MAX_REDIRECTS; hop++) {
     const { url, port } = assertUrlShape(target);
-    const [picked] = await resolvePublicAddresses(url.hostname);
+    const remaining = deadline - Date.now();
+    if (remaining <= 0) throw new SsrfError('Quá thời gian tải phản hồi');
+    let dnsTimer;
+    const [picked] = await Promise.race([
+      resolvePublicAddresses(url.hostname),
+      new Promise((_, reject) => { dnsTimer = setTimeout(() => reject(new SsrfError('DNS timeout')), remaining); }),
+    ]).finally(() => clearTimeout(dnsTimer));
 
     const response = await requestOnce({
       url,
@@ -190,7 +176,8 @@ export const safeFetchText = async (rawUrl, { timeoutMs = 10000, headers = {} } 
       family: picked.family,
       method: 'GET',
       headers: { accept: 'application/json', 'user-agent': 'MovieWeb/1.0', ...headers },
-      timeoutMs,
+      timeoutMs: Math.max(1, deadline - Date.now()),
+      maxBytes,
     });
 
     const isRedirect = response.status >= 300 && response.status < 400 && response.headers.location;

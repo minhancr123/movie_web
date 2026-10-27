@@ -1,0 +1,16 @@
+{
+  "scenario": "optional-hash-critical-path-only",
+  "network": "loopback, 80ms body delay per parallel Range",
+  "before": {
+    "n": 30,
+    "p50Ms": 83.64,
+    "p95Ms": 84.69
+  },
+  "after": {
+    "n": 30,
+    "p50Ms": 0.01,
+    "p95Ms": 0.05
+  },
+  "failures": 0,
+  "device": "Node.js; NOT iPhone or end-to-end playback"
+}

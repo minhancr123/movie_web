@@ -2,9 +2,11 @@ name: CI
 
 on:
   pull_request:
-    branches: [main, master]
+    branches: [main, master, optimize/perf-20261024]
     paths-ignore:
       - '**.md'
+
+  workflow_dispatch:
 
 jobs:
   test:
@@ -21,10 +23,15 @@ jobs:
             backend-node/package-lock.json
             frontend/package-lock.json
 
+      - name: Media integration dependencies
+        run: sudo apt-get update && sudo apt-get install -y ffmpeg
+
       - name: Backend tests
         run: |
           npm ci --prefix backend-node
           npm test --prefix backend-node
+          npm run test:audit --prefix backend-node
+          npm run test:media-audit --prefix backend-node
 
       - name: Frontend typecheck and tests
         run: |

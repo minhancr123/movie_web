@@ -340,3 +340,10 @@ test('English source cues keep the absolute clock at zero, seek 197 and reused s
  assert.equal(toLocalSeekTarget(197, 194.5), 2.5);
  assert.equal(subtitleLookupTime({ sessionStart: 0, elementTime: 199, delay: 0, presentationShiftMs: 0 }), 199, 'direct play has no mux correction');
 });
+
+
+test('failover preserves live position for absent intent and explicit zero for a real seek', () => {
+  for (const [pendingSeek, expected] of [[null, 2400], [undefined, 2400], [0, 0], [2700, 2700]]) {
+    assert.equal(pickFailoverStartAt({pendingSeek, playhead: 2400}), expected);
+  }
+});

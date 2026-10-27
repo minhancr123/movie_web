@@ -23,7 +23,7 @@ import EpisodeResumeDialog from '@/components/EpisodeResumeDialog';
 import MovieRequestForm from '@/components/MovieRequestForm';
 import SeasonPicker, { type SeasonOption } from '@/components/SeasonPicker';
 import { isLastEpisode, firstAvailableEpisode } from '@/lib/season-navigation';
-import { preparedWindowCovers, restoreRequestedPosition, preparationMatches } from '@/lib/prepared-window';
+import { preparedWindowCovers, restoreRequestedPosition, preparationMatches, waitForPreparation } from '@/lib/prepared-window';
 import CinemaLayer, { type CinemaMode } from '@/components/CinemaLayer';
 
 /** Mirrors PLAYBACK_STARTUP_BUFFER_SECONDS on the server, for the wait copy. */
@@ -1302,13 +1302,15 @@ export default function PlaybackSection({
     discardStagedWindow();
   }, [type, tmdbId, season, currentEpisode, discardStagedWindow]);
 
+  const foregroundSeekSerialRef = useRef(0);
   const requestSeekPosition = useCallback(async (displaySeconds: number) => {
+    const intent = ++foregroundSeekSerialRef.current;
     const at = Math.max(0, displaySeconds);
     const preparation = preparingWindowRef.current;
     if (preparation && preparation.epoch === seekEpochRef.current && preparationMatches(preparation, at, activeTokenRef.current, activeAudioIndexRef.current)) {
       const previousIntent = seekEpochRef.current;
-      await preparation.promise;
-      if (previousIntent !== seekEpochRef.current) return;
+      await waitForPreparation(preparation.promise);
+      if (previousIntent !== seekEpochRef.current || intent !== foregroundSeekSerialRef.current) return;
     }
     lastRequestedStartAtRef.current = at;
     pendingSeekRef.current = at;

@@ -1,4 +1,5 @@
 'use client';
+import { SeekTrace } from '@/lib/seek-trace';
 
 import React, { useEffect, useRef, useState, useCallback } from 'react';
 import { createPortal } from 'react-dom';
@@ -468,12 +469,15 @@ export default function VideoPlayer({ src, playbackStartedAt, movie, episode, au
     // In-flight far-seek target (display seconds). Declared up here because
     // togglePlay (below) reads it; the debounced fire effect lives further
     // down next to handleSeek.
+    const seekTraceRef = useRef<SeekTrace | null>(null);
+    seekTraceRef.current ??= new SeekTrace(() => performance.now());
     const telemetrySeekAt = useRef<number | null>(null);
     const telemetryClock = useRef<PlaybackClock | null>(null);
     const [seekTarget, setSeekTarget] = useState<number | null>(null);
     const seekTargetRef = useRef<number | null>(null);
     const seekResumeIntentRef = useRef(false);
     const seekIntentSerialRef = useRef(0);
+    const committedSeekRef = useRef(false);
     const firedSeekIntentRef = useRef(-1);
     const preparedWindowRef = useRef({ key: '', at: 0 });
     const beginSeekLock = (at: number, resume?: boolean) => {
@@ -538,6 +542,12 @@ export default function VideoPlayer({ src, playbackStartedAt, movie, episode, au
             const done = () => {
                 callback = null;
                 if (video.seeking) return; // seeked/playing will request the destination frame.
+                if (restorePendingRef.current) return;
+                seekTraceRef.current?.mark('target_decode_ready');
+                if (typeof video.requestVideoFrameCallback === 'function') seekTraceRef.current?.mark('first_target_frame_rendered');
+                const phases = seekTraceRef.current?.finish();
+                if (phases) sendPlaybackEvent(url, authToken, {type:'seek_trace',
+                    engine: src.includes('.m3u8') ? (nativeHlsPreferred ? 'native' : 'mse') : 'direct', reused: sessionReused, phases});
                 clock.frame(video.paused); telemetrySeekAt.current = null;
             };
             if (typeof video.requestVideoFrameCallback === 'function') callback = video.requestVideoFrameCallback(done);
@@ -624,7 +634,7 @@ export default function VideoPlayer({ src, playbackStartedAt, movie, episode, au
 
                 localStallRecoveryRef.current = false;
                 setIsLoading(false);
-                const reason = 'Luồng phát không tiến triển trong 20 giây.';
+                const reason = 'Luồng phát chưa tiến triển sau khi đã thử khôi phục.';
                 if (onPlaybackFailure) onPlaybackFailure(reason);
                 else setError(`${reason} Bấm Thử lại để nối lại.`);
             }
@@ -1220,7 +1230,6 @@ export default function VideoPlayer({ src, playbackStartedAt, movie, episode, au
         }
         if (!primary || !partner || manualSubtitleTimingRef.current || Math.abs(subDelay) > 0.05) return;
         const primaryEmbedded = isEmbeddedTrack(primary), partnerEmbedded = isEmbeddedTrack(partner);
-        if (!primaryEmbedded && !partnerEmbedded) return;
         if (primaryEmbedded && partnerEmbedded) return;
         const reference = partnerEmbedded && !primaryEmbedded ? partner : primary;
         const target = reference === primary ? partner : primary;
@@ -1526,6 +1535,7 @@ export default function VideoPlayer({ src, playbackStartedAt, movie, episode, au
 
         const finishPositionRestore = () => {
             if (cancelled) return;
+            seekTraceRef.current?.mark('target_decode_ready');
             restorePendingRef.current = false;
             // A paused seek may emit its last timeupdate before this gate
             // opens. Publish the confirmed position instead of the old clock.
@@ -1537,6 +1547,7 @@ export default function VideoPlayer({ src, playbackStartedAt, movie, episode, au
             setIsLoading(false);
         };
         const awaitPositionRestore = (target: number, covered?: () => boolean) => {
+            seekTraceRef.current?.mark('session_ready');
             cancelPositionRestore?.();
             cancelPositionRestore = restoreBeforePlayback(video, target, {
                 covered,
@@ -1640,7 +1651,11 @@ export default function VideoPlayer({ src, playbackStartedAt, movie, episode, au
             // Scope to THIS Hls instance: a new seek/source needs its own
             // restore, while repeated manifests within this instance do not.
             let manifestParsedOnce = false;
+            hls.on(Hls.Events.FRAG_BUFFERED, (_event, data) => {
+                if (data.frag.start <= restoreTargetLocal && data.frag.start + data.frag.duration > restoreTargetLocal) seekTraceRef.current?.mark('first_target_segment_received');
+            });
             hls.on(Hls.Events.MANIFEST_PARSED, () => {
+                seekTraceRef.current?.mark('manifest_received');
                 // EVENT playlists re-emit MANIFEST_PARSED on reloads — e.g.
                 // when extracted subtitle tracks join the manifest minutes
                 // into playback. Re-running the restore below paused the
@@ -2408,7 +2423,10 @@ export default function VideoPlayer({ src, playbackStartedAt, movie, episode, au
         return NaN;
     };
 
-    const seekToAbsolute = (raw: number) => {
+    const seekToAbsolute = (raw: number, committed = false) => {
+        committedSeekRef.current = committed;
+        seekTraceRef.current?.begin();
+        if (committed) seekTraceRef.current?.mark('seek_commit');
         if (suspended) return;
         telemetrySeekAt.current = performance.now();
         telemetryClock.current?.seek();
@@ -2511,6 +2529,8 @@ export default function VideoPlayer({ src, playbackStartedAt, movie, episode, au
         const intent = seekIntentSerialRef.current;
         if (firedSeekIntentRef.current === intent) return;
         const timer = setTimeout(() => {
+            seekTraceRef.current?.mark('seek_commit');
+            seekTraceRef.current?.mark('resolve_start');
             firedSeekIntentRef.current = intent;
             resumeFiredKeyRef.current = `${movie.slug}|${episode.slug}|${Math.floor(at)}`;
             const epoch = ++seekFireEpochRef.current;
@@ -2521,6 +2541,7 @@ export default function VideoPlayer({ src, playbackStartedAt, movie, episode, au
             }
             void Promise.resolve()
                 .then(() => onSeekToPositionRef.current?.(at))
+                .then(() => { if (seekIntentSerialRef.current === intent) seekTraceRef.current?.mark('resolve_end'); })
                 .catch((err: unknown) => {
                     // Resolve failed and no newer seek superseded it: drop the
                     // indicator and say why over the still-playing picture
@@ -2536,7 +2557,7 @@ export default function VideoPlayer({ src, playbackStartedAt, movie, episode, au
                         }
                     }
                 });
-        }, 650);
+        }, committedSeekRef.current ? 0 : 650);
         return () => clearTimeout(timer);
     // eslint-disable-next-line react-hooks/exhaustive-deps
     }, [seekTarget, movie.slug, episode.slug, suspended]);
@@ -3050,7 +3071,7 @@ export default function VideoPlayer({ src, playbackStartedAt, movie, episode, au
                             const position = seekPreviewPosition(event.clientX, rect.left, rect.width, fullDuration);
                             seekDragRef.current = null; setDragPreview(null); setHoverPreview(null);
                             event.currentTarget.releasePointerCapture(event.pointerId);
-                            if (position) seekToAbsolute(position.at);
+                            if (position) seekToAbsolute(position.at, true);
                         }}
                         onPointerCancel={() => { seekDragRef.current = null; setDragPreview(null); setHoverPreview(null); }}
                         onLostPointerCapture={() => { seekDragRef.current = null; setDragPreview(null); }}

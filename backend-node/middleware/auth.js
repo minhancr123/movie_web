@@ -50,20 +50,6 @@ export const authMiddleware = (req, res, next) => {
  * grant minted for session A cannot open session B or any rendition URL.
  */
 export const mediaAuthMiddleware = (req, res, next) => {
-  // Published-rendition SEGMENTS are public-immutable (see
-  // serveRenditionAsset): unguessable content-hash path, byte-identical for
-  // every viewer, meant to be edge-cached and shared across viewers — a
-  // per-request token here would force a per-viewer cache key and defeat
-  // that. Manifests (.m3u8) always take the full auth path below.
-  // req.path inside the playback router is mount-relative (/hls/r/...), and
-  // this middleware is only ever mounted on HLS routes, so match the shape.
-  if (
-    (req.method === 'GET' || req.method === 'HEAD')
-    && /\/hls\/r\/[a-f0-9]{32}\//.test(String(req.path || ''))
-    && !String(req.path || '').endsWith('.m3u8')
-  ) {
-    return next();
-  }
   try {
     const grant = typeof req.query?.[MEDIA_GRANT_QUERY] === 'string'
       ? req.query[MEDIA_GRANT_QUERY]

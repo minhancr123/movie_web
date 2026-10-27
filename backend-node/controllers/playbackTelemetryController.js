@@ -11,6 +11,17 @@ export const parsePlaybackEvent = body => {
     return snapshot ? { ...base, ...snapshot } : null;
   }
   const valid = (n, max) => typeof n === 'number' && Number.isFinite(n) && n >= 0 && n <= max;
+  if (body.type === 'seek_trace') {
+    const names = ['seek_intent','seek_commit','resolve_start','resolve_end','session_ready','manifest_received',
+      'first_target_segment_received','target_decode_ready','first_target_frame_rendered'];
+    if (!['native','mse','direct'].includes(body.engine) || typeof body.reused !== 'boolean'
+      || !body.phases || typeof body.phases !== 'object') return null;
+    const phases = {};
+    for (const name of names) if (valid(body.phases[name],300000)) phases[name] = Math.round(body.phases[name]);
+    if (phases.seek_intent !== 0) return null;
+    return {...base,engine:body.engine,reused:body.reused,phases};
+  }
+
   if (['first_frame', 'seek'].includes(body.type) && valid(body.seconds, 300)) return { ...base, seconds: body.seconds };
   if (body.type === 'summary' && valid(body.playedSeconds, 120) && valid(body.stalledSeconds, 120)
     && body.playedSeconds + body.stalledSeconds <= 120) {
@@ -52,7 +63,8 @@ export const playbackTelemetry = async (req, res) => {
     const session = await findOwnedPlaybackSession(getDB(), req.params.sessionId, req.user.userId);
     if (!session) return res.status(404).json({ success: false });
     if (acceptPlaybackEvent(session.sessionId, event)) {
-      if (event.type === 'sync_snapshot') console.info('[playback-sync]', JSON.stringify(playbackSyncSnapshot(session, event)));
+      if (event.type === 'seek_trace') console.info('[playback-seek-trace]', JSON.stringify(event));
+      else if (event.type === 'sync_snapshot') console.info('[playback-sync]', JSON.stringify(playbackSyncSnapshot(session, event)));
       else if (event.type === 'restore_snapshot') console.info('[playback-restore]', JSON.stringify({ contentRef: session.contentRef, startAt: session.startAt || 0, ...event }));
       else {
         if (event.type === 'error') console.info('[playback-media]', JSON.stringify({ contentRef: session.contentRef, ...event }));

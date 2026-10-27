@@ -1,4 +1,6 @@
+import type { SeekPhase } from './seek-trace';
 export type PlaybackEvent =
+  | { type: 'seek_trace'; engine: 'native'|'mse'|'direct'; reused: boolean; phases: Partial<Record<SeekPhase,number>> }
   | { type: 'first_frame' | 'seek'; seconds: number }
   | { type: 'summary'; playedSeconds: number; stalledSeconds: number }
   | { type: 'error'; mediaErrorCode?: number; engine?: 'native' | 'mse' | 'direct'; readyState?: number; networkState?: number; localTime?: number }

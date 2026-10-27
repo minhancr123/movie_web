@@ -22,3 +22,13 @@ export function restoreRequestedPosition(returned: unknown, requested: number): 
 /** A boundary should adopt its in-flight preparation, not abort and redo it. */
 export const preparationMatches = (prepared: {at:number;token:string;audio:number|null}, at:number, token:string, audio:number|null): boolean =>
   Number.isFinite(at) && Math.abs(prepared.at - at) <= 4 && prepared.token === token && prepared.audio === audio;
+
+/** Foreground playback must not inherit a background poller's entire budget. */
+export async function waitForPreparation(work: Promise<unknown>, budgetMs = 1000): Promise<void> {
+  let timer: ReturnType<typeof setTimeout> | undefined;
+  try {
+    await Promise.race([work.catch(() => undefined), new Promise<void>(resolve => {
+      timer = setTimeout(resolve, budgetMs);
+    })]);
+  } finally { if (timer !== undefined) clearTimeout(timer); }
+}

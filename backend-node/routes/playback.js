@@ -26,6 +26,8 @@ import {
 import { authMiddleware, mediaAuthMiddleware } from '../middleware/auth.js';
 import {
   playbackRateLimit,
+  sourceDiscoveryRateLimit,
+  subtitleInventoryRateLimit,
   playbackPollRateLimit,
   playbackPresenceRateLimit,
   hlsAssetRateLimit,
@@ -41,17 +43,10 @@ const router = express.Router();
 // Manifests are private,no-store; only immutable segments may be edge-cached
 // (with the media_grant query ignored in the cache key).
 router.get('/hls/:sessionId/:asset', mediaAuthMiddleware, hlsAssetRateLimit, serveHlsAsset);
-// Stable cross-viewer URLs for published (finished, immutable) renditions.
-// Different segment count than the session route, so no pattern conflict.
-// Same media guard; bytes are identical for every logged-in viewer, which is
-// what makes edge sharing correct. CDN: never cache index.m3u8
-// (private,no-store with per-viewer grants); segments may be cached with the
-// media_grant query ignored in the cache key.
-router.get('/hls/r/:renditionId/:asset', (req, res, next) => {
-  // Shared immutable segments are public; manifests still authorize the viewer.
-  if (req.params.asset.endsWith('.m3u8')) return mediaAuthMiddleware(req, res, next);
-  return next();
-}, hlsAssetRateLimit, serveRenditionAsset);
+// Stable rendition paths still authorize EVERY asset. Manifests carry scoped
+// child grants; only private browser caching is enabled. Shared edge caching
+// requires an independently authenticated edge, never a blanket token bypass.
+router.get('/hls/r/:renditionId/:asset', mediaAuthMiddleware, hlsAssetRateLimit, serveRenditionAsset);
 // Extracted WebVTT sidecars use the same token-capability pattern: the URL
 // itself is unguessable and server-mapped, so no session needed.
 router.get('/subtitles/vtt/:token', hlsAssetRateLimit, serveSubtitleVtt);
@@ -77,8 +72,8 @@ router.delete('/resolve-jobs/:jobId', resolveJobLimit, resolveJobs.cancel);
 router.post('/session/:sessionId/telemetry', rateLimit({ max: 30, keyPrefix: 'rl:telemetry' }), playbackTelemetry);
 router.post('/prewarm', playbackRateLimit, prewarmPlayback);
 router.post('/preload', playbackRateLimit, preloadPlayback);
-router.post('/sources', playbackRateLimit, listPlaybackSources);
-router.post('/subtitles', playbackRateLimit, getPlaybackSubtitles);
+router.post('/sources', sourceDiscoveryRateLimit, listPlaybackSources);
+router.post('/subtitles', subtitleInventoryRateLimit, getPlaybackSubtitles);
 router.get('/subtitles/job/:jobId', playbackPollRateLimit, getSubtitleJob);
 // Viewer-uploaded .srt: JSON body (no multipart dependency), so this route
 // carries its own 3MB limit instead of raising the global 100kb one.

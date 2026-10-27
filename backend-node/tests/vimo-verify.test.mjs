@@ -41,8 +41,8 @@ const { verifyVimoStream } = await import(
 
 assert.equal(
   await verifyVimoStream(`http://127.0.0.1:${alivePort}/index.m3u8`),
-  true,
-  'a live playlist verifies',
+  false,
+  'even a live private-network playlist is blocked before connecting',
 );
 assert.equal(
   await verifyVimoStream(`http://127.0.0.1:${deadPort}/index.m3u8`),
