@@ -1,6 +1,10 @@
 name: CI
 
 on:
+  push:
+    branches: [codex/streaming-audit-hardening]
+    paths-ignore:
+      - '**.md'
   pull_request:
     branches: [main, master, optimize/perf-20261024]
     paths-ignore:

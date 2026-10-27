@@ -74,7 +74,7 @@ Môi trường local macOS arm64, Node v24.21.0. Dependencies hiện có đã đ
 
 Test mới ngăn tái phát: failover null/undefined/zero; foreground preparation deadline; trace latest-intent/reset/unknown phases; ±10s external/external timing; same-file hash singleflight; exact range/oversize; stale publication selector; max4 sidecars; source/subtitle budget không ăn resolve; private/mapped-IP redirects; HTML200 giả HLS; oversized/drip deadline; published-segment auth; real interrupted-prefix safety.
 
-CI: thêm PR base optimize và workflow_dispatch, cài FFmpeg, chạy audit + mandatory media integration. **Không sửa production deploy triggers**. CI trên GitHub chưa được tính là PASS cho tới khi run thực tế hoàn tất.
+CI: thêm PR base optimize, push đúng nhánh audit và workflow_dispatch, cài FFmpeg, chạy audit + mandatory media integration. **Không sửa production deploy triggers**. CI trên GitHub chưa được tính là PASS cho tới khi run thực tế hoàn tất.
 
 ## 6. Performance: kết quả được phép kết luận
 
@@ -176,3 +176,8 @@ Danh sách file chính xác được tạo bên dưới trước commit. Commit/
 - `frontend/tests/playback-telemetry.test.mjs`
 - `frontend/tests/prepared-window.test.mjs`
 - `frontend/tests/subtitle-alignment.test.mjs`
+
+
+### Trạng thái bàn giao
+
+Code audit commit `76c1b35` đã push nhánh riêng. GitHub connector từ chối tạo draft PR với HTTP403 `Resource not accessible by integration`; không có PR được tạo, không merge. CI được bật bằng push chỉ cho nhánh audit, không thêm trigger deploy. Có thể mở compare/create PR từ nhánh này sau khi quyền GitHub phù hợp. CI remote chưa được xác nhận PASS trong báo cáo.
