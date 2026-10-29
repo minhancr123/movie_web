@@ -64,3 +64,16 @@ loading and still alternated with the animation. **That attempt did not pass.**
 is 2026103004: the held preview card is removed altogether after release, with
 only the plain loading banner rendered. Clock evidence and the compact search
 category strip remain. Device acceptance must be checked again on this build.
+
+## Final build 2026103004 evidence
+
+- Native patch commit `e4f9ae388cf7f1413b4512ea2daf700fae84465c` passed the full GitHub Actions pipeline:
+  https://github.com/minhancr123/movie_web/actions/runs/40933889615 .
+- Signed device archive, strict codesign verification and IPA export passed.
+  devicectl acknowledged successful installation on the paired physical iPhone.
+- IPA: `~/Downloads/CineVN-iOS-Seek-Layout-2026103004/CineVN-IOS.ipa`,
+  2,147,267 bytes, SHA-256
+  `beecdfb373a9aa91b4e8775a989a382250d5d89e4086f97b217fe87e672cc72f`.
+- User confirmation of seek presentation and category spacing on build 004
+  remains pending. Compilation, installation and CI do not prove physical
+  playback correctness or TorBox/4K stability. Backend remains `2e6bc8b`.
