@@ -1643,8 +1643,8 @@ export default function VideoPlayer({ src, playbackStartedAt, movie, episode, au
         }
 
         // iOS 17.1+ exposes ManagedMediaSource, making isSupported() true even
-        // when native HLS is available. Keep Apple mobile on its native path;
-        // browser-managed HEVC buffering avoids MSE recovery loops there.
+        // when native HLS is available. Keep Apple mobile and desktop Safari
+        // on their native path; do not feed HEVC through a second MSE pipeline.
         if (Hls.isSupported() && !(nativeHlsPreferred && video.canPlayType('application/vnd.apple.mpegurl'))) {
             const hls = new Hls({
                 enableWorker: true,

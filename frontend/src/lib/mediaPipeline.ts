@@ -13,7 +13,10 @@
  * attribute), so both are refused rather than risked.
  */
 export const prefersNativeHls = (userAgent: string, platform = '', maxTouchPoints = 0): boolean =>
-    /iPhone|iPad|iPod/i.test(userAgent) || (platform === 'MacIntel' && maxTouchPoints > 1);
+    /iPhone|iPad|iPod/i.test(userAgent) || (platform === 'MacIntel' && maxTouchPoints > 1)
+    || (/Macintosh/i.test(userAgent) && /AppleWebKit\//i.test(userAgent)
+        && /Version\/[\d.]+.*Safari\//i.test(userAgent)
+        && !/Chrome|Chromium|Edg\/|OPR\/|Firefox|FxiOS|CriOS/i.test(userAgent));
 
 export const isTaintFreePipeline = (src: string, hlsSupported: boolean, nativePreferred = false): boolean => {
     // Mirrors the player's own branch: the MSE path, and only that.

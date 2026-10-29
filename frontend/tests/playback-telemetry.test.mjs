@@ -4,11 +4,16 @@ import fs from 'node:fs';
 import vm from 'node:vm';
 import ts from 'typescript';
 const load=(file,globals={})=>{const context={exports:{},setTimeout,clearTimeout,...globals};vm.runInNewContext(ts.transpileModule(fs.readFileSync(new URL(`../src/lib/${file}.ts`,import.meta.url),'utf8'),{compilerOptions:{module:ts.ModuleKind.CommonJS,target:ts.ScriptTarget.ES2020}}).outputText,context);return context.exports;};
-test('Apple mobile prefers native HLS even with MSE; desktop keeps frame sampling',()=>{
+test('Apple mobile and desktop Safari prefer native HLS; other desktops keep MSE sampling',()=>{
  const {prefersNativeHls,isTaintFreePipeline}=load('mediaPipeline');
  assert.equal(prefersNativeHls('Mozilla/5.0 (iPhone; CPU iPhone OS 18_0 like Mac OS X)'),true);
  assert.equal(prefersNativeHls('Mozilla/5.0 (Macintosh)','MacIntel',5),true,'iPad desktop UA');
  assert.equal(prefersNativeHls('Mozilla/5.0 (Macintosh)','MacIntel',0),false);
+ const safari='Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/26.0 Safari/605.1.15';
+ assert.equal(prefersNativeHls(safari,'MacIntel',0),true,'Safari must use its native HEVC pipeline even when MSE is present');
+ for (const brand of ['Chrome/140.0.0.0','Chromium/140.0.0.0','Edg/140.0.0.0','OPR/120.0']) {
+  assert.equal(prefersNativeHls(safari+' '+brand,'MacIntel',0),false,brand+' must retain the MSE path');
+ }
  assert.equal(prefersNativeHls('Mozilla/5.0 (Linux; Android 14)'),false);
  assert.equal(isTaintFreePipeline('/movie.m3u8',true,true),false,'native must never connect pixel/WebAudio sampling');
  assert.equal(isTaintFreePipeline('/movie.m3u8',true,false),true);
