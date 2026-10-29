@@ -76,3 +76,29 @@ as working on iPhone until tested there.
 
 The LAN inactive release passed the full backend suite and mandatory media
 integration with Node 24.21.0 / FFmpeg n9.0.2 before activation.
+
+## Deployment evidence
+
+- Runtime: `2e6bc8b08f4a10487b93dab927b5a097ab15250b`, both services.
+- CI source/media/build/deploy checks: https://github.com/minhancr123/movie_web/actions/runs/40928082913 — success.
+- Latest native patch CI: https://github.com/minhancr123/movie_web/actions/runs/40928690654 — success.
+- LAN integrity check: 429 tracked runtime files, zero mismatches; LAN health
+  and public HTTPS health return the expected release, HTTP 200.
+- Real production Quỷ Móc Mắt listing: legacy/native-only client gets 404;
+  explicit embedded opt-in gets 200 and one `embedded` source. The embedded
+  resolver returns 200, the fixed provider host, private/no-store. These are
+  metadata/contract checks, **not proof that the blocked provider plays**.
+- Real production progressive Interstellar inventory: POST 200, after 2.2s
+  GET 200/version 33/28 tracks while another provider remained pending;
+  DELETE 204. No signed media URLs or account tokens are recorded here.
+- Xcode simulator build, signed iOS archive, codesign strict verification and
+  IPA export succeeded. Device installation completed for the paired physical
+  iPhone, bundle `com.minhancr123.cinevn`, build `2026103001`. Installation is
+  not a successful seek/playback benchmark.
+- Final IPA: `~/Downloads/CineVN-iOS-Embedded-Progressive-20261030-verified/CineVN-IOS.ipa`
+  (2,140,968 bytes), SHA-256
+  `38d6069f65e26d65b28bbae4252b254b8f62f54cd0a9c1f57584ee27805be470`.
+  Existing development signing was reused; this is not a TestFlight upload.
+- Physical playback/seek/subtitle acceptance and sustained TorBox/4K playback
+  remain pending. The user has been asked to test the newly installed app;
+  no successful device result has yet been received.
