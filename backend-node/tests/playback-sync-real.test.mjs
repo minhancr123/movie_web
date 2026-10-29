@@ -6,10 +6,7 @@ import { spawnSync } from 'node:child_process';
 import { buildFfmpegArgs, ffprobe, presentationShiftMs, probeSeekOrigin, extractSubtitleTracks } from '../services/playback/remuxService.js';
 import { bucketSeekStart } from '../services/playback/startupPolicy.js';
 
-if (spawnSync('ffmpeg', ['-version'], { stdio: 'ignore' }).status !== 0) {
-  console.log('skip - real A/V/subtitle sync needs ffmpeg');
-  process.exit(0);
-}
+assert.equal(spawnSync('ffmpeg', ['-version'], { stdio: 'ignore' }).status, 0, 'real A/V/subtitle integration requires ffmpeg');
 const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'cinevn-sync-real-'));
 const run = (args, cwd = dir) => {
   const r = spawnSync('ffmpeg', args, { cwd, encoding: 'utf8', timeout: 45000, maxBuffer: 8 * 1024 * 1024 });
@@ -17,7 +14,10 @@ const run = (args, cwd = dir) => {
   return r.stderr;
 };
 const markers = input => {
-  const output = run(['-hide_banner', '-protocol_whitelist', 'file,crypto,data', '-allowed_extensions', 'ALL',
+  // Inspect the HLS clock itself. Without -copyts FFmpeg subtracts the
+  // container start_time before blackdetect/silencedetect; subtracting the
+  // presentation shift below then counts a second, unrelated origin twice.
+  const output = run(['-copyts', '-hide_banner', '-protocol_whitelist', 'file,crypto,data', '-allowed_extensions', 'ALL',
     '-i', input, '-vf', 'blackdetect=d=0.05:pix_th=0.1', '-af', 'silencedetect=n=-50dB:d=0.1', '-f', 'null', '-']);
   return { flash: Number(output.match(/black_end:([\d.]+)/)?.[1]), tone: Number(output.match(/silence_end: ([\d.]+)/)?.[1]) };
 };

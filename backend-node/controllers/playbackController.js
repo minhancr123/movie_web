@@ -4813,12 +4813,12 @@ export const serveHlsAsset = async (req, res) => {
  *
  * Why a second URL shape when per-session URLs already serve the same bytes?
  * Session URLs embed a random sessionId, so every viewer is a cache MISS even
- * for identical bytes. These URLs depend only on content, so a CDN (or the
- * browser cache) shares one edge object across all viewers. Auth still runs
+ * for identical bytes. These URLs depend only on content, so the browser can
+ * reuse immutable bytes. A shared CDN requires its own authorization layer.
+ * Origin auth still runs
  * (media guard: Bearer header on MSE, ?access_token= once on native, then
  * ?media_grant= scoped to this renditionId on every child asset), but the
- * bytes are identical for everyone holding a valid login, so sharing the
- * cached object is correct. Evicted renditions 404 and the player falls back
+ * bytes require a live session owned by that viewer. Evicted renditions 404 and the player falls back
  * to a fresh remux through the normal recovery path.
  *
  * Manifests embed a rendition-scoped grant and stay `private, no-store`;

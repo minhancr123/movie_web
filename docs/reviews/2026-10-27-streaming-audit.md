@@ -1,5 +1,7 @@
 # CineVN — audit streaming, hardening và performance (27/10/2026)
 
+> Đính chính 29/10: báo cáo này đã bỏ sót lỗi HEVC Ubuntu của run 40463307787. Xem [follow-up timestamp và staging grants](2026-10-29-timestamp-followup.md) cho tái hiện độc lập, baseline-vs-after và trạng thái CI mới. Các kết quả bên dưới là lịch sử ngày 27/10.
+
 ## 1. Phạm vi, baseline và kết luận
 
 - Repository `minhancr123/movie_web`; fetch trước sửa. HEAD ban đầu worktree `40c729e`; remote `optimize/perf-20261024` là **24f7a662d706751e48c75e7d749ccfb2eef0816b**, descendant trực tiếp. Nhánh riêng `codex/streaming-audit-hardening` đã fast-forward tới baseline đó trước khi sửa.

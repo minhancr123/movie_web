@@ -1,0 +1,2521 @@
+{
+  "versions": {
+    "node": "v24.21.0",
+    "ffmpeg": "ffmpeg version 6.0 Copyright (c) 2000-2023 the FFmpeg developers",
+    "ffprobe": "ffprobe version n4.4.1 Copyright (c) 2007-2021 the FFmpeg developers"
+  },
+  "fixtures": {
+    "hevc": "7d336dc82746269bdbe66a87a91b3aca55a56724937a1cbfe9e3075d6198f962",
+    "sync": "0cf982619f9c8edb6246a8db5593d5da4d1f17f4a451c83c88d5c7078593b55d"
+  },
+  "results": {
+    "baseline": {
+      "sync": [
+        {
+          "requested": 0,
+          "bucket": 0,
+          "origin": 0,
+          "shift": 0.083,
+          "args": [
+            "-hide_banner",
+            "-loglevel",
+            "warning",
+            "-nostdin",
+            "-fflags",
+            "+genpts",
+            "-i",
+            "/tmp/cinevn-ts-audit/matrix-mac/fixtures/sync.mkv",
+            "-t",
+            "6",
+            "-map",
+            "0:v:0",
+            "-map",
+            "0:1?",
+            "-c:v",
+            "copy",
+            "-fps_mode:v",
+            "passthrough",
+            "-max_interleave_delta",
+            "0",
+            "-max_muxing_queue_size",
+            "2048",
+            "-c:a",
+            "aac",
+            "-b:a",
+            "192k",
+            "-ac",
+            "2",
+            "-avoid_negative_ts",
+            "make_zero",
+            "-sn",
+            "-f",
+            "hls",
+            "-hls_time",
+            "4",
+            "-hls_segment_type",
+            "fmp4",
+            "-hls_playlist_type",
+            "event",
+            "-hls_flags",
+            "independent_segments",
+            "-hls_list_size",
+            "0",
+            "-hls_fmp4_init_filename",
+            "init.mp4",
+            "-hls_segment_filename",
+            "/tmp/cinevn-ts-audit/matrix-mac/baseline/sync-0/seg_%05d.m4s",
+            "/tmp/cinevn-ts-audit/matrix-mac/baseline/sync-0/index.m3u8"
+          ],
+          "probe": {
+            "streams": [
+              {
+                "index": 0,
+                "codec": "h264",
+                "profile": "Main",
+                "pix_fmt": "yuv420p",
+                "time_base": "1/12288",
+                "start_time": "0.083008",
+                "r_frame_rate": "24/1",
+                "avg_frame_rate": "24/1"
+              },
+              {
+                "index": 1,
+                "codec": "aac",
+                "profile": "LC",
+                "time_base": "1/48000",
+                "start_time": "0.061000",
+                "r_frame_rate": "0/0",
+                "avg_frame_rate": "0/0"
+              }
+            ],
+            "formatStart": "0.061000",
+            "firstPackets": [
+              {
+                "codec_type": "video",
+                "stream_index": 0,
+                "pts": 1020,
+                "pts_time": "0.083008",
+                "dts": 0,
+                "dts_time": "0.000000",
+                "size": "700",
+                "pos": "4673",
+                "flags": "K_"
+              },
+              {
+                "codec_type": "video",
+                "stream_index": 0,
+                "pts": 2556,
+                "pts_time": "0.208008",
+                "dts": 504,
+                "dts_time": "0.041016",
+                "size": "11",
+                "pos": "5373",
+                "flags": "__"
+              },
+              {
+                "codec_type": "video",
+                "stream_index": 0,
+                "pts": 1536,
+                "pts_time": "0.125000",
+                "dts": 1020,
+                "dts_time": "0.083008",
+                "size": "11",
+                "pos": "5384",
+                "flags": "__"
+              },
+              {
+                "codec_type": "video",
+                "stream_index": 0,
+                "pts": 2040,
+                "pts_time": "0.166016",
+                "dts": 1536,
+                "dts_time": "0.125000",
+                "size": "11",
+                "pos": "5395",
+                "flags": "__"
+              },
+              {
+                "codec_type": "video",
+                "stream_index": 0,
+                "pts": 4092,
+                "pts_time": "0.333008",
+                "dts": 2040,
+                "dts_time": "0.166016",
+                "size": "12",
+                "pos": "5406",
+                "flags": "__"
+              },
+              {
+                "codec_type": "video",
+                "stream_index": 0,
+                "pts": 3072,
+                "pts_time": "0.250000",
+                "dts": 2556,
+                "dts_time": "0.208008",
+                "size": "13",
+                "pos": "5418",
+                "flags": "__"
+              },
+              {
+                "codec_type": "video",
+                "stream_index": 0,
+                "pts": 3576,
+                "pts_time": "0.291016",
+                "dts": 3072,
+                "dts_time": "0.250000",
+                "size": "11",
+                "pos": "5431",
+                "flags": "__"
+              },
+              {
+                "codec_type": "video",
+                "stream_index": 0,
+                "pts": 5628,
+                "pts_time": "0.458008",
+                "dts": 3576,
+                "dts_time": "0.291016",
+                "size": "12",
+                "pos": "5442",
+                "flags": "__"
+              }
+            ]
+          },
+          "corrected": {
+            "flash": 2.08301,
+            "tone": 2.09313
+          },
+          "normalized": {
+            "flash": 2.02197,
+            "tone": 2.03212
+          },
+          "audioVideoErrorMs": 10,
+          "subtitleErrorMs": 0,
+          "legacyMeasurementErrorMs": -61,
+          "markerRebaseSeconds": 0.06103999999999976
+        },
+        {
+          "requested": 197,
+          "bucket": 196,
+          "origin": 194,
+          "shift": 0.083,
+          "args": [
+            "-hide_banner",
+            "-loglevel",
+            "warning",
+            "-nostdin",
+            "-fflags",
+            "+genpts",
+            "-noaccurate_seek",
+            "-ss",
+            "196",
+            "-i",
+            "/tmp/cinevn-ts-audit/matrix-mac/fixtures/sync.mkv",
+            "-t",
+            "12",
+            "-map",
+            "0:v:0",
+            "-map",
+            "0:1?",
+            "-c:v",
+            "copy",
+            "-fps_mode:v",
+            "passthrough",
+            "-max_interleave_delta",
+            "0",
+            "-max_muxing_queue_size",
+            "2048",
+            "-c:a",
+            "aac",
+            "-b:a",
+            "192k",
+            "-ac",
+            "2",
+            "-avoid_negative_ts",
+            "make_zero",
+            "-sn",
+            "-f",
+            "hls",
+            "-hls_time",
+            "4",
+            "-hls_segment_type",
+            "fmp4",
+            "-hls_playlist_type",
+            "event",
+            "-hls_flags",
+            "independent_segments",
+            "-hls_list_size",
+            "0",
+            "-hls_fmp4_init_filename",
+            "init.mp4",
+            "-hls_segment_filename",
+            "/tmp/cinevn-ts-audit/matrix-mac/baseline/sync-197/seg_%05d.m4s",
+            "/tmp/cinevn-ts-audit/matrix-mac/baseline/sync-197/index.m3u8"
+          ],
+          "probe": {
+            "streams": [
+              {
+                "index": 0,
+                "codec": "h264",
+                "profile": "Main",
+                "pix_fmt": "yuv420p",
+                "time_base": "1/12288",
+                "start_time": "0.100993",
+                "r_frame_rate": "24/1",
+                "avg_frame_rate": "24/1"
+              },
+              {
+                "index": 1,
+                "codec": "aac",
+                "profile": "LC",
+                "time_base": "1/48000",
+                "start_time": "0.000000",
+                "r_frame_rate": "0/0",
+                "avg_frame_rate": "0/0"
+              }
+            ],
+            "formatStart": "0.000000",
+            "firstPackets": [
+              {
+                "codec_type": "video",
+                "stream_index": 0,
+                "pts": 1241,
+                "pts_time": "0.100993",
+                "dts": 221,
+                "dts_time": "0.017985",
+                "size": "28",
+                "pos": "4693",
+                "flags": "K_"
+              },
+              {
+                "codec_type": "video",
+                "stream_index": 0,
+                "pts": 2777,
+                "pts_time": "0.225993",
+                "dts": 725,
+                "dts_time": "0.059001",
+                "size": "11",
+                "pos": "4721",
+                "flags": "__"
+              },
+              {
+                "codec_type": "video",
+                "stream_index": 0,
+                "pts": 1757,
+                "pts_time": "0.142985",
+                "dts": 1241,
+                "dts_time": "0.100993",
+                "size": "11",
+                "pos": "4732",
+                "flags": "__"
+              },
+              {
+                "codec_type": "video",
+                "stream_index": 0,
+                "pts": 2261,
+                "pts_time": "0.184001",
+                "dts": 1757,
+                "dts_time": "0.142985",
+                "size": "11",
+                "pos": "4743",
+                "flags": "__"
+              },
+              {
+                "codec_type": "video",
+                "stream_index": 0,
+                "pts": 4313,
+                "pts_time": "0.350993",
+                "dts": 2261,
+                "dts_time": "0.184001",
+                "size": "12",
+                "pos": "4754",
+                "flags": "__"
+              },
+              {
+                "codec_type": "video",
+                "stream_index": 0,
+                "pts": 3293,
+                "pts_time": "0.267985",
+                "dts": 2777,
+                "dts_time": "0.225993",
+                "size": "13",
+                "pos": "4766",
+                "flags": "__"
+              },
+              {
+                "codec_type": "video",
+                "stream_index": 0,
+                "pts": 3797,
+                "pts_time": "0.309001",
+                "dts": 3293,
+                "dts_time": "0.267985",
+                "size": "11",
+                "pos": "4779",
+                "flags": "__"
+              },
+              {
+                "codec_type": "video",
+                "stream_index": 0,
+                "pts": 5849,
+                "pts_time": "0.475993",
+                "dts": 3797,
+                "dts_time": "0.309001",
+                "size": "12",
+                "pos": "4790",
+                "flags": "__"
+              }
+            ]
+          },
+          "corrected": {
+            "flash": 5.10099,
+            "tone": 5.10912
+          },
+          "normalized": {
+            "flash": 5.10099,
+            "tone": 5.10912
+          },
+          "audioVideoErrorMs": 8,
+          "subtitleErrorMs": 18,
+          "legacyMeasurementErrorMs": 18,
+          "markerRebaseSeconds": 0
+        }
+      ],
+      "hevc": {
+        "args": [
+          "-hide_banner",
+          "-loglevel",
+          "warning",
+          "-nostdin",
+          "-fflags",
+          "+genpts",
+          "-i",
+          "/tmp/cinevn-ts-audit/matrix-mac/fixtures/fractional.mkv",
+          "-map",
+          "0:v:0",
+          "-map",
+          "0:a:0?",
+          "-c:v",
+          "copy",
+          "-tag:v",
+          "hvc1",
+          "-fps_mode:v",
+          "passthrough",
+          "-bsf:v",
+          "setts=duration=0",
+          "-max_interleave_delta",
+          "0",
+          "-max_muxing_queue_size",
+          "2048",
+          "-c:a",
+          "copy",
+          "-avoid_negative_ts",
+          "make_zero",
+          "-sn",
+          "-f",
+          "hls",
+          "-hls_time",
+          "4",
+          "-hls_segment_type",
+          "fmp4",
+          "-hls_playlist_type",
+          "event",
+          "-hls_flags",
+          "independent_segments",
+          "-hls_list_size",
+          "0",
+          "-hls_fmp4_init_filename",
+          "init.mp4",
+          "-hls_segment_filename",
+          "/tmp/cinevn-ts-audit/matrix-mac/baseline/hevc/seg_%05d.m4s",
+          "/tmp/cinevn-ts-audit/matrix-mac/baseline/hevc/index.m3u8"
+        ],
+        "probe": {
+          "streams": [
+            {
+              "index": 0,
+              "codec": "hevc",
+              "profile": "Main 10",
+              "pix_fmt": "yuv420p10le",
+              "time_base": "1/24000",
+              "start_time": "0.021000",
+              "r_frame_rate": "24000/1001",
+              "avg_frame_rate": "24000/1001"
+            },
+            {
+              "index": 1,
+              "codec": "aac",
+              "time_base": "1/48000",
+              "start_time": "0.021000",
+              "r_frame_rate": "0/0",
+              "avg_frame_rate": "0/0"
+            }
+          ],
+          "formatStart": "0.021000",
+          "firstPackets": [
+            {
+              "codec_type": "video",
+              "stream_index": 0,
+              "pts": 504,
+              "pts_time": "0.021000",
+              "dts": 504,
+              "dts_time": "0.021000",
+              "duration": 1001,
+              "duration_time": "0.041708",
+              "size": "1388",
+              "pos": "8986",
+              "flags": "K_"
+            },
+            {
+              "codec_type": "video",
+              "stream_index": 0,
+              "pts": 1512,
+              "pts_time": "0.063000",
+              "dts": 1512,
+              "dts_time": "0.063000",
+              "duration": 1001,
+              "duration_time": "0.041708",
+              "size": "485",
+              "pos": "10374",
+              "flags": "__"
+            },
+            {
+              "codec_type": "video",
+              "stream_index": 0,
+              "pts": 2496,
+              "pts_time": "0.104000",
+              "dts": 2496,
+              "dts_time": "0.104000",
+              "duration": 1001,
+              "duration_time": "0.041708",
+              "size": "439",
+              "pos": "10859",
+              "flags": "__"
+            },
+            {
+              "codec_type": "video",
+              "stream_index": 0,
+              "pts": 3504,
+              "pts_time": "0.146000",
+              "dts": 3504,
+              "dts_time": "0.146000",
+              "duration": 1001,
+              "duration_time": "0.041708",
+              "size": "680",
+              "pos": "11298",
+              "flags": "__"
+            },
+            {
+              "codec_type": "video",
+              "stream_index": 0,
+              "pts": 4512,
+              "pts_time": "0.188000",
+              "dts": 4512,
+              "dts_time": "0.188000",
+              "duration": 1001,
+              "duration_time": "0.041708",
+              "size": "575",
+              "pos": "11978",
+              "flags": "__"
+            },
+            {
+              "codec_type": "video",
+              "stream_index": 0,
+              "pts": 5520,
+              "pts_time": "0.230000",
+              "dts": 5520,
+              "dts_time": "0.230000",
+              "duration": 1001,
+              "duration_time": "0.041708",
+              "size": "594",
+              "pos": "12553",
+              "flags": "__"
+            },
+            {
+              "codec_type": "video",
+              "stream_index": 0,
+              "pts": 6504,
+              "pts_time": "0.271000",
+              "dts": 6504,
+              "dts_time": "0.271000",
+              "duration": 1001,
+              "duration_time": "0.041708",
+              "size": "584",
+              "pos": "13147",
+              "flags": "__"
+            },
+            {
+              "codec_type": "video",
+              "stream_index": 0,
+              "pts": 7512,
+              "pts_time": "0.313000",
+              "dts": 7512,
+              "dts_time": "0.313000",
+              "duration": 1001,
+              "duration_time": "0.041708",
+              "size": "355",
+              "pos": "13731",
+              "flags": "__"
+            }
+          ]
+        },
+        "packetCount": 288,
+        "maxRelativePtsErrorMs": 0.7079999999994868,
+        "minDtsDelta": 0.04099999999999859,
+        "boundaries": [
+          {
+            "segment": "seg_00000.m4s",
+            "first": [
+              {
+                "codec_type": "video",
+                "stream_index": 0,
+                "pts": 504,
+                "pts_time": "0.021000",
+                "dts": 504,
+                "dts_time": "0.021000",
+                "duration": 1001,
+                "duration_time": "0.041708",
+                "size": "1388",
+                "pos": "8986",
+                "flags": "K_"
+              },
+              {
+                "codec_type": "video",
+                "stream_index": 0,
+                "pts": 1512,
+                "pts_time": "0.063000",
+                "dts": 1512,
+                "dts_time": "0.063000",
+                "duration": 1001,
+                "duration_time": "0.041708",
+                "size": "485",
+                "pos": "10374",
+                "flags": "__"
+              }
+            ],
+            "last": [
+              {
+                "codec_type": "video",
+                "stream_index": 0,
+                "pts": 178680,
+                "pts_time": "7.445000",
+                "dts": 178680,
+                "dts_time": "7.445000",
+                "duration": 1001,
+                "duration_time": "0.041708",
+                "size": "419",
+                "pos": "112913",
+                "flags": "__"
+              },
+              {
+                "codec_type": "video",
+                "stream_index": 0,
+                "pts": 179688,
+                "pts_time": "7.487000",
+                "dts": 179688,
+                "dts_time": "7.487000",
+                "duration": 1001,
+                "duration_time": "0.041708",
+                "size": "360",
+                "pos": "113332",
+                "flags": "__"
+              }
+            ]
+          },
+          {
+            "segment": "seg_00001.m4s",
+            "first": [
+              {
+                "codec_type": "video",
+                "stream_index": 0,
+                "pts": 180689,
+                "pts_time": "7.528708",
+                "dts": 180689,
+                "dts_time": "7.528708",
+                "duration": 1001,
+                "duration_time": "0.041708",
+                "size": "1796",
+                "pos": "6134",
+                "flags": "K_"
+              },
+              {
+                "codec_type": "video",
+                "stream_index": 0,
+                "pts": 181680,
+                "pts_time": "7.570000",
+                "dts": 181680,
+                "dts_time": "7.570000",
+                "duration": 1001,
+                "duration_time": "0.041708",
+                "size": "451",
+                "pos": "7930",
+                "flags": "__"
+              }
+            ],
+            "last": [
+              {
+                "codec_type": "video",
+                "stream_index": 0,
+                "pts": 268776,
+                "pts_time": "11.199000",
+                "dts": 268776,
+                "dts_time": "11.199000",
+                "duration": 1001,
+                "duration_time": "0.041708",
+                "size": "345",
+                "pos": "54999",
+                "flags": "__"
+              },
+              {
+                "codec_type": "video",
+                "stream_index": 0,
+                "pts": 269784,
+                "pts_time": "11.241000",
+                "dts": 269784,
+                "dts_time": "11.241000",
+                "duration": 1001,
+                "duration_time": "0.041708",
+                "size": "371",
+                "pos": "55344",
+                "flags": "__"
+              }
+            ]
+          },
+          {
+            "segment": "seg_00002.m4s",
+            "first": [
+              {
+                "codec_type": "video",
+                "stream_index": 0,
+                "pts": 270785,
+                "pts_time": "11.282708",
+                "dts": 270785,
+                "dts_time": "11.282708",
+                "duration": 1001,
+                "duration_time": "0.041708",
+                "size": "1804",
+                "pos": "4430",
+                "flags": "K_"
+              },
+              {
+                "codec_type": "video",
+                "stream_index": 0,
+                "pts": 271776,
+                "pts_time": "11.324000",
+                "dts": 271776,
+                "dts_time": "11.324000",
+                "duration": 1001,
+                "duration_time": "0.041708",
+                "size": "506",
+                "pos": "6234",
+                "flags": "__"
+              }
+            ],
+            "last": [
+              {
+                "codec_type": "video",
+                "stream_index": 0,
+                "pts": 286800,
+                "pts_time": "11.950000",
+                "dts": 286800,
+                "dts_time": "11.950000",
+                "duration": 1001,
+                "duration_time": "0.041708",
+                "size": "333",
+                "pos": "12833",
+                "flags": "__"
+              },
+              {
+                "codec_type": "video",
+                "stream_index": 0,
+                "pts": 287784,
+                "pts_time": "11.991000",
+                "dts": 287784,
+                "dts_time": "11.991000",
+                "duration": 1001,
+                "duration_time": "0.041708",
+                "size": "329",
+                "pos": "13166",
+                "flags": "__"
+              }
+            ]
+          }
+        ],
+        "playlist": "#EXTM3U\n#EXT-X-VERSION:7\n#EXT-X-TARGETDURATION:8\n#EXT-X-MEDIA-SEQUENCE:0\n#EXT-X-PLAYLIST-TYPE:EVENT\n#EXT-X-INDEPENDENT-SEGMENTS\n#EXT-X-MAP:URI=\"init.mp4\"\n#EXTINF:7.508000,\nseg_00000.m4s\n#EXTINF:3.753000,\nseg_00001.m4s\n#EXTINF:0.750750,\nseg_00002.m4s\n#EXT-X-ENDLIST\n",
+        "stderr": "[mp4 @ 0x159e21ae0] Packet duration: -17 / dts: 270768 is out of range\n"
+      }
+    },
+    "auditBefore": {
+      "sync": [
+        {
+          "requested": 0,
+          "bucket": 0,
+          "origin": 0,
+          "shift": 0.083,
+          "args": [
+            "-hide_banner",
+            "-loglevel",
+            "warning",
+            "-nostdin",
+            "-fflags",
+            "+genpts",
+            "-i",
+            "/tmp/cinevn-ts-audit/matrix-mac/fixtures/sync.mkv",
+            "-t",
+            "6",
+            "-map",
+            "0:v:0",
+            "-map",
+            "0:1?",
+            "-c:v",
+            "copy",
+            "-fps_mode:v",
+            "passthrough",
+            "-max_interleave_delta",
+            "0",
+            "-max_muxing_queue_size",
+            "2048",
+            "-c:a",
+            "aac",
+            "-b:a",
+            "192k",
+            "-ac",
+            "2",
+            "-avoid_negative_ts",
+            "make_zero",
+            "-sn",
+            "-f",
+            "hls",
+            "-hls_time",
+            "4",
+            "-hls_segment_type",
+            "fmp4",
+            "-hls_playlist_type",
+            "event",
+            "-hls_flags",
+            "independent_segments",
+            "-hls_list_size",
+            "0",
+            "-hls_fmp4_init_filename",
+            "init.mp4",
+            "-hls_segment_filename",
+            "/tmp/cinevn-ts-audit/matrix-mac/auditBefore/sync-0/seg_%05d.m4s",
+            "/tmp/cinevn-ts-audit/matrix-mac/auditBefore/sync-0/index.m3u8"
+          ],
+          "probe": {
+            "streams": [
+              {
+                "index": 0,
+                "codec": "h264",
+                "profile": "Main",
+                "pix_fmt": "yuv420p",
+                "time_base": "1/12288",
+                "start_time": "0.083008",
+                "r_frame_rate": "24/1",
+                "avg_frame_rate": "24/1"
+              },
+              {
+                "index": 1,
+                "codec": "aac",
+                "profile": "LC",
+                "time_base": "1/48000",
+                "start_time": "0.061000",
+                "r_frame_rate": "0/0",
+                "avg_frame_rate": "0/0"
+              }
+            ],
+            "formatStart": "0.061000",
+            "firstPackets": [
+              {
+                "codec_type": "video",
+                "stream_index": 0,
+                "pts": 1020,
+                "pts_time": "0.083008",
+                "dts": 0,
+                "dts_time": "0.000000",
+                "size": "700",
+                "pos": "4673",
+                "flags": "K_"
+              },
+              {
+                "codec_type": "video",
+                "stream_index": 0,
+                "pts": 2556,
+                "pts_time": "0.208008",
+                "dts": 504,
+                "dts_time": "0.041016",
+                "size": "11",
+                "pos": "5373",
+                "flags": "__"
+              },
+              {
+                "codec_type": "video",
+                "stream_index": 0,
+                "pts": 1536,
+                "pts_time": "0.125000",
+                "dts": 1020,
+                "dts_time": "0.083008",
+                "size": "11",
+                "pos": "5384",
+                "flags": "__"
+              },
+              {
+                "codec_type": "video",
+                "stream_index": 0,
+                "pts": 2040,
+                "pts_time": "0.166016",
+                "dts": 1536,
+                "dts_time": "0.125000",
+                "size": "11",
+                "pos": "5395",
+                "flags": "__"
+              },
+              {
+                "codec_type": "video",
+                "stream_index": 0,
+                "pts": 4092,
+                "pts_time": "0.333008",
+                "dts": 2040,
+                "dts_time": "0.166016",
+                "size": "12",
+                "pos": "5406",
+                "flags": "__"
+              },
+              {
+                "codec_type": "video",
+                "stream_index": 0,
+                "pts": 3072,
+                "pts_time": "0.250000",
+                "dts": 2556,
+                "dts_time": "0.208008",
+                "size": "13",
+                "pos": "5418",
+                "flags": "__"
+              },
+              {
+                "codec_type": "video",
+                "stream_index": 0,
+                "pts": 3576,
+                "pts_time": "0.291016",
+                "dts": 3072,
+                "dts_time": "0.250000",
+                "size": "11",
+                "pos": "5431",
+                "flags": "__"
+              },
+              {
+                "codec_type": "video",
+                "stream_index": 0,
+                "pts": 5628,
+                "pts_time": "0.458008",
+                "dts": 3576,
+                "dts_time": "0.291016",
+                "size": "12",
+                "pos": "5442",
+                "flags": "__"
+              }
+            ]
+          },
+          "corrected": {
+            "flash": 2.08301,
+            "tone": 2.09313
+          },
+          "normalized": {
+            "flash": 2.02197,
+            "tone": 2.03212
+          },
+          "audioVideoErrorMs": 10,
+          "subtitleErrorMs": 0,
+          "legacyMeasurementErrorMs": -61,
+          "markerRebaseSeconds": 0.06103999999999976
+        },
+        {
+          "requested": 197,
+          "bucket": 196,
+          "origin": 194,
+          "shift": 0.083,
+          "args": [
+            "-hide_banner",
+            "-loglevel",
+            "warning",
+            "-nostdin",
+            "-fflags",
+            "+genpts",
+            "-noaccurate_seek",
+            "-ss",
+            "196",
+            "-i",
+            "/tmp/cinevn-ts-audit/matrix-mac/fixtures/sync.mkv",
+            "-t",
+            "12",
+            "-map",
+            "0:v:0",
+            "-map",
+            "0:1?",
+            "-c:v",
+            "copy",
+            "-fps_mode:v",
+            "passthrough",
+            "-max_interleave_delta",
+            "0",
+            "-max_muxing_queue_size",
+            "2048",
+            "-c:a",
+            "aac",
+            "-b:a",
+            "192k",
+            "-ac",
+            "2",
+            "-avoid_negative_ts",
+            "make_zero",
+            "-sn",
+            "-f",
+            "hls",
+            "-hls_time",
+            "4",
+            "-hls_segment_type",
+            "fmp4",
+            "-hls_playlist_type",
+            "event",
+            "-hls_flags",
+            "independent_segments",
+            "-hls_list_size",
+            "0",
+            "-hls_fmp4_init_filename",
+            "init.mp4",
+            "-hls_segment_filename",
+            "/tmp/cinevn-ts-audit/matrix-mac/auditBefore/sync-197/seg_%05d.m4s",
+            "/tmp/cinevn-ts-audit/matrix-mac/auditBefore/sync-197/index.m3u8"
+          ],
+          "probe": {
+            "streams": [
+              {
+                "index": 0,
+                "codec": "h264",
+                "profile": "Main",
+                "pix_fmt": "yuv420p",
+                "time_base": "1/12288",
+                "start_time": "0.100993",
+                "r_frame_rate": "24/1",
+                "avg_frame_rate": "24/1"
+              },
+              {
+                "index": 1,
+                "codec": "aac",
+                "profile": "LC",
+                "time_base": "1/48000",
+                "start_time": "0.000000",
+                "r_frame_rate": "0/0",
+                "avg_frame_rate": "0/0"
+              }
+            ],
+            "formatStart": "0.000000",
+            "firstPackets": [
+              {
+                "codec_type": "video",
+                "stream_index": 0,
+                "pts": 1241,
+                "pts_time": "0.100993",
+                "dts": 221,
+                "dts_time": "0.017985",
+                "size": "28",
+                "pos": "4693",
+                "flags": "K_"
+              },
+              {
+                "codec_type": "video",
+                "stream_index": 0,
+                "pts": 2777,
+                "pts_time": "0.225993",
+                "dts": 725,
+                "dts_time": "0.059001",
+                "size": "11",
+                "pos": "4721",
+                "flags": "__"
+              },
+              {
+                "codec_type": "video",
+                "stream_index": 0,
+                "pts": 1757,
+                "pts_time": "0.142985",
+                "dts": 1241,
+                "dts_time": "0.100993",
+                "size": "11",
+                "pos": "4732",
+                "flags": "__"
+              },
+              {
+                "codec_type": "video",
+                "stream_index": 0,
+                "pts": 2261,
+                "pts_time": "0.184001",
+                "dts": 1757,
+                "dts_time": "0.142985",
+                "size": "11",
+                "pos": "4743",
+                "flags": "__"
+              },
+              {
+                "codec_type": "video",
+                "stream_index": 0,
+                "pts": 4313,
+                "pts_time": "0.350993",
+                "dts": 2261,
+                "dts_time": "0.184001",
+                "size": "12",
+                "pos": "4754",
+                "flags": "__"
+              },
+              {
+                "codec_type": "video",
+                "stream_index": 0,
+                "pts": 3293,
+                "pts_time": "0.267985",
+                "dts": 2777,
+                "dts_time": "0.225993",
+                "size": "13",
+                "pos": "4766",
+                "flags": "__"
+              },
+              {
+                "codec_type": "video",
+                "stream_index": 0,
+                "pts": 3797,
+                "pts_time": "0.309001",
+                "dts": 3293,
+                "dts_time": "0.267985",
+                "size": "11",
+                "pos": "4779",
+                "flags": "__"
+              },
+              {
+                "codec_type": "video",
+                "stream_index": 0,
+                "pts": 5849,
+                "pts_time": "0.475993",
+                "dts": 3797,
+                "dts_time": "0.309001",
+                "size": "12",
+                "pos": "4790",
+                "flags": "__"
+              }
+            ]
+          },
+          "corrected": {
+            "flash": 5.10099,
+            "tone": 5.10912
+          },
+          "normalized": {
+            "flash": 5.10099,
+            "tone": 5.10912
+          },
+          "audioVideoErrorMs": 8,
+          "subtitleErrorMs": 18,
+          "legacyMeasurementErrorMs": 18,
+          "markerRebaseSeconds": 0
+        }
+      ],
+      "hevc": {
+        "args": [
+          "-hide_banner",
+          "-loglevel",
+          "warning",
+          "-nostdin",
+          "-fflags",
+          "+genpts",
+          "-i",
+          "/tmp/cinevn-ts-audit/matrix-mac/fixtures/fractional.mkv",
+          "-map",
+          "0:v:0",
+          "-map",
+          "0:a:0?",
+          "-c:v",
+          "copy",
+          "-tag:v",
+          "hvc1",
+          "-fps_mode:v",
+          "passthrough",
+          "-bsf:v",
+          "setts=duration=0",
+          "-max_interleave_delta",
+          "0",
+          "-max_muxing_queue_size",
+          "2048",
+          "-c:a",
+          "copy",
+          "-avoid_negative_ts",
+          "make_zero",
+          "-sn",
+          "-f",
+          "hls",
+          "-hls_time",
+          "4",
+          "-hls_segment_type",
+          "fmp4",
+          "-hls_playlist_type",
+          "event",
+          "-hls_flags",
+          "independent_segments",
+          "-hls_list_size",
+          "0",
+          "-hls_fmp4_init_filename",
+          "init.mp4",
+          "-hls_segment_filename",
+          "/tmp/cinevn-ts-audit/matrix-mac/auditBefore/hevc/seg_%05d.m4s",
+          "/tmp/cinevn-ts-audit/matrix-mac/auditBefore/hevc/index.m3u8"
+        ],
+        "probe": {
+          "streams": [
+            {
+              "index": 0,
+              "codec": "hevc",
+              "profile": "Main 10",
+              "pix_fmt": "yuv420p10le",
+              "time_base": "1/24000",
+              "start_time": "0.021000",
+              "r_frame_rate": "24000/1001",
+              "avg_frame_rate": "24000/1001"
+            },
+            {
+              "index": 1,
+              "codec": "aac",
+              "time_base": "1/48000",
+              "start_time": "0.021000",
+              "r_frame_rate": "0/0",
+              "avg_frame_rate": "0/0"
+            }
+          ],
+          "formatStart": "0.021000",
+          "firstPackets": [
+            {
+              "codec_type": "video",
+              "stream_index": 0,
+              "pts": 504,
+              "pts_time": "0.021000",
+              "dts": 504,
+              "dts_time": "0.021000",
+              "duration": 1001,
+              "duration_time": "0.041708",
+              "size": "1388",
+              "pos": "8986",
+              "flags": "K_"
+            },
+            {
+              "codec_type": "video",
+              "stream_index": 0,
+              "pts": 1512,
+              "pts_time": "0.063000",
+              "dts": 1512,
+              "dts_time": "0.063000",
+              "duration": 1001,
+              "duration_time": "0.041708",
+              "size": "485",
+              "pos": "10374",
+              "flags": "__"
+            },
+            {
+              "codec_type": "video",
+              "stream_index": 0,
+              "pts": 2496,
+              "pts_time": "0.104000",
+              "dts": 2496,
+              "dts_time": "0.104000",
+              "duration": 1001,
+              "duration_time": "0.041708",
+              "size": "439",
+              "pos": "10859",
+              "flags": "__"
+            },
+            {
+              "codec_type": "video",
+              "stream_index": 0,
+              "pts": 3504,
+              "pts_time": "0.146000",
+              "dts": 3504,
+              "dts_time": "0.146000",
+              "duration": 1001,
+              "duration_time": "0.041708",
+              "size": "680",
+              "pos": "11298",
+              "flags": "__"
+            },
+            {
+              "codec_type": "video",
+              "stream_index": 0,
+              "pts": 4512,
+              "pts_time": "0.188000",
+              "dts": 4512,
+              "dts_time": "0.188000",
+              "duration": 1001,
+              "duration_time": "0.041708",
+              "size": "575",
+              "pos": "11978",
+              "flags": "__"
+            },
+            {
+              "codec_type": "video",
+              "stream_index": 0,
+              "pts": 5520,
+              "pts_time": "0.230000",
+              "dts": 5520,
+              "dts_time": "0.230000",
+              "duration": 1001,
+              "duration_time": "0.041708",
+              "size": "594",
+              "pos": "12553",
+              "flags": "__"
+            },
+            {
+              "codec_type": "video",
+              "stream_index": 0,
+              "pts": 6504,
+              "pts_time": "0.271000",
+              "dts": 6504,
+              "dts_time": "0.271000",
+              "duration": 1001,
+              "duration_time": "0.041708",
+              "size": "584",
+              "pos": "13147",
+              "flags": "__"
+            },
+            {
+              "codec_type": "video",
+              "stream_index": 0,
+              "pts": 7512,
+              "pts_time": "0.313000",
+              "dts": 7512,
+              "dts_time": "0.313000",
+              "duration": 1001,
+              "duration_time": "0.041708",
+              "size": "355",
+              "pos": "13731",
+              "flags": "__"
+            }
+          ]
+        },
+        "packetCount": 288,
+        "maxRelativePtsErrorMs": 0.7079999999994868,
+        "minDtsDelta": 0.04099999999999859,
+        "boundaries": [
+          {
+            "segment": "seg_00000.m4s",
+            "first": [
+              {
+                "codec_type": "video",
+                "stream_index": 0,
+                "pts": 504,
+                "pts_time": "0.021000",
+                "dts": 504,
+                "dts_time": "0.021000",
+                "duration": 1001,
+                "duration_time": "0.041708",
+                "size": "1388",
+                "pos": "8986",
+                "flags": "K_"
+              },
+              {
+                "codec_type": "video",
+                "stream_index": 0,
+                "pts": 1512,
+                "pts_time": "0.063000",
+                "dts": 1512,
+                "dts_time": "0.063000",
+                "duration": 1001,
+                "duration_time": "0.041708",
+                "size": "485",
+                "pos": "10374",
+                "flags": "__"
+              }
+            ],
+            "last": [
+              {
+                "codec_type": "video",
+                "stream_index": 0,
+                "pts": 178680,
+                "pts_time": "7.445000",
+                "dts": 178680,
+                "dts_time": "7.445000",
+                "duration": 1001,
+                "duration_time": "0.041708",
+                "size": "419",
+                "pos": "112913",
+                "flags": "__"
+              },
+              {
+                "codec_type": "video",
+                "stream_index": 0,
+                "pts": 179688,
+                "pts_time": "7.487000",
+                "dts": 179688,
+                "dts_time": "7.487000",
+                "duration": 1001,
+                "duration_time": "0.041708",
+                "size": "360",
+                "pos": "113332",
+                "flags": "__"
+              }
+            ]
+          },
+          {
+            "segment": "seg_00001.m4s",
+            "first": [
+              {
+                "codec_type": "video",
+                "stream_index": 0,
+                "pts": 180689,
+                "pts_time": "7.528708",
+                "dts": 180689,
+                "dts_time": "7.528708",
+                "duration": 1001,
+                "duration_time": "0.041708",
+                "size": "1796",
+                "pos": "6134",
+                "flags": "K_"
+              },
+              {
+                "codec_type": "video",
+                "stream_index": 0,
+                "pts": 181680,
+                "pts_time": "7.570000",
+                "dts": 181680,
+                "dts_time": "7.570000",
+                "duration": 1001,
+                "duration_time": "0.041708",
+                "size": "451",
+                "pos": "7930",
+                "flags": "__"
+              }
+            ],
+            "last": [
+              {
+                "codec_type": "video",
+                "stream_index": 0,
+                "pts": 268776,
+                "pts_time": "11.199000",
+                "dts": 268776,
+                "dts_time": "11.199000",
+                "duration": 1001,
+                "duration_time": "0.041708",
+                "size": "345",
+                "pos": "54999",
+                "flags": "__"
+              },
+              {
+                "codec_type": "video",
+                "stream_index": 0,
+                "pts": 269784,
+                "pts_time": "11.241000",
+                "dts": 269784,
+                "dts_time": "11.241000",
+                "duration": 1001,
+                "duration_time": "0.041708",
+                "size": "371",
+                "pos": "55344",
+                "flags": "__"
+              }
+            ]
+          },
+          {
+            "segment": "seg_00002.m4s",
+            "first": [
+              {
+                "codec_type": "video",
+                "stream_index": 0,
+                "pts": 270785,
+                "pts_time": "11.282708",
+                "dts": 270785,
+                "dts_time": "11.282708",
+                "duration": 1001,
+                "duration_time": "0.041708",
+                "size": "1804",
+                "pos": "4430",
+                "flags": "K_"
+              },
+              {
+                "codec_type": "video",
+                "stream_index": 0,
+                "pts": 271776,
+                "pts_time": "11.324000",
+                "dts": 271776,
+                "dts_time": "11.324000",
+                "duration": 1001,
+                "duration_time": "0.041708",
+                "size": "506",
+                "pos": "6234",
+                "flags": "__"
+              }
+            ],
+            "last": [
+              {
+                "codec_type": "video",
+                "stream_index": 0,
+                "pts": 286800,
+                "pts_time": "11.950000",
+                "dts": 286800,
+                "dts_time": "11.950000",
+                "duration": 1001,
+                "duration_time": "0.041708",
+                "size": "333",
+                "pos": "12833",
+                "flags": "__"
+              },
+              {
+                "codec_type": "video",
+                "stream_index": 0,
+                "pts": 287784,
+                "pts_time": "11.991000",
+                "dts": 287784,
+                "dts_time": "11.991000",
+                "duration": 1001,
+                "duration_time": "0.041708",
+                "size": "329",
+                "pos": "13166",
+                "flags": "__"
+              }
+            ]
+          }
+        ],
+        "playlist": "#EXTM3U\n#EXT-X-VERSION:7\n#EXT-X-TARGETDURATION:8\n#EXT-X-MEDIA-SEQUENCE:0\n#EXT-X-PLAYLIST-TYPE:EVENT\n#EXT-X-INDEPENDENT-SEGMENTS\n#EXT-X-MAP:URI=\"init.mp4\"\n#EXTINF:7.508000,\nseg_00000.m4s\n#EXTINF:3.753000,\nseg_00001.m4s\n#EXTINF:0.750750,\nseg_00002.m4s\n#EXT-X-ENDLIST\n",
+        "stderr": "[mp4 @ 0x14be21ae0] Packet duration: -17 / dts: 270768 is out of range\n"
+      }
+    },
+    "after": {
+      "sync": [
+        {
+          "requested": 0,
+          "bucket": 0,
+          "origin": 0,
+          "shift": 0.083,
+          "args": [
+            "-hide_banner",
+            "-loglevel",
+            "warning",
+            "-nostdin",
+            "-fflags",
+            "+genpts",
+            "-i",
+            "/tmp/cinevn-ts-audit/matrix-mac/fixtures/sync.mkv",
+            "-t",
+            "6",
+            "-map",
+            "0:v:0",
+            "-map",
+            "0:1?",
+            "-c:v",
+            "copy",
+            "-fps_mode:v",
+            "passthrough",
+            "-max_interleave_delta",
+            "0",
+            "-max_muxing_queue_size",
+            "2048",
+            "-c:a",
+            "aac",
+            "-b:a",
+            "192k",
+            "-ac",
+            "2",
+            "-avoid_negative_ts",
+            "make_zero",
+            "-sn",
+            "-f",
+            "hls",
+            "-hls_time",
+            "4",
+            "-hls_segment_type",
+            "fmp4",
+            "-hls_playlist_type",
+            "event",
+            "-hls_flags",
+            "independent_segments",
+            "-hls_list_size",
+            "0",
+            "-hls_fmp4_init_filename",
+            "init.mp4",
+            "-hls_segment_filename",
+            "/tmp/cinevn-ts-audit/matrix-mac/after/sync-0/seg_%05d.m4s",
+            "/tmp/cinevn-ts-audit/matrix-mac/after/sync-0/index.m3u8"
+          ],
+          "probe": {
+            "streams": [
+              {
+                "index": 0,
+                "codec": "h264",
+                "profile": "Main",
+                "pix_fmt": "yuv420p",
+                "time_base": "1/12288",
+                "start_time": "0.083008",
+                "r_frame_rate": "24/1",
+                "avg_frame_rate": "24/1"
+              },
+              {
+                "index": 1,
+                "codec": "aac",
+                "profile": "LC",
+                "time_base": "1/48000",
+                "start_time": "0.061000",
+                "r_frame_rate": "0/0",
+                "avg_frame_rate": "0/0"
+              }
+            ],
+            "formatStart": "0.061000",
+            "firstPackets": [
+              {
+                "codec_type": "video",
+                "stream_index": 0,
+                "pts": 1020,
+                "pts_time": "0.083008",
+                "dts": 0,
+                "dts_time": "0.000000",
+                "size": "700",
+                "pos": "4673",
+                "flags": "K_"
+              },
+              {
+                "codec_type": "video",
+                "stream_index": 0,
+                "pts": 2556,
+                "pts_time": "0.208008",
+                "dts": 504,
+                "dts_time": "0.041016",
+                "size": "11",
+                "pos": "5373",
+                "flags": "__"
+              },
+              {
+                "codec_type": "video",
+                "stream_index": 0,
+                "pts": 1536,
+                "pts_time": "0.125000",
+                "dts": 1020,
+                "dts_time": "0.083008",
+                "size": "11",
+                "pos": "5384",
+                "flags": "__"
+              },
+              {
+                "codec_type": "video",
+                "stream_index": 0,
+                "pts": 2040,
+                "pts_time": "0.166016",
+                "dts": 1536,
+                "dts_time": "0.125000",
+                "size": "11",
+                "pos": "5395",
+                "flags": "__"
+              },
+              {
+                "codec_type": "video",
+                "stream_index": 0,
+                "pts": 4092,
+                "pts_time": "0.333008",
+                "dts": 2040,
+                "dts_time": "0.166016",
+                "size": "12",
+                "pos": "5406",
+                "flags": "__"
+              },
+              {
+                "codec_type": "video",
+                "stream_index": 0,
+                "pts": 3072,
+                "pts_time": "0.250000",
+                "dts": 2556,
+                "dts_time": "0.208008",
+                "size": "13",
+                "pos": "5418",
+                "flags": "__"
+              },
+              {
+                "codec_type": "video",
+                "stream_index": 0,
+                "pts": 3576,
+                "pts_time": "0.291016",
+                "dts": 3072,
+                "dts_time": "0.250000",
+                "size": "11",
+                "pos": "5431",
+                "flags": "__"
+              },
+              {
+                "codec_type": "video",
+                "stream_index": 0,
+                "pts": 5628,
+                "pts_time": "0.458008",
+                "dts": 3576,
+                "dts_time": "0.291016",
+                "size": "12",
+                "pos": "5442",
+                "flags": "__"
+              }
+            ]
+          },
+          "corrected": {
+            "flash": 2.08301,
+            "tone": 2.09313
+          },
+          "normalized": {
+            "flash": 2.02197,
+            "tone": 2.03212
+          },
+          "audioVideoErrorMs": 10,
+          "subtitleErrorMs": 0,
+          "legacyMeasurementErrorMs": -61,
+          "markerRebaseSeconds": 0.06103999999999976
+        },
+        {
+          "requested": 197,
+          "bucket": 196,
+          "origin": 194,
+          "shift": 0.083,
+          "args": [
+            "-hide_banner",
+            "-loglevel",
+            "warning",
+            "-nostdin",
+            "-fflags",
+            "+genpts",
+            "-noaccurate_seek",
+            "-ss",
+            "196",
+            "-i",
+            "/tmp/cinevn-ts-audit/matrix-mac/fixtures/sync.mkv",
+            "-t",
+            "12",
+            "-map",
+            "0:v:0",
+            "-map",
+            "0:1?",
+            "-c:v",
+            "copy",
+            "-fps_mode:v",
+            "passthrough",
+            "-max_interleave_delta",
+            "0",
+            "-max_muxing_queue_size",
+            "2048",
+            "-c:a",
+            "aac",
+            "-b:a",
+            "192k",
+            "-ac",
+            "2",
+            "-avoid_negative_ts",
+            "make_zero",
+            "-sn",
+            "-f",
+            "hls",
+            "-hls_time",
+            "4",
+            "-hls_segment_type",
+            "fmp4",
+            "-hls_playlist_type",
+            "event",
+            "-hls_flags",
+            "independent_segments",
+            "-hls_list_size",
+            "0",
+            "-hls_fmp4_init_filename",
+            "init.mp4",
+            "-hls_segment_filename",
+            "/tmp/cinevn-ts-audit/matrix-mac/after/sync-197/seg_%05d.m4s",
+            "/tmp/cinevn-ts-audit/matrix-mac/after/sync-197/index.m3u8"
+          ],
+          "probe": {
+            "streams": [
+              {
+                "index": 0,
+                "codec": "h264",
+                "profile": "Main",
+                "pix_fmt": "yuv420p",
+                "time_base": "1/12288",
+                "start_time": "0.100993",
+                "r_frame_rate": "24/1",
+                "avg_frame_rate": "24/1"
+              },
+              {
+                "index": 1,
+                "codec": "aac",
+                "profile": "LC",
+                "time_base": "1/48000",
+                "start_time": "0.000000",
+                "r_frame_rate": "0/0",
+                "avg_frame_rate": "0/0"
+              }
+            ],
+            "formatStart": "0.000000",
+            "firstPackets": [
+              {
+                "codec_type": "video",
+                "stream_index": 0,
+                "pts": 1241,
+                "pts_time": "0.100993",
+                "dts": 221,
+                "dts_time": "0.017985",
+                "size": "28",
+                "pos": "4693",
+                "flags": "K_"
+              },
+              {
+                "codec_type": "video",
+                "stream_index": 0,
+                "pts": 2777,
+                "pts_time": "0.225993",
+                "dts": 725,
+                "dts_time": "0.059001",
+                "size": "11",
+                "pos": "4721",
+                "flags": "__"
+              },
+              {
+                "codec_type": "video",
+                "stream_index": 0,
+                "pts": 1757,
+                "pts_time": "0.142985",
+                "dts": 1241,
+                "dts_time": "0.100993",
+                "size": "11",
+                "pos": "4732",
+                "flags": "__"
+              },
+              {
+                "codec_type": "video",
+                "stream_index": 0,
+                "pts": 2261,
+                "pts_time": "0.184001",
+                "dts": 1757,
+                "dts_time": "0.142985",
+                "size": "11",
+                "pos": "4743",
+                "flags": "__"
+              },
+              {
+                "codec_type": "video",
+                "stream_index": 0,
+                "pts": 4313,
+                "pts_time": "0.350993",
+                "dts": 2261,
+                "dts_time": "0.184001",
+                "size": "12",
+                "pos": "4754",
+                "flags": "__"
+              },
+              {
+                "codec_type": "video",
+                "stream_index": 0,
+                "pts": 3293,
+                "pts_time": "0.267985",
+                "dts": 2777,
+                "dts_time": "0.225993",
+                "size": "13",
+                "pos": "4766",
+                "flags": "__"
+              },
+              {
+                "codec_type": "video",
+                "stream_index": 0,
+                "pts": 3797,
+                "pts_time": "0.309001",
+                "dts": 3293,
+                "dts_time": "0.267985",
+                "size": "11",
+                "pos": "4779",
+                "flags": "__"
+              },
+              {
+                "codec_type": "video",
+                "stream_index": 0,
+                "pts": 5849,
+                "pts_time": "0.475993",
+                "dts": 3797,
+                "dts_time": "0.309001",
+                "size": "12",
+                "pos": "4790",
+                "flags": "__"
+              }
+            ]
+          },
+          "corrected": {
+            "flash": 5.10099,
+            "tone": 5.10912
+          },
+          "normalized": {
+            "flash": 5.10099,
+            "tone": 5.10912
+          },
+          "audioVideoErrorMs": 8,
+          "subtitleErrorMs": 18,
+          "legacyMeasurementErrorMs": 18,
+          "markerRebaseSeconds": 0
+        }
+      ],
+      "hevc": {
+        "args": [
+          "-hide_banner",
+          "-loglevel",
+          "warning",
+          "-nostdin",
+          "-fflags",
+          "+genpts",
+          "-i",
+          "/tmp/cinevn-ts-audit/matrix-mac/fixtures/fractional.mkv",
+          "-map",
+          "0:v:0",
+          "-map",
+          "0:a:0?",
+          "-c:v",
+          "copy",
+          "-tag:v",
+          "hvc1",
+          "-fps_mode:v",
+          "passthrough",
+          "-copytb",
+          "1",
+          "-bsf:v",
+          "setts=duration='if(isnan(NEXT_DTS),DURATION,NEXT_DTS-DTS)'",
+          "-max_interleave_delta",
+          "0",
+          "-max_muxing_queue_size",
+          "2048",
+          "-c:a",
+          "copy",
+          "-avoid_negative_ts",
+          "make_zero",
+          "-sn",
+          "-f",
+          "hls",
+          "-hls_time",
+          "4",
+          "-hls_segment_type",
+          "fmp4",
+          "-hls_playlist_type",
+          "event",
+          "-hls_flags",
+          "independent_segments",
+          "-hls_list_size",
+          "0",
+          "-hls_fmp4_init_filename",
+          "init.mp4",
+          "-hls_segment_filename",
+          "/tmp/cinevn-ts-audit/matrix-mac/after/hevc/seg_%05d.m4s",
+          "/tmp/cinevn-ts-audit/matrix-mac/after/hevc/index.m3u8"
+        ],
+        "probe": {
+          "streams": [
+            {
+              "index": 0,
+              "codec": "hevc",
+              "profile": "Main 10",
+              "pix_fmt": "yuv420p10le",
+              "time_base": "1/16000",
+              "start_time": "0.021000",
+              "r_frame_rate": "24000/1001",
+              "avg_frame_rate": "24000/1001"
+            },
+            {
+              "index": 1,
+              "codec": "aac",
+              "time_base": "1/48000",
+              "start_time": "0.021000",
+              "r_frame_rate": "0/0",
+              "avg_frame_rate": "0/0"
+            }
+          ],
+          "formatStart": "0.021000",
+          "firstPackets": [
+            {
+              "codec_type": "video",
+              "stream_index": 0,
+              "pts": 336,
+              "pts_time": "0.021000",
+              "dts": 336,
+              "dts_time": "0.021000",
+              "duration": 667,
+              "duration_time": "0.041688",
+              "size": "1388",
+              "pos": "8986",
+              "flags": "K_"
+            },
+            {
+              "codec_type": "video",
+              "stream_index": 0,
+              "pts": 1008,
+              "pts_time": "0.063000",
+              "dts": 1008,
+              "dts_time": "0.063000",
+              "duration": 667,
+              "duration_time": "0.041688",
+              "size": "485",
+              "pos": "10374",
+              "flags": "__"
+            },
+            {
+              "codec_type": "video",
+              "stream_index": 0,
+              "pts": 1664,
+              "pts_time": "0.104000",
+              "dts": 1664,
+              "dts_time": "0.104000",
+              "duration": 667,
+              "duration_time": "0.041688",
+              "size": "439",
+              "pos": "10859",
+              "flags": "__"
+            },
+            {
+              "codec_type": "video",
+              "stream_index": 0,
+              "pts": 2336,
+              "pts_time": "0.146000",
+              "dts": 2336,
+              "dts_time": "0.146000",
+              "duration": 667,
+              "duration_time": "0.041688",
+              "size": "680",
+              "pos": "11298",
+              "flags": "__"
+            },
+            {
+              "codec_type": "video",
+              "stream_index": 0,
+              "pts": 3008,
+              "pts_time": "0.188000",
+              "dts": 3008,
+              "dts_time": "0.188000",
+              "duration": 667,
+              "duration_time": "0.041688",
+              "size": "575",
+              "pos": "11978",
+              "flags": "__"
+            },
+            {
+              "codec_type": "video",
+              "stream_index": 0,
+              "pts": 3680,
+              "pts_time": "0.230000",
+              "dts": 3680,
+              "dts_time": "0.230000",
+              "duration": 667,
+              "duration_time": "0.041688",
+              "size": "594",
+              "pos": "12553",
+              "flags": "__"
+            },
+            {
+              "codec_type": "video",
+              "stream_index": 0,
+              "pts": 4336,
+              "pts_time": "0.271000",
+              "dts": 4336,
+              "dts_time": "0.271000",
+              "duration": 667,
+              "duration_time": "0.041688",
+              "size": "584",
+              "pos": "13147",
+              "flags": "__"
+            },
+            {
+              "codec_type": "video",
+              "stream_index": 0,
+              "pts": 5008,
+              "pts_time": "0.313000",
+              "dts": 5008,
+              "dts_time": "0.313000",
+              "duration": 667,
+              "duration_time": "0.041688",
+              "size": "355",
+              "pos": "13731",
+              "flags": "__"
+            }
+          ]
+        },
+        "packetCount": 288,
+        "maxRelativePtsErrorMs": 1.7763568394002505e-12,
+        "minDtsDelta": 0.04099999999999859,
+        "boundaries": [
+          {
+            "segment": "seg_00000.m4s",
+            "first": [
+              {
+                "codec_type": "video",
+                "stream_index": 0,
+                "pts": 336,
+                "pts_time": "0.021000",
+                "dts": 336,
+                "dts_time": "0.021000",
+                "duration": 667,
+                "duration_time": "0.041688",
+                "size": "1388",
+                "pos": "8986",
+                "flags": "K_"
+              },
+              {
+                "codec_type": "video",
+                "stream_index": 0,
+                "pts": 1008,
+                "pts_time": "0.063000",
+                "dts": 1008,
+                "dts_time": "0.063000",
+                "duration": 667,
+                "duration_time": "0.041688",
+                "size": "485",
+                "pos": "10374",
+                "flags": "__"
+              }
+            ],
+            "last": [
+              {
+                "codec_type": "video",
+                "stream_index": 0,
+                "pts": 119120,
+                "pts_time": "7.445000",
+                "dts": 119120,
+                "dts_time": "7.445000",
+                "duration": 667,
+                "duration_time": "0.041688",
+                "size": "419",
+                "pos": "112913",
+                "flags": "__"
+              },
+              {
+                "codec_type": "video",
+                "stream_index": 0,
+                "pts": 119792,
+                "pts_time": "7.487000",
+                "dts": 119792,
+                "dts_time": "7.487000",
+                "duration": 667,
+                "duration_time": "0.041688",
+                "size": "360",
+                "pos": "113332",
+                "flags": "__"
+              }
+            ]
+          },
+          {
+            "segment": "seg_00001.m4s",
+            "first": [
+              {
+                "codec_type": "video",
+                "stream_index": 0,
+                "pts": 120464,
+                "pts_time": "7.529000",
+                "dts": 120464,
+                "dts_time": "7.529000",
+                "duration": 667,
+                "duration_time": "0.041688",
+                "size": "1796",
+                "pos": "6134",
+                "flags": "K_"
+              },
+              {
+                "codec_type": "video",
+                "stream_index": 0,
+                "pts": 121120,
+                "pts_time": "7.570000",
+                "dts": 121120,
+                "dts_time": "7.570000",
+                "duration": 667,
+                "duration_time": "0.041688",
+                "size": "451",
+                "pos": "7930",
+                "flags": "__"
+              }
+            ],
+            "last": [
+              {
+                "codec_type": "video",
+                "stream_index": 0,
+                "pts": 179184,
+                "pts_time": "11.199000",
+                "dts": 179184,
+                "dts_time": "11.199000",
+                "duration": 667,
+                "duration_time": "0.041688",
+                "size": "345",
+                "pos": "54999",
+                "flags": "__"
+              },
+              {
+                "codec_type": "video",
+                "stream_index": 0,
+                "pts": 179856,
+                "pts_time": "11.241000",
+                "dts": 179856,
+                "dts_time": "11.241000",
+                "duration": 667,
+                "duration_time": "0.041688",
+                "size": "371",
+                "pos": "55344",
+                "flags": "__"
+              }
+            ]
+          },
+          {
+            "segment": "seg_00002.m4s",
+            "first": [
+              {
+                "codec_type": "video",
+                "stream_index": 0,
+                "pts": 180512,
+                "pts_time": "11.282000",
+                "dts": 180512,
+                "dts_time": "11.282000",
+                "duration": 667,
+                "duration_time": "0.041688",
+                "size": "1804",
+                "pos": "4430",
+                "flags": "K_"
+              },
+              {
+                "codec_type": "video",
+                "stream_index": 0,
+                "pts": 181184,
+                "pts_time": "11.324000",
+                "dts": 181184,
+                "dts_time": "11.324000",
+                "duration": 667,
+                "duration_time": "0.041688",
+                "size": "506",
+                "pos": "6234",
+                "flags": "__"
+              }
+            ],
+            "last": [
+              {
+                "codec_type": "video",
+                "stream_index": 0,
+                "pts": 191200,
+                "pts_time": "11.950000",
+                "dts": 191200,
+                "dts_time": "11.950000",
+                "duration": 667,
+                "duration_time": "0.041688",
+                "size": "333",
+                "pos": "12833",
+                "flags": "__"
+              },
+              {
+                "codec_type": "video",
+                "stream_index": 0,
+                "pts": 191856,
+                "pts_time": "11.991000",
+                "dts": 191856,
+                "dts_time": "11.991000",
+                "duration": 667,
+                "duration_time": "0.041688",
+                "size": "329",
+                "pos": "13166",
+                "flags": "__"
+              }
+            ]
+          }
+        ],
+        "playlist": "#EXTM3U\n#EXT-X-VERSION:7\n#EXT-X-TARGETDURATION:8\n#EXT-X-MEDIA-SEQUENCE:0\n#EXT-X-PLAYLIST-TYPE:EVENT\n#EXT-X-INDEPENDENT-SEGMENTS\n#EXT-X-MAP:URI=\"init.mp4\"\n#EXTINF:7.508000,\nseg_00000.m4s\n#EXTINF:3.753000,\nseg_00001.m4s\n#EXTINF:0.750688,\nseg_00002.m4s\n#EXT-X-ENDLIST\n",
+        "stderr": "[hls @ 0x13de20ae0] Packet with invalid duration -9223372036854775808 in stream 0\n"
+      }
+    }
+  },
+  "originalTests": {
+    "baseline": [
+      {
+        "command": [
+          "node",
+          "/var/folders/md/1l27d4ps5s7b78wknlmtlvdw0000gn/T/cinevn-timestamp-baseline-xdR0A2/backend-node/tests/remux-hevc-roundtrip.test.mjs"
+        ],
+        "status": 0,
+        "stdout": "ok - HEVC Main 10 survives HLS remux with identical decoded frames\nok - fractional-rate HEVC keeps monotonic fragment timestamps and the source clock\n",
+        "stderr": ""
+      },
+      {
+        "command": [
+          "node",
+          "/var/folders/md/1l27d4ps5s7b78wknlmtlvdw0000gn/T/cinevn-timestamp-baseline-xdR0A2/backend-node/tests/playback-sync-real.test.mjs"
+        ],
+        "status": 1,
+        "stdout": "",
+        "stderr": "node:internal/modules/run_main:107\n    triggerUncaughtException(\n    ^\n\nAssertionError [ERR_ASSERTION]: subtitle/source clock mismatch -61ms\n    at file:///private/var/folders/md/1l27d4ps5s7b78wknlmtlvdw0000gn/T/cinevn-timestamp-baseline-xdR0A2/backend-node/tests/playback-sync-real.test.mjs:56:12 {\n  generatedMessage: false,\n  code: 'ERR_ASSERTION',\n  actual: false,\n  expected: true,\n  operator: '==',\n  diff: 'simple'\n}\n\nNode.js v24.21.0\n"
+      }
+    ],
+    "auditBefore": [
+      {
+        "command": [
+          "node",
+          "/var/folders/md/1l27d4ps5s7b78wknlmtlvdw0000gn/T/cinevn-timestamp-auditBefore-btw9yy/backend-node/tests/remux-hevc-roundtrip.test.mjs"
+        ],
+        "status": 0,
+        "stdout": "ok - HEVC Main 10 survives HLS remux with identical decoded frames\nok - fractional-rate HEVC keeps monotonic fragment timestamps and the source clock\n",
+        "stderr": ""
+      },
+      {
+        "command": [
+          "node",
+          "/var/folders/md/1l27d4ps5s7b78wknlmtlvdw0000gn/T/cinevn-timestamp-auditBefore-btw9yy/backend-node/tests/playback-sync-real.test.mjs"
+        ],
+        "status": 1,
+        "stdout": "",
+        "stderr": "node:internal/modules/run_main:107\n    triggerUncaughtException(\n    ^\n\nAssertionError [ERR_ASSERTION]: subtitle/source clock mismatch -61ms\n    at file:///private/var/folders/md/1l27d4ps5s7b78wknlmtlvdw0000gn/T/cinevn-timestamp-auditBefore-btw9yy/backend-node/tests/playback-sync-real.test.mjs:56:12 {\n  generatedMessage: false,\n  code: 'ERR_ASSERTION',\n  actual: false,\n  expected: true,\n  operator: '==',\n  diff: 'simple'\n}\n\nNode.js v24.21.0\n"
+      }
+    ]
+  },
+  "sourceHEVC": {
+    "streams": [
+      {
+        "index": 0,
+        "codec": "hevc",
+        "profile": "Main 10",
+        "pix_fmt": "yuv420p10le",
+        "time_base": "1/1000",
+        "start_time": "0.000000",
+        "r_frame_rate": "24000/1001",
+        "avg_frame_rate": "24000/1001"
+      },
+      {
+        "index": 1,
+        "codec": "aac",
+        "profile": "LC",
+        "time_base": "1/1000",
+        "start_time": "-0.021000",
+        "r_frame_rate": "0/0",
+        "avg_frame_rate": "0/0"
+      }
+    ],
+    "formatStart": "-0.021000",
+    "firstPackets": [
+      {
+        "codec_type": "audio",
+        "stream_index": 1,
+        "pts": -21,
+        "pts_time": "-0.021000",
+        "dts": -21,
+        "dts_time": "-0.021000",
+        "size": "210",
+        "pos": "3116",
+        "flags": "K_"
+      },
+      {
+        "codec_type": "video",
+        "stream_index": 0,
+        "pts": 0,
+        "pts_time": "0.000000",
+        "dts": 0,
+        "dts_time": "0.000000",
+        "duration": 41,
+        "duration_time": "0.041000",
+        "size": "1388",
+        "pos": "3333",
+        "flags": "K_"
+      },
+      {
+        "codec_type": "audio",
+        "stream_index": 1,
+        "pts": 0,
+        "pts_time": "0.000000",
+        "dts": 0,
+        "dts_time": "0.000000",
+        "duration": 21,
+        "duration_time": "0.021000",
+        "size": "280",
+        "pos": "4728",
+        "flags": "K_"
+      },
+      {
+        "codec_type": "audio",
+        "stream_index": 1,
+        "pts": 21,
+        "pts_time": "0.021000",
+        "dts": 21,
+        "dts_time": "0.021000",
+        "duration": 21,
+        "duration_time": "0.021000",
+        "size": "157",
+        "pos": "5015",
+        "flags": "K_"
+      },
+      {
+        "codec_type": "video",
+        "stream_index": 0,
+        "pts": 42,
+        "pts_time": "0.042000",
+        "dts": 42,
+        "dts_time": "0.042000",
+        "duration": 41,
+        "duration_time": "0.041000",
+        "size": "485",
+        "pos": "5179",
+        "flags": "__"
+      },
+      {
+        "codec_type": "audio",
+        "stream_index": 1,
+        "pts": 43,
+        "pts_time": "0.043000",
+        "dts": 43,
+        "dts_time": "0.043000",
+        "duration": 21,
+        "duration_time": "0.021000",
+        "size": "208",
+        "pos": "5671",
+        "flags": "K_"
+      },
+      {
+        "codec_type": "audio",
+        "stream_index": 1,
+        "pts": 64,
+        "pts_time": "0.064000",
+        "dts": 64,
+        "dts_time": "0.064000",
+        "duration": 21,
+        "duration_time": "0.021000",
+        "size": "231",
+        "pos": "5886",
+        "flags": "K_"
+      },
+      {
+        "codec_type": "video",
+        "stream_index": 0,
+        "pts": 83,
+        "pts_time": "0.083000",
+        "dts": 83,
+        "dts_time": "0.083000",
+        "duration": 41,
+        "duration_time": "0.041000",
+        "size": "439",
+        "pos": "6124",
+        "flags": "__"
+      }
+    ]
+  },
+  "sourceSync": {
+    "streams": [
+      {
+        "index": 0,
+        "codec": "h264",
+        "profile": "Main",
+        "pix_fmt": "yuv420p",
+        "time_base": "1/1000",
+        "start_time": "0.000000",
+        "r_frame_rate": "24/1",
+        "avg_frame_rate": "24/1"
+      },
+      {
+        "index": 1,
+        "codec": "dts",
+        "profile": "DTS",
+        "time_base": "1/1000",
+        "start_time": "0.000000",
+        "r_frame_rate": "0/0",
+        "avg_frame_rate": "0/0"
+      },
+      {
+        "index": 2,
+        "codec": "subrip",
+        "time_base": "1/1000",
+        "start_time": "0.000000",
+        "r_frame_rate": "0/0",
+        "avg_frame_rate": "0/0"
+      }
+    ],
+    "formatStart": "0.000000",
+    "firstPackets": [
+      {
+        "codec_type": "video",
+        "stream_index": 0,
+        "pts": 0,
+        "pts_time": "0.000000",
+        "duration": 41,
+        "duration_time": "0.041000",
+        "size": "700",
+        "pos": "863",
+        "flags": "K_"
+      },
+      {
+        "codec_type": "video",
+        "stream_index": 0,
+        "pts": 125,
+        "pts_time": "0.125000",
+        "duration": 41,
+        "duration_time": "0.041000",
+        "size": "11",
+        "pos": "1569",
+        "flags": "__"
+      },
+      {
+        "codec_type": "video",
+        "stream_index": 0,
+        "pts": 42,
+        "pts_time": "0.042000",
+        "dts": 0,
+        "dts_time": "0.000000",
+        "duration": 41,
+        "duration_time": "0.041000",
+        "size": "11",
+        "pos": "1586",
+        "flags": "__"
+      },
+      {
+        "codec_type": "audio",
+        "stream_index": 1,
+        "pts": 0,
+        "pts_time": "0.000000",
+        "dts": 0,
+        "dts_time": "0.000000",
+        "duration": 10,
+        "duration_time": "0.010000",
+        "size": "1884",
+        "pos": "1604",
+        "flags": "K_"
+      },
+      {
+        "codec_type": "audio",
+        "stream_index": 1,
+        "pts": 11,
+        "pts_time": "0.011000",
+        "dts": 11,
+        "dts_time": "0.011000",
+        "duration": 10,
+        "duration_time": "0.010000",
+        "size": "1884",
+        "pos": "3495",
+        "flags": "K_"
+      },
+      {
+        "codec_type": "audio",
+        "stream_index": 1,
+        "pts": 21,
+        "pts_time": "0.021000",
+        "dts": 21,
+        "dts_time": "0.021000",
+        "duration": 10,
+        "duration_time": "0.010000",
+        "size": "1884",
+        "pos": "5386",
+        "flags": "K_"
+      },
+      {
+        "codec_type": "audio",
+        "stream_index": 1,
+        "pts": 32,
+        "pts_time": "0.032000",
+        "dts": 32,
+        "dts_time": "0.032000",
+        "duration": 10,
+        "duration_time": "0.010000",
+        "size": "1884",
+        "pos": "7277",
+        "flags": "K_"
+      },
+      {
+        "codec_type": "video",
+        "stream_index": 0,
+        "pts": 83,
+        "pts_time": "0.083000",
+        "dts": 42,
+        "dts_time": "0.042000",
+        "duration": 41,
+        "duration_time": "0.041000",
+        "size": "11",
+        "pos": "9167",
+        "flags": "__"
+      }
+    ]
+  }
+}

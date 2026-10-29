@@ -1,0 +1,2617 @@
+{
+  "versions": {
+    "node": "v24.21.0",
+    "ffmpeg": "ffmpeg version 6.1.1-3ubuntu5 Copyright (c) 2000-2023 the FFmpeg developers",
+    "ffprobe": "ffprobe version 6.1.1-3ubuntu5 Copyright (c) 2007-2023 the FFmpeg developers"
+  },
+  "fixtures": {
+    "hevc": "7d336dc82746269bdbe66a87a91b3aca55a56724937a1cbfe9e3075d6198f962",
+    "sync": "0cf982619f9c8edb6246a8db5593d5da4d1f17f4a451c83c88d5c7078593b55d"
+  },
+  "results": {
+    "baseline": {
+      "sync": [
+        {
+          "requested": 0,
+          "bucket": 0,
+          "origin": 0,
+          "shift": 0.083,
+          "args": [
+            "-hide_banner",
+            "-loglevel",
+            "warning",
+            "-nostdin",
+            "-fflags",
+            "+genpts",
+            "-i",
+            "/evidence/matrix-ubuntu/fixtures/sync.mkv",
+            "-t",
+            "6",
+            "-map",
+            "0:v:0",
+            "-map",
+            "0:1?",
+            "-c:v",
+            "copy",
+            "-fps_mode:v",
+            "passthrough",
+            "-max_interleave_delta",
+            "0",
+            "-max_muxing_queue_size",
+            "2048",
+            "-c:a",
+            "aac",
+            "-b:a",
+            "192k",
+            "-ac",
+            "2",
+            "-avoid_negative_ts",
+            "make_zero",
+            "-sn",
+            "-f",
+            "hls",
+            "-hls_time",
+            "4",
+            "-hls_segment_type",
+            "fmp4",
+            "-hls_playlist_type",
+            "event",
+            "-hls_flags",
+            "independent_segments",
+            "-hls_list_size",
+            "0",
+            "-hls_fmp4_init_filename",
+            "init.mp4",
+            "-hls_segment_filename",
+            "/evidence/matrix-ubuntu/baseline/sync-0/seg_%05d.m4s",
+            "/evidence/matrix-ubuntu/baseline/sync-0/index.m3u8"
+          ],
+          "probe": {
+            "streams": [
+              {
+                "index": 0,
+                "codec": "h264",
+                "profile": "Main",
+                "pix_fmt": "yuv420p",
+                "time_base": "1/12288",
+                "start_time": "0.083008",
+                "r_frame_rate": "24/1",
+                "avg_frame_rate": "24/1"
+              },
+              {
+                "index": 1,
+                "codec": "aac",
+                "profile": "LC",
+                "time_base": "1/48000",
+                "start_time": "0.061000",
+                "r_frame_rate": "0/0",
+                "avg_frame_rate": "0/0"
+              }
+            ],
+            "formatStart": "0.061000",
+            "firstPackets": [
+              {
+                "codec_type": "video",
+                "stream_index": 0,
+                "pts": 1020,
+                "pts_time": "0.083008",
+                "dts": 0,
+                "dts_time": "0.000000",
+                "duration": 512,
+                "duration_time": "0.041667",
+                "size": "700",
+                "pos": "3934",
+                "flags": "K__"
+              },
+              {
+                "codec_type": "video",
+                "stream_index": 0,
+                "pts": 2556,
+                "pts_time": "0.208008",
+                "dts": 504,
+                "dts_time": "0.041016",
+                "duration": 512,
+                "duration_time": "0.041667",
+                "size": "11",
+                "pos": "4634",
+                "flags": "___"
+              },
+              {
+                "codec_type": "video",
+                "stream_index": 0,
+                "pts": 1536,
+                "pts_time": "0.125000",
+                "dts": 1020,
+                "dts_time": "0.083008",
+                "duration": 512,
+                "duration_time": "0.041667",
+                "size": "11",
+                "pos": "4645",
+                "flags": "___"
+              },
+              {
+                "codec_type": "video",
+                "stream_index": 0,
+                "pts": 2040,
+                "pts_time": "0.166016",
+                "dts": 1536,
+                "dts_time": "0.125000",
+                "duration": 512,
+                "duration_time": "0.041667",
+                "size": "11",
+                "pos": "4656",
+                "flags": "___"
+              },
+              {
+                "codec_type": "video",
+                "stream_index": 0,
+                "pts": 4092,
+                "pts_time": "0.333008",
+                "dts": 2040,
+                "dts_time": "0.166016",
+                "duration": 512,
+                "duration_time": "0.041667",
+                "size": "12",
+                "pos": "4667",
+                "flags": "___"
+              },
+              {
+                "codec_type": "video",
+                "stream_index": 0,
+                "pts": 3072,
+                "pts_time": "0.250000",
+                "dts": 2556,
+                "dts_time": "0.208008",
+                "duration": 512,
+                "duration_time": "0.041667",
+                "size": "13",
+                "pos": "4679",
+                "flags": "___"
+              },
+              {
+                "codec_type": "video",
+                "stream_index": 0,
+                "pts": 3576,
+                "pts_time": "0.291016",
+                "dts": 3072,
+                "dts_time": "0.250000",
+                "duration": 512,
+                "duration_time": "0.041667",
+                "size": "11",
+                "pos": "4692",
+                "flags": "___"
+              },
+              {
+                "codec_type": "video",
+                "stream_index": 0,
+                "pts": 5628,
+                "pts_time": "0.458008",
+                "dts": 3576,
+                "dts_time": "0.291016",
+                "duration": 512,
+                "duration_time": "0.041667",
+                "size": "12",
+                "pos": "4703",
+                "flags": "___"
+              }
+            ]
+          },
+          "corrected": {
+            "flash": 2.08301,
+            "tone": 2.09296
+          },
+          "normalized": {
+            "flash": 2.02197,
+            "tone": 2.03196
+          },
+          "audioVideoErrorMs": 10,
+          "subtitleErrorMs": 0,
+          "legacyMeasurementErrorMs": -61,
+          "markerRebaseSeconds": 0.06103999999999976
+        },
+        {
+          "requested": 197,
+          "bucket": 196,
+          "origin": 194,
+          "shift": 0.083,
+          "args": [
+            "-hide_banner",
+            "-loglevel",
+            "warning",
+            "-nostdin",
+            "-fflags",
+            "+genpts",
+            "-noaccurate_seek",
+            "-ss",
+            "196",
+            "-i",
+            "/evidence/matrix-ubuntu/fixtures/sync.mkv",
+            "-t",
+            "12",
+            "-map",
+            "0:v:0",
+            "-map",
+            "0:1?",
+            "-c:v",
+            "copy",
+            "-fps_mode:v",
+            "passthrough",
+            "-max_interleave_delta",
+            "0",
+            "-max_muxing_queue_size",
+            "2048",
+            "-c:a",
+            "aac",
+            "-b:a",
+            "192k",
+            "-ac",
+            "2",
+            "-avoid_negative_ts",
+            "make_zero",
+            "-sn",
+            "-f",
+            "hls",
+            "-hls_time",
+            "4",
+            "-hls_segment_type",
+            "fmp4",
+            "-hls_playlist_type",
+            "event",
+            "-hls_flags",
+            "independent_segments",
+            "-hls_list_size",
+            "0",
+            "-hls_fmp4_init_filename",
+            "init.mp4",
+            "-hls_segment_filename",
+            "/evidence/matrix-ubuntu/baseline/sync-197/seg_%05d.m4s",
+            "/evidence/matrix-ubuntu/baseline/sync-197/index.m3u8"
+          ],
+          "probe": {
+            "streams": [
+              {
+                "index": 0,
+                "codec": "h264",
+                "profile": "Main",
+                "pix_fmt": "yuv420p",
+                "time_base": "1/12288",
+                "start_time": "0.100993",
+                "r_frame_rate": "24/1",
+                "avg_frame_rate": "24/1"
+              },
+              {
+                "index": 1,
+                "codec": "aac",
+                "profile": "LC",
+                "time_base": "1/48000",
+                "start_time": "0.000000",
+                "r_frame_rate": "0/0",
+                "avg_frame_rate": "0/0"
+              }
+            ],
+            "formatStart": "0.000000",
+            "firstPackets": [
+              {
+                "codec_type": "video",
+                "stream_index": 0,
+                "pts": 1241,
+                "pts_time": "0.100993",
+                "dts": 221,
+                "dts_time": "0.017985",
+                "duration": 512,
+                "duration_time": "0.041667",
+                "size": "28",
+                "pos": "3938",
+                "flags": "K__"
+              },
+              {
+                "codec_type": "video",
+                "stream_index": 0,
+                "pts": 2777,
+                "pts_time": "0.225993",
+                "dts": 725,
+                "dts_time": "0.059001",
+                "duration": 512,
+                "duration_time": "0.041667",
+                "size": "11",
+                "pos": "3966",
+                "flags": "___"
+              },
+              {
+                "codec_type": "video",
+                "stream_index": 0,
+                "pts": 1757,
+                "pts_time": "0.142985",
+                "dts": 1241,
+                "dts_time": "0.100993",
+                "duration": 512,
+                "duration_time": "0.041667",
+                "size": "11",
+                "pos": "3977",
+                "flags": "___"
+              },
+              {
+                "codec_type": "video",
+                "stream_index": 0,
+                "pts": 2261,
+                "pts_time": "0.184001",
+                "dts": 1757,
+                "dts_time": "0.142985",
+                "duration": 512,
+                "duration_time": "0.041667",
+                "size": "11",
+                "pos": "3988",
+                "flags": "___"
+              },
+              {
+                "codec_type": "video",
+                "stream_index": 0,
+                "pts": 4313,
+                "pts_time": "0.350993",
+                "dts": 2261,
+                "dts_time": "0.184001",
+                "duration": 512,
+                "duration_time": "0.041667",
+                "size": "12",
+                "pos": "3999",
+                "flags": "___"
+              },
+              {
+                "codec_type": "video",
+                "stream_index": 0,
+                "pts": 3293,
+                "pts_time": "0.267985",
+                "dts": 2777,
+                "dts_time": "0.225993",
+                "duration": 512,
+                "duration_time": "0.041667",
+                "size": "13",
+                "pos": "4011",
+                "flags": "___"
+              },
+              {
+                "codec_type": "video",
+                "stream_index": 0,
+                "pts": 3797,
+                "pts_time": "0.309001",
+                "dts": 3293,
+                "dts_time": "0.267985",
+                "duration": 512,
+                "duration_time": "0.041667",
+                "size": "11",
+                "pos": "4024",
+                "flags": "___"
+              },
+              {
+                "codec_type": "video",
+                "stream_index": 0,
+                "pts": 5849,
+                "pts_time": "0.475993",
+                "dts": 3797,
+                "dts_time": "0.309001",
+                "duration": 512,
+                "duration_time": "0.041667",
+                "size": "12",
+                "pos": "4035",
+                "flags": "___"
+              }
+            ]
+          },
+          "corrected": {
+            "flash": 5.10099,
+            "tone": 5.10979
+          },
+          "normalized": {
+            "flash": 5.10099,
+            "tone": 5.10979
+          },
+          "audioVideoErrorMs": 9,
+          "subtitleErrorMs": 18,
+          "legacyMeasurementErrorMs": 18,
+          "markerRebaseSeconds": 0
+        }
+      ],
+      "hevc": {
+        "args": [
+          "-hide_banner",
+          "-loglevel",
+          "warning",
+          "-nostdin",
+          "-fflags",
+          "+genpts",
+          "-i",
+          "/evidence/matrix-ubuntu/fixtures/fractional.mkv",
+          "-map",
+          "0:v:0",
+          "-map",
+          "0:a:0?",
+          "-c:v",
+          "copy",
+          "-tag:v",
+          "hvc1",
+          "-fps_mode:v",
+          "passthrough",
+          "-bsf:v",
+          "setts=duration=0",
+          "-max_interleave_delta",
+          "0",
+          "-max_muxing_queue_size",
+          "2048",
+          "-c:a",
+          "copy",
+          "-avoid_negative_ts",
+          "make_zero",
+          "-sn",
+          "-f",
+          "hls",
+          "-hls_time",
+          "4",
+          "-hls_segment_type",
+          "fmp4",
+          "-hls_playlist_type",
+          "event",
+          "-hls_flags",
+          "independent_segments",
+          "-hls_list_size",
+          "0",
+          "-hls_fmp4_init_filename",
+          "init.mp4",
+          "-hls_segment_filename",
+          "/evidence/matrix-ubuntu/baseline/hevc/seg_%05d.m4s",
+          "/evidence/matrix-ubuntu/baseline/hevc/index.m3u8"
+        ],
+        "probe": {
+          "streams": [
+            {
+              "index": 0,
+              "codec": "hevc",
+              "profile": "Main 10",
+              "pix_fmt": "yuv420p10le",
+              "time_base": "1/24000",
+              "start_time": "0.041000",
+              "r_frame_rate": "24000/1001",
+              "avg_frame_rate": "24000/1001"
+            },
+            {
+              "index": 1,
+              "codec": "aac",
+              "time_base": "1/48000",
+              "start_time": "0.041000",
+              "r_frame_rate": "0/0",
+              "avg_frame_rate": "0/0"
+            }
+          ],
+          "formatStart": "0.041000",
+          "firstPackets": [
+            {
+              "codec_type": "video",
+              "stream_index": 0,
+              "pts": 984,
+              "pts_time": "0.041000",
+              "dts": 984,
+              "dts_time": "0.041000",
+              "duration": 1001,
+              "duration_time": "0.041708",
+              "size": "1388",
+              "pos": "8995",
+              "flags": "K__"
+            },
+            {
+              "codec_type": "video",
+              "stream_index": 0,
+              "pts": 1985,
+              "pts_time": "0.082708",
+              "dts": 1985,
+              "dts_time": "0.082708",
+              "duration": 1001,
+              "duration_time": "0.041708",
+              "size": "485",
+              "pos": "10383",
+              "flags": "___"
+            },
+            {
+              "codec_type": "video",
+              "stream_index": 0,
+              "pts": 1986,
+              "pts_time": "0.082750",
+              "dts": 1986,
+              "dts_time": "0.082750",
+              "duration": 1001,
+              "duration_time": "0.041708",
+              "size": "439",
+              "pos": "10868",
+              "flags": "___"
+            },
+            {
+              "codec_type": "video",
+              "stream_index": 0,
+              "pts": 3987,
+              "pts_time": "0.166125",
+              "dts": 3987,
+              "dts_time": "0.166125",
+              "duration": 1001,
+              "duration_time": "0.041708",
+              "size": "680",
+              "pos": "11307",
+              "flags": "___"
+            },
+            {
+              "codec_type": "video",
+              "stream_index": 0,
+              "pts": 4988,
+              "pts_time": "0.207833",
+              "dts": 4988,
+              "dts_time": "0.207833",
+              "duration": 1001,
+              "duration_time": "0.041708",
+              "size": "575",
+              "pos": "11987",
+              "flags": "___"
+            },
+            {
+              "codec_type": "video",
+              "stream_index": 0,
+              "pts": 5989,
+              "pts_time": "0.249542",
+              "dts": 5989,
+              "dts_time": "0.249542",
+              "duration": 1001,
+              "duration_time": "0.041708",
+              "size": "594",
+              "pos": "12562",
+              "flags": "___"
+            },
+            {
+              "codec_type": "video",
+              "stream_index": 0,
+              "pts": 5990,
+              "pts_time": "0.249583",
+              "dts": 5990,
+              "dts_time": "0.249583",
+              "duration": 1001,
+              "duration_time": "0.041708",
+              "size": "584",
+              "pos": "13156",
+              "flags": "___"
+            },
+            {
+              "codec_type": "video",
+              "stream_index": 0,
+              "pts": 7991,
+              "pts_time": "0.332958",
+              "dts": 7991,
+              "dts_time": "0.332958",
+              "duration": 1001,
+              "duration_time": "0.041708",
+              "size": "355",
+              "pos": "13740",
+              "flags": "___"
+            }
+          ]
+        },
+        "packetCount": 288,
+        "maxRelativePtsErrorMs": 41.54200000000152,
+        "minDtsDelta": 0.00004099999999951365,
+        "boundaries": [
+          {
+            "segment": "seg_00000.m4s",
+            "first": [
+              {
+                "codec_type": "video",
+                "stream_index": 0,
+                "pts": 984,
+                "pts_time": "0.041000",
+                "dts": 984,
+                "dts_time": "0.041000",
+                "duration": 1001,
+                "duration_time": "0.041708",
+                "size": "1388",
+                "pos": "8995",
+                "flags": "K__"
+              },
+              {
+                "codec_type": "video",
+                "stream_index": 0,
+                "pts": 1985,
+                "pts_time": "0.082708",
+                "dts": 1985,
+                "dts_time": "0.082708",
+                "duration": 1001,
+                "duration_time": "0.041708",
+                "size": "485",
+                "pos": "10383",
+                "flags": "___"
+              }
+            ],
+            "last": [
+              {
+                "codec_type": "video",
+                "stream_index": 0,
+                "pts": 179162,
+                "pts_time": "7.465083",
+                "dts": 179162,
+                "dts_time": "7.465083",
+                "duration": 1001,
+                "duration_time": "0.041708",
+                "size": "419",
+                "pos": "112922",
+                "flags": "___"
+              },
+              {
+                "codec_type": "video",
+                "stream_index": 0,
+                "pts": 180163,
+                "pts_time": "7.506792",
+                "dts": 180163,
+                "dts_time": "7.506792",
+                "duration": 1001,
+                "duration_time": "0.041708",
+                "size": "360",
+                "pos": "113341",
+                "flags": "___"
+              }
+            ]
+          },
+          {
+            "segment": "seg_00001.m4s",
+            "first": [
+              {
+                "codec_type": "video",
+                "stream_index": 0,
+                "pts": 181164,
+                "pts_time": "7.548500",
+                "dts": 181164,
+                "dts_time": "7.548500",
+                "duration": 1001,
+                "duration_time": "0.041708",
+                "size": "1796",
+                "pos": "6119",
+                "flags": "K__"
+              },
+              {
+                "codec_type": "video",
+                "stream_index": 0,
+                "pts": 181165,
+                "pts_time": "7.548542",
+                "dts": 181165,
+                "dts_time": "7.548542",
+                "duration": 1001,
+                "duration_time": "0.041708",
+                "size": "451",
+                "pos": "7915",
+                "flags": "___"
+              }
+            ],
+            "last": [
+              {
+                "codec_type": "video",
+                "stream_index": 0,
+                "pts": 269252,
+                "pts_time": "11.218833",
+                "dts": 269252,
+                "dts_time": "11.218833",
+                "duration": 1001,
+                "duration_time": "0.041708",
+                "size": "345",
+                "pos": "54984",
+                "flags": "___"
+              },
+              {
+                "codec_type": "video",
+                "stream_index": 0,
+                "pts": 270253,
+                "pts_time": "11.260542",
+                "dts": 270253,
+                "dts_time": "11.260542",
+                "duration": 1001,
+                "duration_time": "0.041708",
+                "size": "371",
+                "pos": "55329",
+                "flags": "___"
+              }
+            ]
+          },
+          {
+            "segment": "seg_00002.m4s",
+            "first": [
+              {
+                "codec_type": "video",
+                "stream_index": 0,
+                "pts": 271254,
+                "pts_time": "11.302250",
+                "dts": 271254,
+                "dts_time": "11.302250",
+                "duration": 1001,
+                "duration_time": "0.041708",
+                "size": "1804",
+                "pos": "4439",
+                "flags": "K__"
+              },
+              {
+                "codec_type": "video",
+                "stream_index": 0,
+                "pts": 272255,
+                "pts_time": "11.343958",
+                "dts": 272255,
+                "dts_time": "11.343958",
+                "duration": 1001,
+                "duration_time": "0.041708",
+                "size": "506",
+                "pos": "6243",
+                "flags": "___"
+              }
+            ],
+            "last": [
+              {
+                "codec_type": "video",
+                "stream_index": 0,
+                "pts": 287270,
+                "pts_time": "11.969583",
+                "dts": 287270,
+                "dts_time": "11.969583",
+                "duration": 1001,
+                "duration_time": "0.041708",
+                "size": "333",
+                "pos": "12842",
+                "flags": "___"
+              },
+              {
+                "codec_type": "video",
+                "stream_index": 0,
+                "pts": 287271,
+                "pts_time": "11.969625",
+                "dts": 287271,
+                "dts_time": "11.969625",
+                "duration": 1001,
+                "duration_time": "0.041708",
+                "size": "329",
+                "pos": "13175",
+                "flags": "___"
+              }
+            ]
+          }
+        ],
+        "playlist": "#EXTM3U\n#EXT-X-VERSION:7\n#EXT-X-TARGETDURATION:8\n#EXT-X-MEDIA-SEQUENCE:0\n#EXT-X-PLAYLIST-TYPE:EVENT\n#EXT-X-INDEPENDENT-SEGMENTS\n#EXT-X-MAP:URI=\"init.mp4\"\n#EXTINF:7.507500,\nseg_00000.m4s\n#EXTINF:3.712083,\nseg_00001.m4s\n#EXTINF:0.750750,\nseg_00002.m4s\n#EXT-X-ENDLIST\n",
+        "stderr": "[hls @ 0x5555556215c0] Non-monotonic DTS in output stream 0:0; previous: 2002, current: 2002; changing to 2003. This may result in incorrect timestamps in the output file.\n[hls @ 0x5555556215c0] Non-monotonic DTS in output stream 0:0; previous: 6006, current: 6006; changing to 6007. This may result in incorrect timestamps in the output file.\n[hls @ 0x5555556215c0] Non-monotonic DTS in output stream 0:0; previous: 9009, current: 9009; changing to 9010. This may result in incorrect timestamps in the output file.\n[hls @ 0x5555556215c0] Non-monotonic DTS in output stream 0:0; previous: 13013, current: 13013; changing to 13014. This may result in incorrect timestamps in the output file.\n[hls @ 0x5555556215c0] Non-monotonic DTS in output stream 0:0; previous: 16016, current: 16016; changing to 16017. This may result in incorrect timestamps in the output file.\n[hls @ 0x5555556215c0] Non-monotonic DTS in output stream 0:0; previous: 19019, current: 19019; changing to 19020. This may result in incorrect timestamps in the output file.\n[hls @ 0x5555556215c0] Non-monotonic DTS in output stream 0:0; previous: 23023, current: 23023; changing to 23024. This may result in incorrect timestamps in the output file.\n[hls @ 0x5555556215c0] Non-monotonic DTS in output stream 0:0; previous: 26026, current: 26026; changing to 26027. This may result in incorrect timestamps in the output file.\n[hls @ 0x5555556215c0] Non-monotonic DTS in output stream 0:0; previous: 30030, current: 30030; changing to 30031. This may result in incorrect timestamps in the output file.\n[hls @ 0x5555556215c0] Non-monotonic DTS in output stream 0:0; previous: 33033, current: 33033; changing to 33034. This may result in incorrect timestamps in the output file.\n[hls @ 0x5555556215c0] Non-monotonic DTS in output stream 0:0; previous: 37037, current: 37037; changing to 37038. This may result in incorrect timestamps in the output file.\n[hls @ 0x5555556215c0] Non-monotonic DTS in output stream 0:0; previous: 40040, current: 40040; changing to 40041. This may result in incorrect timestamps in the output file.\n[hls @ 0x5555556215c0] Non-monotonic DTS in output stream 0:0; previous: 43043, current: 43043; changing to 43044. This may result in incorrect timestamps in the output file.\n[hls @ 0x5555556215c0] Non-monotonic DTS in output stream 0:0; previous: 47047, current: 47047; changing to 47048. This may result in incorrect timestamps in the output file.\n[hls @ 0x5555556215c0] Non-monotonic DTS in output stream 0:0; previous: 50050, current: 50050; changing to 50051. This may result in incorrect timestamps in the output file.\n[hls @ 0x5555556215c0] Non-monotonic DTS in output stream 0:0; previous: 54054, current: 54054; changing to 54055. This may result in incorrect timestamps in the output file.\n[hls @ 0x5555556215c0] Non-monotonic DTS in output stream 0:0; previous: 57057, current: 57057; changing to 57058. This may result in incorrect timestamps in the output file.\n[hls @ 0x5555556215c0] Non-monotonic DTS in output stream 0:0; previous: 61061, current: 61061; changing to 61062. This may result in incorrect timestamps in the output file.\n[hls @ 0x5555556215c0] Non-monotonic DTS in output stream 0:0; previous: 64064, current: 64064; changing to 64065. This may result in incorrect timestamps in the output file.\n[hls @ 0x5555556215c0] Non-monotonic DTS in output stream 0:0; previous: 67067, current: 67067; changing to 67068. This may result in incorrect timestamps in the output file.\n[hls @ 0x5555556215c0] Non-monotonic DTS in output stream 0:0; previous: 71071, current: 71071; changing to 71072. This may result in incorrect timestamps in the output file.\n[hls @ 0x5555556215c0] Non-monotonic DTS in output stream 0:0; previous: 74074, current: 74074; changing to 74075. This may result in incorrect timestamps in the output file.\n[hls @ 0x5555556215c0] Non-monotonic DTS in output stream 0:0; previous: 78078, current: 78078; changing to 78079. This may result in incorrect timestamps in the output file.\n[hls @ 0x5555556215c0] Non-monotonic DTS in output stream 0:0; previous: 81081, current: 81081; changing to 81082. This may result in incorrect timestamps in the output file.\n[hls @ 0x5555556215c0] Non-monotonic DTS in output stream 0:0; previous: 85085, current: 85085; changing to 85086. This may result in incorrect timestamps in the output file.\n[hls @ 0x5555556215c0] Non-monotonic DTS in output stream 0:0; previous: 88088, current: 88088; changing to 88089. This may result in incorrect timestamps in the output file.\n[hls @ 0x5555556215c0] Non-monotonic DTS in output stream 0:0; previous: 91091, current: 91091; changing to 91092. This may result in incorrect timestamps in the output file.\n[hls @ 0x5555556215c0] Non-monotonic DTS in output stream 0:0; previous: 95095, current: 95095; changing to 95096. This may result in incorrect timestamps in the output file.\n[hls @ 0x5555556215c0] Non-monotonic DTS in output stream 0:0; previous: 98098, current: 98098; changing to 98099. This may result in incorrect timestamps in the output file.\n[hls @ 0x5555556215c0] Non-monotonic DTS in output stream 0:0; previous: 102102, current: 102102; changing to 102103. This may result in incorrect timestamps in the output file.\n[hls @ 0x5555556215c0] Non-monotonic DTS in output stream 0:0; previous: 105105, current: 105105; changing to 105106. This may result in incorrect timestamps in the output file.\n[hls @ 0x5555556215c0] Non-monotonic DTS in output stream 0:0; previous: 109109, current: 109109; changing to 109110. This may result in incorrect timestamps in the output file.\n[hls @ 0x5555556215c0] Non-monotonic DTS in output stream 0:0; previous: 112112, current: 112112; changing to 112113. This may result in incorrect timestamps in the output file.\n[hls @ 0x5555556215c0] Non-monotonic DTS in output stream 0:0; previous: 115115, current: 115115; changing to 115116. This may result in incorrect timestamps in the output file.\n[hls @ 0x5555556215c0] Non-monotonic DTS in output stream 0:0; previous: 119119, current: 119119; changing to 119120. This may result in incorrect timestamps in the output file.\n[hls @ 0x5555556215c0] Non-monotonic DTS in output stream 0:0; previous: 122122, current: 122122; changing to 122123. This may result in incorrect timestamps in the output file.\n[hls @ 0x5555556215c0] Non-monotonic DTS in output stream 0:0; previous: 126126, current: 126126; changing to 126127. This may result in incorrect timestamps in the output file.\n[hls @ 0x5555556215c0] Non-monotonic DTS in output stream 0:0; previous: 129129, current: 129129; changing to 129130. This may result in incorrect timestamps in the output file.\n[hls @ 0x5555556215c0] Non-monotonic DTS in output stream 0:0; previous: 133133, current: 133133; changing to 133134. This may result in incorrect timestamps in the output file.\n[hls @ 0x5555556215c0] Non-monotonic DTS in output stream 0:0; previous: 136136, current: 136136; changing to 136137. This may result in incorrect timestamps in the output file.\n[hls @ 0x5555556215c0] Non-monotonic DTS in output stream 0:0; previous: 139139, current: 139139; changing to 139140. This may result in incorrect timestamps in the output file.\n[hls @ 0x5555556215c0] Non-monotonic DTS in output stream 0:0; previous: 143143, current: 143143; changing to 143144. This may result in incorrect timestamps in the output file.\n[hls @ 0x5555556215c0] Non-monotonic DTS in output stream 0:0; previous: 146146, current: 146146; changing to 146147. This may result in incorrect timestamps in the output file.\n[hls @ 0x5555556215c0] Non-monotonic DTS in output stream 0:0; previous: 150150, current: 150150; changing to 150151. This may result in incorrect timestamps in the output file.\n[hls @ 0x5555556215c0] Non-monotonic DTS in output stream 0:0; previous: 153153, current: 153153; changing to 153154. This may result in incorrect timestamps in the output file.\n[hls @ 0x5555556215c0] Non-monotonic DTS in output stream 0:0; previous: 157157, current: 157157; changing to 157158. This may result in incorrect timestamps in the output file.\n[hls @ 0x5555556215c0] Non-monotonic DTS in output stream 0:0; previous: 160160, current: 160160; changing to 160161. This may result in incorrect timestamps in the output file.\n[hls @ 0x5555556215c0] Non-monotonic DTS in output stream 0:0; previous: 163163, current: 163163; changing to 163164. This may result in incorrect timestamps in the output file.\n[hls @ 0x5555556215c0] Non-monotonic DTS in output stream 0:0; previous: 167167, current: 167167; changing to 167168. This may result in incorrect timestamps in the output file.\n[hls @ 0x5555556215c0] Non-monotonic DTS in output stream 0:0; previous: 170170, current: 170170; changing to 170171. This may result in incorrect timestamps in the output file.\n[hls @ 0x5555556215c0] Non-monotonic DTS in output stream 0:0; previous: 174174, current: 174174; changing to 174175. This may result in incorrect timestamps in the output file.\n[hls @ 0x5555556215c0] Non-monotonic DTS in output stream 0:0; previous: 177177, current: 177177; changing to 177178. This may result in incorrect timestamps in the output file.\n[hls @ 0x5555556215c0] Non-monotonic DTS in output stream 0:0; previous: 181181, current: 181181; changing to 181182. This may result in incorrect timestamps in the output file.\n[hls @ 0x5555556215c0] Non-monotonic DTS in output stream 0:0; previous: 184184, current: 184184; changing to 184185. This may result in incorrect timestamps in the output file.\n[hls @ 0x5555556215c0] Non-monotonic DTS in output stream 0:0; previous: 187187, current: 187187; changing to 187188. This may result in incorrect timestamps in the output file.\n[hls @ 0x5555556215c0] Non-monotonic DTS in output stream 0:0; previous: 191191, current: 191191; changing to 191192. This may result in incorrect timestamps in the output file.\n[hls @ 0x5555556215c0] Non-monotonic DTS in output stream 0:0; previous: 194194, current: 194194; changing to 194195. This may result in incorrect timestamps in the output file.\n[hls @ 0x5555556215c0] Non-monotonic DTS in output stream 0:0; previous: 198198, current: 198198; changing to 198199. This may result in incorrect timestamps in the output file.\n[hls @ 0x5555556215c0] Non-monotonic DTS in output stream 0:0; previous: 201201, current: 201201; changing to 201202. This may result in incorrect timestamps in the output file.\n[hls @ 0x5555556215c0] Non-monotonic DTS in output stream 0:0; previous: 205205, current: 205205; changing to 205206. This may result in incorrect timestamps in the output file.\n[hls @ 0x5555556215c0] Non-monotonic DTS in output stream 0:0; previous: 208208, current: 208208; changing to 208209. This may result in incorrect timestamps in the output file.\n[hls @ 0x5555556215c0] Non-monotonic DTS in output stream 0:0; previous: 211211, current: 211211; changing to 211212. This may result in incorrect timestamps in the output file.\n[hls @ 0x5555556215c0] Non-monotonic DTS in output stream 0:0; previous: 215215, current: 215215; changing to 215216. This may result in incorrect timestamps in the output file.\n[hls @ 0x5555556215c0] Non-monotonic DTS in output stream 0:0; previous: 218218, current: 218218; changing to 218219. This may result in incorrect timestamps in the output file.\n[hls @ 0x5555556215c0] Non-monotonic DTS in output stream 0:0; previous: 222222, current: 222222; changing to 222223. This may result in incorrect timestamps in the output file.\n[hls @ 0x5555556215c0] Non-monotonic DTS in output stream 0:0; previous: 225225, current: 225225; changing to 225226. This may result in incorrect timestamps in the output file.\n[hls @ 0x5555556215c0] Non-monotonic DTS in output stream 0:0; previous: 229229, current: 229229; changing to 229230. This may result in incorrect timestamps in the output file.\n[hls @ 0x5555556215c0] Non-monotonic DTS in output stream 0:0; previous: 232232, current: 232232; changing to 232233. This may result in incorrect timestamps in the output file.\n[hls @ 0x5555556215c0] Non-monotonic DTS in output stream 0:0; previous: 235235, current: 235235; changing to 235236. This may result in incorrect timestamps in the output file.\n[hls @ 0x5555556215c0] Non-monotonic DTS in output stream 0:0; previous: 239239, current: 239239; changing to 239240. This may result in incorrect timestamps in the output file.\n[hls @ 0x5555556215c0] Non-monotonic DTS in output stream 0:0; previous: 242242, current: 242242; changing to 242243. This may result in incorrect timestamps in the output file.\n[hls @ 0x5555556215c0] Non-monotonic DTS in output stream 0:0; previous: 246246, current: 246246; changing to 246247. This may result in incorrect timestamps in the output file.\n[hls @ 0x5555556215c0] Non-monotonic DTS in output stream 0:0; previous: 249249, current: 249249; changing to 249250. This may result in incorrect timestamps in the output file.\n[hls @ 0x5555556215c0] Non-monotonic DTS in output stream 0:0; previous: 253253, current: 253253; changing to 253254. This may result in incorrect timestamps in the output file.\n[hls @ 0x5555556215c0] Non-monotonic DTS in output stream 0:0; previous: 256256, current: 256256; changing to 256257. This may result in incorrect timestamps in the output file.\n[hls @ 0x5555556215c0] Non-monotonic DTS in output stream 0:0; previous: 259259, current: 259259; changing to 259260. This may result in incorrect timestamps in the output file.\n[hls @ 0x5555556215c0] Non-monotonic DTS in output stream 0:0; previous: 263263, current: 263263; changing to 263264. This may result in incorrect timestamps in the output file.\n[hls @ 0x5555556215c0] Non-monotonic DTS in output stream 0:0; previous: 266266, current: 266266; changing to 266267. This may result in incorrect timestamps in the output file.\n[hls @ 0x5555556215c0] Non-monotonic DTS in output stream 0:0; previous: 270270, current: 270270; changing to 270271. This may result in incorrect timestamps in the output file.\n[mp4 @ 0x5555556353c0] Packet duration: -1000 / dts: 270271 is out of range\n[hls @ 0x5555556215c0] Non-monotonic DTS in output stream 0:0; previous: 273273, current: 273273; changing to 273274. This may result in incorrect timestamps in the output file.\n[hls @ 0x5555556215c0] Non-monotonic DTS in output stream 0:0; previous: 277277, current: 277277; changing to 277278. This may result in incorrect timestamps in the output file.\n[hls @ 0x5555556215c0] Non-monotonic DTS in output stream 0:0; previous: 280280, current: 280280; changing to 280281. This may result in incorrect timestamps in the output file.\n[hls @ 0x5555556215c0] Non-monotonic DTS in output stream 0:0; previous: 283283, current: 283283; changing to 283284. This may result in incorrect timestamps in the output file.\n[hls @ 0x5555556215c0] Non-monotonic DTS in output stream 0:0; previous: 287287, current: 287287; changing to 287288. This may result in incorrect timestamps in the output file.\n"
+      }
+    },
+    "auditBefore": {
+      "sync": [
+        {
+          "requested": 0,
+          "bucket": 0,
+          "origin": 0,
+          "shift": 0.083,
+          "args": [
+            "-hide_banner",
+            "-loglevel",
+            "warning",
+            "-nostdin",
+            "-fflags",
+            "+genpts",
+            "-i",
+            "/evidence/matrix-ubuntu/fixtures/sync.mkv",
+            "-t",
+            "6",
+            "-map",
+            "0:v:0",
+            "-map",
+            "0:1?",
+            "-c:v",
+            "copy",
+            "-fps_mode:v",
+            "passthrough",
+            "-max_interleave_delta",
+            "0",
+            "-max_muxing_queue_size",
+            "2048",
+            "-c:a",
+            "aac",
+            "-b:a",
+            "192k",
+            "-ac",
+            "2",
+            "-avoid_negative_ts",
+            "make_zero",
+            "-sn",
+            "-f",
+            "hls",
+            "-hls_time",
+            "4",
+            "-hls_segment_type",
+            "fmp4",
+            "-hls_playlist_type",
+            "event",
+            "-hls_flags",
+            "independent_segments",
+            "-hls_list_size",
+            "0",
+            "-hls_fmp4_init_filename",
+            "init.mp4",
+            "-hls_segment_filename",
+            "/evidence/matrix-ubuntu/auditBefore/sync-0/seg_%05d.m4s",
+            "/evidence/matrix-ubuntu/auditBefore/sync-0/index.m3u8"
+          ],
+          "probe": {
+            "streams": [
+              {
+                "index": 0,
+                "codec": "h264",
+                "profile": "Main",
+                "pix_fmt": "yuv420p",
+                "time_base": "1/12288",
+                "start_time": "0.083008",
+                "r_frame_rate": "24/1",
+                "avg_frame_rate": "24/1"
+              },
+              {
+                "index": 1,
+                "codec": "aac",
+                "profile": "LC",
+                "time_base": "1/48000",
+                "start_time": "0.061000",
+                "r_frame_rate": "0/0",
+                "avg_frame_rate": "0/0"
+              }
+            ],
+            "formatStart": "0.061000",
+            "firstPackets": [
+              {
+                "codec_type": "video",
+                "stream_index": 0,
+                "pts": 1020,
+                "pts_time": "0.083008",
+                "dts": 0,
+                "dts_time": "0.000000",
+                "duration": 512,
+                "duration_time": "0.041667",
+                "size": "700",
+                "pos": "3934",
+                "flags": "K__"
+              },
+              {
+                "codec_type": "video",
+                "stream_index": 0,
+                "pts": 2556,
+                "pts_time": "0.208008",
+                "dts": 504,
+                "dts_time": "0.041016",
+                "duration": 512,
+                "duration_time": "0.041667",
+                "size": "11",
+                "pos": "4634",
+                "flags": "___"
+              },
+              {
+                "codec_type": "video",
+                "stream_index": 0,
+                "pts": 1536,
+                "pts_time": "0.125000",
+                "dts": 1020,
+                "dts_time": "0.083008",
+                "duration": 512,
+                "duration_time": "0.041667",
+                "size": "11",
+                "pos": "4645",
+                "flags": "___"
+              },
+              {
+                "codec_type": "video",
+                "stream_index": 0,
+                "pts": 2040,
+                "pts_time": "0.166016",
+                "dts": 1536,
+                "dts_time": "0.125000",
+                "duration": 512,
+                "duration_time": "0.041667",
+                "size": "11",
+                "pos": "4656",
+                "flags": "___"
+              },
+              {
+                "codec_type": "video",
+                "stream_index": 0,
+                "pts": 4092,
+                "pts_time": "0.333008",
+                "dts": 2040,
+                "dts_time": "0.166016",
+                "duration": 512,
+                "duration_time": "0.041667",
+                "size": "12",
+                "pos": "4667",
+                "flags": "___"
+              },
+              {
+                "codec_type": "video",
+                "stream_index": 0,
+                "pts": 3072,
+                "pts_time": "0.250000",
+                "dts": 2556,
+                "dts_time": "0.208008",
+                "duration": 512,
+                "duration_time": "0.041667",
+                "size": "13",
+                "pos": "4679",
+                "flags": "___"
+              },
+              {
+                "codec_type": "video",
+                "stream_index": 0,
+                "pts": 3576,
+                "pts_time": "0.291016",
+                "dts": 3072,
+                "dts_time": "0.250000",
+                "duration": 512,
+                "duration_time": "0.041667",
+                "size": "11",
+                "pos": "4692",
+                "flags": "___"
+              },
+              {
+                "codec_type": "video",
+                "stream_index": 0,
+                "pts": 5628,
+                "pts_time": "0.458008",
+                "dts": 3576,
+                "dts_time": "0.291016",
+                "duration": 512,
+                "duration_time": "0.041667",
+                "size": "12",
+                "pos": "4703",
+                "flags": "___"
+              }
+            ]
+          },
+          "corrected": {
+            "flash": 2.08301,
+            "tone": 2.09296
+          },
+          "normalized": {
+            "flash": 2.02197,
+            "tone": 2.03196
+          },
+          "audioVideoErrorMs": 10,
+          "subtitleErrorMs": 0,
+          "legacyMeasurementErrorMs": -61,
+          "markerRebaseSeconds": 0.06103999999999976
+        },
+        {
+          "requested": 197,
+          "bucket": 196,
+          "origin": 194,
+          "shift": 0.083,
+          "args": [
+            "-hide_banner",
+            "-loglevel",
+            "warning",
+            "-nostdin",
+            "-fflags",
+            "+genpts",
+            "-noaccurate_seek",
+            "-ss",
+            "196",
+            "-i",
+            "/evidence/matrix-ubuntu/fixtures/sync.mkv",
+            "-t",
+            "12",
+            "-map",
+            "0:v:0",
+            "-map",
+            "0:1?",
+            "-c:v",
+            "copy",
+            "-fps_mode:v",
+            "passthrough",
+            "-max_interleave_delta",
+            "0",
+            "-max_muxing_queue_size",
+            "2048",
+            "-c:a",
+            "aac",
+            "-b:a",
+            "192k",
+            "-ac",
+            "2",
+            "-avoid_negative_ts",
+            "make_zero",
+            "-sn",
+            "-f",
+            "hls",
+            "-hls_time",
+            "4",
+            "-hls_segment_type",
+            "fmp4",
+            "-hls_playlist_type",
+            "event",
+            "-hls_flags",
+            "independent_segments",
+            "-hls_list_size",
+            "0",
+            "-hls_fmp4_init_filename",
+            "init.mp4",
+            "-hls_segment_filename",
+            "/evidence/matrix-ubuntu/auditBefore/sync-197/seg_%05d.m4s",
+            "/evidence/matrix-ubuntu/auditBefore/sync-197/index.m3u8"
+          ],
+          "probe": {
+            "streams": [
+              {
+                "index": 0,
+                "codec": "h264",
+                "profile": "Main",
+                "pix_fmt": "yuv420p",
+                "time_base": "1/12288",
+                "start_time": "0.100993",
+                "r_frame_rate": "24/1",
+                "avg_frame_rate": "24/1"
+              },
+              {
+                "index": 1,
+                "codec": "aac",
+                "profile": "LC",
+                "time_base": "1/48000",
+                "start_time": "0.000000",
+                "r_frame_rate": "0/0",
+                "avg_frame_rate": "0/0"
+              }
+            ],
+            "formatStart": "0.000000",
+            "firstPackets": [
+              {
+                "codec_type": "video",
+                "stream_index": 0,
+                "pts": 1241,
+                "pts_time": "0.100993",
+                "dts": 221,
+                "dts_time": "0.017985",
+                "duration": 512,
+                "duration_time": "0.041667",
+                "size": "28",
+                "pos": "3938",
+                "flags": "K__"
+              },
+              {
+                "codec_type": "video",
+                "stream_index": 0,
+                "pts": 2777,
+                "pts_time": "0.225993",
+                "dts": 725,
+                "dts_time": "0.059001",
+                "duration": 512,
+                "duration_time": "0.041667",
+                "size": "11",
+                "pos": "3966",
+                "flags": "___"
+              },
+              {
+                "codec_type": "video",
+                "stream_index": 0,
+                "pts": 1757,
+                "pts_time": "0.142985",
+                "dts": 1241,
+                "dts_time": "0.100993",
+                "duration": 512,
+                "duration_time": "0.041667",
+                "size": "11",
+                "pos": "3977",
+                "flags": "___"
+              },
+              {
+                "codec_type": "video",
+                "stream_index": 0,
+                "pts": 2261,
+                "pts_time": "0.184001",
+                "dts": 1757,
+                "dts_time": "0.142985",
+                "duration": 512,
+                "duration_time": "0.041667",
+                "size": "11",
+                "pos": "3988",
+                "flags": "___"
+              },
+              {
+                "codec_type": "video",
+                "stream_index": 0,
+                "pts": 4313,
+                "pts_time": "0.350993",
+                "dts": 2261,
+                "dts_time": "0.184001",
+                "duration": 512,
+                "duration_time": "0.041667",
+                "size": "12",
+                "pos": "3999",
+                "flags": "___"
+              },
+              {
+                "codec_type": "video",
+                "stream_index": 0,
+                "pts": 3293,
+                "pts_time": "0.267985",
+                "dts": 2777,
+                "dts_time": "0.225993",
+                "duration": 512,
+                "duration_time": "0.041667",
+                "size": "13",
+                "pos": "4011",
+                "flags": "___"
+              },
+              {
+                "codec_type": "video",
+                "stream_index": 0,
+                "pts": 3797,
+                "pts_time": "0.309001",
+                "dts": 3293,
+                "dts_time": "0.267985",
+                "duration": 512,
+                "duration_time": "0.041667",
+                "size": "11",
+                "pos": "4024",
+                "flags": "___"
+              },
+              {
+                "codec_type": "video",
+                "stream_index": 0,
+                "pts": 5849,
+                "pts_time": "0.475993",
+                "dts": 3797,
+                "dts_time": "0.309001",
+                "duration": 512,
+                "duration_time": "0.041667",
+                "size": "12",
+                "pos": "4035",
+                "flags": "___"
+              }
+            ]
+          },
+          "corrected": {
+            "flash": 5.10099,
+            "tone": 5.10979
+          },
+          "normalized": {
+            "flash": 5.10099,
+            "tone": 5.10979
+          },
+          "audioVideoErrorMs": 9,
+          "subtitleErrorMs": 18,
+          "legacyMeasurementErrorMs": 18,
+          "markerRebaseSeconds": 0
+        }
+      ],
+      "hevc": {
+        "args": [
+          "-hide_banner",
+          "-loglevel",
+          "warning",
+          "-nostdin",
+          "-fflags",
+          "+genpts",
+          "-i",
+          "/evidence/matrix-ubuntu/fixtures/fractional.mkv",
+          "-map",
+          "0:v:0",
+          "-map",
+          "0:a:0?",
+          "-c:v",
+          "copy",
+          "-tag:v",
+          "hvc1",
+          "-fps_mode:v",
+          "passthrough",
+          "-bsf:v",
+          "setts=duration=0",
+          "-max_interleave_delta",
+          "0",
+          "-max_muxing_queue_size",
+          "2048",
+          "-c:a",
+          "copy",
+          "-avoid_negative_ts",
+          "make_zero",
+          "-sn",
+          "-f",
+          "hls",
+          "-hls_time",
+          "4",
+          "-hls_segment_type",
+          "fmp4",
+          "-hls_playlist_type",
+          "event",
+          "-hls_flags",
+          "independent_segments",
+          "-hls_list_size",
+          "0",
+          "-hls_fmp4_init_filename",
+          "init.mp4",
+          "-hls_segment_filename",
+          "/evidence/matrix-ubuntu/auditBefore/hevc/seg_%05d.m4s",
+          "/evidence/matrix-ubuntu/auditBefore/hevc/index.m3u8"
+        ],
+        "probe": {
+          "streams": [
+            {
+              "index": 0,
+              "codec": "hevc",
+              "profile": "Main 10",
+              "pix_fmt": "yuv420p10le",
+              "time_base": "1/24000",
+              "start_time": "0.041000",
+              "r_frame_rate": "24000/1001",
+              "avg_frame_rate": "24000/1001"
+            },
+            {
+              "index": 1,
+              "codec": "aac",
+              "time_base": "1/48000",
+              "start_time": "0.041000",
+              "r_frame_rate": "0/0",
+              "avg_frame_rate": "0/0"
+            }
+          ],
+          "formatStart": "0.041000",
+          "firstPackets": [
+            {
+              "codec_type": "video",
+              "stream_index": 0,
+              "pts": 984,
+              "pts_time": "0.041000",
+              "dts": 984,
+              "dts_time": "0.041000",
+              "duration": 1001,
+              "duration_time": "0.041708",
+              "size": "1388",
+              "pos": "8995",
+              "flags": "K__"
+            },
+            {
+              "codec_type": "video",
+              "stream_index": 0,
+              "pts": 1985,
+              "pts_time": "0.082708",
+              "dts": 1985,
+              "dts_time": "0.082708",
+              "duration": 1001,
+              "duration_time": "0.041708",
+              "size": "485",
+              "pos": "10383",
+              "flags": "___"
+            },
+            {
+              "codec_type": "video",
+              "stream_index": 0,
+              "pts": 1986,
+              "pts_time": "0.082750",
+              "dts": 1986,
+              "dts_time": "0.082750",
+              "duration": 1001,
+              "duration_time": "0.041708",
+              "size": "439",
+              "pos": "10868",
+              "flags": "___"
+            },
+            {
+              "codec_type": "video",
+              "stream_index": 0,
+              "pts": 3987,
+              "pts_time": "0.166125",
+              "dts": 3987,
+              "dts_time": "0.166125",
+              "duration": 1001,
+              "duration_time": "0.041708",
+              "size": "680",
+              "pos": "11307",
+              "flags": "___"
+            },
+            {
+              "codec_type": "video",
+              "stream_index": 0,
+              "pts": 4988,
+              "pts_time": "0.207833",
+              "dts": 4988,
+              "dts_time": "0.207833",
+              "duration": 1001,
+              "duration_time": "0.041708",
+              "size": "575",
+              "pos": "11987",
+              "flags": "___"
+            },
+            {
+              "codec_type": "video",
+              "stream_index": 0,
+              "pts": 5989,
+              "pts_time": "0.249542",
+              "dts": 5989,
+              "dts_time": "0.249542",
+              "duration": 1001,
+              "duration_time": "0.041708",
+              "size": "594",
+              "pos": "12562",
+              "flags": "___"
+            },
+            {
+              "codec_type": "video",
+              "stream_index": 0,
+              "pts": 5990,
+              "pts_time": "0.249583",
+              "dts": 5990,
+              "dts_time": "0.249583",
+              "duration": 1001,
+              "duration_time": "0.041708",
+              "size": "584",
+              "pos": "13156",
+              "flags": "___"
+            },
+            {
+              "codec_type": "video",
+              "stream_index": 0,
+              "pts": 7991,
+              "pts_time": "0.332958",
+              "dts": 7991,
+              "dts_time": "0.332958",
+              "duration": 1001,
+              "duration_time": "0.041708",
+              "size": "355",
+              "pos": "13740",
+              "flags": "___"
+            }
+          ]
+        },
+        "packetCount": 288,
+        "maxRelativePtsErrorMs": 41.54200000000152,
+        "minDtsDelta": 0.00004099999999951365,
+        "boundaries": [
+          {
+            "segment": "seg_00000.m4s",
+            "first": [
+              {
+                "codec_type": "video",
+                "stream_index": 0,
+                "pts": 984,
+                "pts_time": "0.041000",
+                "dts": 984,
+                "dts_time": "0.041000",
+                "duration": 1001,
+                "duration_time": "0.041708",
+                "size": "1388",
+                "pos": "8995",
+                "flags": "K__"
+              },
+              {
+                "codec_type": "video",
+                "stream_index": 0,
+                "pts": 1985,
+                "pts_time": "0.082708",
+                "dts": 1985,
+                "dts_time": "0.082708",
+                "duration": 1001,
+                "duration_time": "0.041708",
+                "size": "485",
+                "pos": "10383",
+                "flags": "___"
+              }
+            ],
+            "last": [
+              {
+                "codec_type": "video",
+                "stream_index": 0,
+                "pts": 179162,
+                "pts_time": "7.465083",
+                "dts": 179162,
+                "dts_time": "7.465083",
+                "duration": 1001,
+                "duration_time": "0.041708",
+                "size": "419",
+                "pos": "112922",
+                "flags": "___"
+              },
+              {
+                "codec_type": "video",
+                "stream_index": 0,
+                "pts": 180163,
+                "pts_time": "7.506792",
+                "dts": 180163,
+                "dts_time": "7.506792",
+                "duration": 1001,
+                "duration_time": "0.041708",
+                "size": "360",
+                "pos": "113341",
+                "flags": "___"
+              }
+            ]
+          },
+          {
+            "segment": "seg_00001.m4s",
+            "first": [
+              {
+                "codec_type": "video",
+                "stream_index": 0,
+                "pts": 181164,
+                "pts_time": "7.548500",
+                "dts": 181164,
+                "dts_time": "7.548500",
+                "duration": 1001,
+                "duration_time": "0.041708",
+                "size": "1796",
+                "pos": "6119",
+                "flags": "K__"
+              },
+              {
+                "codec_type": "video",
+                "stream_index": 0,
+                "pts": 181165,
+                "pts_time": "7.548542",
+                "dts": 181165,
+                "dts_time": "7.548542",
+                "duration": 1001,
+                "duration_time": "0.041708",
+                "size": "451",
+                "pos": "7915",
+                "flags": "___"
+              }
+            ],
+            "last": [
+              {
+                "codec_type": "video",
+                "stream_index": 0,
+                "pts": 269252,
+                "pts_time": "11.218833",
+                "dts": 269252,
+                "dts_time": "11.218833",
+                "duration": 1001,
+                "duration_time": "0.041708",
+                "size": "345",
+                "pos": "54984",
+                "flags": "___"
+              },
+              {
+                "codec_type": "video",
+                "stream_index": 0,
+                "pts": 270253,
+                "pts_time": "11.260542",
+                "dts": 270253,
+                "dts_time": "11.260542",
+                "duration": 1001,
+                "duration_time": "0.041708",
+                "size": "371",
+                "pos": "55329",
+                "flags": "___"
+              }
+            ]
+          },
+          {
+            "segment": "seg_00002.m4s",
+            "first": [
+              {
+                "codec_type": "video",
+                "stream_index": 0,
+                "pts": 271254,
+                "pts_time": "11.302250",
+                "dts": 271254,
+                "dts_time": "11.302250",
+                "duration": 1001,
+                "duration_time": "0.041708",
+                "size": "1804",
+                "pos": "4439",
+                "flags": "K__"
+              },
+              {
+                "codec_type": "video",
+                "stream_index": 0,
+                "pts": 272255,
+                "pts_time": "11.343958",
+                "dts": 272255,
+                "dts_time": "11.343958",
+                "duration": 1001,
+                "duration_time": "0.041708",
+                "size": "506",
+                "pos": "6243",
+                "flags": "___"
+              }
+            ],
+            "last": [
+              {
+                "codec_type": "video",
+                "stream_index": 0,
+                "pts": 287270,
+                "pts_time": "11.969583",
+                "dts": 287270,
+                "dts_time": "11.969583",
+                "duration": 1001,
+                "duration_time": "0.041708",
+                "size": "333",
+                "pos": "12842",
+                "flags": "___"
+              },
+              {
+                "codec_type": "video",
+                "stream_index": 0,
+                "pts": 287271,
+                "pts_time": "11.969625",
+                "dts": 287271,
+                "dts_time": "11.969625",
+                "duration": 1001,
+                "duration_time": "0.041708",
+                "size": "329",
+                "pos": "13175",
+                "flags": "___"
+              }
+            ]
+          }
+        ],
+        "playlist": "#EXTM3U\n#EXT-X-VERSION:7\n#EXT-X-TARGETDURATION:8\n#EXT-X-MEDIA-SEQUENCE:0\n#EXT-X-PLAYLIST-TYPE:EVENT\n#EXT-X-INDEPENDENT-SEGMENTS\n#EXT-X-MAP:URI=\"init.mp4\"\n#EXTINF:7.507500,\nseg_00000.m4s\n#EXTINF:3.712083,\nseg_00001.m4s\n#EXTINF:0.750750,\nseg_00002.m4s\n#EXT-X-ENDLIST\n",
+        "stderr": "[hls @ 0x5555556215c0] Non-monotonic DTS in output stream 0:0; previous: 2002, current: 2002; changing to 2003. This may result in incorrect timestamps in the output file.\n[hls @ 0x5555556215c0] Non-monotonic DTS in output stream 0:0; previous: 6006, current: 6006; changing to 6007. This may result in incorrect timestamps in the output file.\n[hls @ 0x5555556215c0] Non-monotonic DTS in output stream 0:0; previous: 9009, current: 9009; changing to 9010. This may result in incorrect timestamps in the output file.\n[hls @ 0x5555556215c0] Non-monotonic DTS in output stream 0:0; previous: 13013, current: 13013; changing to 13014. This may result in incorrect timestamps in the output file.\n[hls @ 0x5555556215c0] Non-monotonic DTS in output stream 0:0; previous: 16016, current: 16016; changing to 16017. This may result in incorrect timestamps in the output file.\n[hls @ 0x5555556215c0] Non-monotonic DTS in output stream 0:0; previous: 19019, current: 19019; changing to 19020. This may result in incorrect timestamps in the output file.\n[hls @ 0x5555556215c0] Non-monotonic DTS in output stream 0:0; previous: 23023, current: 23023; changing to 23024. This may result in incorrect timestamps in the output file.\n[hls @ 0x5555556215c0] Non-monotonic DTS in output stream 0:0; previous: 26026, current: 26026; changing to 26027. This may result in incorrect timestamps in the output file.\n[hls @ 0x5555556215c0] Non-monotonic DTS in output stream 0:0; previous: 30030, current: 30030; changing to 30031. This may result in incorrect timestamps in the output file.\n[hls @ 0x5555556215c0] Non-monotonic DTS in output stream 0:0; previous: 33033, current: 33033; changing to 33034. This may result in incorrect timestamps in the output file.\n[hls @ 0x5555556215c0] Non-monotonic DTS in output stream 0:0; previous: 37037, current: 37037; changing to 37038. This may result in incorrect timestamps in the output file.\n[hls @ 0x5555556215c0] Non-monotonic DTS in output stream 0:0; previous: 40040, current: 40040; changing to 40041. This may result in incorrect timestamps in the output file.\n[hls @ 0x5555556215c0] Non-monotonic DTS in output stream 0:0; previous: 43043, current: 43043; changing to 43044. This may result in incorrect timestamps in the output file.\n[hls @ 0x5555556215c0] Non-monotonic DTS in output stream 0:0; previous: 47047, current: 47047; changing to 47048. This may result in incorrect timestamps in the output file.\n[hls @ 0x5555556215c0] Non-monotonic DTS in output stream 0:0; previous: 50050, current: 50050; changing to 50051. This may result in incorrect timestamps in the output file.\n[hls @ 0x5555556215c0] Non-monotonic DTS in output stream 0:0; previous: 54054, current: 54054; changing to 54055. This may result in incorrect timestamps in the output file.\n[hls @ 0x5555556215c0] Non-monotonic DTS in output stream 0:0; previous: 57057, current: 57057; changing to 57058. This may result in incorrect timestamps in the output file.\n[hls @ 0x5555556215c0] Non-monotonic DTS in output stream 0:0; previous: 61061, current: 61061; changing to 61062. This may result in incorrect timestamps in the output file.\n[hls @ 0x5555556215c0] Non-monotonic DTS in output stream 0:0; previous: 64064, current: 64064; changing to 64065. This may result in incorrect timestamps in the output file.\n[hls @ 0x5555556215c0] Non-monotonic DTS in output stream 0:0; previous: 67067, current: 67067; changing to 67068. This may result in incorrect timestamps in the output file.\n[hls @ 0x5555556215c0] Non-monotonic DTS in output stream 0:0; previous: 71071, current: 71071; changing to 71072. This may result in incorrect timestamps in the output file.\n[hls @ 0x5555556215c0] Non-monotonic DTS in output stream 0:0; previous: 74074, current: 74074; changing to 74075. This may result in incorrect timestamps in the output file.\n[hls @ 0x5555556215c0] Non-monotonic DTS in output stream 0:0; previous: 78078, current: 78078; changing to 78079. This may result in incorrect timestamps in the output file.\n[hls @ 0x5555556215c0] Non-monotonic DTS in output stream 0:0; previous: 81081, current: 81081; changing to 81082. This may result in incorrect timestamps in the output file.\n[hls @ 0x5555556215c0] Non-monotonic DTS in output stream 0:0; previous: 85085, current: 85085; changing to 85086. This may result in incorrect timestamps in the output file.\n[hls @ 0x5555556215c0] Non-monotonic DTS in output stream 0:0; previous: 88088, current: 88088; changing to 88089. This may result in incorrect timestamps in the output file.\n[hls @ 0x5555556215c0] Non-monotonic DTS in output stream 0:0; previous: 91091, current: 91091; changing to 91092. This may result in incorrect timestamps in the output file.\n[hls @ 0x5555556215c0] Non-monotonic DTS in output stream 0:0; previous: 95095, current: 95095; changing to 95096. This may result in incorrect timestamps in the output file.\n[hls @ 0x5555556215c0] Non-monotonic DTS in output stream 0:0; previous: 98098, current: 98098; changing to 98099. This may result in incorrect timestamps in the output file.\n[hls @ 0x5555556215c0] Non-monotonic DTS in output stream 0:0; previous: 102102, current: 102102; changing to 102103. This may result in incorrect timestamps in the output file.\n[hls @ 0x5555556215c0] Non-monotonic DTS in output stream 0:0; previous: 105105, current: 105105; changing to 105106. This may result in incorrect timestamps in the output file.\n[hls @ 0x5555556215c0] Non-monotonic DTS in output stream 0:0; previous: 109109, current: 109109; changing to 109110. This may result in incorrect timestamps in the output file.\n[hls @ 0x5555556215c0] Non-monotonic DTS in output stream 0:0; previous: 112112, current: 112112; changing to 112113. This may result in incorrect timestamps in the output file.\n[hls @ 0x5555556215c0] Non-monotonic DTS in output stream 0:0; previous: 115115, current: 115115; changing to 115116. This may result in incorrect timestamps in the output file.\n[hls @ 0x5555556215c0] Non-monotonic DTS in output stream 0:0; previous: 119119, current: 119119; changing to 119120. This may result in incorrect timestamps in the output file.\n[hls @ 0x5555556215c0] Non-monotonic DTS in output stream 0:0; previous: 122122, current: 122122; changing to 122123. This may result in incorrect timestamps in the output file.\n[hls @ 0x5555556215c0] Non-monotonic DTS in output stream 0:0; previous: 126126, current: 126126; changing to 126127. This may result in incorrect timestamps in the output file.\n[hls @ 0x5555556215c0] Non-monotonic DTS in output stream 0:0; previous: 129129, current: 129129; changing to 129130. This may result in incorrect timestamps in the output file.\n[hls @ 0x5555556215c0] Non-monotonic DTS in output stream 0:0; previous: 133133, current: 133133; changing to 133134. This may result in incorrect timestamps in the output file.\n[hls @ 0x5555556215c0] Non-monotonic DTS in output stream 0:0; previous: 136136, current: 136136; changing to 136137. This may result in incorrect timestamps in the output file.\n[hls @ 0x5555556215c0] Non-monotonic DTS in output stream 0:0; previous: 139139, current: 139139; changing to 139140. This may result in incorrect timestamps in the output file.\n[hls @ 0x5555556215c0] Non-monotonic DTS in output stream 0:0; previous: 143143, current: 143143; changing to 143144. This may result in incorrect timestamps in the output file.\n[hls @ 0x5555556215c0] Non-monotonic DTS in output stream 0:0; previous: 146146, current: 146146; changing to 146147. This may result in incorrect timestamps in the output file.\n[hls @ 0x5555556215c0] Non-monotonic DTS in output stream 0:0; previous: 150150, current: 150150; changing to 150151. This may result in incorrect timestamps in the output file.\n[hls @ 0x5555556215c0] Non-monotonic DTS in output stream 0:0; previous: 153153, current: 153153; changing to 153154. This may result in incorrect timestamps in the output file.\n[hls @ 0x5555556215c0] Non-monotonic DTS in output stream 0:0; previous: 157157, current: 157157; changing to 157158. This may result in incorrect timestamps in the output file.\n[hls @ 0x5555556215c0] Non-monotonic DTS in output stream 0:0; previous: 160160, current: 160160; changing to 160161. This may result in incorrect timestamps in the output file.\n[hls @ 0x5555556215c0] Non-monotonic DTS in output stream 0:0; previous: 163163, current: 163163; changing to 163164. This may result in incorrect timestamps in the output file.\n[hls @ 0x5555556215c0] Non-monotonic DTS in output stream 0:0; previous: 167167, current: 167167; changing to 167168. This may result in incorrect timestamps in the output file.\n[hls @ 0x5555556215c0] Non-monotonic DTS in output stream 0:0; previous: 170170, current: 170170; changing to 170171. This may result in incorrect timestamps in the output file.\n[hls @ 0x5555556215c0] Non-monotonic DTS in output stream 0:0; previous: 174174, current: 174174; changing to 174175. This may result in incorrect timestamps in the output file.\n[hls @ 0x5555556215c0] Non-monotonic DTS in output stream 0:0; previous: 177177, current: 177177; changing to 177178. This may result in incorrect timestamps in the output file.\n[hls @ 0x5555556215c0] Non-monotonic DTS in output stream 0:0; previous: 181181, current: 181181; changing to 181182. This may result in incorrect timestamps in the output file.\n[hls @ 0x5555556215c0] Non-monotonic DTS in output stream 0:0; previous: 184184, current: 184184; changing to 184185. This may result in incorrect timestamps in the output file.\n[hls @ 0x5555556215c0] Non-monotonic DTS in output stream 0:0; previous: 187187, current: 187187; changing to 187188. This may result in incorrect timestamps in the output file.\n[hls @ 0x5555556215c0] Non-monotonic DTS in output stream 0:0; previous: 191191, current: 191191; changing to 191192. This may result in incorrect timestamps in the output file.\n[hls @ 0x5555556215c0] Non-monotonic DTS in output stream 0:0; previous: 194194, current: 194194; changing to 194195. This may result in incorrect timestamps in the output file.\n[hls @ 0x5555556215c0] Non-monotonic DTS in output stream 0:0; previous: 198198, current: 198198; changing to 198199. This may result in incorrect timestamps in the output file.\n[hls @ 0x5555556215c0] Non-monotonic DTS in output stream 0:0; previous: 201201, current: 201201; changing to 201202. This may result in incorrect timestamps in the output file.\n[hls @ 0x5555556215c0] Non-monotonic DTS in output stream 0:0; previous: 205205, current: 205205; changing to 205206. This may result in incorrect timestamps in the output file.\n[hls @ 0x5555556215c0] Non-monotonic DTS in output stream 0:0; previous: 208208, current: 208208; changing to 208209. This may result in incorrect timestamps in the output file.\n[hls @ 0x5555556215c0] Non-monotonic DTS in output stream 0:0; previous: 211211, current: 211211; changing to 211212. This may result in incorrect timestamps in the output file.\n[hls @ 0x5555556215c0] Non-monotonic DTS in output stream 0:0; previous: 215215, current: 215215; changing to 215216. This may result in incorrect timestamps in the output file.\n[hls @ 0x5555556215c0] Non-monotonic DTS in output stream 0:0; previous: 218218, current: 218218; changing to 218219. This may result in incorrect timestamps in the output file.\n[hls @ 0x5555556215c0] Non-monotonic DTS in output stream 0:0; previous: 222222, current: 222222; changing to 222223. This may result in incorrect timestamps in the output file.\n[hls @ 0x5555556215c0] Non-monotonic DTS in output stream 0:0; previous: 225225, current: 225225; changing to 225226. This may result in incorrect timestamps in the output file.\n[hls @ 0x5555556215c0] Non-monotonic DTS in output stream 0:0; previous: 229229, current: 229229; changing to 229230. This may result in incorrect timestamps in the output file.\n[hls @ 0x5555556215c0] Non-monotonic DTS in output stream 0:0; previous: 232232, current: 232232; changing to 232233. This may result in incorrect timestamps in the output file.\n[hls @ 0x5555556215c0] Non-monotonic DTS in output stream 0:0; previous: 235235, current: 235235; changing to 235236. This may result in incorrect timestamps in the output file.\n[hls @ 0x5555556215c0] Non-monotonic DTS in output stream 0:0; previous: 239239, current: 239239; changing to 239240. This may result in incorrect timestamps in the output file.\n[hls @ 0x5555556215c0] Non-monotonic DTS in output stream 0:0; previous: 242242, current: 242242; changing to 242243. This may result in incorrect timestamps in the output file.\n[hls @ 0x5555556215c0] Non-monotonic DTS in output stream 0:0; previous: 246246, current: 246246; changing to 246247. This may result in incorrect timestamps in the output file.\n[hls @ 0x5555556215c0] Non-monotonic DTS in output stream 0:0; previous: 249249, current: 249249; changing to 249250. This may result in incorrect timestamps in the output file.\n[hls @ 0x5555556215c0] Non-monotonic DTS in output stream 0:0; previous: 253253, current: 253253; changing to 253254. This may result in incorrect timestamps in the output file.\n[hls @ 0x5555556215c0] Non-monotonic DTS in output stream 0:0; previous: 256256, current: 256256; changing to 256257. This may result in incorrect timestamps in the output file.\n[hls @ 0x5555556215c0] Non-monotonic DTS in output stream 0:0; previous: 259259, current: 259259; changing to 259260. This may result in incorrect timestamps in the output file.\n[hls @ 0x5555556215c0] Non-monotonic DTS in output stream 0:0; previous: 263263, current: 263263; changing to 263264. This may result in incorrect timestamps in the output file.\n[hls @ 0x5555556215c0] Non-monotonic DTS in output stream 0:0; previous: 266266, current: 266266; changing to 266267. This may result in incorrect timestamps in the output file.\n[hls @ 0x5555556215c0] Non-monotonic DTS in output stream 0:0; previous: 270270, current: 270270; changing to 270271. This may result in incorrect timestamps in the output file.\n[mp4 @ 0x5555556353c0] Packet duration: -1000 / dts: 270271 is out of range\n[hls @ 0x5555556215c0] Non-monotonic DTS in output stream 0:0; previous: 273273, current: 273273; changing to 273274. This may result in incorrect timestamps in the output file.\n[hls @ 0x5555556215c0] Non-monotonic DTS in output stream 0:0; previous: 277277, current: 277277; changing to 277278. This may result in incorrect timestamps in the output file.\n[hls @ 0x5555556215c0] Non-monotonic DTS in output stream 0:0; previous: 280280, current: 280280; changing to 280281. This may result in incorrect timestamps in the output file.\n[hls @ 0x5555556215c0] Non-monotonic DTS in output stream 0:0; previous: 283283, current: 283283; changing to 283284. This may result in incorrect timestamps in the output file.\n[hls @ 0x5555556215c0] Non-monotonic DTS in output stream 0:0; previous: 287287, current: 287287; changing to 287288. This may result in incorrect timestamps in the output file.\n"
+      }
+    },
+    "after": {
+      "sync": [
+        {
+          "requested": 0,
+          "bucket": 0,
+          "origin": 0,
+          "shift": 0.083,
+          "args": [
+            "-hide_banner",
+            "-loglevel",
+            "warning",
+            "-nostdin",
+            "-fflags",
+            "+genpts",
+            "-i",
+            "/evidence/matrix-ubuntu/fixtures/sync.mkv",
+            "-t",
+            "6",
+            "-map",
+            "0:v:0",
+            "-map",
+            "0:1?",
+            "-c:v",
+            "copy",
+            "-fps_mode:v",
+            "passthrough",
+            "-max_interleave_delta",
+            "0",
+            "-max_muxing_queue_size",
+            "2048",
+            "-c:a",
+            "aac",
+            "-b:a",
+            "192k",
+            "-ac",
+            "2",
+            "-avoid_negative_ts",
+            "make_zero",
+            "-sn",
+            "-f",
+            "hls",
+            "-hls_time",
+            "4",
+            "-hls_segment_type",
+            "fmp4",
+            "-hls_playlist_type",
+            "event",
+            "-hls_flags",
+            "independent_segments",
+            "-hls_list_size",
+            "0",
+            "-hls_fmp4_init_filename",
+            "init.mp4",
+            "-hls_segment_filename",
+            "/evidence/matrix-ubuntu/after/sync-0/seg_%05d.m4s",
+            "/evidence/matrix-ubuntu/after/sync-0/index.m3u8"
+          ],
+          "probe": {
+            "streams": [
+              {
+                "index": 0,
+                "codec": "h264",
+                "profile": "Main",
+                "pix_fmt": "yuv420p",
+                "time_base": "1/12288",
+                "start_time": "0.083008",
+                "r_frame_rate": "24/1",
+                "avg_frame_rate": "24/1"
+              },
+              {
+                "index": 1,
+                "codec": "aac",
+                "profile": "LC",
+                "time_base": "1/48000",
+                "start_time": "0.061000",
+                "r_frame_rate": "0/0",
+                "avg_frame_rate": "0/0"
+              }
+            ],
+            "formatStart": "0.061000",
+            "firstPackets": [
+              {
+                "codec_type": "video",
+                "stream_index": 0,
+                "pts": 1020,
+                "pts_time": "0.083008",
+                "dts": 0,
+                "dts_time": "0.000000",
+                "duration": 512,
+                "duration_time": "0.041667",
+                "size": "700",
+                "pos": "3934",
+                "flags": "K__"
+              },
+              {
+                "codec_type": "video",
+                "stream_index": 0,
+                "pts": 2556,
+                "pts_time": "0.208008",
+                "dts": 504,
+                "dts_time": "0.041016",
+                "duration": 512,
+                "duration_time": "0.041667",
+                "size": "11",
+                "pos": "4634",
+                "flags": "___"
+              },
+              {
+                "codec_type": "video",
+                "stream_index": 0,
+                "pts": 1536,
+                "pts_time": "0.125000",
+                "dts": 1020,
+                "dts_time": "0.083008",
+                "duration": 512,
+                "duration_time": "0.041667",
+                "size": "11",
+                "pos": "4645",
+                "flags": "___"
+              },
+              {
+                "codec_type": "video",
+                "stream_index": 0,
+                "pts": 2040,
+                "pts_time": "0.166016",
+                "dts": 1536,
+                "dts_time": "0.125000",
+                "duration": 512,
+                "duration_time": "0.041667",
+                "size": "11",
+                "pos": "4656",
+                "flags": "___"
+              },
+              {
+                "codec_type": "video",
+                "stream_index": 0,
+                "pts": 4092,
+                "pts_time": "0.333008",
+                "dts": 2040,
+                "dts_time": "0.166016",
+                "duration": 512,
+                "duration_time": "0.041667",
+                "size": "12",
+                "pos": "4667",
+                "flags": "___"
+              },
+              {
+                "codec_type": "video",
+                "stream_index": 0,
+                "pts": 3072,
+                "pts_time": "0.250000",
+                "dts": 2556,
+                "dts_time": "0.208008",
+                "duration": 512,
+                "duration_time": "0.041667",
+                "size": "13",
+                "pos": "4679",
+                "flags": "___"
+              },
+              {
+                "codec_type": "video",
+                "stream_index": 0,
+                "pts": 3576,
+                "pts_time": "0.291016",
+                "dts": 3072,
+                "dts_time": "0.250000",
+                "duration": 512,
+                "duration_time": "0.041667",
+                "size": "11",
+                "pos": "4692",
+                "flags": "___"
+              },
+              {
+                "codec_type": "video",
+                "stream_index": 0,
+                "pts": 5628,
+                "pts_time": "0.458008",
+                "dts": 3576,
+                "dts_time": "0.291016",
+                "duration": 512,
+                "duration_time": "0.041667",
+                "size": "12",
+                "pos": "4703",
+                "flags": "___"
+              }
+            ]
+          },
+          "corrected": {
+            "flash": 2.08301,
+            "tone": 2.09296
+          },
+          "normalized": {
+            "flash": 2.02197,
+            "tone": 2.03196
+          },
+          "audioVideoErrorMs": 10,
+          "subtitleErrorMs": 0,
+          "legacyMeasurementErrorMs": -61,
+          "markerRebaseSeconds": 0.06103999999999976
+        },
+        {
+          "requested": 197,
+          "bucket": 196,
+          "origin": 194,
+          "shift": 0.083,
+          "args": [
+            "-hide_banner",
+            "-loglevel",
+            "warning",
+            "-nostdin",
+            "-fflags",
+            "+genpts",
+            "-noaccurate_seek",
+            "-ss",
+            "196",
+            "-i",
+            "/evidence/matrix-ubuntu/fixtures/sync.mkv",
+            "-t",
+            "12",
+            "-map",
+            "0:v:0",
+            "-map",
+            "0:1?",
+            "-c:v",
+            "copy",
+            "-fps_mode:v",
+            "passthrough",
+            "-max_interleave_delta",
+            "0",
+            "-max_muxing_queue_size",
+            "2048",
+            "-c:a",
+            "aac",
+            "-b:a",
+            "192k",
+            "-ac",
+            "2",
+            "-avoid_negative_ts",
+            "make_zero",
+            "-sn",
+            "-f",
+            "hls",
+            "-hls_time",
+            "4",
+            "-hls_segment_type",
+            "fmp4",
+            "-hls_playlist_type",
+            "event",
+            "-hls_flags",
+            "independent_segments",
+            "-hls_list_size",
+            "0",
+            "-hls_fmp4_init_filename",
+            "init.mp4",
+            "-hls_segment_filename",
+            "/evidence/matrix-ubuntu/after/sync-197/seg_%05d.m4s",
+            "/evidence/matrix-ubuntu/after/sync-197/index.m3u8"
+          ],
+          "probe": {
+            "streams": [
+              {
+                "index": 0,
+                "codec": "h264",
+                "profile": "Main",
+                "pix_fmt": "yuv420p",
+                "time_base": "1/12288",
+                "start_time": "0.100993",
+                "r_frame_rate": "24/1",
+                "avg_frame_rate": "24/1"
+              },
+              {
+                "index": 1,
+                "codec": "aac",
+                "profile": "LC",
+                "time_base": "1/48000",
+                "start_time": "0.000000",
+                "r_frame_rate": "0/0",
+                "avg_frame_rate": "0/0"
+              }
+            ],
+            "formatStart": "0.000000",
+            "firstPackets": [
+              {
+                "codec_type": "video",
+                "stream_index": 0,
+                "pts": 1241,
+                "pts_time": "0.100993",
+                "dts": 221,
+                "dts_time": "0.017985",
+                "duration": 512,
+                "duration_time": "0.041667",
+                "size": "28",
+                "pos": "3938",
+                "flags": "K__"
+              },
+              {
+                "codec_type": "video",
+                "stream_index": 0,
+                "pts": 2777,
+                "pts_time": "0.225993",
+                "dts": 725,
+                "dts_time": "0.059001",
+                "duration": 512,
+                "duration_time": "0.041667",
+                "size": "11",
+                "pos": "3966",
+                "flags": "___"
+              },
+              {
+                "codec_type": "video",
+                "stream_index": 0,
+                "pts": 1757,
+                "pts_time": "0.142985",
+                "dts": 1241,
+                "dts_time": "0.100993",
+                "duration": 512,
+                "duration_time": "0.041667",
+                "size": "11",
+                "pos": "3977",
+                "flags": "___"
+              },
+              {
+                "codec_type": "video",
+                "stream_index": 0,
+                "pts": 2261,
+                "pts_time": "0.184001",
+                "dts": 1757,
+                "dts_time": "0.142985",
+                "duration": 512,
+                "duration_time": "0.041667",
+                "size": "11",
+                "pos": "3988",
+                "flags": "___"
+              },
+              {
+                "codec_type": "video",
+                "stream_index": 0,
+                "pts": 4313,
+                "pts_time": "0.350993",
+                "dts": 2261,
+                "dts_time": "0.184001",
+                "duration": 512,
+                "duration_time": "0.041667",
+                "size": "12",
+                "pos": "3999",
+                "flags": "___"
+              },
+              {
+                "codec_type": "video",
+                "stream_index": 0,
+                "pts": 3293,
+                "pts_time": "0.267985",
+                "dts": 2777,
+                "dts_time": "0.225993",
+                "duration": 512,
+                "duration_time": "0.041667",
+                "size": "13",
+                "pos": "4011",
+                "flags": "___"
+              },
+              {
+                "codec_type": "video",
+                "stream_index": 0,
+                "pts": 3797,
+                "pts_time": "0.309001",
+                "dts": 3293,
+                "dts_time": "0.267985",
+                "duration": 512,
+                "duration_time": "0.041667",
+                "size": "11",
+                "pos": "4024",
+                "flags": "___"
+              },
+              {
+                "codec_type": "video",
+                "stream_index": 0,
+                "pts": 5849,
+                "pts_time": "0.475993",
+                "dts": 3797,
+                "dts_time": "0.309001",
+                "duration": 512,
+                "duration_time": "0.041667",
+                "size": "12",
+                "pos": "4035",
+                "flags": "___"
+              }
+            ]
+          },
+          "corrected": {
+            "flash": 5.10099,
+            "tone": 5.10979
+          },
+          "normalized": {
+            "flash": 5.10099,
+            "tone": 5.10979
+          },
+          "audioVideoErrorMs": 9,
+          "subtitleErrorMs": 18,
+          "legacyMeasurementErrorMs": 18,
+          "markerRebaseSeconds": 0
+        }
+      ],
+      "hevc": {
+        "args": [
+          "-hide_banner",
+          "-loglevel",
+          "warning",
+          "-nostdin",
+          "-fflags",
+          "+genpts",
+          "-i",
+          "/evidence/matrix-ubuntu/fixtures/fractional.mkv",
+          "-map",
+          "0:v:0",
+          "-map",
+          "0:a:0?",
+          "-c:v",
+          "copy",
+          "-tag:v",
+          "hvc1",
+          "-fps_mode:v",
+          "passthrough",
+          "-copytb",
+          "1",
+          "-bsf:v",
+          "setts=duration='if(isnan(NEXT_DTS),DURATION,NEXT_DTS-DTS)'",
+          "-max_interleave_delta",
+          "0",
+          "-max_muxing_queue_size",
+          "2048",
+          "-c:a",
+          "copy",
+          "-avoid_negative_ts",
+          "make_zero",
+          "-sn",
+          "-f",
+          "hls",
+          "-hls_time",
+          "4",
+          "-hls_segment_type",
+          "fmp4",
+          "-hls_playlist_type",
+          "event",
+          "-hls_flags",
+          "independent_segments",
+          "-hls_list_size",
+          "0",
+          "-hls_fmp4_init_filename",
+          "init.mp4",
+          "-hls_segment_filename",
+          "/evidence/matrix-ubuntu/after/hevc/seg_%05d.m4s",
+          "/evidence/matrix-ubuntu/after/hevc/index.m3u8"
+        ],
+        "probe": {
+          "streams": [
+            {
+              "index": 0,
+              "codec": "hevc",
+              "profile": "Main 10",
+              "pix_fmt": "yuv420p10le",
+              "time_base": "1/16000",
+              "start_time": "0.021000",
+              "r_frame_rate": "24000/1001",
+              "avg_frame_rate": "24000/1001"
+            },
+            {
+              "index": 1,
+              "codec": "aac",
+              "time_base": "1/48000",
+              "start_time": "0.021000",
+              "r_frame_rate": "0/0",
+              "avg_frame_rate": "0/0"
+            }
+          ],
+          "formatStart": "0.021000",
+          "firstPackets": [
+            {
+              "codec_type": "video",
+              "stream_index": 0,
+              "pts": 336,
+              "pts_time": "0.021000",
+              "dts": 336,
+              "dts_time": "0.021000",
+              "duration": 667,
+              "duration_time": "0.041688",
+              "size": "1388",
+              "pos": "8987",
+              "flags": "K__"
+            },
+            {
+              "codec_type": "video",
+              "stream_index": 0,
+              "pts": 1008,
+              "pts_time": "0.063000",
+              "dts": 1008,
+              "dts_time": "0.063000",
+              "duration": 667,
+              "duration_time": "0.041688",
+              "size": "485",
+              "pos": "10375",
+              "flags": "___"
+            },
+            {
+              "codec_type": "video",
+              "stream_index": 0,
+              "pts": 1664,
+              "pts_time": "0.104000",
+              "dts": 1664,
+              "dts_time": "0.104000",
+              "duration": 667,
+              "duration_time": "0.041688",
+              "size": "439",
+              "pos": "10860",
+              "flags": "___"
+            },
+            {
+              "codec_type": "video",
+              "stream_index": 0,
+              "pts": 2336,
+              "pts_time": "0.146000",
+              "dts": 2336,
+              "dts_time": "0.146000",
+              "duration": 667,
+              "duration_time": "0.041688",
+              "size": "680",
+              "pos": "11299",
+              "flags": "___"
+            },
+            {
+              "codec_type": "video",
+              "stream_index": 0,
+              "pts": 3008,
+              "pts_time": "0.188000",
+              "dts": 3008,
+              "dts_time": "0.188000",
+              "duration": 667,
+              "duration_time": "0.041688",
+              "size": "575",
+              "pos": "11979",
+              "flags": "___"
+            },
+            {
+              "codec_type": "video",
+              "stream_index": 0,
+              "pts": 3680,
+              "pts_time": "0.230000",
+              "dts": 3680,
+              "dts_time": "0.230000",
+              "duration": 667,
+              "duration_time": "0.041688",
+              "size": "594",
+              "pos": "12554",
+              "flags": "___"
+            },
+            {
+              "codec_type": "video",
+              "stream_index": 0,
+              "pts": 4336,
+              "pts_time": "0.271000",
+              "dts": 4336,
+              "dts_time": "0.271000",
+              "duration": 667,
+              "duration_time": "0.041688",
+              "size": "584",
+              "pos": "13148",
+              "flags": "___"
+            },
+            {
+              "codec_type": "video",
+              "stream_index": 0,
+              "pts": 5008,
+              "pts_time": "0.313000",
+              "dts": 5008,
+              "dts_time": "0.313000",
+              "duration": 667,
+              "duration_time": "0.041688",
+              "size": "355",
+              "pos": "13732",
+              "flags": "___"
+            }
+          ]
+        },
+        "packetCount": 288,
+        "maxRelativePtsErrorMs": 1.7763568394002505e-12,
+        "minDtsDelta": 0.04099999999999859,
+        "boundaries": [
+          {
+            "segment": "seg_00000.m4s",
+            "first": [
+              {
+                "codec_type": "video",
+                "stream_index": 0,
+                "pts": 336,
+                "pts_time": "0.021000",
+                "dts": 336,
+                "dts_time": "0.021000",
+                "duration": 667,
+                "duration_time": "0.041688",
+                "size": "1388",
+                "pos": "8987",
+                "flags": "K__"
+              },
+              {
+                "codec_type": "video",
+                "stream_index": 0,
+                "pts": 1008,
+                "pts_time": "0.063000",
+                "dts": 1008,
+                "dts_time": "0.063000",
+                "duration": 667,
+                "duration_time": "0.041688",
+                "size": "485",
+                "pos": "10375",
+                "flags": "___"
+              }
+            ],
+            "last": [
+              {
+                "codec_type": "video",
+                "stream_index": 0,
+                "pts": 119120,
+                "pts_time": "7.445000",
+                "dts": 119120,
+                "dts_time": "7.445000",
+                "duration": 667,
+                "duration_time": "0.041688",
+                "size": "419",
+                "pos": "112914",
+                "flags": "___"
+              },
+              {
+                "codec_type": "video",
+                "stream_index": 0,
+                "pts": 119792,
+                "pts_time": "7.487000",
+                "dts": 119792,
+                "dts_time": "7.487000",
+                "duration": 667,
+                "duration_time": "0.041688",
+                "size": "360",
+                "pos": "113333",
+                "flags": "___"
+              }
+            ]
+          },
+          {
+            "segment": "seg_00001.m4s",
+            "first": [
+              {
+                "codec_type": "video",
+                "stream_index": 0,
+                "pts": 120464,
+                "pts_time": "7.529000",
+                "dts": 120464,
+                "dts_time": "7.529000",
+                "duration": 667,
+                "duration_time": "0.041688",
+                "size": "1796",
+                "pos": "6135",
+                "flags": "K__"
+              },
+              {
+                "codec_type": "video",
+                "stream_index": 0,
+                "pts": 121120,
+                "pts_time": "7.570000",
+                "dts": 121120,
+                "dts_time": "7.570000",
+                "duration": 667,
+                "duration_time": "0.041688",
+                "size": "451",
+                "pos": "7931",
+                "flags": "___"
+              }
+            ],
+            "last": [
+              {
+                "codec_type": "video",
+                "stream_index": 0,
+                "pts": 179184,
+                "pts_time": "11.199000",
+                "dts": 179184,
+                "dts_time": "11.199000",
+                "duration": 667,
+                "duration_time": "0.041688",
+                "size": "345",
+                "pos": "55000",
+                "flags": "___"
+              },
+              {
+                "codec_type": "video",
+                "stream_index": 0,
+                "pts": 179856,
+                "pts_time": "11.241000",
+                "dts": 179856,
+                "dts_time": "11.241000",
+                "duration": 667,
+                "duration_time": "0.041688",
+                "size": "371",
+                "pos": "55345",
+                "flags": "___"
+              }
+            ]
+          },
+          {
+            "segment": "seg_00002.m4s",
+            "first": [
+              {
+                "codec_type": "video",
+                "stream_index": 0,
+                "pts": 180512,
+                "pts_time": "11.282000",
+                "dts": 180512,
+                "dts_time": "11.282000",
+                "duration": 667,
+                "duration_time": "0.041688",
+                "size": "1804",
+                "pos": "4431",
+                "flags": "K__"
+              },
+              {
+                "codec_type": "video",
+                "stream_index": 0,
+                "pts": 181184,
+                "pts_time": "11.324000",
+                "dts": 181184,
+                "dts_time": "11.324000",
+                "duration": 667,
+                "duration_time": "0.041688",
+                "size": "506",
+                "pos": "6235",
+                "flags": "___"
+              }
+            ],
+            "last": [
+              {
+                "codec_type": "video",
+                "stream_index": 0,
+                "pts": 191200,
+                "pts_time": "11.950000",
+                "dts": 191200,
+                "dts_time": "11.950000",
+                "duration": 667,
+                "duration_time": "0.041688",
+                "size": "333",
+                "pos": "12834",
+                "flags": "___"
+              },
+              {
+                "codec_type": "video",
+                "stream_index": 0,
+                "pts": 191856,
+                "pts_time": "11.991000",
+                "dts": 191856,
+                "dts_time": "11.991000",
+                "duration": 667,
+                "duration_time": "0.041688",
+                "size": "329",
+                "pos": "13167",
+                "flags": "___"
+              }
+            ]
+          }
+        ],
+        "playlist": "#EXTM3U\n#EXT-X-VERSION:7\n#EXT-X-TARGETDURATION:8\n#EXT-X-MEDIA-SEQUENCE:0\n#EXT-X-PLAYLIST-TYPE:EVENT\n#EXT-X-INDEPENDENT-SEGMENTS\n#EXT-X-MAP:URI=\"init.mp4\"\n#EXTINF:7.508000,\nseg_00000.m4s\n#EXTINF:3.753000,\nseg_00001.m4s\n#EXTINF:0.750688,\nseg_00002.m4s\n#EXT-X-ENDLIST\n",
+        "stderr": "[hls @ 0x555555621740] Packet with invalid duration -9223372036854775808 in stream 0\n"
+      }
+    }
+  },
+  "originalTests": {
+    "baseline": [
+      {
+        "command": [
+          "node",
+          "/tmp/cinevn-timestamp-baseline-tYEghB/backend-node/tests/remux-hevc-roundtrip.test.mjs"
+        ],
+        "status": 1,
+        "stdout": "ok - HEVC Main 10 survives HLS remux with identical decoded frames\n",
+        "stderr": "node:internal/modules/run_main:107\n    triggerUncaughtException(\n    ^\n\nAssertionError [ERR_ASSERTION]: preserve the source clock within 2ms, not an invented fixed cadence\n    at file:///tmp/cinevn-timestamp-baseline-tYEghB/backend-node/tests/remux-hevc-roundtrip.test.mjs:66:5\n    at ModuleJob.run (node:internal/modules/esm/module_job:561:25)\n    at async node:internal/modules/esm/loader:647:26\n    at async asyncRunEntryPointWithESMLoader (node:internal/modules/run_main:101:5) {\n  generatedMessage: false,\n  code: 'ERR_ASSERTION',\n  actual: false,\n  expected: true,\n  operator: '==',\n  diff: 'simple'\n}\n\nNode.js v24.21.0\n"
+      },
+      {
+        "command": [
+          "node",
+          "/tmp/cinevn-timestamp-baseline-tYEghB/backend-node/tests/playback-sync-real.test.mjs"
+        ],
+        "status": 1,
+        "stdout": "",
+        "stderr": "node:internal/modules/run_main:107\n    triggerUncaughtException(\n    ^\n\nAssertionError [ERR_ASSERTION]: subtitle/source clock mismatch -61ms\n    at file:///tmp/cinevn-timestamp-baseline-tYEghB/backend-node/tests/playback-sync-real.test.mjs:56:12 {\n  generatedMessage: false,\n  code: 'ERR_ASSERTION',\n  actual: false,\n  expected: true,\n  operator: '==',\n  diff: 'simple'\n}\n\nNode.js v24.21.0\n"
+      }
+    ],
+    "auditBefore": [
+      {
+        "command": [
+          "node",
+          "/tmp/cinevn-timestamp-auditBefore-Pi74qS/backend-node/tests/remux-hevc-roundtrip.test.mjs"
+        ],
+        "status": 1,
+        "stdout": "ok - HEVC Main 10 survives HLS remux with identical decoded frames\n",
+        "stderr": "node:internal/modules/run_main:107\n    triggerUncaughtException(\n    ^\n\nAssertionError [ERR_ASSERTION]: preserve the source clock within 2ms, not an invented fixed cadence\n    at file:///tmp/cinevn-timestamp-auditBefore-Pi74qS/backend-node/tests/remux-hevc-roundtrip.test.mjs:66:5\n    at ModuleJob.run (node:internal/modules/esm/module_job:561:25)\n    at async node:internal/modules/esm/loader:647:26\n    at async asyncRunEntryPointWithESMLoader (node:internal/modules/run_main:101:5) {\n  generatedMessage: false,\n  code: 'ERR_ASSERTION',\n  actual: false,\n  expected: true,\n  operator: '==',\n  diff: 'simple'\n}\n\nNode.js v24.21.0\n"
+      },
+      {
+        "command": [
+          "node",
+          "/tmp/cinevn-timestamp-auditBefore-Pi74qS/backend-node/tests/playback-sync-real.test.mjs"
+        ],
+        "status": 1,
+        "stdout": "",
+        "stderr": "node:internal/modules/run_main:107\n    triggerUncaughtException(\n    ^\n\nAssertionError [ERR_ASSERTION]: subtitle/source clock mismatch -61ms\n    at file:///tmp/cinevn-timestamp-auditBefore-Pi74qS/backend-node/tests/playback-sync-real.test.mjs:56:12 {\n  generatedMessage: false,\n  code: 'ERR_ASSERTION',\n  actual: false,\n  expected: true,\n  operator: '==',\n  diff: 'simple'\n}\n\nNode.js v24.21.0\n"
+      }
+    ]
+  },
+  "sourceHEVC": {
+    "streams": [
+      {
+        "index": 0,
+        "codec": "hevc",
+        "profile": "Main 10",
+        "pix_fmt": "yuv420p10le",
+        "time_base": "1/1000",
+        "start_time": "0.000000",
+        "r_frame_rate": "24000/1001",
+        "avg_frame_rate": "24000/1001"
+      },
+      {
+        "index": 1,
+        "codec": "aac",
+        "profile": "LC",
+        "time_base": "1/1000",
+        "start_time": "-0.021000",
+        "r_frame_rate": "0/0",
+        "avg_frame_rate": "0/0"
+      }
+    ],
+    "formatStart": "-0.021000",
+    "firstPackets": [
+      {
+        "codec_type": "audio",
+        "stream_index": 1,
+        "pts": -21,
+        "pts_time": "-0.021000",
+        "dts": -21,
+        "dts_time": "-0.021000",
+        "size": "210",
+        "pos": "3116",
+        "flags": "K__"
+      },
+      {
+        "codec_type": "video",
+        "stream_index": 0,
+        "pts": 0,
+        "pts_time": "0.000000",
+        "dts": 0,
+        "dts_time": "0.000000",
+        "duration": 41,
+        "duration_time": "0.041000",
+        "size": "1388",
+        "pos": "3333",
+        "flags": "K__"
+      },
+      {
+        "codec_type": "audio",
+        "stream_index": 1,
+        "pts": 0,
+        "pts_time": "0.000000",
+        "dts": 0,
+        "dts_time": "0.000000",
+        "duration": 21,
+        "duration_time": "0.021000",
+        "size": "280",
+        "pos": "4728",
+        "flags": "K__"
+      },
+      {
+        "codec_type": "audio",
+        "stream_index": 1,
+        "pts": 21,
+        "pts_time": "0.021000",
+        "dts": 21,
+        "dts_time": "0.021000",
+        "duration": 21,
+        "duration_time": "0.021000",
+        "size": "157",
+        "pos": "5015",
+        "flags": "K__"
+      },
+      {
+        "codec_type": "video",
+        "stream_index": 0,
+        "pts": 42,
+        "pts_time": "0.042000",
+        "dts": 42,
+        "dts_time": "0.042000",
+        "duration": 41,
+        "duration_time": "0.041000",
+        "size": "485",
+        "pos": "5179",
+        "flags": "___"
+      },
+      {
+        "codec_type": "audio",
+        "stream_index": 1,
+        "pts": 43,
+        "pts_time": "0.043000",
+        "dts": 43,
+        "dts_time": "0.043000",
+        "duration": 21,
+        "duration_time": "0.021000",
+        "size": "208",
+        "pos": "5671",
+        "flags": "K__"
+      },
+      {
+        "codec_type": "audio",
+        "stream_index": 1,
+        "pts": 64,
+        "pts_time": "0.064000",
+        "dts": 64,
+        "dts_time": "0.064000",
+        "duration": 21,
+        "duration_time": "0.021000",
+        "size": "231",
+        "pos": "5886",
+        "flags": "K__"
+      },
+      {
+        "codec_type": "video",
+        "stream_index": 0,
+        "pts": 83,
+        "pts_time": "0.083000",
+        "dts": 83,
+        "dts_time": "0.083000",
+        "duration": 41,
+        "duration_time": "0.041000",
+        "size": "439",
+        "pos": "6124",
+        "flags": "___"
+      }
+    ]
+  },
+  "sourceSync": {
+    "streams": [
+      {
+        "index": 0,
+        "codec": "h264",
+        "profile": "Main",
+        "pix_fmt": "yuv420p",
+        "time_base": "1/1000",
+        "start_time": "0.000000",
+        "r_frame_rate": "24/1",
+        "avg_frame_rate": "24/1"
+      },
+      {
+        "index": 1,
+        "codec": "dts",
+        "profile": "DTS",
+        "time_base": "1/1000",
+        "start_time": "0.000000",
+        "r_frame_rate": "0/0",
+        "avg_frame_rate": "0/0"
+      },
+      {
+        "index": 2,
+        "codec": "subrip",
+        "time_base": "1/1000",
+        "start_time": "0.000000",
+        "r_frame_rate": "0/0",
+        "avg_frame_rate": "0/0"
+      }
+    ],
+    "formatStart": "0.000000",
+    "firstPackets": [
+      {
+        "codec_type": "video",
+        "stream_index": 0,
+        "pts": 0,
+        "pts_time": "0.000000",
+        "duration": 41,
+        "duration_time": "0.041000",
+        "size": "700",
+        "pos": "863",
+        "flags": "K__"
+      },
+      {
+        "codec_type": "video",
+        "stream_index": 0,
+        "pts": 125,
+        "pts_time": "0.125000",
+        "duration": 41,
+        "duration_time": "0.041000",
+        "size": "11",
+        "pos": "1569",
+        "flags": "___"
+      },
+      {
+        "codec_type": "video",
+        "stream_index": 0,
+        "pts": 42,
+        "pts_time": "0.042000",
+        "dts": 0,
+        "dts_time": "0.000000",
+        "duration": 41,
+        "duration_time": "0.041000",
+        "size": "11",
+        "pos": "1586",
+        "flags": "___"
+      },
+      {
+        "codec_type": "audio",
+        "stream_index": 1,
+        "pts": 0,
+        "pts_time": "0.000000",
+        "dts": 0,
+        "dts_time": "0.000000",
+        "duration": 10,
+        "duration_time": "0.010000",
+        "size": "1884",
+        "pos": "1604",
+        "flags": "K__"
+      },
+      {
+        "codec_type": "audio",
+        "stream_index": 1,
+        "pts": 11,
+        "pts_time": "0.011000",
+        "dts": 11,
+        "dts_time": "0.011000",
+        "duration": 10,
+        "duration_time": "0.010000",
+        "size": "1884",
+        "pos": "3495",
+        "flags": "K__"
+      },
+      {
+        "codec_type": "audio",
+        "stream_index": 1,
+        "pts": 21,
+        "pts_time": "0.021000",
+        "dts": 21,
+        "dts_time": "0.021000",
+        "duration": 10,
+        "duration_time": "0.010000",
+        "size": "1884",
+        "pos": "5386",
+        "flags": "K__"
+      },
+      {
+        "codec_type": "audio",
+        "stream_index": 1,
+        "pts": 32,
+        "pts_time": "0.032000",
+        "dts": 32,
+        "dts_time": "0.032000",
+        "duration": 10,
+        "duration_time": "0.010000",
+        "size": "1884",
+        "pos": "7277",
+        "flags": "K__"
+      },
+      {
+        "codec_type": "video",
+        "stream_index": 0,
+        "pts": 83,
+        "pts_time": "0.083000",
+        "dts": 42,
+        "dts_time": "0.042000",
+        "duration": 41,
+        "duration_time": "0.041000",
+        "size": "11",
+        "pos": "9167",
+        "flags": "___"
+      }
+    ]
+  }
+}

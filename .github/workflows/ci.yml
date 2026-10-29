@@ -14,14 +14,16 @@ on:
 
 jobs:
   test:
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
     timeout-minutes: 20
     steps:
       - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+        with:
+          fetch-depth: 0 # timestamp matrix compares the actual historical modules
 
       - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4
         with:
-          node-version: '24'
+          node-version: '24.21.0'
           cache: 'npm'
           cache-dependency-path: |
             backend-node/package-lock.json
@@ -34,8 +36,22 @@ jobs:
         run: |
           npm ci --prefix backend-node
           npm test --prefix backend-node
+
+      - name: Media integration and baseline timestamp matrix
+        env:
+          TIMESTAMP_AUDIT_DIR: ${{ runner.temp }}/cinevn-timestamp-audit
+        run: |
           npm run test:audit --prefix backend-node
           npm run test:media-audit --prefix backend-node
+          npm run test:timestamp-matrix --prefix backend-node
+
+      - name: Timestamp evidence
+        if: always()
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
+        with:
+          name: timestamp-baseline-vs-after
+          path: ${{ runner.temp }}/cinevn-timestamp-audit
+          if-no-files-found: warn
 
       - name: Frontend typecheck and tests
         run: |

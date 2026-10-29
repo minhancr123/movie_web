@@ -886,7 +886,10 @@ export const isTenBitVideo = (video) =>
 // otherwise decodable Main 10 SDR sources on the deployed FFmpeg pipeline.
 // Build 9 infers duration for HEVC without decode-order reordering. Keep
 // B-frame duration hints: clearing those can lose the final delayed frame.
-export const REMUX_BUILD = 9;
+// Build 10 preserves the demuxer time base and derives non-B HEVC packet
+// duration from NEXT_DTS. FFmpeg 6.1 otherwise rounds fractional MKV clocks;
+// duration=0 also invents a nominal frame at VFR fragment boundaries.
+export const REMUX_BUILD = 10;
 
 /** VBR targets for codec-transcode rungs (H.264, SDR). */
 export const transcodeKbpsForHeight = (height) => {
@@ -1082,10 +1085,13 @@ export const buildFfmpegArgs = ({ inputUrl, outputDir, audioCopy = false, segmen
   // damage HEVC slice data even on SDR files without Dolby Vision metadata.
   ...(videoCopy ? ['-fps_mode:v', 'passthrough'] : []),
   // This adjusts packet metadata, not HEVC NAL payloads or PTS/DTS. On the
-  // reproduced 23.976fps Matroska sample, stale duration hints made the first
-  // packet at fragment boundaries overlap its successor. Let MOV infer the
-  // duration from adjacent timestamps instead of carrying those rounded hints.
-  ...(videoCopy && video?.codec === 'hevc' && video.hasBFrames === 0 ? ['-bsf:v', 'setts=duration=0'] : []),
+  // reproduced 23.976fps Matroska sample, stale duration hints made fragment
+  // boundaries overlap. A zero duration still makes MOV guess a nominal frame
+  // at a VFR boundary. Buffer one packet to use the actual next DTS; only the
+  // final packet (no successor) keeps its original duration. Preserve the
+  // demuxer time base before this filter so FFmpeg 6.1 cannot round to 1/24.
+  ...(videoCopy && video?.codec === 'hevc' && video.hasBFrames === 0
+    ? ['-copytb', '1', '-bsf:v', "setts=duration='if(isnan(NEXT_DTS),DURATION,NEXT_DTS-DTS)'"] : []),
   '-max_interleave_delta', '0',
   '-max_muxing_queue_size', '2048',
   '-c:a',
