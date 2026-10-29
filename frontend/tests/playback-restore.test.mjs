@@ -201,3 +201,32 @@ test('a buffered paused decoder can be primed once without completing the restor
   assert.equal(ready, 1);
   cancel();
 });
+
+test('native HLS primes a covered metadata-only seek with no buffer, but does not settle from play()', async () => {
+  const media = new Media(); media.readyState = 1;
+  media.buffered = { length: 0 };
+  let covered = false, primed = 0, ready = 0;
+  const cancel = restoreBeforePlayback(media, 2.349, {
+    covered: () => covered, primeWhenCovered: true, prime: () => primed++,
+    ready: () => ready++, failed: () => assert.fail('unexpected timeout'),
+  });
+  await new Promise(resolve => setTimeout(resolve, 800));
+  assert.equal(primed, 0, 'the new playlist must cover the destination first');
+  covered = true; media.event('progress'); media.position = 2.349;
+  await new Promise(resolve => setTimeout(resolve, 850));
+  media.event('progress');
+  assert.equal(primed, 1); assert.equal(ready, 0);
+  assert.equal(media.seeking, true, 'play intent is not a completed seek');
+  media.readyState = 2; media.seeking = false; media.event('seeked');
+  assert.equal(ready, 1); cancel();
+});
+
+test('a native seek with no play intent never starts playback to fill its buffer', async () => {
+  const media = new Media(); media.readyState = 1; media.buffered = { length: 0 };
+  const cancel = restoreBeforePlayback(media, 2.349, {
+    covered: () => true, primeWhenCovered: true, ready: () => assert.fail(), failed: () => assert.fail(),
+  });
+  media.position = 2.349;
+  await new Promise(resolve => setTimeout(resolve, 850));
+  assert.equal(media.paused, true); cancel();
+});

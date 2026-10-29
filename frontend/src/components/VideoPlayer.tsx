@@ -1546,13 +1546,14 @@ export default function VideoPlayer({ src, playbackStartedAt, movie, episode, au
             startPlayback();
             setIsLoading(false);
         };
-        const awaitPositionRestore = (target: number, covered?: () => boolean) => {
+        const awaitPositionRestore = (target: number, covered?: () => boolean, primeWhenCovered = false) => {
             seekTraceRef.current?.mark('session_ready');
             cancelPositionRestore?.();
             cancelPositionRestore = restoreBeforePlayback(video, target, {
                 covered,
                 ready: finishPositionRestore,
                 prime: playAfterRestore ? startPlayback : undefined,
+                primeWhenCovered,
                 failed: () => {
                     if (cancelled) return;
                     clearSeekLock();
@@ -1922,7 +1923,7 @@ export default function VideoPlayer({ src, playbackStartedAt, movie, episode, au
             video.src = authToken && src.includes('/api/playback/hls/')
                 ? `${src}${src.includes('?') ? '&' : '?'}access_token=${encodeURIComponent(authToken)}` : src;
             video.load();
-            awaitPositionRestore(restoreTargetLocal, nativeCovered);
+            awaitPositionRestore(restoreTargetLocal, nativeCovered, true);
         } else {
             setError("Trình duyệt không hỗ trợ HLS.");
         }

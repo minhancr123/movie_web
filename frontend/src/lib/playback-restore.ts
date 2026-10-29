@@ -40,6 +40,9 @@ export const restoreBeforePlayback = (video: RestoreMedia, target: number, optio
   ready: () => void;
   /** Resume decoding at an already-buffered seek target; does not settle UI. */
   prime?: () => void;
+  /** Native HLS may not fetch its target while paused, so buffered remains
+   * empty until play(). Coverage still has to come from the new playlist. */
+  primeWhenCovered?: boolean;
   failed: () => void;
   timeoutMs?: number;
 }) => {
@@ -65,7 +68,13 @@ export const restoreBeforePlayback = (video: RestoreMedia, target: number, optio
     if (cancelled || video.readyState < 1 || (options.covered && !options.covered())) return;
     if (!assigned) {
       if (!video.seeking && Math.abs(video.currentTime - target) <= 0.5) {
-        if (video.readyState < 2) return;
+        if (video.readyState < 2) {
+          if (options.primeWhenCovered && options.prime) {
+            assigned = true;
+            assignedAt = performance.now();
+          }
+          return;
+        }
         cleanup(); options.ready(); return;
       }
       assigned = true;
@@ -79,11 +88,17 @@ export const restoreBeforePlayback = (video: RestoreMedia, target: number, optio
     // Some decoders retain HAVE_METADATA while a paused seek is pending,
     // even after the destination has arrived. Let the existing play intent
     // drive decoding once, without treating play() as proof the seek landed.
+    // Native WebKit can withhold ALL buffered ranges until play(); requiring
+    // a buffer there creates a paused -> no download -> no play deadlock.
     if (!primed && options.prime && Math.abs(video.currentTime - target) <= 0.5
         && performance.now() - assignedAt >= 750) {
       try {
+        if (options.primeWhenCovered && options.covered?.()) {
+          primed = true;
+          options.prime();
+        }
         const ranges = video.buffered;
-        for (let i = 0; ranges && i < ranges.length; i++) {
+        for (let i = 0; !primed && ranges && i < ranges.length; i++) {
           if (ranges.start(i) <= target && ranges.end(i) >= target + 0.5) {
             primed = true;
             options.prime();
