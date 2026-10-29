@@ -6,7 +6,7 @@ Nhánh `codex/streaming-audit-hardening`, bắt đầu tại `4d0e94b82f2676823d
 
 Báo cáo 27/10 đã bỏ sót lỗi HEVC của [run 40463307787](https://github.com/minhancr123/movie_web/actions/runs/40463307787). Backend dừng tại `remux-hevc-roundtrip`, nên frontend/typecheck/build chưa chạy trong run đó. Không thể dùng kết quả local macOS để kết luận Ubuntu xanh.
 
-**Local đã PASS toàn bộ; CI GitHub của commit sửa đang chờ xác nhận.** Progressive subtitle inventory và benchmark iPhone vật lý vẫn **pending**, không dùng fixture thay nghiệm thu trên thiết bị.
+**Local và [CI GitHub run 40819463916](https://github.com/minhancr123/movie_web/actions/runs/40819463916) đã PASS toàn bộ tại commit `1115b62ba4571a2bbe38cb69e2b4a50f3e822070`.** Progressive subtitle inventory và benchmark iPhone vật lý vẫn **pending**, không dùng fixture thay nghiệm thu trên thiết bị.
 
 ## Tái hiện độc lập và cùng fixture
 
@@ -72,7 +72,7 @@ Sửa **lệnh detector trong test** bằng `-copyts`. Giữ nguyên phép tính
 - Frontend: typecheck PASS; tests 188/188 PASS; production build PASS.
 - Deploy manifests: 64/64 PASS. Đây là **test deploy**, không thực hiện deployment.
 - Test HEVC/sync hiện fail rõ khi thiếu FFmpeg/x265 thay vì skip. CI cài dependency trước test; không bỏ test hoặc tăng tolerance.
-- CI chạy clean `npm ci`; chạy media integration/matrix riêng, upload evidence bằng action pin SHA. Chưa ghi PASS GitHub trước khi run hoàn tất.
+- CI chạy clean `npm ci`; chạy media integration/matrix riêng, upload evidence bằng action pin SHA. Run GitHub đã hoàn tất `success`; mọi bước backend/media/frontend/typecheck/build/manifest đều `success`. Artifact `timestamp-baseline-vs-after` id `12873584067`, digest `sha256:bfa659fcb1faa49db7e5d636b071fc1ef0aabff2a68e20329a3c59387fc24d75`.
 
 ## Staging compatibility của media grants
 
@@ -86,6 +86,8 @@ Sửa **lệnh detector trong test** bằng `-copyts`. Giữ nguyên phép tính
 6. Sai rendition scope 403; session hết hạn 410 dù JWT grant chưa hết hạn.
 7. Proxy cache tuân thủ header không cache authorized response để phát lại cho client trần: manifest `private,no-store`; segments `private,immutable`; request trần vẫn 401.
 
+Rà cấu hình trong repo: `deploy/lan/nginx-routes.conf` và `deploy/Caddyfile` không cấu hình shared cache cho playback; tài liệu `deploy/cloudflare/README.md` yêu cầu bypass `/api/*`. Đây là cấu hình/tài liệu trong Git, không phải xác nhận rule đang chạy trên Cloudflare.
+
 **Giới hạn trước release:** chưa kiểm tra CDN đang triển khai hoặc ứng dụng iPhone cũ. CDN rule ép cache bất chấp `private`/bỏ query có thể vượt qua origin auth. Phải kiểm tra cấu hình và purge các object public từ bản cũ trước release; local proxy không chứng minh điều đó. Không thực hiện purge/deploy theo yêu cầu lượt này. Native client giữ manifest cũ phải refresh/re-resolve; raw segment public URL không được giữ tương thích bằng cách nới auth.
 
 ## Vẫn pending
@@ -97,4 +99,4 @@ Sửa **lệnh detector trong test** bằng `-copyts`. Giữ nguyên phép tính
 ## Evidence
 
 - [macOS matrix](evidence/2026-10-29-timestamps/macos.json), [Ubuntu matrix](evidence/2026-10-29-timestamps/ubuntu.json): versions, SHA256 fixtures, original-test exits, first timestamps, time bases, PTS/DTS ở boundary, FFmpeg args, marker clocks.
-- Cùng thư mục có log backend, audit/media, frontend typecheck/tests/build và deploy tests. Raw toàn bộ packet và media synthetic nằm trong artifact CI, không chứa signed media URL hoặc credentials production.
+- [validation.json](evidence/2026-10-29-timestamps/validation.json) lưu kết quả local, từng step CI và log timestamp liên quan. Log đầy đủ backend, audit/media, frontend typecheck/tests/build và deploy tests có trong run GitHub. Raw toàn bộ packet và media synthetic nằm trong artifact CI, không chứa signed media URL hoặc credentials production.

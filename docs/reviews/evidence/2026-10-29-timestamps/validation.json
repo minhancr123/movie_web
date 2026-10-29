@@ -1,0 +1,147 @@
+{
+  "codeCommit": "1115b62ba4571a2bbe38cb69e2b4a50f3e822070",
+  "ci": {
+    "runId": 40819463916,
+    "url": "https://github.com/minhancr123/movie_web/actions/runs/40819463916",
+    "conclusion": "success",
+    "jobs": [
+      {
+        "id": 123268272583,
+        "name": "test",
+        "status": "completed",
+        "conclusion": "success",
+        "run_id": 40819463916,
+        "logs_url": null,
+        "steps": [
+          {
+            "name": "Set up job",
+            "status": "completed",
+            "conclusion": "success",
+            "number": 1
+          },
+          {
+            "name": "Run actions/checkout@11d5960a326750d5838078e36cf38b85af677262",
+            "status": "completed",
+            "conclusion": "success",
+            "number": 2
+          },
+          {
+            "name": "Run actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020",
+            "status": "completed",
+            "conclusion": "success",
+            "number": 3
+          },
+          {
+            "name": "Media integration dependencies",
+            "status": "completed",
+            "conclusion": "success",
+            "number": 4
+          },
+          {
+            "name": "Backend tests",
+            "status": "completed",
+            "conclusion": "success",
+            "number": 5
+          },
+          {
+            "name": "Media integration and baseline timestamp matrix",
+            "status": "completed",
+            "conclusion": "success",
+            "number": 6
+          },
+          {
+            "name": "Timestamp evidence",
+            "status": "completed",
+            "conclusion": "success",
+            "number": 7
+          },
+          {
+            "name": "Frontend typecheck and tests",
+            "status": "completed",
+            "conclusion": "success",
+            "number": 8
+          },
+          {
+            "name": "Frontend build",
+            "status": "completed",
+            "conclusion": "success",
+            "number": 9
+          },
+          {
+            "name": "Manifest tests",
+            "status": "completed",
+            "conclusion": "success",
+            "number": 10
+          },
+          {
+            "name": "Post Run actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020",
+            "status": "completed",
+            "conclusion": "success",
+            "number": 19
+          },
+          {
+            "name": "Post Run actions/checkout@11d5960a326750d5838078e36cf38b85af677262",
+            "status": "completed",
+            "conclusion": "success",
+            "number": 20
+          },
+          {
+            "name": "Complete job",
+            "status": "completed",
+            "conclusion": "success",
+            "number": 21
+          }
+        ]
+      }
+    ],
+    "artifact": {
+      "id": 12873584067,
+      "name": "timestamp-baseline-vs-after",
+      "digest": "sha256:bfa659fcb1faa49db7e5d636b071fc1ef0aabff2a68e20329a3c59387fc24d75"
+    }
+  },
+  "local": {
+    "macOS": {
+      "backend": "PASS",
+      "audit": "4/4 PASS",
+      "mediaIntegration": "PASS",
+      "grantHTTP": "7/7 PASS",
+      "timestampMatrix": "PASS"
+    },
+    "Ubuntu24_04_amd64": {
+      "backend": "PASS",
+      "audit": "4/4 PASS",
+      "mediaIntegration": "PASS",
+      "grantHTTP": "7/7 PASS",
+      "timestampMatrix": "PASS"
+    },
+    "frontend": {
+      "typecheck": "PASS",
+      "tests": "188/188 PASS",
+      "build": "PASS"
+    },
+    "deployTests": "64/64 PASS"
+  },
+  "ciTimestampAndStagingLogExcerpt": [
+    "2026-10-29T04:45:58.5369813Z {\"test\":\"fractional-HEVC-clock\",\"packets\":288,\"maxPtsErrorMs\":1.7763568394002505e-12,\"segments\":3}",
+    "2026-10-29T04:45:59.5875924Z {\"test\":\"variable-HEVC-clock\",\"packets\":246,\"maxPtsErrorMs\":1.7763568394002505e-12,\"segments\":3}",
+    "2026-10-29T04:46:04.7385834Z {\"requestedStartAt\":0,\"actualSeekOrigin\":0,\"presentationShiftMs\":83,\"audioVideoErrorMs\":10,\"subtitleTimelineErrorMs\":0,\"reuse\":\"unchanged\"}",
+    "2026-10-29T04:46:05.2672686Z {\"requestedStartAt\":197,\"actualSeekOrigin\":194,\"presentationShiftMs\":83,\"audioVideoErrorMs\":9,\"subtitleTimelineErrorMs\":18,\"reuse\":\"unchanged\"}",
+    "2026-10-29T04:46:30.8773637Z {\"staging\":\"local-HTTP-real-controller\",\"checks\":7,\"externalCDN\":\"not-tested\",\"oldPublicCachePurge\":\"required-before-release\"}",
+    "2026-10-29T04:46:52.8073220Z {\"label\":\"baseline\",\"hevcErrorMs\":41.54200000000152,\"sync\":[{\"requested\":0,\"avMs\":10,\"subtitleMs\":0,\"legacyMs\":-61},{\"requested\":197,\"avMs\":9,\"subtitleMs\":18,\"legacyMs\":18}]}",
+    "2026-10-29T04:46:54.1989483Z {\"label\":\"auditBefore\",\"hevcErrorMs\":41.54200000000152,\"sync\":[{\"requested\":0,\"avMs\":10,\"subtitleMs\":0,\"legacyMs\":-61},{\"requested\":197,\"avMs\":9,\"subtitleMs\":18,\"legacyMs\":18}]}",
+    "2026-10-29T04:46:55.6078802Z {\"label\":\"after\",\"hevcErrorMs\":1.7763568394002505e-12,\"sync\":[{\"requested\":0,\"avMs\":10,\"subtitleMs\":0,\"legacyMs\":-61},{\"requested\":197,\"avMs\":9,\"subtitleMs\":18,\"legacyMs\":18}]}",
+    "2026-10-29T04:48:14.4751867Z Ran 64 tests in 0.025s"
+  ],
+  "pending": [
+    "progressive subtitle inventory staging acceptance",
+    "physical iPhone seek benchmark",
+    "deployed CDN override/purge and old native app acceptance"
+  ],
+  "productionActions": {
+    "merged": false,
+    "deployed": false,
+    "restarted": false,
+    "iOSInstalled": false
+  }
+}
