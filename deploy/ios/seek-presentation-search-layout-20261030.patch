@@ -1,0 +1,293 @@
+--- a/CineVN-IOS/Player/NativePlayer.swift
++++ b/CineVN-IOS/Player/NativePlayer.swift
+@@ -16,8 +16,7 @@
+     @Published var duration: Double = 0
+     @Published var isBuffering: Bool = false
+     @Published private(set) var isAdvancing = false
+-    private var lastClockSample: Double?
+-    private var lastClockAdvanceAt = Date.distantPast
++    private var progressEvidence = PlaybackProgressEvidence()
+     @Published var playbackRate: Float = 1.0
+     @Published var isAudioOnlyFallback: Bool = false
+     @Published var startOffset: Double = 0
+@@ -161,7 +160,7 @@
+ 
+         player?.pause()
+         isAdvancing = false
+-        lastClockSample = nil
++        progressEvidence.reset()
+         isPlaying = false
+         currentTime = startOffset
+         duration = 0
+@@ -331,24 +330,17 @@
+             // The movie clock is always the observed AVPlayer clock. Seek
+             // intent belongs to the loading/preview UI, never progress/history.
+             self.currentTime = clock
+-            let delta = self.lastClockSample.map { clock - $0 } ?? 0
+-            self.lastClockSample = clock
+-            let nearIntent = self.pendingSeekDisplayAt.map { abs(clock - $0) <= 2 } ?? true
+-            let advancing = (self.player?.rate ?? 0) > 0 && delta > 0.01 && delta < 2
+-                && !self.localSeekInFlight && self.pendingSeekFireTask == nil && nearIntent
+-            if advancing {
+-                self.lastClockAdvanceAt = Date()
+-                self.isAdvancing = true
++            let actuallyPlaying = self.player?.timeControlStatus == .playing
++            let evidence = self.progressEvidence.observe(clock: clock, wall: ProcessInfo.processInfo.systemUptime,
++                rate: Double(self.player?.rate ?? 0), playing: actuallyPlaying,
++                blocked: self.localSeekInFlight || self.pendingSeekFireTask != nil,
++                target: self.pendingSeekDisplayAt)
++            if self.isAdvancing != evidence { self.isAdvancing = evidence }
++            if evidence && actuallyPlaying {
+                 self.bufferStateWork?.cancel()
+                 self.isBuffering = false
+-                // The clock can pass the exact target between observer ticks.
+-                // Forward progress beyond it also proves restoration landed.
+                 if let pending = self.pendingSeekDisplayAt, clock >= pending - 0.5,
+-                   self.pendingSeekFireTask == nil {
+-                    self.pendingSeekDisplayAt = nil
+-                }
+-            } else if Date().timeIntervalSince(self.lastClockAdvanceAt) > 1 {
+-                self.isAdvancing = false
++                   self.pendingSeekFireTask == nil { self.pendingSeekDisplayAt = nil }
+             }
+             self.updateBufferedTime()
+             self.checkNextWindowPreparation()
+@@ -568,7 +560,7 @@
+         lastRestorationTarget = seconds
+         pendingSeekDisplayAt = seconds
+         isAdvancing = false
+-        lastClockSample = nil
++        progressEvidence.reset()
+     }
+ 
+     /// Cửa sổ remux (playlist EVENT) hết segment mà phim còn dài — playlist
+@@ -1503,7 +1495,7 @@
+         if !preserveSeekIntent { seekShouldResume = false }
+         player?.pause()
+         isAdvancing = false
+-        lastClockSample = nil
++        progressEvidence.reset()
+         isPlaying = false
+         stopStallWatchdogTimer()
+         // Pause là thời điểm hợp lệ để lưu tiến độ ngay.
+@@ -1538,7 +1530,7 @@
+         seekShouldResume = resumeAfterSeek ?? (pendingSeekDisplayAt != nil ? seekShouldResume : isPlaying)
+         pendingSeekDisplayAt = target
+         isAdvancing = false
+-        lastClockSample = nil
++        progressEvidence.reset()
+ 
+         // ĐÓNG GÓP cú tua THẬT: bấm nhanh 5 lần = 5 chu kỳ đệm + 5 khung hình
+         // lóe nếu mỗi tap một seek AVPlayer. Ý định cộng dồn tức thì, còn máy
+--- a/CineVN-IOS/Player/PlayerScreen.swift
++++ b/CineVN-IOS/Player/PlayerScreen.swift
+@@ -106,6 +106,8 @@
+     @State private var scrubIntentCaptured = false
+     @State private var isFarSeeking = false
+     @State private var loadingIndicatorVisible = false
++    @State private var committedSeekTarget: Double?
++    @State private var committedSeekImage: UIImage?
+     @State private var farSeekStatus: String? = nil
+ 
+     // Scrub (kéo thanh thời gian + pan ngang)
+@@ -430,6 +432,15 @@
+                     .allowsHitTesting(false)
+                 }
+ 
++                // Keep one immutable preview/loading card until playback is proven.
++                // Replacing AVPlayerItem or late thumbnail responses must not swap it.
++                if !isScrubbing, let target = committedSeekTarget, player.errorMessage == nil {
++                    SeekHUD(targetTime: target, delta: 0, thumbnail: committedSeekImage,
++                            loadingText: "Đang tải đoạn đã chọn…")
++                        .transaction { $0.animation = nil }
++                        .zIndex(5).allowsHitTesting(false)
++                }
++
+                 // Long-press 2x badge
+                 if isSpeedHolding {
+                     VStack {
+@@ -479,7 +490,7 @@
+                 }
+ 
+                 // Buffering indicator
+-                if loadingIndicatorVisible && player.errorMessage == nil && !isScrubbing {
++                if loadingIndicatorVisible && player.errorMessage == nil && !isScrubbing && committedSeekTarget == nil {
+                     VStack(spacing: 12) {
+                         ProgressView()
+                             .progressViewStyle(CircularProgressViewStyle(tint: .white))
+@@ -593,6 +604,23 @@
+         .onDisappear(perform: teardown)
+         .onChange(of: player.currentTime) { _, _ in
+             checkNextEpisodeTrigger()
++        }
++        .onChange(of: player.isAdvancing) { _, advancing in
++            if advancing { committedSeekTarget = nil; committedSeekImage = nil; loadingIndicatorVisible = false }
++        }
++        .task(id: player.pendingSeekDisplayAt) {
++            if let target = player.pendingSeekDisplayAt {
++                commitSeekPreview(at: target)
++            } else {
++                // A manually paused seek also completes, without requiring Play.
++                let target = committedSeekTarget
++                try? await Task.sleep(for: .milliseconds(300))
++                guard !Task.isCancelled, let target, committedSeekTarget == target,
++                      !isFarSeeking, !player.isResolvingSeek, !player.seekShouldResume,
++                      player.pendingSeekDisplayAt == nil, !player.isBuffering,
++                      abs(player.currentTime - target) <= 1 else { return }
++                committedSeekTarget = nil; committedSeekImage = nil; loadingIndicatorVisible = false
++            }
+         }
+         .onChange(of: player.needsSourceFallback) { _, needed in
+             if needed { triggerDecodeFallback() }
+@@ -929,6 +957,7 @@
+                             requestThumbnail(for: position)
+                         },
+                         onScrubEnded: { position in
++                            commitSeekPreview(at: position)
+                             player.seekCoalesced(to: position, immediate: true, resumeAfterSeek: wasPlayingBeforeScrub)
+                             wasPlayingBeforeScrub = false
+                             scrubIntentCaptured = false
+@@ -1304,9 +1333,17 @@
+         requestThumbnail(for: target)
+     }
+ 
++    private func commitSeekPreview(at target: Double) {
++        committedSeekTarget = target
++        committedSeekImage = thumbnailStore?.cachedPreview(at: target)
++        loadingIndicatorVisible = false
++        pauseCinematicTask?.cancel(); pauseCinematicVisible = false
++    }
++
+     private func endScrubPan() {
+         guard isScrubbing else { return }
+         let target = scrubPosition
++        commitSeekPreview(at: target)
+         isScrubbing = false
+         panStartTime = nil
+         scrubRate = 1
+@@ -1640,6 +1677,7 @@
+         startAt: Double
+     ) {
+         if let newEpisodeInfo {
++            committedSeekTarget = nil; committedSeekImage = nil
+             currentEpisodeInfo = newEpisodeInfo
+             progressReporter?.updateEpisode(season: newEpisodeInfo.season, episode: newEpisodeInfo.episode)
+         }
+@@ -1846,6 +1884,7 @@
+             && player.pendingSeekDisplayAt == nil
+             && !isFarSeeking
+             && !isScrubbing
++            && committedSeekTarget == nil
+             && !player.isAudioOnlyFallback
+     }
+ 
+--- a/CineVN-IOS/Player/PlayerSupport.swift
++++ b/CineVN-IOS/Player/PlayerSupport.swift
+@@ -334,6 +334,7 @@
+     let thumbnail: UIImage?
+     /// Multiplier tua tăng tốc khi kéo giữ (nil/≤1.3 = ẩn).
+     var speedMultiplier: Double? = nil
++    var loadingText: String? = nil
+ 
+     var body: some View {
+         VStack(spacing: 6) {
+@@ -376,6 +377,12 @@
+                     .font(.system(size: 15, weight: .bold, design: .monospaced))
+                     .foregroundColor(.white)
+             }
++            if let loadingText {
++                HStack(spacing: 8) {
++                    ProgressView().tint(.white)
++                    Text(loadingText).font(.caption).foregroundStyle(.white)
++                }
++            }
+         }
+         .padding(10)
+         .background(.black.opacity(0.82))
+--- a/CineVN-IOS/Player/SeekThumbnailStore.swift
++++ b/CineVN-IOS/Player/SeekThumbnailStore.swift
+@@ -24,6 +24,12 @@
+ 
+     init(sessionId: String) {
+         self.sessionId = sessionId
++    }
++
++    func cachedPreview(at seconds: Double) -> UIImage? {
++        guard seconds.isFinite, seconds >= 0 else { return nil }
++        let bucket = Int(seconds / Double(bucketSeconds)) * bucketSeconds
++        return cache[bucket]
+     }
+ 
+     /// Gọi liên tục khi đang kéo thanh thời gian; tự throttle + cache theo bucket 10s.
+--- /dev/null
++++ b/CineVN-IOS/Services/PlaybackProgressEvidence.swift
+@@ -0,0 +1,32 @@
++import Foundation
++
++/// A seek-completion/time jump is not evidence that media is playing.
++/// Require several normal clock advances with AVPlayer actually playing.
++struct PlaybackProgressEvidence {
++    private var previous: (clock: Double, wall: Double)?
++    private var consecutive = 0
++    private var lastAdvance = -Double.infinity
++    private var stable = false
++
++    mutating func reset() { self = Self() }
++
++    mutating func observe(clock: Double, wall: Double, rate: Double, playing: Bool,
++                          blocked: Bool, target: Double?) -> Bool {
++        guard clock.isFinite, wall.isFinite, !blocked,
++              target.map({ abs(clock - $0) <= 2 }) ?? true else { reset(); return false }
++        let old = previous
++        previous = (clock, wall)
++        let elapsed = old.map { wall - $0.wall } ?? 0
++        let delta = old.map { clock - $0.clock } ?? 0
++        let advancing = playing && rate > 0 && elapsed > 0 && elapsed <= 2
++            && delta > 0.01 && delta <= max(0.75, elapsed * rate * 2)
++        if advancing {
++            consecutive += 1; lastAdvance = wall
++            if consecutive >= 3 { stable = true }
++        } else {
++            consecutive = 0
++            if wall - lastAdvance > 0.75 { stable = false }
++        }
++        return stable
++    }
++}
+--- a/CineVN-IOS/Views/SearchView.swift
++++ b/CineVN-IOS/Views/SearchView.swift
+@@ -15,12 +15,14 @@
+     @State private var selectedGenre: GenreItem? = nil
+     @State private var genreTask: Task<Void, Never>?
+ 
++    @ScaledMetric(relativeTo: .subheadline) private var genreRowHeight: CGFloat = 44
++
+     private let columns = [GridItem(.adaptive(minimum: 100, maximum: 130), spacing: 12)]
+ 
+     var body: some View {
+         VStack(spacing: 0) {
+             searchBar
+-            genreChips
++            if !genres.isEmpty { genreChips }
+ 
+             if !searchText.isEmpty && isSearching && results.isEmpty {
+                 HStack(spacing: 10) {
+@@ -61,7 +63,9 @@
+                         selectGenre(genre)
+                     } label: {
+                         Text(genre.name.replacingOccurrences(of: "Phim ", with: ""))
+-                            .font(.system(size: 13, weight: selectedGenre?.id == genre.id ? .bold : .medium))
++                            .font(.subheadline.weight(selectedGenre?.id == genre.id ? .bold : .medium))
++                            .lineLimit(1)
++                            .fixedSize(horizontal: true, vertical: false)
+                             .foregroundColor(selectedGenre?.id == genre.id ? .black : .white)
+                             .padding(.horizontal, 13)
+                             .padding(.vertical, 7)
+@@ -77,6 +81,7 @@
+             .padding(.horizontal, 16)
+             .padding(.bottom, 8)
+         }
++        .frame(height: genreRowHeight)
+     }
+ 
+     /// Chọn thể loại = duyệt theo genre (bỏ chữ tìm kiếm); gõ chữ lại = thoát chế độ genre.
