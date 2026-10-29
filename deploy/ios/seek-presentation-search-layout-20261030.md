@@ -104,3 +104,28 @@ IPA: `~/Downloads/CineVN-iOS-Seek-Layout-2026103005/CineVN-IOS.ipa`,
 `b1910908db41896b530a0401caf460acd0e46b99b104d18349c728b4f56698f9`.
 The user has been asked to test the full-frame curtain during seek and resumed
 playback; no physical PASS is claimed yet.
+
+## Startup follow-up: build 2026103006
+
+Build 005's CI passed (run 40936829745), but the user then reported prolonged
+startup buffering on Endgame. This does not establish seek acceptance. Server
+resolve took 13.9 seconds for the cold source and 2.6 seconds on reuse; HLS init
+and multiple segments returned HTTP 200 to AppleCoreMedia. Cached device
+diagnostics were stale because clock callbacks stop during waits. No claim
+that TorBox alone caused this failure is justified.
+
+Code review found the first resolve's requested resume position was discarded
+when constructing PlaybackContext. Only subsequent replacement sessions held
+a restoration target. Build 006 carries the initial request into the first
+item-ready callback and explicitly seeks it, including the window start, rather
+than allowing an EVENT playlist to choose its current edge. A five-second
+independent diagnostic sampler now records item/time-control status, waiting
+reason, loaded/seekable ranges and error codes even with a stationary clock.
+It stops on engine cleanup; no signed URLs or credentials are recorded.
+
+Build 006 signed archive, codesign verification and export passed; installation
+was acknowledged by devicectl. IPA: `~/Downloads/CineVN-iOS-Seek-Layout-2026103006/CineVN-IOS.ipa`,
+2,150,574 bytes, SHA-256 `54f29309ef04a3de0091bac8ee74a0415420dfc93113b414b77a4766bb09d88e`.
+User was asked to reopen Endgame for a physical measurement. That test and
+seek acceptance remain pending; user subsequently asked for a post-reboot
+server health check. Category spacing is user-confirmed fixed.

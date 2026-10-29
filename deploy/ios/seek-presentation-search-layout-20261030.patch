@@ -1,16 +1,17 @@
 --- a/CineVN-IOS/Player/NativePlayer.swift
 +++ b/CineVN-IOS/Player/NativePlayer.swift
-@@ -16,8 +16,7 @@
+@@ -16,8 +16,8 @@
      @Published var duration: Double = 0
      @Published var isBuffering: Bool = false
      @Published private(set) var isAdvancing = false
 -    private var lastClockSample: Double?
 -    private var lastClockAdvanceAt = Date.distantPast
 +    private var progressEvidence = PlaybackProgressEvidence()
++    private var diagnosticsTimer: Timer?
      @Published var playbackRate: Float = 1.0
      @Published var isAudioOnlyFallback: Bool = false
      @Published var startOffset: Double = 0
-@@ -161,7 +160,7 @@
+@@ -161,7 +161,7 @@
  
          player?.pause()
          isAdvancing = false
@@ -19,7 +20,7 @@
          isPlaying = false
          currentTime = startOffset
          duration = 0
-@@ -331,24 +330,17 @@
+@@ -331,24 +331,17 @@
              // The movie clock is always the observed AVPlayer clock. Seek
              // intent belongs to the loading/preview UI, never progress/history.
              self.currentTime = clock
@@ -52,7 +53,24 @@
              }
              self.updateBufferedTime()
              self.checkNextWindowPreparation()
-@@ -568,7 +560,7 @@
+@@ -413,6 +406,16 @@
+             }
+         }
+ 
++        // Clock callbacks may stop while AVPlayer is waiting/paused. Sample
++        // state separately so a startup stall cannot leave stale diagnostics.
++        if diagnosticsTimer == nil {
++            let timer = Timer(timeInterval: 5, repeats: true) { [weak self] _ in
++                self?.writeSubtitleDiagnosticsIfNeeded()
++            }
++            diagnosticsTimer = timer
++            RunLoop.main.add(timer, forMode: .common)
++        }
++
+         // Start Heartbeat for CineVN Server
+         if let sid = sessionId, !sid.isEmpty {
+             startHeartbeat(sessionId: sid)
+@@ -568,7 +571,7 @@
          lastRestorationTarget = seconds
          pendingSeekDisplayAt = seconds
          isAdvancing = false
@@ -61,7 +79,27 @@
      }
  
      /// Cửa sổ remux (playlist EVENT) hết segment mà phim còn dài — playlist
-@@ -1503,7 +1495,7 @@
+@@ -1337,6 +1340,19 @@
+             "startOffset": startOffset,
+             "isPlaying": isPlaying,
+             "isBuffering": isBuffering,
++            "isAdvancing": isAdvancing,
++            "rate": player?.rate ?? 0,
++            "timeControlStatus": player?.timeControlStatus.rawValue ?? -1,
++            "waitingReason": player?.reasonForWaitingToPlay?.rawValue ?? "",
++            "itemStatus": player?.currentItem?.status.rawValue ?? -1,
++            "itemErrorCode": (player?.currentItem?.error as NSError?)?.code ?? 0,
++            "mediaErrorCodes": player?.currentItem?.errorLog()?.events.suffix(5).map { $0.errorStatusCode } ?? [],
++            "pendingSeekTarget": pendingSeekDisplayAt ?? -1,
++            "localSeekInFlight": localSeekInFlight,
++            "isResolvingSeek": isResolvingSeek,
++            "bufferedTime": bufferedTime,
++            "seekableRanges": player?.currentItem?.seekableTimeRanges.map { [ $0.timeRangeValue.start.seconds, $0.timeRangeValue.end.seconds ] } ?? [],
++            "loadedRanges": player?.currentItem?.loadedTimeRanges.map { [ $0.timeRangeValue.start.seconds, $0.timeRangeValue.end.seconds ] } ?? [],
+             "nextWindowPrepared": nextWindowPrepared,
+             "lastRestorationTarget": lastRestorationTarget ?? -1,
+             "lastAppliedSeekTarget": lastAppliedSeekTarget ?? -1,
+@@ -1503,7 +1519,7 @@
          if !preserveSeekIntent { seekShouldResume = false }
          player?.pause()
          isAdvancing = false
@@ -70,7 +108,7 @@
          isPlaying = false
          stopStallWatchdogTimer()
          // Pause là thời điểm hợp lệ để lưu tiến độ ngay.
-@@ -1538,7 +1530,7 @@
+@@ -1538,7 +1554,7 @@
          seekShouldResume = resumeAfterSeek ?? (pendingSeekDisplayAt != nil ? seekShouldResume : isPlaying)
          pendingSeekDisplayAt = target
          isAdvancing = false
@@ -79,9 +117,37 @@
  
          // ĐÓNG GÓP cú tua THẬT: bấm nhanh 5 lần = 5 chu kỳ đệm + 5 khung hình
          // lóe nếu mỗi tap một seek AVPlayer. Ý định cộng dồn tức thì, còn máy
+@@ -1596,7 +1612,8 @@
+                 let r = range.timeRangeValue
+                 return relTarget >= r.start.seconds - 0.5 && relTarget <= r.end.seconds + 5
+             }
+-            if isWithinSeekable {
++            let isWindowStart = relTarget <= 0.1 && item.status == .readyToPlay
++            if isWithinSeekable || isWindowStart {
+                 performLocalSeek(to: relTarget, displayAt: target, precise: precise, completion: completion)
+             } else {
+                 // Ngoài vùng playlist hiện có → far-seek resolve cửa sổ mới
+@@ -1757,6 +1774,8 @@
+     // MARK: - Cleanup
+ 
+     func cleanup() {
++        diagnosticsTimer?.invalidate()
++        diagnosticsTimer = nil
+         // Lưu lần cuối trước khi tháo player.
+         if currentTime > 0 {
+             progressSink?(currentTime, duration > 0 && duration - currentTime < 30)
 --- a/CineVN-IOS/Player/PlayerScreen.swift
 +++ b/CineVN-IOS/Player/PlayerScreen.swift
-@@ -106,6 +106,7 @@
+@@ -19,6 +19,8 @@
+     var audioIndex: Int? = nil
+     /// Server-reported reorder lead (ms) — trừ khi lookup phụ đề.
+     var presentationShiftMs: Double? = nil
++    /// User resume target, separate from the server window origin.
++    var initialPosition: Double = 0
+ 
+     /// contentRef cấp show (khóa watch-history trên backend).
+     var showContentRef: String { "tmdb:\(mediaType):\(tmdbId)" }
+@@ -106,6 +108,7 @@
      @State private var scrubIntentCaptured = false
      @State private var isFarSeeking = false
      @State private var loadingIndicatorVisible = false
@@ -89,7 +155,7 @@
      @State private var farSeekStatus: String? = nil
  
      // Scrub (kéo thanh thời gian + pan ngang)
-@@ -308,14 +309,14 @@
+@@ -308,14 +311,14 @@
                  )
  
                  // Subtitle overlay
@@ -106,7 +172,7 @@
                      // Chỉ có EN (bản Việt khoảng gap) — vẫn hiện để không nhấp nháy.
                      subtitleOverlay(
                          text: nil,
-@@ -323,6 +324,18 @@
+@@ -323,6 +326,18 @@
                          isLandscape: isLandscape,
                          safeBottom: safeBottom
                      )
@@ -125,7 +191,7 @@
                  }
  
                  // Toast (độ lệch phụ đề / lệnh từ lock screen)
-@@ -479,12 +492,12 @@
+@@ -479,12 +494,12 @@
                  }
  
                  // Buffering indicator
@@ -140,7 +206,7 @@
                              .font(.caption)
                              .foregroundColor(.white.opacity(0.8))
  
-@@ -510,6 +523,7 @@
+@@ -510,6 +525,7 @@
                      .padding(16)
                      .background(.black.opacity(0.65))
                      .cornerRadius(12)
@@ -148,7 +214,7 @@
                  }
  
                  // Màn pause điện ảnh: backdrop blur + poster + nút tiếp tục.
-@@ -593,11 +607,30 @@
+@@ -593,11 +609,30 @@
          .onDisappear(perform: teardown)
          .onChange(of: player.currentTime) { _, _ in
              checkNextEpisodeTrigger()
@@ -179,7 +245,28 @@
              if !busy && player.needsSourceFallback { triggerDecodeFallback() }
          }
          .onChange(of: player.isPlaying) { _, playing in
-@@ -929,6 +962,7 @@
+@@ -713,6 +748,12 @@
+         player.onSwitchAudioTrack = { idx in
+             Task { await handleSwitchAudio(index: idx) }
+         }
++        // HLS EVENT may default to its growing live edge. Explicitly restore
++        // the requested movie position on first presentation too, not just
++        // when replacing an item after a far seek.
++        let initialTarget = max(startOffset, context.initialPosition)
++        pendingSeekAfterLoad = initialTarget.isFinite ? max(0, initialTarget) : 0
++        if let target = pendingSeekAfterLoad { commitSeekPreview(at: target) }
+         player.load(
+             url: url,
+             sessionId: sessionId,
+@@ -720,6 +761,7 @@
+             initialDuration: initialDuration,
+             startOffset: startOffset
+         )
++        if let target = pendingSeekAfterLoad { player.holdRestorationTarget(target) }
+         player.presentationLeadSeconds = max(0, (context.presentationShiftMs ?? 0) / 1000)
+ 
+ 
+@@ -929,6 +971,7 @@
                              requestThumbnail(for: position)
                          },
                          onScrubEnded: { position in
@@ -187,7 +274,7 @@
                              player.seekCoalesced(to: position, immediate: true, resumeAfterSeek: wasPlayingBeforeScrub)
                              wasPlayingBeforeScrub = false
                              scrubIntentCaptured = false
-@@ -1304,9 +1338,25 @@
+@@ -1304,9 +1347,25 @@
          requestThumbnail(for: target)
      }
  
@@ -213,7 +300,7 @@
          isScrubbing = false
          panStartTime = nil
          scrubRate = 1
-@@ -1640,6 +1690,7 @@
+@@ -1640,6 +1699,7 @@
          startAt: Double
      ) {
          if let newEpisodeInfo {
@@ -221,7 +308,7 @@
              currentEpisodeInfo = newEpisodeInfo
              progressReporter?.updateEpisode(season: newEpisodeInfo.season, episode: newEpisodeInfo.episode)
          }
-@@ -1846,6 +1897,7 @@
+@@ -1846,6 +1906,7 @@
              && player.pendingSeekDisplayAt == nil
              && !isFarSeeking
              && !isScrubbing
@@ -301,3 +388,31 @@
      }
  
      /// Chọn thể loại = duyệt theo genre (bỏ chữ tìm kiếm); gõ chữ lại = thoát chế độ genre.
+--- a/CineVN-IOS/Views/MovieDetailViewModel.swift
++++ b/CineVN-IOS/Views/MovieDetailViewModel.swift
+@@ -33,6 +33,7 @@
+     // Playback state (giữ nguyên flow của bản cũ)
+     @Published var playbackURL: URL?
+     @Published var playbackSession: PlaybackSession?
++    private var resolvedInitialPosition: Double = 0
+     @Published var showPlayer = false
+     @Published var isResolving = false
+     @Published var resolvingStage = "Đang chuẩn bị..."
+@@ -148,7 +149,8 @@
+             year: detail?.year ?? item?.year,
+             sourceToken: currentSourceToken,
+             audioIndex: playbackSession?.audioIndex ?? currentAudioIndex,
+-            presentationShiftMs: playbackSession?.presentationShiftMs
++            presentationShiftMs: playbackSession?.presentationShiftMs,
++            initialPosition: resolvedInitialPosition
+         )
+     }
+ 
+@@ -496,6 +498,7 @@
+                 selectedSeason = season
+                 selectedEpisode = episode
+             }
++            resolvedInitialPosition = max(0, resumeAt ?? 0)
+             playbackURL = url
+             playbackSession = session
+             currentSourceToken = session.sourceToken ?? currentSourceToken
