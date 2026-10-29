@@ -89,7 +89,43 @@
      @State private var farSeekStatus: String? = nil
  
      // Scrub (kéo thanh thời gian + pan ngang)
-@@ -479,12 +480,12 @@
+@@ -308,14 +309,14 @@
+                 )
+ 
+                 // Subtitle overlay
+-                if let text = player.currentSubtitleText, !text.isEmpty {
++                if committedSeekTarget == nil, let text = player.currentSubtitleText, !text.isEmpty {
+                     subtitleOverlay(
+                         text: text,
+                         secondary: player.currentSecondaryText,
+                         isLandscape: isLandscape,
+                         safeBottom: safeBottom
+                     )
+-                } else if let secondary = player.currentSecondaryText, !secondary.isEmpty {
++                } else if committedSeekTarget == nil, let secondary = player.currentSecondaryText, !secondary.isEmpty {
+                     // Chỉ có EN (bản Việt khoảng gap) — vẫn hiện để không nhấp nháy.
+                     subtitleOverlay(
+                         text: nil,
+@@ -323,6 +324,18 @@
+                         isLandscape: isLandscape,
+                         safeBottom: safeBottom
+                     )
++                }
++
++                // Item replacement/seeking can expose old or intermediate decoded
++                // frames. Keep AVPlayer attached and decoding behind an opaque
++                // curtain until this seek has settled; never alternate the movie
++                // surface with a spinner/thumbnail during the same operation.
++                if committedSeekTarget != nil && !isScrubbing {
++                    Color.black
++                        .ignoresSafeArea()
++                        .allowsHitTesting(false)
++                        .transition(.identity)
++                        .transaction { $0.animation = nil }
+                 }
+ 
+                 // Toast (độ lệch phụ đề / lệnh từ lock screen)
+@@ -479,12 +492,12 @@
                  }
  
                  // Buffering indicator
@@ -104,7 +140,7 @@
                              .font(.caption)
                              .foregroundColor(.white.opacity(0.8))
  
-@@ -510,6 +511,7 @@
+@@ -510,6 +523,7 @@
                      .padding(16)
                      .background(.black.opacity(0.65))
                      .cornerRadius(12)
@@ -112,13 +148,14 @@
                  }
  
                  // Màn pause điện ảnh: backdrop blur + poster + nút tiếp tục.
-@@ -593,6 +595,23 @@
+@@ -593,11 +607,30 @@
          .onDisappear(perform: teardown)
          .onChange(of: player.currentTime) { _, _ in
              checkNextEpisodeTrigger()
++            settleCommittedSeekIfReady()
 +        }
-+        .onChange(of: player.isAdvancing) { _, advancing in
-+            if advancing { committedSeekTarget = nil; loadingIndicatorVisible = false }
++        .onChange(of: player.isAdvancing) { _, _ in
++            settleCommittedSeekIfReady()
 +        }
 +        .task(id: player.pendingSeekDisplayAt) {
 +            if let target = player.pendingSeekDisplayAt {
@@ -136,7 +173,13 @@
          }
          .onChange(of: player.needsSourceFallback) { _, needed in
              if needed { triggerDecodeFallback() }
-@@ -929,6 +948,7 @@
+         }
+         .onChange(of: isFarSeeking) { _, busy in
++            if !busy { settleCommittedSeekIfReady() }
+             if !busy && player.needsSourceFallback { triggerDecodeFallback() }
+         }
+         .onChange(of: player.isPlaying) { _, playing in
+@@ -929,6 +962,7 @@
                              requestThumbnail(for: position)
                          },
                          onScrubEnded: { position in
@@ -144,7 +187,7 @@
                              player.seekCoalesced(to: position, immediate: true, resumeAfterSeek: wasPlayingBeforeScrub)
                              wasPlayingBeforeScrub = false
                              scrubIntentCaptured = false
-@@ -1304,9 +1324,16 @@
+@@ -1304,9 +1338,25 @@
          requestThumbnail(for: target)
      }
  
@@ -154,6 +197,15 @@
 +        pauseCinematicTask?.cancel(); pauseCinematicVisible = false
 +    }
 +
++    private func settleCommittedSeekIfReady() {
++        guard let target = committedSeekTarget, player.isAdvancing,
++              !isScrubbing, !isFarSeeking, !player.isResolvingSeek,
++              player.pendingSeekDisplayAt == nil,
++              player.currentTime >= target - 1 else { return }
++        committedSeekTarget = nil
++        loadingIndicatorVisible = false
++    }
++
      private func endScrubPan() {
          guard isScrubbing else { return }
          let target = scrubPosition
@@ -161,7 +213,7 @@
          isScrubbing = false
          panStartTime = nil
          scrubRate = 1
-@@ -1640,6 +1667,7 @@
+@@ -1640,6 +1690,7 @@
          startAt: Double
      ) {
          if let newEpisodeInfo {
@@ -169,7 +221,7 @@
              currentEpisodeInfo = newEpisodeInfo
              progressReporter?.updateEpisode(season: newEpisodeInfo.season, episode: newEpisodeInfo.episode)
          }
-@@ -1846,6 +1874,7 @@
+@@ -1846,6 +1897,7 @@
              && player.pendingSeekDisplayAt == nil
              && !isFarSeeking
              && !isScrubbing

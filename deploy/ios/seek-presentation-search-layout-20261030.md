@@ -77,3 +77,30 @@ category strip remain. Device acceptance must be checked again on this build.
 - User confirmation of seek presentation and category spacing on build 004
   remains pending. Compilation, installation and CI do not prove physical
   playback correctness or TorBox/4K stability. Backend remains `2e6bc8b`.
+
+## Build 004 physical result and build 005 correction
+
+The user confirms category spacing is fixed. Seek presentation on build 004
+**failed**: the image alternating with loading is the full movie surface, not
+a thumbnail. Removing the thumbnail did not mask intermediate AVPlayer frames.
+
+Build 005 keeps the actual AVPlayer attached and decoding, but places an opaque,
+non-interactive black curtain above the video and subtitle layers during a
+committed seek. The single loading banner and controls remain above it. The
+curtain has no fade transition and is released only after stable clock evidence,
+no outstanding target, and no resolver/item handoff in progress. A manually
+paused completed seek retains the existing completion path. This is a visual
+presentation correction, not an upstream-speed or media-decoding fix.
+
+Physical acceptance of build 005 remains pending.
+
+Build 2026103005 signed archive, strict codesign verification and IPA export
+passed. devicectl acknowledged installation on the paired physical iPhone.
+The 24 progress-evidence checks pass and the incremental patch applies cleanly
+to the saved build-001 source.
+
+IPA: `~/Downloads/CineVN-iOS-Seek-Layout-2026103005/CineVN-IOS.ipa`,
+2,147,644 bytes, SHA-256
+`b1910908db41896b530a0401caf460acd0e46b99b104d18349c728b4f56698f9`.
+The user has been asked to test the full-frame curtain during seek and resumed
+playback; no physical PASS is claimed yet.
