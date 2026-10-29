@@ -48,3 +48,9 @@ archive, installation and real iPhone acceptance are recorded after execution.
   bytes, SHA-256 `38a24d1a61429cf76256f1bf7cbda80a845f21bbda9828664e648b55fa3b4179`.
 - Backend remains release `2e6bc8b`; this patch requires no service restart or
   server policy change. No Cloudflare bypass or additional provider was added.
+
+Final review found an item-handoff edge case: reapplying the same target after
+softReset could replace the frozen image with nil from the new session's empty
+thumbnail cache. Only a new target or an explicit user scrub commit now replaces
+that snapshot. Build 2026103003 includes this refinement; 2026103002 was the
+initial installation in this task. Physical acceptance is still pending.

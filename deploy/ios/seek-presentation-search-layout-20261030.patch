@@ -143,17 +143,21 @@
                              requestThumbnail(for: position)
                          },
                          onScrubEnded: { position in
-+                            commitSeekPreview(at: position)
++                            commitSeekPreview(at: position, userCommitted: true)
                              player.seekCoalesced(to: position, immediate: true, resumeAfterSeek: wasPlayingBeforeScrub)
                              wasPlayingBeforeScrub = false
                              scrubIntentCaptured = false
-@@ -1304,9 +1333,17 @@
+@@ -1304,9 +1333,21 @@
          requestThumbnail(for: target)
      }
  
-+    private func commitSeekPreview(at target: Double) {
++    private func commitSeekPreview(at target: Double, userCommitted: Bool = false) {
++        // Item replacement can briefly clear/reapply the same restore target.
++        // Its fresh thumbnail store must not erase the already held image.
++        if userCommitted || committedSeekTarget != target {
++            committedSeekImage = thumbnailStore?.cachedPreview(at: target)
++        }
 +        committedSeekTarget = target
-+        committedSeekImage = thumbnailStore?.cachedPreview(at: target)
 +        loadingIndicatorVisible = false
 +        pauseCinematicTask?.cancel(); pauseCinematicVisible = false
 +    }
@@ -161,11 +165,11 @@
      private func endScrubPan() {
          guard isScrubbing else { return }
          let target = scrubPosition
-+        commitSeekPreview(at: target)
++        commitSeekPreview(at: target, userCommitted: true)
          isScrubbing = false
          panStartTime = nil
          scrubRate = 1
-@@ -1640,6 +1677,7 @@
+@@ -1640,6 +1681,7 @@
          startAt: Double
      ) {
          if let newEpisodeInfo {
@@ -173,7 +177,7 @@
              currentEpisodeInfo = newEpisodeInfo
              progressReporter?.updateEpisode(season: newEpisodeInfo.season, episode: newEpisodeInfo.episode)
          }
-@@ -1846,6 +1884,7 @@
+@@ -1846,6 +1888,7 @@
              && player.pendingSeekDisplayAt == nil
              && !isFarSeeking
              && !isScrubbing
