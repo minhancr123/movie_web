@@ -471,12 +471,15 @@
 +}
 --- /dev/null
 +++ b/CineVN-IOS/Views/EmbeddedPlayerView.swift
-@@ -0,0 +1,92 @@
+@@ -0,0 +1,113 @@
 +import SwiftUI
 +import WebKit
 +
 +struct EmbeddedPlayerView: View {
 +    let playback: EmbeddedPlayback
++    var onRequestMovie: (() async -> String)? = nil
++    @State private var requesting = false
++    @State private var requestMessage: String?
 +    @Environment(\.dismiss) private var dismiss
 +    @State private var loading = true
 +    @State private var failure: String?
@@ -502,6 +505,13 @@
 +                    VStack(spacing: 16) {
 +                        Text(failure).multilineTextAlignment(.center)
 +                        Button("Thử lại") { self.failure = nil; loading = true; reload = UUID() }.buttonStyle(.borderedProminent)
++                        if let onRequestMovie {
++                            Button(requesting ? "Đang gửi…" : "Yêu cầu phim") {
++                                guard !requesting else { return }; requesting = true
++                                Task { requestMessage = await onRequestMovie(); requesting = false }
++                            }.buttonStyle(.bordered).disabled(requesting)
++                        }
++                        if let requestMessage { Text(requestMessage).font(.caption) }
 +                    }.padding(24).background(.black.opacity(0.95))
 +                }
 +            }
@@ -552,6 +562,17 @@
 +            if action.targetFrame == nil { decisionHandler(.cancel); return }
 +            decisionHandler(EmbeddedPlaybackPolicy.allows(url) || url.absoluteString == "about:blank" ? .allow : .cancel)
 +        }
++        func webView(_ webView: WKWebView, decidePolicyFor response: WKNavigationResponse, decisionHandler: @escaping (WKNavigationResponsePolicy) -> Void) {
++            if response.isForMainFrame, let http = response.response as? HTTPURLResponse, http.statusCode >= 400 {
++                watchdog?.cancel(); parent.loading = false
++                parent.failure = http.statusCode == 403 ? "Nhà cung cấp đang chặn truy cập nguồn này. Bạn có thể yêu cầu bản phát khác." : "Nguồn nhúng chưa phản hồi thành công. Bạn có thể thử lại hoặc yêu cầu phim."
++                decisionHandler(.cancel); return
++            }
++            decisionHandler(.allow)
++        }
++        func webViewWebContentProcessDidTerminate(_ webView: WKWebView) {
++            watchdog?.cancel(); parent.loading = false; parent.failure = "Trình phát đã dừng. Vui lòng thử lại."
++        }
 +        func webView(_ webView: WKWebView, didFinish navigation: WKNavigation!) {
 +            watchdog?.cancel(); parent.loading = false
 +        }
@@ -580,13 +601,17 @@
          } message: {
              Text(model.errorMessage)
          }
-@@ -92,6 +95,13 @@
+@@ -92,6 +95,17 @@
                      }
                  }
              )
 +        }
 +        .fullScreenCover(item: $model.embeddedPlayback) { playback in
-+            EmbeddedPlayerView(playback: playback)
++            EmbeddedPlayerView(playback: playback, onRequestMovie: {
++                do { return try await APIService.shared.requestMovie(title: playback.title, tmdbId: item.tmdbId, mediaType: item.mediaType,
++                    season: item.mediaType == "tv" ? model.selectedSeason : nil, episode: item.mediaType == "tv" ? model.selectedEpisode : nil) }
++                catch { return error.localizedDescription }
++            })
 +                .onAppear {
 +                    PlaybackCoordinator.shared.activePlayer?.cleanup()
 +                    PlaybackCoordinator.shared.close()
@@ -594,7 +619,7 @@
          }
          .fullScreenCover(isPresented: $showTrailer) {
              if let trailerKey = model.detail?.trailerKey, !trailerKey.isEmpty {
-@@ -123,6 +133,7 @@
+@@ -123,6 +137,7 @@
                  onSelectSource: {
                      model.showSourcePicker = true
                  },

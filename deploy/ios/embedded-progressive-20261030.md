@@ -65,3 +65,14 @@ The new native behavior and embedded provider need physical-device acceptance.
 Local full backend/media tests on 2026-10-30 encountered a missing FFmpeg binary
 (the previous temporary toolchain no longer exists). This is not a passing
 media result. Ubuntu CI and the LAN FFmpeg toolchain must supply that evidence.
+
+## Provider observation
+
+The known public Quỷ Móc Mắt player opened in the in-app browser on 2026-10-30
+returned Cloudflare “Sorry, you have been blocked.” No challenge was bypassed.
+The iOS transport now stops loading and offers a movie request on an HTTP error;
+source existence is not proof of playable media. This film is **not** accepted
+as working on iPhone until tested there.
+
+The LAN inactive release passed the full backend suite and mandatory media
+integration with Node 24.21.0 / FFmpeg n9.0.2 before activation.
