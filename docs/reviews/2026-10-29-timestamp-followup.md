@@ -100,3 +100,7 @@ Rà cấu hình trong repo: `deploy/lan/nginx-routes.conf` và `deploy/Caddyfile
 
 - [macOS matrix](evidence/2026-10-29-timestamps/macos.json), [Ubuntu matrix](evidence/2026-10-29-timestamps/ubuntu.json): versions, SHA256 fixtures, original-test exits, first timestamps, time bases, PTS/DTS ở boundary, FFmpeg args, marker clocks.
 - [validation.json](evidence/2026-10-29-timestamps/validation.json) lưu kết quả local, từng step CI và log timestamp liên quan. Log đầy đủ backend, audit/media, frontend typecheck/tests/build và deploy tests có trong run GitHub. Raw toàn bộ packet và media synthetic nằm trong artifact CI, không chứa signed media URL hoặc credentials production.
+
+## Cập nhật triển khai LAN sau audit
+
+Sau khi người dùng cho phép triển khai, cả backend/frontend đã chuyển sang `8cc4ac8` và được xác minh source + health + media HTTP qua production. Xem [báo cáo LAN](2026-10-29-lan-deployment.md). Các câu “không deploy” phía trên mô tả phạm vi lượt audit trước đó. Benchmark iPhone và progressive subtitle inventory vẫn pending.
