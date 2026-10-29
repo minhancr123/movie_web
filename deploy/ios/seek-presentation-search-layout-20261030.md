@@ -32,3 +32,19 @@ simulator build pass. Compile PlaybackProgressEvidence.swift together with
 The SDK's simctl can boot/install, but this host has no Simulator.app UI bundle;
 CUA could not open it, so no simulator visual-layout PASS is claimed. Device
 archive, installation and real iPhone acceptance are recorded after execution.
+
+## Deployment results
+
+- Native code/patch commit: `af1b368`; GitHub Actions full pipeline passed:
+  https://github.com/minhancr123/movie_web/actions/runs/40932251473 .
+- Xcode simulator build and signed device archive passed. Existing native
+  API/codec/source-policy checks also pass (25), in addition to the 24 new
+  progress-evidence checks. No simulator media performance claim is made.
+- codesign strict verification and IPA export succeeded; installation of
+  bundle `com.minhancr123.cinevn`, build `2026103002`, completed on the paired
+  physical iPhone. User has been asked to check both category spacing and
+  Interstellar seek presentation; acceptance is pending that response.
+- IPA: `~/Downloads/CineVN-iOS-Seek-Layout-20261030/CineVN-IOS.ipa`, 2,149,491
+  bytes, SHA-256 `38a24d1a61429cf76256f1bf7cbda80a845f21bbda9828664e648b55fa3b4179`.
+- Backend remains release `2e6bc8b`; this patch requires no service restart or
+  server policy change. No Cloudflare bypass or additional provider was added.
