@@ -183,3 +183,14 @@ Danh sách file chính xác được tạo bên dưới trước commit. Commit/
 ### Trạng thái bàn giao
 
 Code audit commit `76c1b35` đã push nhánh riêng. GitHub connector từ chối tạo draft PR với HTTP403 `Resource not accessible by integration`; không có PR được tạo, không merge. CI được bật bằng push chỉ cho nhánh audit, không thêm trigger deploy. Có thể mở compare/create PR từ nhánh này sau khi quyền GitHub phù hợp. CI remote chưa được xác nhận PASS trong báo cáo.
+
+
+### Physical iPhone follow-up — 2026-10-29
+
+Safari Interstellar 1080p seek to 12:00 is **not passing**. The user reported stuck/wrong-position playback on both `8cc4ac8` and deployed `05f852b`. Production telemetry for the latter records `MEDIA_ERR_DECODE` (3), readyState 1, zero buffered duration while restoring local 1.889s in a window with origin 695.111s. The priming repair alone is insufficient.
+
+The actual HEVC Main10/HDR source windows at 0, 695.111 and 734.651s decode using FFmpeg n9.0.2. A 350-frame sample from the 695.111s window also decodes completely using macOS AVAssetReader, without errors. These checks do **not** prove physical iPhone HLS compatibility. Native iPhone HLS requests in the inspected Nginx tail were HTTP 200; no authentication failure was observed in those entries.
+
+The native player previously switched sources for error 4 only; error 3 retried the same failing bytes. The follow-up change routes 3/4 to bounded source failover, prevents concurrent failovers, preserves the pending destination, excludes aliases of failed source tokens, and favors a ready alternative codec within the existing quality preference. Network/abort errors keep the ordinary recovery path. FFmpeg packaging and timestamp tolerances are unchanged.
+
+An experimental HEVC header normalization was **not adopted**: its real-media round-trip changed the decoded frame count (350 → 349). Neither desktop decoding nor a passing synthetic fixture closes the iPhone benchmark. Progressive subtitle inventory, provider 4K long-play validation, and successful iPhone seek remain pending.

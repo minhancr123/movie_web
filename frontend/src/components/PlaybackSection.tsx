@@ -60,7 +60,7 @@ const RETRYABLE_503_CODES = new Set(['REMUX_BUSY', 'REMUX_NO_SPACE', 'SOURCE_PRE
 import { providerAPI, playbackAPI, API_URL } from '@/lib/api';
 import { detectCapabilities } from '@/lib/capabilities';
 import { groupPlaybackSources, type GroupableSource } from '@/lib/source-groups';
-import { filterPlaybackSources, pickFallbackSource, audioIndexForSource, isSourceActiveToken, type SourceFilter, type DeliveryState } from '@/lib/source-delivery';
+import { filterPlaybackSources, pickFallbackSource, sourceCodecFamily, audioIndexForSource, isSourceActiveToken, type SourceFilter, type DeliveryState } from '@/lib/source-delivery';
 import SourceDeliveryFilter, { SourceDeliveryBadge } from '@/components/SourceDeliveryFilter';
 import type { PlayerEpisode } from '@/lib/catalog';
 import { episodeScrollTarget } from '@/lib/episode-list';
@@ -813,6 +813,7 @@ export default function PlaybackSection({
   // Backstop against any loop the set misses: bounded failovers per title,
   // then a straight error screen.
   const decodeFailoverCountRef = useRef(0);
+  const decodeFailoverInFlightRef = useRef(false);
   const MAX_DECODE_FAILOVERS = 3;
   // Token sent with the latest resolve (pre-fallback): mirrored for the
   // failover above, which otherwise only sees the served token.
@@ -831,6 +832,9 @@ export default function PlaybackSection({
   // at once instead of recovering on the same unplayable bytes twice.
   // Auto-start never loads the menu list, so an empty list is fetched first.
   const handleUnplayableSource = useCallback(() => {
+    if (decodeFailoverInFlightRef.current) return;
+    decodeFailoverInFlightRef.current = true;
+    const generation = seekEpochRef.current;
     void (async () => {
       const failed = decodeFailedTokensRef.current;
       if (activeTokenRef.current) failed.add(activeTokenRef.current);
@@ -843,8 +847,9 @@ export default function PlaybackSection({
           list = [];
         }
       }
-      const current = list.find(s => s.sourceToken === activeTokenRef.current);
-      const next = pickFallbackSource(list, failed, Number(current?.resolution) || 0);
+      if (generation !== seekEpochRef.current) return;
+      const current = list.find(s => isSourceActiveToken(s.sourceToken, activeTokenRef.current));
+      const next = pickFallbackSource(list, failed, Number(current?.resolution) || 0, sourceCodecFamily(current));
       decodeFailoverCountRef.current += 1;
       if (!next?.sourceToken || decodeFailoverCountRef.current > MAX_DECODE_FAILOVERS) {
         setPlaybackStatus('error');
@@ -865,7 +870,7 @@ export default function PlaybackSection({
         playhead: playheadRef.current,
       });
       const epoch = ++seekEpochRef.current;
-      void startPlaybackResolutionRef
+      await startPlaybackResolutionRef
         .current(next.sourceToken, undefined, {
           ...(failoverAt > 0 ? { startAt: failoverAt } : {}),
           seekEpoch: epoch,
@@ -874,7 +879,7 @@ export default function PlaybackSection({
           // Error UI is owned by the resolve path itself; a failed failover
           // just leaves the viewer where the notice already explains.
         });
-    })();
+    })().finally(() => { decodeFailoverInFlightRef.current = false; });
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 

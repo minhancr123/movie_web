@@ -7,6 +7,7 @@ import { enterCssFullscreen } from '@/lib/css-fullscreen';
 import { observeBuffering } from '@/lib/media-buffering';
 import { prepareWindowAt } from '@/lib/prepared-window';
 import { loadingPresentation } from '@/lib/autoplay';
+import { nativeMediaNeedsAnotherSource } from '@/lib/source-delivery';
 import Hls from 'hls.js';
 import { SeekPreview, TimelineSkip, NextEpisodePrompt, RememberedIntroSkip } from './PlaybackExtras';
 import SubtitleSyncGuide from './SubtitleSyncGuide';
@@ -1574,9 +1575,9 @@ export default function VideoPlayer({ src, playbackStartedAt, movie, episode, au
                 cancelPositionRestore?.();
                 setIsLoading(false);
                 // Same unplayable-file path as HLS/native below: a direct
-                // MP4 the decoder rejects (code 4) must fail over, not retry.
+                // MP4 the decoder rejects (codes 3/4) must fail over, not retry.
                 try {
-                    if (video.error && video.error.code === 4 /* MEDIA_ERR_SRC_NOT_SUPPORTED */) {
+                    if (nativeMediaNeedsAnotherSource(video.error?.code)) {
                         const unplayable = onUnplayableSourceRef.current;
                         if (unplayable) unplayable();
                         else if (onPlaybackFailure) onPlaybackFailure('Trình duyệt không giải mã được bản phát này.');
@@ -1904,7 +1905,7 @@ export default function VideoPlayer({ src, playbackStartedAt, movie, episode, au
             const onNativeError = () => {
                 cancelPositionRestore?.();
                 if (cancelled) return;
-                if (video.error?.code === 4) {
+                if (nativeMediaNeedsAnotherSource(video.error?.code)) {
                     const unplayable = onUnplayableSourceRef.current;
                     if (unplayable) unplayable();
                     else if (onPlaybackFailure) onPlaybackFailure('Trình duyệt không giải mã được bản phát này.');

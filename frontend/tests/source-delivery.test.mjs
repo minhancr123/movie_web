@@ -15,6 +15,31 @@ test('switching release resets audio indices; seeking and explicit track choices
  assert.equal(m.audioIndexForSource(1,2,'old','new'),1);
 });
 
+test('native decode and unsupported errors switch source, network/abort errors do not', () => {
+ for (const code of [3, 4]) assert.equal(m.nativeMediaNeedsAnotherSource(code), true);
+ for (const code of [undefined, 0, 1, 2]) assert.equal(m.nativeMediaNeedsAnotherSource(code), false);
+});
+
+test('a failed file cannot reappear through a versioned source token', () => {
+ const hash='a'.repeat(40);
+ const list=[{sourceToken:hash+':index:7',cached:true,resolution:1080},{sourceToken:'other',cached:true,resolution:1080}];
+ assert.equal(m.pickFallbackSource(list,new Set([hash]),1080).sourceToken,'other');
+});
+
+test('decode failover prefers a ready alternate codec without upscaling or repeating failed bytes', () => {
+ const list = [
+  { sourceToken:'bad', cached:true, resolution:1080, codec:'HEVC' },
+  { sourceToken:'same-codec', cached:true, resolution:1080, filename:'Film.x265.mkv' },
+  { sourceToken:'compatible', cached:true, resolution:1080, filename:'Film.1080p.x264.mkv' },
+  { sourceToken:'oversized', cached:true, resolution:2160, codec:'H.264' },
+  { sourceToken:'uncached', cached:false, resolution:1080, codec:'AVC' },
+ ];
+ assert.equal(m.sourceCodecFamily(list[1]), 'hevc');
+ assert.equal(m.pickFallbackSource(list, new Set(['bad']), 1080, 'hevc').sourceToken, 'compatible');
+ assert.equal(m.pickFallbackSource(list, new Set(['bad','compatible']), 1080, 'hevc').sourceToken, 'same-codec');
+ assert.equal(m.pickFallbackSource(list, new Set(['bad','same-codec','compatible','oversized','uncached']), 1080, 'hevc'), undefined);
+});
+
 test('isSourceActiveToken matches exact, case-insensitive, and versioned index tags', () => {
  const hash = 'a'.repeat(40);
  assert.equal(m.isSourceActiveToken(hash, hash), true);
