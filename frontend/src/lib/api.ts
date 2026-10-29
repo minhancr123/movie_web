@@ -261,6 +261,12 @@ export const playbackAPI = {
     episode?: number;
   }) => authClient.post('/playback/preload', data),
   subtitleJob: (jobId: string) => authClient.get(`/playback/subtitles/job/${jobId}`),
+  cancelSubtitleInventory: (jobId: string) => authClient.delete(`/playback/subtitles/job/${encodeURIComponent(jobId)}`),
+  subtitleInventory: (data: {
+    type: string; tmdbId: number; season?: number; episode?: number;
+    capabilities: any; sourceToken?: string; playbackSessionId?: string;
+    externalOnly?: boolean; positionSeconds?: number; inventoryJobId?: string;
+  }, signal?: AbortSignal) => authClient.post('/playback/subtitles/inventory', data, { signal }),
   subtitles: (data: {
     type: string;
     tmdbId: number;

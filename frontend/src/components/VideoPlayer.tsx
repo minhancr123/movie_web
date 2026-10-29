@@ -690,6 +690,17 @@ export default function VideoPlayer({ src, playbackStartedAt, movie, episode, au
     // every source change so a late response from the previous source can
     // never overwrite the new source's list (race guard in the loader below).
     const subSourceEpochRef = useRef(0);
+    const subInventoryJobRef = useRef<string | null>(null);
+    const subInventoryRequestRef = useRef<AbortController | null>(null);
+    const retireSubtitleInventory = useCallback(() => {
+        subInventoryRequestRef.current?.abort();
+        subInventoryRequestRef.current = null;
+        const id = subInventoryJobRef.current;
+        subInventoryJobRef.current = null;
+        if (id) void playbackAPI.cancelSubtitleInventory(id).catch(() => {});
+    }, []);
+    useEffect(() => () => retireSubtitleInventory(), [retireSubtitleInventory]);
+
     const subSourceKeyRef = useRef<string | null>(null);
 
     // Auto-select a Vietnamese/English track by timing trust, upgrading when one
@@ -785,8 +796,10 @@ export default function VideoPlayer({ src, playbackStartedAt, movie, episode, au
         subRequestInFlightEpochRef.current = epoch;
         setSubStatus('loading');
         setSubError('');
+        const request = new AbortController();
+        subInventoryRequestRef.current = request;
         try {
-            const res = await playbackAPI.subtitles({
+            const res = await playbackAPI.subtitleInventory({
                 type: subContext.type,
                 tmdbId: subContext.tmdbId,
                 season: subContext.season ?? undefined,
@@ -795,9 +808,10 @@ export default function VideoPlayer({ src, playbackStartedAt, movie, episode, au
                 ...(subContext.sourceToken ? { sourceToken: subContext.sourceToken } : {}),
                 ...(subContext.playbackSessionId ? { playbackSessionId: subContext.playbackSessionId } : {}),
                 externalOnly: !allowEmbedded,
+                ...(subInventoryJobRef.current ? { inventoryJobId: subInventoryJobRef.current } : {}),
                 positionSeconds: restorePendingRef.current && typeof targetAt === 'number'
                     ? targetAt : sessionStartAt + (videoRef.current?.currentTime || 0),
-            });
+            }, request.signal);
             // Source changed while this request was in flight: the departed
             // source's list must never overwrite the new source's inventory.
             if (epoch !== subSourceEpochRef.current) return;
@@ -807,14 +821,16 @@ export default function VideoPlayer({ src, playbackStartedAt, movie, episode, au
             setProbeSubs(Array.isArray(data.probe?.subtitles) ? data.probe.subtitles : []);
             setSubNote(typeof data.note === 'string' ? data.note : '');
             setSubMatch(data.match && typeof data.match === 'object' ? data.match : { checked: false, languages: {} });
-            setSubStatus('ready');
+            setSubStatus(tracks.length || data.done ? 'ready' : 'loading');
             subHasTracksRef.current = tracks.length > 0;
             subLoadModeRef.current = allowEmbedded ? 'full' : 'external';
-            applyTracks(tracks);
+            if (tracks.length || data.done) applyTracks(tracks);
             if (typeof data.jobId === 'string' && data.jobId) {
-                setSubJobId(data.jobId);
+                subInventoryJobRef.current = data.jobId;
+                setSubJobId(data.done ? null : data.jobId);
             }
         } catch (err: unknown) {
+            if (request.signal.aborted || epoch !== subSourceEpochRef.current) return;
             const message =
                 (err as { response?: { data?: { message?: string } } })?.response?.data?.message ||
                 'Không tải được danh sách phụ đề';
@@ -822,6 +838,7 @@ export default function VideoPlayer({ src, playbackStartedAt, movie, episode, au
             setSubStatus('error');
             subLoadModeRef.current = 'idle';
         } finally {
+            if (subInventoryRequestRef.current === request) subInventoryRequestRef.current = null;
             // Only the owning generation releases the slot and chains the
             // queued full load: a stale generation's finally must not clear a
             // newer generation's flight, nor re-fire the old closure (which
@@ -863,6 +880,7 @@ export default function VideoPlayer({ src, playbackStartedAt, movie, episode, au
         if (subSourceKeyRef.current !== contentKey) {
             subSourceKeyRef.current = contentKey;
             subSessionKeyRef.current = sessionKey;
+            retireSubtitleInventory();
             subSourceEpochRef.current += 1;
             subLoadModeRef.current = 'idle';
             subHasTracksRef.current = false;
@@ -893,6 +911,7 @@ export default function VideoPlayer({ src, playbackStartedAt, movie, episode, au
         // retire the old session's in-flight callbacks, keep viewer state.
         // The dead session's extraction job is dropped too: the new session
         // mints its own, and the poller below must not chase the old one.
+        retireSubtitleInventory();
         subSourceEpochRef.current += 1;
         subLoadModeRef.current = 'idle';
         subHasTracksRef.current = false;
@@ -923,44 +942,64 @@ export default function VideoPlayer({ src, playbackStartedAt, movie, episode, au
     // The old English-first preempt here used to fire a competing resolve that
     // overrode the backend default with English on non-English films.
 
-    // Poll the background extraction job; tracks flip to ready as VTTs land.
+    // One request at a time; each response belongs to this source generation
+    // and this subscription. Late provider/extraction results cannot repaint
+    // a different film, session or seek window.
     useEffect(() => {
         if (!subJobId) return;
         let cancelled = false;
         let polls = 0;
-        const timer = setInterval(async () => {
-            polls += 1;
-            if (polls > 45) {
-                clearInterval(timer);
-                if (!cancelled) setSubJobId(null);
+        let inventoryVersion: number | undefined;
+        let timer: ReturnType<typeof setTimeout>;
+        const epoch = subSourceEpochRef.current;
+        const current = () => !cancelled && epoch === subSourceEpochRef.current
+            && subInventoryJobRef.current === subJobId;
+        const poll = async () => {
+            if (!current()) return;
+            if (++polls > 125) {
+                setSubJobId(null); subLoadModeRef.current = 'idle';
+                setSubNote('Đã hết thời gian tìm thêm phụ đề; các track đã có vẫn dùng được.');
+                void playbackAPI.cancelSubtitleInventory(subJobId).catch(() => {});
                 return;
             }
             try {
                 const res = await playbackAPI.subtitleJob(subJobId);
                 const job = res.data?.data;
-                if (!job || cancelled) return;
-                const ready: Record<string, string> = job.ready || {};
-                if (Object.keys(ready).length > 0) {
-                    setSubTracks((prev) =>
-                        prev.map((t) => (ready[t.id] ? { ...t, url: ready[t.id], ready: true, coverageRanges: job.coverage?.[t.id] ?? t.coverageRanges } : t))
-                    );
+                if (!job || !current()) return;
+                if (job.kind === 'inventory' && job.version !== inventoryVersion) {
+                    inventoryVersion = job.version;
+                    const tracks: SubTrack[] = Array.isArray(job.tracks) ? job.tracks : [];
+                    if (tracks.length || job.done) applyTracks(tracks);
+                    if (tracks.length) subHasTracksRef.current = true;
+                    setSubAudio(Array.isArray(job.audio) ? job.audio : []);
+                    setProbeSubs(Array.isArray(job.probe?.subtitles) ? job.probe.subtitles : []);
+                    if (job.match) setSubMatch(job.match);
+                    setSubNote(typeof job.note === 'string' ? job.note : '');
+                    setSubStatus(tracks.length || job.done ? 'ready' : 'loading');
+                } else if (job.kind !== 'inventory') {
+                    const ready: Record<string, string> = job.ready || {};
+                    setSubTracks(prev => prev.map(t => ready[t.id]
+                        ? { ...t, url: ready[t.id], ready: true, coverageRanges: job.coverage?.[t.id] ?? t.coverageRanges } : t));
                 }
                 if (job.done || job.error) {
-                    clearInterval(timer);
-                    if (!cancelled) {
-                        setSubJobId(null);
-                        if (job.error) { setSubNote(job.error); subLoadModeRef.current = 'idle'; }
-                    }
+                    setSubJobId(null);
+                    if (job.error) { setSubNote(job.error); subLoadModeRef.current = 'idle'; }
+                    return;
                 }
-            } catch {
-                // Transient poll failure: keep polling until the cap.
+            } catch (err: unknown) {
+                if (!current()) return;
+                const status = (err as { response?: { status?: number } })?.response?.status;
+                if (status === 404 || status === 403) {
+                    setSubJobId(null); subLoadModeRef.current = 'idle';
+                    setSubNote('Tác vụ phụ đề đã dừng; bạn có thể tải lại danh sách.');
+                    return;
+                }
             }
-        }, 4000);
-        return () => {
-            cancelled = true;
-            clearInterval(timer);
+            if (current()) timer = setTimeout(poll, 1000);
         };
-    }, [subJobId]);
+        void poll();
+        return () => { cancelled = true; clearTimeout(timer); };
+    }, [subJobId, applyTracks]);
 
     // Follow file-matched tracks as the inventory improves: background
     // prefetch (online-only) → session-backed list (may add embedded) →

@@ -1,3 +1,6 @@
+import { isErrorSubtitleText } from '../services/playback/subtitleQuality.js';
+import { getEmbeddedSources, embeddedPickerEntry } from './embeddedPlaybackController.js';
+import { createSubtitleInventories } from '../services/playback/progressiveSubtitleInventory.js';
 import { createRenditionGate } from '../services/playback/admissionQueue.js';
 import { selectAdoptableSession } from '../services/playback/sessionAdoption.js';
 const renditionGate = createRenditionGate();
@@ -3312,6 +3315,11 @@ export const listPlaybackSources = async (req, res) => {
       ...playable.map(sanitizeCandidateForPicker),
       ...(vimoEntry ? [vimoEntry] : []),
     ];
+    if (allSources.length === 0 && req.body?.embeddedPlayer === true) {
+      const embeds = await getEmbeddedSources({ type, tmdbId, season, episode, detail }).catch(() => []);
+      allSources.push(...embeds.map(embeddedPickerEntry));
+      if (allSources.length) return res.json({ success: true, data: { caps, sources: allSources } });
+    }
 
     // "Chọn nguồn theo phụ đề": flag sources whose release name matches a
     // Vietnamese subtitle release — same release means the same cut, so that
@@ -3451,15 +3459,6 @@ const audioInfo = (list) =>
 
 /* ---- Subtitle junk detection + source fetcher ---- */
 /** Phrases that identify an error page posing as a subtitle file. */
-const SUB_ERROR_MARKERS = [
-  'limit has been reached', 'download limit', 'daily limit', 'quota exceeded',
-  'too many requests', 'api key', 'not available', 'no subtitles found',
-  'lỗi cấu hình', 'chưa nhập api key', 'không tìm thấy phụ đề',
-];
-const isErrorSubtitleText = (text) => {
-  const head = String(text || '').slice(0, 4096).toLowerCase();
-  return SUB_ERROR_MARKERS.some((marker) => head.includes(marker));
-};
 /** Fetch a sidecar; null = network error (transient), '' = dead link (404/410). */
 const fetchSubtitleSource = async (url) => {
   try {
@@ -3486,7 +3485,7 @@ const readSubtitleBody = async (url) => {
   return fetchSubtitleSource(url);
 };
 
-export const getPlaybackSubtitles = async (req, res) => {
+const buildSubtitleInventory = async (req, res, { skipExternal = false, signal, onProgress } = {}) => {
   const parsed = parseResolveBody(req.body);
   if (parsed.error) return fail(res, 400, parsed.error);
   const {
@@ -3541,7 +3540,8 @@ export const getPlaybackSubtitles = async (req, res) => {
     // Started here rather than awaited later: it is an independent network
     // call, and running it after the addon fetch put two round trips in series
     // on the path that opens the subtitle menu.
-    const matchReportPromise = buildSubtitleMatchReport({
+    signal?.throwIfAborted();
+    const matchReportPromise = skipExternal ? Promise.resolve({ checked: false, languages: {} }) : buildSubtitleMatchReport({
       imdbId: detail.imdbId,
       season,
       episode,
@@ -3551,18 +3551,6 @@ export const getPlaybackSubtitles = async (req, res) => {
 
     // External sidecars are tiny; fetch them before touching TorBox or starting
     // a second full-file ffmpeg scan.
-    const externalResult = await getSubtitleCandidates({
-      imdbId: detail.imdbId,
-      mediaType: type,
-      season,
-      episode,
-      videoHash: ownedSession?.videoHash ?? null,
-      videoSize: ownedSession?.videoSize ?? null,
-    }).catch((error) => ({ subtitles: [], errors: [error.message] }));
-    const externalSubs = externalResult.subtitles || [];
-    const availabilityNote = externalResult.errors?.some(error => String(error).includes('SUBTITLE_DOWNLOAD_LIMIT'))
-      && !externalSubs.some(track => /^(vi|vie|vit)$/i.test(track.language))
-      ? 'Chưa tải được phụ đề Việt: dịch vụ phụ đề đã hết lượt tải trong ngày. Bạn có thể dùng track khác hoặc thử lại sau.' : '';
 
     const subtitleWindow = subtitleWindowAt(positionSeconds ?? ownedSession?.startAt ?? 0, {
       kbps: ownedSession?.durationSeconds > 0 ? Number(ownedSession.videoSize || 0) * 8 / ownedSession.durationSeconds / 1000 : 0,
@@ -3600,6 +3588,26 @@ export const getPlaybackSubtitles = async (req, res) => {
         }
       }
     }
+
+    await onProgress?.({ audio: audioInfo(probeFacts?.audio), tracks: embeddedTracks,
+      probe: { audio: audioInfo(probeFacts?.audio), subtitles: probeFacts?.subtitles || [] } });
+    signal?.throwIfAborted();
+    const externalResult = skipExternal ? { subtitles: [], errors: [] } : await getSubtitleCandidates({
+      imdbId: detail.imdbId,
+      mediaType: type,
+      season,
+      episode,
+      videoHash: ownedSession?.videoHash ?? null,
+      videoSize: ownedSession?.videoSize ?? null,
+      signal,
+      onProgress: onProgress ? result => onProgress({ tracks: partialExternalTracks(result.subtitles || [], ownedSession?.sourceFileName || ownedSession?.fileName || '') }) : undefined,
+    }).catch((error) => ({ subtitles: [], errors: [error.message] }));
+    const externalSubs = externalResult.subtitles || [];
+    const availabilityNote = externalResult.errors?.some(error => String(error).includes('SUBTITLE_DOWNLOAD_LIMIT'))
+      && !externalSubs.some(track => /^(vi|vie|vit)$/i.test(track.language))
+      ? 'Chưa tải được phụ đề Việt: dịch vụ phụ đề đã hết lượt tải trong ngày. Bạn có thể dùng track khác hoặc thử lại sau.' : '';
+
+    signal?.throwIfAborted();
 
     const languageCounts = new Map();
     const externalTracks = externalSubs.map((subtitle) => {
@@ -3787,6 +3795,26 @@ export const getPlaybackSubtitles = async (req, res) => {
       return fail(res, error.status || 500, error.message, error.code ? { code: error.code } : {});
     }
 
+    signal?.throwIfAborted();
+    let probe = null;
+    let inputUrl = '';
+    let pickedHash = '';
+    let pickedFileId = null;
+    // The ownership-checked playing session already identifies the exact file.
+    // Do not rediscover torrents or scan a multi-GB file just to list its subs.
+    if (ownedSession?.torrentId != null && ownedSession?.fileId != null) {
+      try {
+        inputUrl = await torbox.getDownloadUrl(debridKey, {
+          torrentId: ownedSession.torrentId, fileId: ownedSession.fileId, userId: String(req.user.userId),
+        });
+        signal?.throwIfAborted();
+        probe = await getCache(probeResultKey(ownedSession.infoHash, ownedSession.fileId));
+        if (!probe && Array.isArray(probeFacts?.subtitles) && probeFacts.subtitles.every(t => Number.isInteger(t.streamIndex))) probe = probeFacts;
+        if (!probe) probe = await ffprobe(inputUrl);
+        pickedHash = String(ownedSession.infoHash).toLowerCase(); pickedFileId = ownedSession.fileId;
+      } catch { signal?.throwIfAborted(); }
+    }
+    if (!probe) {
     const { candidates } = await getStreamCandidates({
       debridKey,
       imdbId: detail.imdbId,
@@ -3813,10 +3841,6 @@ export const getPlaybackSubtitles = async (req, res) => {
       return fail(res, 404, 'Nguồn đã chọn không còn khả dụng, vui lòng tải lại danh sách');
     }
 
-    let probe = null;
-    let inputUrl = '';
-    let pickedHash = '';
-    let pickedFileId = null;
     for (const candidate of pool.slice(0, 3)) {
       try {
         const prepared = await preparePlaybackSource(debridKey, {
@@ -3841,6 +3865,8 @@ export const getPlaybackSubtitles = async (req, res) => {
         continue;
       }
     }
+    }
+    signal?.throwIfAborted();
     if (!probe) return fail(res, 404, 'Không trích được thông tin file từ nguồn này');
     await rememberProbeFacts(pickedHash, probe, pickedFileId);
     const pickedScope = fileIdentity(pickedHash, pickedFileId);
@@ -3941,6 +3967,7 @@ export const getPlaybackSubtitles = async (req, res) => {
       { done: false, tracks, jobId, probe: probeSummary },
       SUB_INVENTORY_TTL
     );
+    signal?.throwIfAborted();
     void runSubtitleExtractionJob({
       jobId,
       inventoryKey,
@@ -3964,6 +3991,79 @@ export const getPlaybackSubtitles = async (req, res) => {
     console.error(`getPlaybackSubtitles error tmdb=${tmdbId}:`, error.message);
     return fail(res, error.status || 500, error.message || 'Lỗi server');
   }
+};
+
+export const getPlaybackSubtitles = (req, res) => buildSubtitleInventory(req, res);
+
+const partialExternalTracks = (subs, filename) => {
+  const counts = new Map();
+  return subs.map(sub => {
+    const index = (counts.get(sub.language) || 0) + 1; counts.set(sub.language, index);
+    const { score, veto } = releaseSimilarity(sub.name || '', filename);
+    return { id: sub.id, language: sub.language,
+      label: subtitleVariantLabel({ base: subLabel(sub.language), name: sub.name, source: sub.source, index }),
+      url: sub.url, ready: true, source: sub.source, similarity: veto ? null : score,
+      ...(filename && sub.name && releaseNamesMatch(sub.name, filename) ? { matched: true } : {}) };
+  });
+};
+
+const runInventoryPhase = async (input, options, skipExternal) => {
+  const signal = options.signal;
+  let result;
+  const response = { json: body => { result = body; return response; },
+    status: code => { response.statusCode = code; return response; }, statusCode: 200 };
+  await buildSubtitleInventory({ body: { ...input.body, externalOnly: !skipExternal }, user: { userId: input.owner } }, response,
+    { skipExternal, signal, onProgress: options.publish });
+  signal.throwIfAborted();
+  if (response.statusCode >= 400 || !result?.success) throw new Error('Inventory phase unavailable');
+  let data = result.data;
+  if (skipExternal) data = { ...data, tracks: (data.tracks || []).filter(t => ['embedded', 'upload'].includes(t.source)) };
+  options.publish(data);
+  // Only subscribe to the bounded shared extraction. Cancelling this viewer
+  // must never kill a batch another viewer may already be consuming.
+  while (skipExternal && data.jobId) {
+    await new Promise((resolve, reject) => {
+      const onAbort = () => { clearTimeout(timer); reject(signal.reason); };
+      const timer = setTimeout(() => { signal.removeEventListener('abort', onAbort); resolve(); }, 1000);
+      signal.addEventListener('abort', onAbort, { once: true });
+      if (signal.aborted) onAbort();
+    });
+    signal.throwIfAborted();
+    const job = await getCache(subJobKey(data.jobId));
+    if (!job || (job.worker && job.worker !== SUB_WORKER_ID)) throw new Error('Extraction no longer available');
+    data = { ...data, tracks: (data.tracks || []).map(t => job.ready?.[t.id]
+      ? { ...t, ready: true, url: job.ready[t.id], coverageRanges: job.coverage?.[t.id] || t.coverageRanges } : t) };
+    options.publish(data);
+    if (job.done) { if (job.error) throw new Error('Extraction unavailable'); break; }
+  }
+  return data;
+};
+const subtitleInventories = createSubtitleInventories({
+  external: (input, options) => runInventoryPhase(input, options, false),
+  embedded: (input, options) => runInventoryPhase(input, options, true),
+});
+
+export const getProgressiveSubtitleInventory = (req, res) => {
+  const parsed = parseResolveBody(req.body);
+  if (parsed.error) return fail(res, 400, parsed.error);
+  try {
+    const { type, tmdbId, season, episode, sourceToken, playbackSessionId, positionSeconds } = parsed;
+    // Both the 30-second heavy-media and 120-second normal window grids
+    // align here. A subscription must not cross either extraction boundary.
+    const windowBucket = Math.floor((positionSeconds || 0) / 30);
+    const key = JSON.stringify([type, tmdbId, season, episode, sourceToken, playbackSessionId, windowBucket]);
+    const owner = String(req.user.userId);
+    const snapshot = subtitleInventories.start(owner, key, { body: req.body, owner },
+      { id: req.body.inventoryJobId, includeEmbedded: req.body.externalOnly !== true });
+    res.setHeader('Cache-Control', 'private, no-store');
+    res.once('close', () => { if (!res.writableFinished) subtitleInventories.cancel(snapshot.jobId, owner); });
+    return res.json({ success: true, data: snapshot });
+  } catch (error) { return fail(res, error.status || 500, error.message); }
+};
+
+export const cancelSubtitleInventory = (req, res) => {
+  try { subtitleInventories.cancel(String(req.params.jobId || ''), req.user.userId); return res.sendStatus(204); }
+  catch (error) { return fail(res, error.status || 500, error.message); }
 };
 
 /** Background worker: single-pass extract, then publish URLs to job+inventory. */
@@ -4036,8 +4136,13 @@ async function runSubtitleExtractionJob({ jobId, inventoryKey, pickedHash, input
 
 /** GET /api/playback/subtitles/job/:jobId — poll background extraction. */
 export const getSubtitleJob = async (req, res) => {
+  res.setHeader('Cache-Control', 'private, no-store');
   const jobId = String(req.params.jobId || '');
   if (!/^[a-f0-9]{32}$/.test(jobId)) return fail(res, 404, 'Không tìm thấy tác vụ');
+  try {
+    const inventory = subtitleInventories.get(jobId, req.user.userId);
+    if (inventory) return res.json({ success: true, data: inventory });
+  } catch (error) { return fail(res, error.status || 500, error.message); }
   const job = await getCache(subJobKey(jobId));
   if (!job) return fail(res, 404, 'Tác vụ đã hết hạn');
   if (!job.done && job.worker !== SUB_WORKER_ID) return res.json({ success: true, data: { done: true, ready: {}, error: 'Tác vụ đã dừng khi máy chủ cập nhật. Vui lòng tải lại phụ đề.' } });

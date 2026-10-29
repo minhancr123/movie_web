@@ -40,6 +40,29 @@ export const catalogueStreams = (movie, groups, { type, season, episode }, provi
   return result.slice(0,6);
 };
 
+// These hosts are public players supplied by the fixed Nguon C catalogue.
+// Never accept an arbitrary iframe URL, a login URL, or a viewer-supplied host.
+export const isAllowedEmbeddedPlayer = raw => {
+  try {
+    const { url } = assertUrlShape(raw);
+    return url.protocol === 'https:' && !url.username && !url.password
+      && (!url.port || url.port === '443') && /^embed\d+\.streamc\.xyz$/i.test(url.hostname);
+  } catch { return false; }
+};
+
+export const catalogueEmbeds = (movie, groups, { type, season, episode }, provider) => {
+  if (provider !== 'nguonc') return [];
+  // Reuse the exact episode/movie selection rules; only the transport differs.
+  const adapted = (groups || []).map(g => ({ ...g,
+    server_data: (g.server_data || g.items || [])
+      .map(ep => ({ ...ep, link_m3u8: isAllowedEmbeddedPlayer(ep.embed) ? ep.embed : null })) }));
+  return catalogueStreams(movie, adapted, { type, season, episode }, provider).map(s => ({ ...s,
+    id: s.id.replace('yastream:vn:', 'embedded:nguonc:'),
+    sourceToken: s.sourceToken.replace('yastream:vn:', 'embedded:nguonc:'),
+    origin: 'nguonc', playbackType: 'embedded', directPlay: 'unknown',
+  }));
+};
+
 export async function validateCatalogueVideoUrl(raw) {
   const { url } = assertUrlShape(raw);
   if (url.protocol !== 'https:') return false;
@@ -47,10 +70,11 @@ export async function validateCatalogueVideoUrl(raw) {
   return addresses.length > 0 && addresses.every(x => !isPrivateAddress(x.address));
 }
 
-export async function lookupVietnameseCatalogues(args, { fetchJson = safeFetchJson, validateUrl = validateCatalogueVideoUrl } = {}) {
+export async function lookupVietnameseCatalogues(args, { fetchJson = safeFetchJson, validateUrl = validateCatalogueVideoUrl, mode = 'direct' } = {}) {
   const queries = [...new Set([args.detail.title, args.detail.originalTitle, args.detail.englishTitle].filter(Boolean))].slice(0,2);
   const get = url => fetchJson(url, { timeoutMs: 2200, headers: { 'user-agent': 'Mozilla/5.0 (compatible; CineVN/1.0)' } });
   const results = await Promise.all(catalogues.map(async provider => {
+    if (mode === 'embedded' && provider.id !== 'nguonc') return [];
     try {
       const searches = await Promise.all(queries.map(async query => {
         try { const d = await get(`${provider.base}${provider.search}?keyword=${encodeURIComponent(query)}&limit=24`); return d.data?.items || d.items || []; }
@@ -61,7 +85,8 @@ export async function lookupVietnameseCatalogues(args, { fetchJson = safeFetchJs
       const data = await get(provider.base+provider.detail+encodeURIComponent(candidates[0].slug));
       const movie = data.movie || data.data?.item;
       if (!movie || !matchesVietnameseCatalogue(movie,args.detail)) return [];
-      return catalogueStreams(movie, data.episodes || movie.episodes || data.data?.episodes || [], args, provider.id);
+      const select = mode === 'embedded' ? catalogueEmbeds : catalogueStreams;
+      return select(movie, data.episodes || movie.episodes || data.data?.episodes || [], args, provider.id);
     } catch { return []; }
   }));
   const checked = await Promise.all(results.flat().map(async stream => {

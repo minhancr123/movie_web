@@ -1,3 +1,4 @@
+import { isErrorSubtitleText } from './playback/subtitleQuality.js';
 import { boundedSettled } from './playback/bounded-settled.js';
 import { requestedCandidates } from './requests/library.js';
 /**
@@ -401,7 +402,7 @@ const fetchSubtitlesFromAddon = async (addon, type, id, hints = {}) => {
   }
   const url = buildSubtitleUrl(addon, type, id, hints);
   const listingTimeout = new URL(addon).hostname === 'api3.subdl.com' ? 20000 : SUBTITLE_REQUEST_TIMEOUT_MS;
-  const payload = await safeFetchJson(url, { timeoutMs: listingTimeout });
+  const payload = await safeFetchJson(url, { timeoutMs: listingTimeout, signal: hints.signal });
   const tracks = normalizeSubtitlePayload(payload, host);
   // Every addon's sidecars are fetched and re-serialized up front, not just
   // SubDL's: OpenSubtitles relays serve raw .ssa the browser cannot parse and
@@ -410,16 +411,22 @@ const fetchSubtitlesFromAddon = async (addon, type, id, hints = {}) => {
   // barely parses (<3 cues) is dropped instead of pinning the sync
   // measurement floor and reading as a broken track.
   const settled = await boundedSettled(tracks, 4, async (track) => {
-    const raw = await safeFetchText(track.url, { timeoutMs: SUBTITLE_REQUEST_TIMEOUT_MS });
+    hints.signal?.throwIfAborted();
+    const raw = await safeFetchText(track.url, { timeoutMs: SUBTITLE_REQUEST_TIMEOUT_MS, signal: hints.signal });
+    hints.signal?.throwIfAborted();
     // Re-serialize also normalizes ASS-converted 0:12:00 timestamps to VTT's
     // 00:12:00, which the current production player understands.
     const body = normalizeAddonSubtitle(raw);
+    if (/^(vi|vie|vit)$/i.test(track.language) && isErrorSubtitleText(body)) throw new Error('Phản hồi không phải phụ đề');
     if ((String(body).match(/-->/g) || []).length < 3) {
       throw new Error('sidecar không đủ câu phụ đề');
     }
     const token = crypto.randomBytes(32).toString('hex');
     await setCache(`playback:sub:${token}`, { body }, SUBTITLE_CACHE_TTL + 86400);
-    return { ...track, url: `/api/playback/subtitles/vtt/${token}` };
+    hints.signal?.throwIfAborted();
+    const ready = { ...track, url: `/api/playback/subtitles/vtt/${token}` };
+    await hints.onTrack?.(ready);
+    return ready;
   });
   const available = settled.filter((item) => item.status === 'fulfilled').map((item) => item.value);
   const warnings = [...new Set(settled.filter(item => item.status === 'rejected')
@@ -437,6 +444,8 @@ export const getSubtitleCandidates = async ({
   episode,
   videoHash = null,
   videoSize = null,
+  signal,
+  onProgress,
 }) => {
   const stremio = toStremioId({ imdbId, mediaType, season, episode });
   if (!stremio) return { subtitles: [], errors: ['IMDb ID không hợp lệ'] };
@@ -448,11 +457,16 @@ export const getSubtitleCandidates = async ({
   const cacheKey = `addon:subtitles:v4:${stremio.type}:${stremio.id}${fileKey}`;
   const result = await cached(cacheKey, SUBTITLE_CACHE_TTL, async () => {
     const addons = configuredSubtitleAddons();
-    const hints = { videoHash, videoSize };
+    const partial = new Map();
+    const hints = { videoHash, videoSize, signal, onTrack: onProgress ? async track => {
+      partial.set(track.id, track);
+      await onProgress({ subtitles: [...partial.values()].sort((a,b) => subtitlePriority(a.language)-subtitlePriority(b.language)).slice(0, MAX_SUBTITLES), errors: [] });
+    } : undefined };
     const settled = await Promise.allSettled(
       addons.map((addon) => fetchSubtitlesFromAddon(addon, stremio.type, stremio.id, hints)),
     );
     const subtitles = [];
+    signal?.throwIfAborted();
     const errors = [];
     const seen = new Set();
     settled.forEach((result, index) => {
@@ -472,6 +486,8 @@ export const getSubtitleCandidates = async ({
   });
   // A partial outage must not hide an entire language for six hours.
   if (result.errors?.length) await setCache(cacheKey, result, 60);
+  signal?.throwIfAborted();
+  await onProgress?.(result);
   return result;
 };
 

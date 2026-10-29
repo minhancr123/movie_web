@@ -101,7 +101,7 @@ const resolvePublicAddresses = async (hostname) => {
  * Uses node:http(s) rather than fetch because we must dictate the socket target
  * while keeping the original Host/SNI — fetch offers no hook for that.
  */
-const requestOnce = ({ url, port, address, family, method, headers, timeoutMs, maxBytes }) =>
+const requestOnce = ({ url, port, address, family, method, headers, timeoutMs, maxBytes, signal }) =>
   new Promise((resolve, reject) => {
     const transport = url.protocol === 'https:' ? https : http;
 
@@ -115,6 +115,7 @@ const requestOnce = ({ url, port, address, family, method, headers, timeoutMs, m
         headers: { ...headers, host: url.host },
         servername: url.hostname, // keep TLS SNI on the real name
         timeout: timeoutMs,
+        signal,
         // Redirects are handled by the caller so each hop is re-validated.
       },
       (res) => {
@@ -146,7 +147,7 @@ const requestOnce = ({ url, port, address, family, method, headers, timeoutMs, m
       req.destroy();
       reject(new SsrfError(`Quá ${timeoutMs / 1000}s không phản hồi`));
     });
-    req.on('error', (error) => reject(new Error(`Kết nối thất bại: ${error.message}`)));
+    req.on('error', (error) => reject(signal?.aborted ? signal.reason : new Error(`Kết nối thất bại: ${error.message}`)));
     req.end();
   });
 
@@ -154,20 +155,29 @@ const requestOnce = ({ url, port, address, family, method, headers, timeoutMs, m
  * GET a user-supplied URL safely, following redirects with full re-validation.
  * Returns `{ status, headers, body }`; the caller parses.
  */
-export const safeFetchText = async (rawUrl, { timeoutMs = 10000, headers = {}, maxBytes = MAX_BODY_BYTES } = {}) => {
+export const safeFetchText = async (rawUrl, { timeoutMs = 10000, headers = {}, maxBytes = MAX_BODY_BYTES, signal } = {}) => {
   let target = rawUrl;
   const deadline = Date.now() + timeoutMs;
   maxBytes = Math.max(1, Math.min(MAX_BODY_BYTES, maxBytes));
 
   for (let hop = 0; hop <= MAX_REDIRECTS; hop++) {
+    signal?.throwIfAborted();
     const { url, port } = assertUrlShape(target);
     const remaining = deadline - Date.now();
     if (remaining <= 0) throw new SsrfError('Quá thời gian tải phản hồi');
-    let dnsTimer;
+    let dnsTimer, cancelDns;
     const [picked] = await Promise.race([
       resolvePublicAddresses(url.hostname),
       new Promise((_, reject) => { dnsTimer = setTimeout(() => reject(new SsrfError('DNS timeout')), remaining); }),
-    ]).finally(() => clearTimeout(dnsTimer));
+      ...(signal ? [new Promise((_, reject) => {
+        cancelDns = () => reject(signal.reason);
+        signal.addEventListener('abort', cancelDns, { once: true });
+      })] : []),
+    ]).finally(() => {
+      clearTimeout(dnsTimer);
+      if (cancelDns) signal.removeEventListener('abort', cancelDns);
+    });
+    signal?.throwIfAborted();
 
     const response = await requestOnce({
       url,
@@ -178,6 +188,7 @@ export const safeFetchText = async (rawUrl, { timeoutMs = 10000, headers = {}, m
       headers: { accept: 'application/json', 'user-agent': 'MovieWeb/1.0', ...headers },
       timeoutMs: Math.max(1, deadline - Date.now()),
       maxBytes,
+      signal,
     });
 
     const isRedirect = response.status >= 300 && response.status < 400 && response.headers.location;

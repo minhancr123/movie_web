@@ -19,6 +19,8 @@ import {
   serveHlsAsset,
   serveRenditionAsset,
   getPlaybackSubtitles,
+  getProgressiveSubtitleInventory,
+  cancelSubtitleInventory,
   getSubtitleJob,
   serveSubtitleVtt,
   uploadSubtitle,
@@ -73,8 +75,11 @@ router.post('/session/:sessionId/telemetry', rateLimit({ max: 30, keyPrefix: 'rl
 router.post('/prewarm', playbackRateLimit, prewarmPlayback);
 router.post('/preload', playbackRateLimit, preloadPlayback);
 router.post('/sources', sourceDiscoveryRateLimit, listPlaybackSources);
+router.post('/embedded', sourceDiscoveryRateLimit, getEmbeddedPlayback);
 router.post('/subtitles', subtitleInventoryRateLimit, getPlaybackSubtitles);
+router.post('/subtitles/inventory', subtitleInventoryRateLimit, getProgressiveSubtitleInventory);
 router.get('/subtitles/job/:jobId', playbackPollRateLimit, getSubtitleJob);
+router.delete('/subtitles/job/:jobId', playbackPresenceRateLimit, cancelSubtitleInventory);
 // Viewer-uploaded .srt: JSON body (no multipart dependency), so this route
 // carries its own 3MB limit instead of raising the global 100kb one.
 router.post(
@@ -95,3 +100,4 @@ router.post('/session/:sessionId/refresh', playbackPresenceRateLimit, refreshPla
 router.get('/resolve/:resolveId/stage', playbackPollRateLimit, getResolveStage);
 
 export default router;
+import { getEmbeddedPlayback } from '../controllers/embeddedPlaybackController.js';
