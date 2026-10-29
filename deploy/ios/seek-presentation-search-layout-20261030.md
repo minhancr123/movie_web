@@ -17,11 +17,12 @@ source selection, subtitle offsets, media timing tolerances or grants.
   timeControlStatus actually playing. A short stable-playback grace avoids
   flickering for isolated buffer-status changes; genuine stalls remain visible.
   New seeks, pause and source resets discard old evidence.
-- Scrub commit freezes the exact cached preview bucket and target. Async
-  thumbnail arrival and item handoffs cannot replace the held card with a
-  separate spinner/pause-artwork screen. The card includes the loading status,
-  then clears after stable progress; a completed manually paused seek can clear
-  it without pressing Play. A real episode change discards the old card.
+- Preview thumbnails are displayed **only while actively dragging**. After
+  release there is one plain loading banner, with the committed target and no
+  thumbnail/empty square. The same banner covers item replacement/restoration
+  and buffering; late thumbnail replies cannot change it into a picture.
+  It clears after stable progress; a completed manually paused seek clears it
+  without pressing Play. Pause artwork is suppressed during the committed seek.
 - The player's actual clock still supplies history/progress; preview intent
   does not become a fabricated media position. This is clock/status evidence,
   not a measurement of decoded frame presentation or provider performance.
@@ -54,3 +55,12 @@ softReset could replace the frozen image with nil from the new session's empty
 thumbnail cache. Only a new target or an explicit user scrub commit now replaces
 that snapshot. Build 2026103003 includes this refinement; 2026103002 was the
 initial installation in this task. Physical acceptance is still pending.
+
+## Physical feedback and final presentation revision
+
+The user tested 2026103002 and reported that the preview square remained during
+loading and still alternated with the animation. **That attempt did not pass.**
+2026103003 was archived during review but was not installed. The final candidate
+is 2026103004: the held preview card is removed altogether after release, with
+only the plain loading banner rendered. Clock evidence and the compact search
+category strip remain. Device acceptance must be checked again on this build.

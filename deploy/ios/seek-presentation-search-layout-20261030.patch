@@ -81,47 +81,44 @@
          // lóe nếu mỗi tap một seek AVPlayer. Ý định cộng dồn tức thì, còn máy
 --- a/CineVN-IOS/Player/PlayerScreen.swift
 +++ b/CineVN-IOS/Player/PlayerScreen.swift
-@@ -106,6 +106,8 @@
+@@ -106,6 +106,7 @@
      @State private var scrubIntentCaptured = false
      @State private var isFarSeeking = false
      @State private var loadingIndicatorVisible = false
 +    @State private var committedSeekTarget: Double?
-+    @State private var committedSeekImage: UIImage?
      @State private var farSeekStatus: String? = nil
  
      // Scrub (kéo thanh thời gian + pan ngang)
-@@ -430,6 +432,15 @@
-                     .allowsHitTesting(false)
-                 }
- 
-+                // Keep one immutable preview/loading card until playback is proven.
-+                // Replacing AVPlayerItem or late thumbnail responses must not swap it.
-+                if !isScrubbing, let target = committedSeekTarget, player.errorMessage == nil {
-+                    SeekHUD(targetTime: target, delta: 0, thumbnail: committedSeekImage,
-+                            loadingText: "Đang tải đoạn đã chọn…")
-+                        .transaction { $0.animation = nil }
-+                        .zIndex(5).allowsHitTesting(false)
-+                }
-+
-                 // Long-press 2x badge
-                 if isSpeedHolding {
-                     VStack {
-@@ -479,7 +490,7 @@
+@@ -479,12 +480,12 @@
                  }
  
                  // Buffering indicator
 -                if loadingIndicatorVisible && player.errorMessage == nil && !isScrubbing {
-+                if loadingIndicatorVisible && player.errorMessage == nil && !isScrubbing && committedSeekTarget == nil {
++                if (loadingIndicatorVisible || committedSeekTarget != nil) && player.errorMessage == nil && !isScrubbing {
                      VStack(spacing: 12) {
                          ProgressView()
                              .progressViewStyle(CircularProgressViewStyle(tint: .white))
-@@ -593,6 +604,23 @@
+                             .scaleEffect(1.2)
+-                        Text("Đang tải phim…")
++                        Text(committedSeekTarget.map { "Đang tải từ \(formatTime($0))…" } ?? "Đang đệm…")
+                             .font(.caption)
+                             .foregroundColor(.white.opacity(0.8))
+ 
+@@ -510,6 +511,7 @@
+                     .padding(16)
+                     .background(.black.opacity(0.65))
+                     .cornerRadius(12)
++                    .transaction { $0.animation = nil }
+                 }
+ 
+                 // Màn pause điện ảnh: backdrop blur + poster + nút tiếp tục.
+@@ -593,6 +595,23 @@
          .onDisappear(perform: teardown)
          .onChange(of: player.currentTime) { _, _ in
              checkNextEpisodeTrigger()
 +        }
 +        .onChange(of: player.isAdvancing) { _, advancing in
-+            if advancing { committedSeekTarget = nil; committedSeekImage = nil; loadingIndicatorVisible = false }
++            if advancing { committedSeekTarget = nil; loadingIndicatorVisible = false }
 +        }
 +        .task(id: player.pendingSeekDisplayAt) {
 +            if let target = player.pendingSeekDisplayAt {
@@ -134,29 +131,24 @@
 +                      !isFarSeeking, !player.isResolvingSeek, !player.seekShouldResume,
 +                      player.pendingSeekDisplayAt == nil, !player.isBuffering,
 +                      abs(player.currentTime - target) <= 1 else { return }
-+                committedSeekTarget = nil; committedSeekImage = nil; loadingIndicatorVisible = false
++                committedSeekTarget = nil; loadingIndicatorVisible = false
 +            }
          }
          .onChange(of: player.needsSourceFallback) { _, needed in
              if needed { triggerDecodeFallback() }
-@@ -929,6 +957,7 @@
+@@ -929,6 +948,7 @@
                              requestThumbnail(for: position)
                          },
                          onScrubEnded: { position in
-+                            commitSeekPreview(at: position, userCommitted: true)
++                            commitSeekPreview(at: position)
                              player.seekCoalesced(to: position, immediate: true, resumeAfterSeek: wasPlayingBeforeScrub)
                              wasPlayingBeforeScrub = false
                              scrubIntentCaptured = false
-@@ -1304,9 +1333,21 @@
+@@ -1304,9 +1324,16 @@
          requestThumbnail(for: target)
      }
  
-+    private func commitSeekPreview(at target: Double, userCommitted: Bool = false) {
-+        // Item replacement can briefly clear/reapply the same restore target.
-+        // Its fresh thumbnail store must not erase the already held image.
-+        if userCommitted || committedSeekTarget != target {
-+            committedSeekImage = thumbnailStore?.cachedPreview(at: target)
-+        }
++    private func commitSeekPreview(at target: Double) {
 +        committedSeekTarget = target
 +        loadingIndicatorVisible = false
 +        pauseCinematicTask?.cancel(); pauseCinematicVisible = false
@@ -165,19 +157,19 @@
      private func endScrubPan() {
          guard isScrubbing else { return }
          let target = scrubPosition
-+        commitSeekPreview(at: target, userCommitted: true)
++        commitSeekPreview(at: target)
          isScrubbing = false
          panStartTime = nil
          scrubRate = 1
-@@ -1640,6 +1681,7 @@
+@@ -1640,6 +1667,7 @@
          startAt: Double
      ) {
          if let newEpisodeInfo {
-+            committedSeekTarget = nil; committedSeekImage = nil
++            committedSeekTarget = nil
              currentEpisodeInfo = newEpisodeInfo
              progressReporter?.updateEpisode(season: newEpisodeInfo.season, episode: newEpisodeInfo.episode)
          }
-@@ -1846,6 +1888,7 @@
+@@ -1846,6 +1874,7 @@
              && player.pendingSeekDisplayAt == nil
              && !isFarSeeking
              && !isScrubbing
@@ -185,44 +177,6 @@
              && !player.isAudioOnlyFallback
      }
  
---- a/CineVN-IOS/Player/PlayerSupport.swift
-+++ b/CineVN-IOS/Player/PlayerSupport.swift
-@@ -334,6 +334,7 @@
-     let thumbnail: UIImage?
-     /// Multiplier tua tăng tốc khi kéo giữ (nil/≤1.3 = ẩn).
-     var speedMultiplier: Double? = nil
-+    var loadingText: String? = nil
- 
-     var body: some View {
-         VStack(spacing: 6) {
-@@ -376,6 +377,12 @@
-                     .font(.system(size: 15, weight: .bold, design: .monospaced))
-                     .foregroundColor(.white)
-             }
-+            if let loadingText {
-+                HStack(spacing: 8) {
-+                    ProgressView().tint(.white)
-+                    Text(loadingText).font(.caption).foregroundStyle(.white)
-+                }
-+            }
-         }
-         .padding(10)
-         .background(.black.opacity(0.82))
---- a/CineVN-IOS/Player/SeekThumbnailStore.swift
-+++ b/CineVN-IOS/Player/SeekThumbnailStore.swift
-@@ -24,6 +24,12 @@
- 
-     init(sessionId: String) {
-         self.sessionId = sessionId
-+    }
-+
-+    func cachedPreview(at seconds: Double) -> UIImage? {
-+        guard seconds.isFinite, seconds >= 0 else { return nil }
-+        let bucket = Int(seconds / Double(bucketSeconds)) * bucketSeconds
-+        return cache[bucket]
-     }
- 
-     /// Gọi liên tục khi đang kéo thanh thời gian; tự throttle + cache theo bucket 10s.
 --- /dev/null
 +++ b/CineVN-IOS/Services/PlaybackProgressEvidence.swift
 @@ -0,0 +1,32 @@
