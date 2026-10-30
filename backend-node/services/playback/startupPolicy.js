@@ -7,9 +7,12 @@ export const bucketSeekStart = value => {
   return Math.floor(at / SEEK_BUCKET_SECONDS) * SEEK_BUCKET_SECONDS;
 };
 
-/** The requested frame plus a full segment must exist before seeking is ready. */
+/** The requested frame plus a full segment must exist before seeking is ready.
+ * Keep the fractional boundary: rounding 10.16s up to 11s rejects a complete
+ * 10.427s GOP and unnecessarily waits for the next (possibly ten-second) GOP.
+ */
 export const seekBufferFloor = ({ requestedAt, origin, segmentSeconds = 4 }) =>
-  Math.ceil(Math.max(segmentSeconds, Math.max(0, requestedAt - origin) + segmentSeconds));
+  Math.max(segmentSeconds, Math.max(0, requestedAt - origin) + segmentSeconds);
 
 /** Only reduce the head start after observing new segments faster than realtime. */
 export function startupTarget({ configuredSeconds, minimumSeconds, initialDuration,

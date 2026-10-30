@@ -15,6 +15,20 @@ test('a cold seek never asks the writer to prepare a long unused prefix', () => 
   assert.equal(bucketSeekStart(-10), 0);
 });
 const base = { configuredSeconds: 12, minimumSeconds: 8, initialDuration: 4, bufferedSeconds: 8, elapsedMs: 2000 };
+test('a real Endgame GOP covers the exact seek runway without waiting for the next GOP', () => {
+  // Production window: request 1347s, measured source origin 1340.84s,
+  // EXTINF 10.427 then 10.385. The old ceil required 11s (two GOPs),
+  // even though the first already contains the target plus the full 4s cushion.
+  const localTarget = 1347 - 1340.84;
+  const floor = seekBufferFloor({ requestedAt: 1347, origin: 1340.84 });
+  const firstGop = { exists: true, ended: false, duration: 10.427 };
+  assert.ok(floor >= localTarget + 4, 'retain the entire configured runway');
+  assert.equal(hasPlayableBuffer(firstGop, floor), true);
+  assert.equal(hasPlayableBuffer({ ...firstGop, duration: localTarget + 3.99 }, floor), false,
+    'a genuinely incomplete runway must still wait');
+  assert.equal(startupTarget({ ...base, seeking: true, minimumSeconds: floor }), floor);
+  assert.equal(sessionStartupTarget({ startupTargetSeconds: floor }, 4), floor);
+});
 test('fast sources can start with two segments; slow or unmeasured writers retain the larger buffer', () => {
   assert.equal(startupTarget(base), 8);
   assert.equal(startupTarget({ ...base, elapsedMs: 6000 }), 12);
