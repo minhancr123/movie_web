@@ -21,8 +21,10 @@ export const prefersNativeHls = (userAgent: string, platform = '', maxTouchPoint
 /** Let native HLS select the destination segment before its first data load.
  * The exact decoded-position restore still validates the requested frame.
  */
-export const withNativeStartHint = (src: string, localTarget: number): string => {
-    if (!Number.isFinite(localTarget) || localTarget <= 0) return src;
+export const withNativeStartHint = (src: string, localTarget: number, enabled = false): string => {
+    // AVFoundation fixtures passed, but the physical Safari trial was slower.
+    // Keep this experiment opt-in until a controlled browser trial passes.
+    if (!enabled || !Number.isFinite(localTarget) || localTarget <= 0) return src;
     try {
         const url = new URL(src, 'https://cinevn.invalid');
         if (!url.pathname.startsWith('/api/playback/hls/') || !url.pathname.endsWith('.m3u8')) return src;

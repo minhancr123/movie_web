@@ -1,5 +1,20 @@
 # Native HLS initial destination — 2026-10-30
 
+**Physical acceptance failed: withdrawn.** The user subsequently reported a
+longer wait followed by automatic playback (not a permanent freeze). The
+frontend was immediately rolled back to 6ad7dcb, the frontend used with the
+accepted 91fbee4 buffer-floor fix. Backend 52f39fb remains active and serves
+legacy requests without a hint unchanged; its buffer-floor fix is preserved.
+No backend restart was needed for this rollback. A page reload is needed for
+already-open tabs running the experimental JavaScript.
+
+The source now defaults the start-hint builder to disabled, and the player
+requires explicit NEXT_PUBLIC_NATIVE_HLS_START_HINT=1 to opt in. Do not enable
+it in production on the strength of CI or AVFoundation-only fixtures. The
+earlier evidence below remains valid for those narrower tests, not physical
+Safari latency acceptance. Current public frontend health is 6ad7dcb; the
+rollback script is revert-native-hint-frontend.sh in the release backup folder.
+
 The user measured about 5–6 seconds for a Safari seek after the 91fbee4
 fractional buffer-floor fix. This follow-up reduces avoidable initial segment
 fetches; it does not make an unprepared remote movie instantly seekable.

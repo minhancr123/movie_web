@@ -1963,7 +1963,8 @@ export default function VideoPlayer({ src, playbackStartedAt, movie, episode, au
             video.pause();
             const nativeSrc = authToken && src.includes('/api/playback/hls/')
                 ? `${src}${src.includes('?') ? '&' : '?'}access_token=${encodeURIComponent(authToken)}` : src;
-            video.src = withNativeStartHint(nativeSrc, restoreTargetLocal);
+            video.src = withNativeStartHint(nativeSrc, restoreTargetLocal,
+                process.env.NEXT_PUBLIC_NATIVE_HLS_START_HINT === '1');
             video.load();
             awaitPositionRestore(restoreTargetLocal, nativeCovered, true);
         } else {

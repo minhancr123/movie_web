@@ -5,8 +5,11 @@ import vm from 'node:vm';
 import ts from 'typescript';
 const load=(file,globals={})=>{const context={exports:{},setTimeout,clearTimeout,...globals};vm.runInNewContext(ts.transpileModule(fs.readFileSync(new URL(`../src/lib/${file}.ts`,import.meta.url),'utf8'),{compilerOptions:{module:ts.ModuleKind.CommonJS,target:ts.ScriptTarget.ES2020}}).outputText,context);return context.exports;};
 test('native HLS start hint uses the local clock and preserves grants without changing direct URLs',()=>{
- const {withNativeStartHint}=load('mediaPipeline',{URL});
+ const {withNativeStartHint:buildHint}=load('mediaPipeline',{URL});
+ const withNativeStartHint=(src,at)=>buildHint(src,at,true);
  const src='/api/playback/hls/abc/index.m3u8?media_grant=G&start=9';
+ assert.equal(buildHint(src,6.16),src,'default must not enable a failed physical Safari experiment');
+ assert.equal(buildHint(src,6.16,false),src);
  const hinted=new URL(withNativeStartHint(src,6.16),'https://cinevn.me');
  assert.equal(hinted.searchParams.get('start'),'6.16');
  assert.equal(hinted.searchParams.get('media_grant'),'G');
