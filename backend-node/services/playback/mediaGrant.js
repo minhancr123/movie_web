@@ -320,12 +320,15 @@ export const withManifestStartHint = (body, requested) => {
       || String(requested).trim() === '') return body;
   const at = Number(requested);
   if (!Number.isFinite(at) || at <= 0 || at > 172800) return body;
+  // HLS decimal-floating-point syntax does not permit exponent notation.
+  const offset = Number(at.toFixed(6));
+  if (offset <= 0) return body;
   const duration = [...body.matchAll(/^#EXTINF:([\d.]+)/gm)]
     .reduce((sum, match) => sum + Number(match[1]), 0);
   if (!(at + 0.5 <= duration)) return body;
-  const withoutStart = body.replace(/^#EXT-X-START:[^\r\n]*\r?\n/gm, '');
+  const withoutStart = body.replace(/^#EXT-X-START:[^\r\n]*(?:\r?\n|$)/gm, '');
   return withoutStart.replace(/^#EXTM3U\r?\n/,
-    `#EXTM3U\n#EXT-X-START:TIME-OFFSET=${at},PRECISE=YES\n`);
+    `#EXTM3U\n#EXT-X-START:TIME-OFFSET=${offset},PRECISE=YES\n`);
 };
 
 export const serveManifestResponse = async (res, filePath, grantToken, { param = MEDIA_GRANT_QUERY, startAt } = {}) => {

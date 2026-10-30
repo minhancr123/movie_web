@@ -27,7 +27,8 @@ export const withNativeStartHint = (src: string, localTarget: number): string =>
         const url = new URL(src, 'https://cinevn.invalid');
         if (!url.pathname.startsWith('/api/playback/hls/') || !url.pathname.endsWith('.m3u8')) return src;
         url.searchParams.set('start', String(localTarget));
-        return /^[a-z][a-z\d+.-]*:/i.test(src) ? url.href : `${url.pathname}${url.search}${url.hash}`;
+        const relative = `${url.pathname}${url.search}${url.hash}`;
+        return /^[a-z][a-z\d+.-]*:/i.test(src) ? url.href : src.startsWith('//') ? `//${url.host}${relative}` : relative;
     } catch { return src; }
 };
 

@@ -16,6 +16,8 @@ test('native HLS start hint uses the local clock and preserves grants without ch
  assert.equal(next.origin,'https://cinevn.me');
  assert.equal(next.searchParams.get('access_token'),'a+b');
  assert.equal(next.hash,'#anchor');
+ assert.equal(withNativeStartHint('//cinevn.me/api/playback/hls/r/abc/index.m3u8',12),
+  '//cinevn.me/api/playback/hls/r/abc/index.m3u8?start=12');
  for(const at of [0,-1,NaN,Infinity])assert.equal(withNativeStartHint(src,at),src);
  for(const other of ['https://cdn.example/movie.mp4','https://cdn.example/stream.m3u8'])assert.equal(withNativeStartHint(other,12),other);
 });

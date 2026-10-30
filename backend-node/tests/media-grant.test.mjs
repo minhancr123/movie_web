@@ -502,6 +502,7 @@ check('native-start-hint-does-not-change-clocks-or-leak-between-cached-responses
   const twice = grant.withManifestStartHint(hinted, 6.16);
   assert.equal((twice.match(/#EXT-X-START:/g) || []).length, 1);
   assert.ok(twice.includes('TIME-OFFSET=6.16,'));
+  assert.equal(grant.withManifestStartHint(raw, 1e-8), raw, 'no exponent notation or zero-valued hint');
   const file = manifestTmp.file + '.hint';
   await manifestTmp.fs.writeFile(file, raw);
   try {
