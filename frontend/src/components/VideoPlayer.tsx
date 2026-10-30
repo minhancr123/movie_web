@@ -4,7 +4,7 @@ import { SeekTrace } from '@/lib/seek-trace';
 import React, { useEffect, useRef, useState, useCallback } from 'react';
 import { createPortal } from 'react-dom';
 import { enterCssFullscreen } from '@/lib/css-fullscreen';
-import { observeBuffering } from '@/lib/media-buffering';
+import { observeBuffering, armStallDeadline } from '@/lib/media-buffering';
 import { prepareWindowAt } from '@/lib/prepared-window';
 import { loadingPresentation } from '@/lib/autoplay';
 import { nativeMediaNeedsAnotherSource } from '@/lib/source-delivery';
@@ -598,19 +598,15 @@ export default function VideoPlayer({ src, playbackStartedAt, movie, episode, au
         // eslint-disable-next-line react-hooks/exhaustive-deps
     }, [src, reloadKey, subContext?.playbackSessionId, authToken]);
 
-    /** Restart hls.js once before replacing the server-side remux. The two
-        deadlines still total 20s, but a recoverable loader stall gets nudged
-        after 8s instead of leaving the viewer on a frozen frame for all 20. */
+    /** One local loader retry before the bounded parent recovery. Browser
+        readiness events must not postpone either no-progress deadline. */
     const LOCAL_STALL_RECOVERY_MS = 15000; // Increased from 8s to 15s to allow for cold resumes
     const ESCALATED_STALL_TIMEOUT_MS = 25000; // Increased from 12s to 25s
-    const armStallTimer = (timeoutMs = LOCAL_STALL_RECOVERY_MS) => {
+    const armStallTimer = (timeoutMs = LOCAL_STALL_RECOVERY_MS, progressed = false) => {
         // This is a rolling deadline, not a one-shot "waiting" alarm. Browsers
         // can report playing/canplay and keep readyState > 0 while currentTime
         // is frozen, so progress itself must keep renewing the watchdog.
-        if (stallTimerRef.current) clearTimeout(stallTimerRef.current);
-        lastProgressRef.current = videoRef.current?.currentTime ?? 0;
-        stallTimerRef.current = setTimeout(() => {
-            stallTimerRef.current = undefined;
+        const armed = armStallDeadline(stallTimerRef, () => {
             const video = videoRef.current;
             if (video && !video.paused && !video.ended) {
                 // A trickling CDN (a frame every ~10s) defeats a "did it move
@@ -629,7 +625,7 @@ export default function VideoPlayer({ src, playbackStartedAt, movie, episode, au
                     hls.stopLoad();
                     hls.startLoad(video.currentTime || -1);
                     void video.play().catch(() => { /* autoplay may need a gesture */ });
-                    armStallTimer(ESCALATED_STALL_TIMEOUT_MS);
+                    armStallTimer(ESCALATED_STALL_TIMEOUT_MS, true);
                     return;
                 }
 
@@ -639,7 +635,8 @@ export default function VideoPlayer({ src, playbackStartedAt, movie, episode, au
                 if (onPlaybackFailure) onPlaybackFailure(reason);
                 else setError(`${reason} Bấm Thử lại để nối lại.`);
             }
-        }, timeoutMs);
+        }, timeoutMs, progressed);
+        if (armed) lastProgressRef.current = videoRef.current?.currentTime ?? 0;
     };
     const clearStallTimer = () => {
         if (stallTimerRef.current) {
@@ -2124,7 +2121,7 @@ export default function VideoPlayer({ src, playbackStartedAt, movie, episode, au
             if (video.paused) setCurrentTime(video.currentTime);
             if (video.currentTime > lastProgressRef.current + 0.25) {
                 localStallRecoveryRef.current = false;
-                armStallTimer();
+                armStallTimer(undefined, true);
                 if (onPlaybackProgress) onPlaybackProgress(sessionStartAt + video.currentTime);
             }
             if (video.buffered.length > 0) {

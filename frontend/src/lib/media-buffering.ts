@@ -1,5 +1,15 @@
 type BufferingMedia = Pick<HTMLVideoElement, 'paused' | 'ended' | 'addEventListener' | 'removeEventListener'>;
 
+/** Repeated waiting/canplay events are not proof that frames progressed.
+ * Only the progress path may renew an already armed recovery deadline. */
+export function armStallDeadline(slot: { current: ReturnType<typeof setTimeout> | undefined },
+  fire: () => void, delayMs: number, progressed = false): boolean {
+  if (slot.current !== undefined && !progressed) return false;
+  if (slot.current !== undefined) clearTimeout(slot.current);
+  slot.current = setTimeout(() => { slot.current = undefined; fire(); }, delayMs);
+  return true;
+}
+
 /** A delayed waiting event must not leave a spinner over a paused video.
  * Internal pauses during position restoration keep the startup indicator. */
 export function observeBuffering(video: BufferingMedia, loading: (value: boolean) => void,
