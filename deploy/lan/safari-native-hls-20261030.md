@@ -79,3 +79,58 @@ The active symlink now targets that durable dependency directory outside
 runtime pruning. Lock bytes match; mediaGrant imports, scoped diagnostic HLS
 requests, and backend readiness succeeded afterward. Backend was not restarted.
 No private token, URL query, environment secret or movie media is committed here.
+
+
+## Slow-seek follow-up 91fbee4 (12:06–12:30 +07)
+
+The user's clarification matters: Safari **does resume automatically after a
+wait**, rather than requiring a reload forever. This is a latency failure,
+not evidence that every seek remains permanently deadlocked. No claim of
+instant seeking or stable 4K follows from this report.
+
+A UI-driven IAB seek to 1347s created session
+c30598fa2ed5088d24d2d242c940c20b. Resolve took 9.4s (remux 3.3s, buffer 4.8s).
+Measured origin was 1340.84s; playlist EXTINF values began 10.427s, 10.385s.
+The required target-local position plus the unchanged 4s runway is 10.16s.
+`Math.ceil` raised this to 11s and unnecessarily required the second GOP.
+Its file mtime was 4.698s later than the first. Commit 91fbee4 removes only
+that integer rounding. The test still rejects a genuinely incomplete 4s
+runway; no timestamp, codec, audio or subtitle tolerance changes.
+
+CI 41008058815 passed backend, media integration/timestamp matrix, frontend
+checks/build, and deployment tests. Local frontend checks/build also passed.
+Local backend verification could not run the media integration tests because
+FFmpeg is absent from that shell. LAN verification must use the complete
+archive (some backend tests read frontend/deploy files), Node 24.21.0, and an
+isolated unavailable Redis endpoint: a test process otherwise stays alive
+on the LAN machine's real Redis. An incomplete archive and an unisolated
+first attempt are **not** counted as passes.
+
+The public path also adds real transfer latency: a 20,303,106-byte first
+segment took 7.424s (21.88 Mbps); a 4 MiB range took 1.069s publicly and
+0.081s over LAN. These are samples, not a sustained bandwidth guarantee.
+The IAB MSE test had empty-buffer restores even after resolve, so the floor
+fix is not proof that all browser transfer/decoder delays are solved.
+A bare local HLS fixture sought accurately in IAB Chrome 156; it is not a
+physical Safari test. No further muxing flags changed based on that fixture.
+
+LAN verification completed successfully using Node 24.21.0, the full source
+archive, and the isolated test Redis setting. Real-media output included
+fractional/VFR HEVC maximum PTS error below 2e-12ms and the existing A/V and
+subtitle integration assertions passed. The CI run is:
+https://github.com/minhancr123/movie_web/actions/runs/41008058815 .
+
+Backend 91fbee4 was then activated with a readiness-checked rollback script.
+The isolated 127.0.0.1:5002 preview was stopped first. All 206 archived backend
+blobs match Git. Production /healthz reports ready with 91fbee4; frontend
+continues serving 6ad7dcb intentionally. Backend restart stops its old writers;
+this was not advertised as a zero-interruption hot swap. Rollback and integrity
+proof live in ~/cinevn-deploy-backups/20261030-91fbee4bf99b37e91fb3d15253a2afae8bf77cd5/.
+The durable dependency link remains outside release pruning.
+
+After rollout, the authenticated IAB video advanced from about 258s to 332.57s,
+readyState=4, paused=false, buffered [316.357,408.063]. Actual dimensions remain
+1920x804, so this only verifies ordinary playback, not 4K or the physical
+Safari seek latency. The user was asked for one new timed Safari seek;
+acceptance and full end-to-end latency improvement remain pending. Temporary
+local fixture server and private diagnostic grant URL files were removed.
