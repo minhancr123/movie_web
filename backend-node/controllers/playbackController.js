@@ -1,3 +1,4 @@
+import { registerViewerResolve } from '../services/playback/resolveViewerScope.js';
 import { isErrorSubtitleText } from '../services/playback/subtitleQuality.js';
 import { getEmbeddedSources, embeddedPickerEntry } from './embeddedPlaybackController.js';
 import { createSubtitleInventories } from '../services/playback/progressiveSubtitleInventory.js';
@@ -274,7 +275,7 @@ const playbackResolveTails = new Map();
 // letting a departed film burn the writer slot it no longer needs. Same-title
 // retries and seeks share the ref, so they never abort each other — and a Set
 // (not a single slot) so an A1→A2→B chain aborts both A1 and A2.
-const activeResolveByUser = new Map();
+const activeResolveByViewer = new Map();
 
 const resolveSupersededError = () =>
   Object.assign(new Error('Resolve đã bị thay thế bởi nội dung mới'), {
@@ -1216,29 +1217,18 @@ export const resolvePlayback = async (req, res) => {
   // Every in-flight resolve is tracked (a Set, not a single slot): same-title
   // retries/seeks share the ref and must not evict each other from the map,
   // or an A1→A2→B chain would lose A1 and leave it running after the switch.
-  const viewerKey = String(req.user?.userId || '');
   const switchRef = [type, tmdbId, type === 'tv' ? `${season ?? ''}:${episode ?? ''}` : 'full'].join(':');
   const switchController = new AbortController();
   const switchSignal = switchController.signal;
-  const switchRecord = { ref: switchRef, controller: switchController, resolveId };
   const throwIfSuperseded = () => {
     if (switchSignal.aborted) throw resolveSupersededError();
   };
-  if (viewerKey) {
-    let actives = activeResolveByUser.get(viewerKey);
-    if (!(actives instanceof Set)) {
-      actives = new Set();
-      activeResolveByUser.set(viewerKey, actives);
-    }
-    for (const prev of actives) {
-      if (prev.ref !== switchRef) {
-        prev.controller.abort();
-        if (prev.resolveId) setResolveStage(prev.resolveId, 'cancelled', 'switched content');
-        actives.delete(prev);
-      }
-    }
-    actives.add(switchRecord);
-  }
+  const releaseSwitch = registerViewerResolve(activeResolveByViewer, {
+    userId: req.user?.userId, viewerId: req.body?.viewerId,
+    ref: switchRef, controller: switchController, resolveId,
+  }, (previous) => {
+    if (previous.resolveId) setResolveStage(previous.resolveId, 'cancelled', 'switched content');
+  });
   // res close, never req close: the request stream ends as soon as the POST
   // body is fully read (normal for every resolve), while res closes early
   // only when the connection actually drops before the response completes.
@@ -2843,13 +2833,7 @@ export const resolvePlayback = async (req, res) => {
     // (not by key) so a slow earlier resolve cannot evict a newer one, and an
     // emptied per-viewer set is removed so the map cannot grow without bound.
     res.off('close', onResClose);
-    if (viewerKey) {
-      const actives = activeResolveByUser.get(viewerKey);
-      if (actives instanceof Set) {
-        actives.delete(switchRecord);
-        if (actives.size === 0) activeResolveByUser.delete(viewerKey);
-      }
-    }
+    releaseSwitch();
   }
   // One line per resolve with the full phase timeline: when a viewer reports
   // "it loads forever", this (plus their stage pill) names the slow leg

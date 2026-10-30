@@ -1625,6 +1625,7 @@ export default function PlaybackSection({
     try {
       const caps = detectCapabilities();
       const res = await playbackAPI.resolve({
+        viewerId: getViewerId(),
         type,
         tmdbId,
         season: season ?? undefined,
