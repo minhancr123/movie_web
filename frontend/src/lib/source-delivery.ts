@@ -46,3 +46,13 @@ export function isSourceActiveToken(candidateToken?: string, currentToken?: stri
   const hashB = b.split(':')[0];
   return hashA.length === 40 && hashA === hashB;
 }
+
+/** Use the same episode-specific pin as playback; storage can be unavailable. */
+export function prewarmSourceToken(read: (key: string) => string | null, type: string, tmdbId: number,
+  season?: number, episode?: number): string | undefined {
+  if (type !== 'movie' && type !== 'tv') return undefined;
+  if (type === 'tv' && (!Number.isInteger(season) || season! < 0 || !Number.isInteger(episode) || episode! < 1)) return undefined;
+  const key = `playback:selectedSource:${type}:${tmdbId}:${type === 'tv' ? season : 'movie'}:${type === 'tv' ? episode : 'full'}`;
+  try { const value = read(key); return typeof value === 'string' && value.trim() ? value.trim() : undefined; }
+  catch { return undefined; }
+}

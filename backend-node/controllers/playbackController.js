@@ -43,6 +43,7 @@ import {
 import { toVttDocument, UPLOAD_MAX_PER_TITLE } from '../services/playback/userSubtitles.js';
 import * as torbox from '../services/debrid/torbox.js';
 import { createPreparedSourceCache } from '../services/playback/preparedSourceCache.js';
+import { candidatesForPin, reusableSourceFile } from '../services/playback/pinnedDiscovery.js';
 const preparePlaybackSource = createPreparedSourceCache(torbox.prepareSource);
 import { DebridError } from '../services/debrid/torbox.js';
 import { normalizeCapabilities } from '../services/playback/sourceRanker.js';
@@ -686,7 +687,7 @@ const hasLiveRenditionWriter = async (db, renditionKey, excludeSessionId) => {
   });
 };
 
-const findReusableRemuxSession = async (db, { userId, type, tmdbId, season, episode, infoHash, audioIndex, caps, startAt = 0 }) => {  const requestedStartAt = Number.isFinite(Number(startAt)) && Number(startAt) > 0 ? Math.floor(Number(startAt)) : 0;
+const findReusableRemuxSession = async (db, { userId, type, tmdbId, season, episode, infoHash, audioIndex, caps, candidate, startAt = 0 }) => {  const requestedStartAt = Number.isFinite(Number(startAt)) && Number(startAt) > 0 ? Math.floor(Number(startAt)) : 0;
   // A measured origin can overshoot a later request by milliseconds (session
   // at 178.178s vs a new seek to 178s): without tolerance every such seek
   // spawns a duplicate writer 2s apart and supersedes a healthy session.
@@ -702,6 +703,10 @@ const findReusableRemuxSession = async (db, { userId, type, tmdbId, season, epis
       season: type === 'tv' ? season : null,
       episode: type === 'tv' ? episode : null,
       infoHash: String(infoHash).toLowerCase(),
+      ...(candidate ? { $or: [
+        { sourceIdentity: candidateIdentity(candidate) },
+        { sourceIdentity: { $exists: false } },
+      ] } : {}),
       // A remux bakes in ONE audio track: a different choice needs its own session.
       audioIndex: audioIndex ?? 0,
       // Candidate sessions started at or before requested offset (plus a
@@ -714,6 +719,7 @@ const findReusableRemuxSession = async (db, { userId, type, tmdbId, season, epis
   ).limit(5).toArray();
 
   for (const session of sessions) {
+    if (!candidate || !reusableSourceFile(session, candidate, candidateIdentity)) continue;
     if (session.windowSeconds > 0 && !caps.windowedRemux) continue;
     if (!session?.playlistUrl) continue;
     // Generation gate: bytes remuxed under an older recipe (missing stamp =
@@ -1504,13 +1510,16 @@ export const resolvePlayback = async (req, res) => {
       }
     }
 
+    const availabilityCandidates = candidatesForPin(candidates, sourceToken, matchCandidateToken);
+    if (sourceToken && !availabilityCandidates.length) return fail(res, 404, 'Nguồn đã chọn không còn khả dụng, vui lòng tải lại danh sách');
+
     // 4. Cached check (per-user entitlements; failure degrades to "not cached").
     stage('rank');
     let cachedMap = {};
     try {
       cachedMap = await torbox.checkCached(
         debridKey,
-        candidates.map((c) => c.infoHash),
+        availabilityCandidates.map((c) => c.infoHash),
       );
     } catch (error) {
       if (error instanceof DebridError && ['invalid_token', 'plan_restricted'].includes(error.code)) {
@@ -1519,7 +1528,7 @@ export const resolvePlayback = async (req, res) => {
       cachedMap = {};
     }
     const enriched = await applyProbeFacts(
-      candidates.map((c) => ({
+      availabilityCandidates.map((c) => ({
         ...c,
         cached: cachedMap[String(c.infoHash).toLowerCase()] === 'cached',
         cachedStatus: cachedMap[String(c.infoHash).toLowerCase()] || 'unknown',
@@ -1596,6 +1605,7 @@ export const resolvePlayback = async (req, res) => {
         season,
         episode,
         infoHash: candidate.infoHash,
+        candidate,
         audioIndex: resolvedAudioForReuse,
         caps,
         // A seek-started session holds truncated bytes: check if an existing
@@ -2159,7 +2169,8 @@ export const resolvePlayback = async (req, res) => {
           infoHash: String(candidate.infoHash).toLowerCase(),
           torrentId: prepared.torrentId,
           fileId: file.fileId,
-        sourceFileName: file.name || '',
+          sourceIdentity: candidateIdentity(candidate),
+          sourceFileName: file.name || '',
           fileName: publicFileName(file.name || ''),
           videoHash: fileHash?.videoHash ?? null,
           videoSize: fileHash?.videoSize ?? null,
@@ -2283,7 +2294,8 @@ export const resolvePlayback = async (req, res) => {
           infoHash: String(candidate.infoHash).toLowerCase(),
           torrentId: prepared.torrentId,
           fileId: file.fileId,
-        sourceFileName: file.name || '',
+          sourceIdentity: candidateIdentity(candidate),
+          sourceFileName: file.name || '',
           fileName: publicFileName(file.name || ''),
           videoHash: fileHash?.videoHash ?? null,
           videoSize: fileHash?.videoSize ?? null,
@@ -2368,6 +2380,7 @@ export const resolvePlayback = async (req, res) => {
               infoHash: String(candidate.infoHash).toLowerCase(),
               torrentId: prepared.torrentId,
               fileId: file.fileId,
+              sourceIdentity: candidateIdentity(candidate),
               sourceFileName: file.name || '',
               fileName: publicFileName(file.name || ''),
               videoHash: fileHash?.videoHash ?? null,
@@ -2666,6 +2679,7 @@ export const resolvePlayback = async (req, res) => {
         infoHash: String(candidate.infoHash).toLowerCase(),
         torrentId: prepared.torrentId,
         fileId: file.fileId,
+        sourceIdentity: candidateIdentity(candidate),
         sourceFileName: file.name || '',
           fileName: publicFileName(file.name || ''),
           videoHash: fileHash?.videoHash ?? null,
@@ -2953,8 +2967,9 @@ export const prewarmPlayback = async (req, res) => {
     return fail(res, 400, parsed.error);
   }
 
-  const { type, tmdbId, season, episode, capabilities } = parsed;
+  const { type, tmdbId, season, episode, capabilities, sourceToken, vimoToken, yastreamToken } = parsed;
   const caps = normalizeCapabilities(capabilities);
+  if (vimoToken || yastreamToken) return res.json({ success: true, data: { warmed: false, state: 'direct' } });
 
   try {
     const db = getDB();
@@ -2972,6 +2987,7 @@ export const prewarmPlayback = async (req, res) => {
 
     const { candidates } = await getStreamCandidates({
       debridKey,
+      sourceToken,
       imdbId: detail.imdbId,
       mediaType: type,
       season,
@@ -2979,17 +2995,19 @@ export const prewarmPlayback = async (req, res) => {
     });
     if (!candidates.length) return fail(res, 404, 'Không tìm thấy nguồn phát');
 
+    const availabilityCandidates = candidatesForPin(candidates, sourceToken, matchCandidateToken);
+    if (sourceToken && !availabilityCandidates.length) return fail(res, 404, 'Nguồn đã chọn không còn khả dụng, vui lòng tải lại danh sách');
     let cachedMap = {};
     try {
       cachedMap = await torbox.checkCached(
         debridKey,
-        candidates.map((c) => c.infoHash),
+        availabilityCandidates.map((c) => c.infoHash),
       );
     } catch {
       cachedMap = {};
     }
     const enriched = await applyProbeFacts(
-      candidates.map((c) => ({
+      availabilityCandidates.map((c) => ({
         ...c,
         cached: cachedMap[String(c.infoHash).toLowerCase()] === 'cached',
         cachedStatus: cachedMap[String(c.infoHash).toLowerCase()] || 'unknown',
@@ -2997,7 +3015,7 @@ export const prewarmPlayback = async (req, res) => {
     );
     const runtimeMinutes = Number(detail.runtime) > 0 ? Number(detail.runtime) : null;
     const videoTranscode = await resolveVideoTranscodeCapability();
-    const { best, playable } = rankCandidates(enriched, caps, {
+    const { best, playable, rejected } = rankCandidates(enriched, caps, {
       runtimeMinutes,
       contentLanguage: detail?.originalLanguage,
       ...titleExpectation(detail),
@@ -3008,9 +3026,10 @@ export const prewarmPlayback = async (req, res) => {
     // the very provider/probe latency this endpoint is intended to hide.
     const freeBytes = await freeDiskBytes();
     const reservedBytes = pendingReservationBytes();
-    const target = remuxWindowSeconds(caps.windowedRemux && seekStartEnabled()) ? best : prioritizeDiskFitSources(playable, (needBytes) => admitRemuxDisk({
+    const target = sourceToken ? (playable[0] || rejected[0] || null) : remuxWindowSeconds(caps.windowedRemux && seekStartEnabled()) ? best : prioritizeDiskFitSources(playable, (needBytes) => admitRemuxDisk({
       freeBytes, reservedBytes, needBytes,
     }).admitted)[0] ?? best ?? null;
+    if (target?.titleMatched === false) return fail(res, 422, 'Nguồn không khớp nội dung đã chọn');
     if (!target) return fail(res, 422, 'Không có nguồn nào phát được trên thiết bị này');
 
     let prepared;

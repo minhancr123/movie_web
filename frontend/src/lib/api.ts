@@ -231,6 +231,7 @@ export const playbackAPI = {
     season?: number;
     episode?: number;
     capabilities: any;
+    sourceToken?: string;
   }) => enhancePlaybackPayload(data).then(payload => authClient.post('/playback/prewarm', payload)),
   listSources: (data: {
     type: string;

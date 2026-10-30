@@ -4,6 +4,7 @@ import Link from 'next/link';
 import { useEffect, useRef, type ReactNode } from 'react';
 import { playbackAPI } from '@/lib/api';
 import { detectCapabilities } from '@/lib/capabilities';
+import { prewarmSourceToken } from '@/lib/source-delivery';
 
 interface PrewarmWatchLinkProps {
   type: string;
@@ -74,6 +75,8 @@ export default function PrewarmWatchLink({
           tmdbId,
           ...(pair ? { season: seasonNumber, episode: episodeNumber } : {}),
           capabilities: caps,
+          sourceToken: prewarmSourceToken(key => window.localStorage.getItem(key), type, tmdbId,
+            pair ? seasonNumber : undefined, pair ? episodeNumber : undefined),
         })
         .catch(() => {
           // Best effort only.
