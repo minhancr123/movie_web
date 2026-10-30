@@ -69,3 +69,9 @@ export function groupPlaybackSources<T extends GroupableSource>(sources: T[]) {
     ),
   })).filter(group => group.sources.length > 0);
 }
+
+/** Rank against the complete, sorted menu, before a delivery filter hides rows. */
+export function sourceOrdinal<T>(groups: ReadonlyArray<{ sources: T[] }>, source: T): number {
+  const group = groups.find(g => g.sources.includes(source));
+  return group ? group.sources.indexOf(source) + 1 : 0;
+}

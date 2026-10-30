@@ -59,8 +59,8 @@ const formatResolveStage = (stage: string, detail: string): string => {
 const RETRYABLE_503_CODES = new Set(['REMUX_BUSY', 'REMUX_NO_SPACE', 'SOURCE_PREPARE_TIMEOUT']);
 import { providerAPI, playbackAPI, API_URL } from '@/lib/api';
 import { detectCapabilities } from '@/lib/capabilities';
-import { groupPlaybackSources, type GroupableSource } from '@/lib/source-groups';
-import { filterPlaybackSources, pickFallbackSource, sourceCodecFamily, audioIndexForSource, isSourceActiveToken, type SourceFilter, type DeliveryState } from '@/lib/source-delivery';
+import { groupPlaybackSources, sourceOrdinal, type GroupableSource } from '@/lib/source-groups';
+import { filterPlaybackSources, pickFallbackSource, sourceCodecFamily, audioIndexForSource, isSourceActiveToken, findPlayingSource, resolvedPlayingToken, type SourceFilter, type DeliveryState } from '@/lib/source-delivery';
 import SourceDeliveryFilter, { SourceDeliveryBadge } from '@/components/SourceDeliveryFilter';
 import type { PlayerEpisode } from '@/lib/catalog';
 import { episodeScrollTarget } from '@/lib/episode-list';
@@ -277,6 +277,8 @@ export default function PlaybackSection({
   const [showSources, setShowSources] = useState<boolean>(false);
   const [isLoadingSources, setIsLoadingSources] = useState<boolean>(false);
   const [activeToken, setActiveToken] = useState<string>('');
+  const sourceGroups = groupPlaybackSources(sources);
+  const activeSource = findPlayingSource(sources, activeToken) || null;
   const [playbackSessionId, setPlaybackSessionId] = useState<string>('');
   // When the current direct-playback URL dies (absolute ms). Provider CDN
   // URLs live ~15 min (expiresIn on the resolve response): without a refresh
@@ -1184,14 +1186,12 @@ export default function PlaybackSection({
     // settle the waiting room the same way.
     clearBusyWait();
     
-    // Server truth wins on a silent source swap: the Vimo fallback answers
-    // with its own sourceToken, and keeping the requested torrent token would
+    // Server truth wins on a fallback or a corrected file identity. Keeping
+    // the requested token instead of the server's sourceToken would
     // leave the UI/badge claiming the original source while direct Vimo bytes
     // play (different cut/timing, mistimed sidecars).
     const serverToken = typeof data.sourceToken === 'string' ? data.sourceToken : '';
-    const effectiveToken = data.fallbackSource
-      ? (serverToken || activeTokenRef.current)
-      : (activeTokenRef.current || serverToken);
+    const effectiveToken = resolvedPlayingToken(serverToken, activeTokenRef.current);
     setActiveToken(effectiveToken);
     activeTokenRef.current = effectiveToken;
     // Pin the release across reloads and later intents: every resume,
@@ -1715,12 +1715,10 @@ export default function PlaybackSection({
           `sessionId=${typeof data.sessionId === 'string' ? data.sessionId : '?'} mode=${data.mode || '?'}`,
         );
       }
-      // Same rule as handleResolveResponse above: a fallback swap means the
-      // bytes on screen belong to the server's token, not the requested one.
+      // Use the server's actual file identity, including corrected indices
+      // and silent fallback swaps; the requested token can be stale.
       const serverToken = typeof data.sourceToken === 'string' ? data.sourceToken : '';
-      const effectiveToken = data.fallbackSource
-        ? (serverToken || resolvedSourceToken)
-        : (resolvedSourceToken || serverToken);
+      const effectiveToken = resolvedPlayingToken(serverToken, resolvedSourceToken);
       setActiveToken(effectiveToken);
       activeTokenRef.current = effectiveToken;
       // A fallback swap is temporary (slow writer / busy debrid): the pinned
@@ -2353,8 +2351,9 @@ export default function PlaybackSection({
                 <h5 key={`group-${group.key}`} className="sticky top-0 z-10 rounded-lg bg-surface-dark px-3 py-2 text-xs font-bold text-white">
                   {group.label} <span className="text-cinema-subtle">({group.sources.length})</span>
                 </h5>,
-                ...group.sources.map((src, index) => {
-                const isActive = isSourceActiveToken(src.sourceToken, activeToken);
+                ...group.sources.map((src) => {
+                const index = sourceOrdinal(sourceGroups, src) - 1;
+                const isActive = src === activeSource;
                 return (
                   <button
                     key={src.sourceToken}
@@ -2500,14 +2499,10 @@ export default function PlaybackSection({
 
     const is4K = Number(candidate?.resolution) >= 2160;
 
-    const activeSource = sources.find((s) => isSourceActiveToken(s.sourceToken, activeToken)) || null;
-
     const currentSourceDisplayName = (() => {
       if (activeSource) {
-        const groupKey = activeSource.qualityGroup || '1080p';
-        const groupSources = sources.filter((s) => (s.qualityGroup || '1080p') === groupKey && s.playable !== false);
-        const idx = groupSources.findIndex((s) => isSourceActiveToken(s.sourceToken, activeToken));
-        const vipNum = idx >= 0 ? idx + 1 : 1;
+        const groupKey = sourceGroups.find(g => g.sources.includes(activeSource))?.key || 'other';
+        const vipNum = sourceOrdinal(sourceGroups, activeSource);
         if (groupKey === 'vietsub' || activeSource.origin === 'vimo' || activeSource.origin === 'yastream') {
           return `Vietsub VIP ${vipNum}`;
         }
@@ -2515,10 +2510,10 @@ export default function PlaybackSection({
         return `Nguồn VIP ${vipNum} • ${resBadge}`;
       }
       if (activeToken.startsWith('vimo|') || activeToken.startsWith('yastream:')) {
-        return 'Vietsub VIP 1';
+        return 'Nguồn Vietsub';
       }
       const resBadge = candidate?.resolution ? resolutionLabel(candidate.resolution) : (is4K ? '4K' : '1080p');
-      return `Nguồn VIP 1 • ${resBadge}`;
+      return `Nguồn tự động • ${resBadge}`;
     })();
 
     return (
@@ -2857,8 +2852,9 @@ export default function PlaybackSection({
                 <h5 key={`group-${group.key}`} className="sticky top-0 z-10 rounded-lg bg-surface-dark px-3 py-2 text-xs font-bold text-white">
                   {group.label} <span className="text-cinema-subtle">({group.sources.length})</span>
                 </h5>,
-                ...group.sources.map((src, index) => {
-              const isActive = isSourceActiveToken(src.sourceToken, activeToken);
+                ...group.sources.map((src) => {
+              const index = sourceOrdinal(sourceGroups, src) - 1;
+              const isActive = src === activeSource;
               return (
                 <button
                   key={src.sourceToken}

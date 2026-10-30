@@ -42,5 +42,20 @@ const parsed4 = playback.parseResolveBody({
 assert.equal(parsed4.vimoToken, 'vimo|series|slug123:2:3', 'series vimoToken extracted with season/episode');
 
 console.log('ok - parseResolveBody handles yastream and vimo tokens for movie and tv');
+const { candidateIdentity, matchCandidateToken } = await import('../services/addonClient.js');
+for (const candidate of [
+  {infoHash:'a'.repeat(40),fileIdx:1,filename:'movie.mkv'},
+  {infoHash:'a'.repeat(40),filename:'Avengers Endgame (2019) IMAX.mkv'},
+  {infoHash:'a'.repeat(40),filename:'Tập làm người xấu - S2E8.mkv'},
+]) {
+  const token=candidateIdentity(candidate);
+  const parsed=playback.parseResolveBody({type:'movie',tmdbId:299534,sourceToken:token});
+  assert.equal(parsed.sourceToken,token,'a token returned by the picker must survive resolve, not become an automatic pick');
+  assert.equal(matchCandidateToken(candidate,parsed.sourceToken),true);
+}
+for (const suffix of ['bad|provider', 'bad\nname', 'x'.repeat(1025)]) {
+  assert.equal(playback.SOURCE_TOKEN_PATTERN.test('a'.repeat(40)+':unknown:'+suffix),false);
+}
+console.log('ok - source picker identities round-trip including spaced and Unicode filenames');
 console.log('All vietsub-picker tests passed!');
 process.exit(0);

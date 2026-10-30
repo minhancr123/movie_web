@@ -22,8 +22,12 @@ export function filterPlaybackSources<T extends Source>(sources: T[], filter: So
 }
 /** The menu is grouped for display. Recovery must choose by suitability instead. */
 export function pickFallbackSource<T extends Source>(sources: T[], failed: Set<string>, height = 0, failedCodec = ''): T | undefined {
+  // Recovery keeps the historical conservative torrent-wide failure veto;
+  // it must not be used to identify/highlight the particular playing file.
   return sources.filter(s => s.playable !== false && s.sourceToken
-      && ![...failed].some(token => isSourceActiveToken(s.sourceToken, token)))
+      && ![...failed].some(token => isSourceActiveToken(s.sourceToken, token)
+        || (/^[a-f0-9]{40}(?::|$)/i.test(token) && /^[a-f0-9]{40}(?::|$)/i.test(s.sourceToken || '')
+          && token.slice(0,40).toLowerCase() === s.sourceToken!.slice(0,40).toLowerCase())))
     .map((source,index) => ({source,index}))
     .sort((a,b) => {
       const priority = (s: Source) => {
@@ -44,18 +48,26 @@ export function audioIndexForSource(explicit: number | undefined, current: numbe
   return nextToken && nextToken !== previousToken ? null : current;
 }
 
-/** Robust matching for active candidate token across versioned index tags and raw hashes */
+/** File identity is narrower than a torrent hash: never merge pack indices,
+ * provider types or episodes. Legacy numeric tags alias only that exact index.
+ */
+export function canonicalSourceToken(token?: string): string {
+  if (!token) return '';
+  const t = token.trim();
+  const torrent = /^([a-f0-9]{40})(?::(?:(?:index:)?(\d+)|unknown:(.*)))?$/i.exec(t);
+  if (!torrent) return t; // Provider identifiers can be case-sensitive.
+  const hash = torrent[1].toLowerCase();
+  if (torrent[2] !== undefined) return `${hash}:index:${torrent[2].replace(/^0+(?=\d)/, '')}`;
+  return torrent[3] !== undefined ? `${hash}:unknown:${torrent[3].toLowerCase()}` : hash;
+}
 export function isSourceActiveToken(candidateToken?: string, currentToken?: string): boolean {
-  if (!candidateToken || !currentToken) return false;
-  const a = candidateToken.toLowerCase();
-  const b = currentToken.toLowerCase();
-  if (a === b) return true;
-  if (a.startsWith('vimo|') && b.startsWith('vimo|')) {
-    const idA = a.split('|')[2]?.split(':')[0];
-    const idB = b.split('|')[2]?.split(':')[0];
-    if (idA && idB && idA === idB) return true;
-  }
-  const hashA = a.split(':')[0];
-  const hashB = b.split(':')[0];
-  return hashA.length === 40 && hashA === hashB;
+  return Boolean(candidateToken && currentToken && canonicalSourceToken(candidateToken) === canonicalSourceToken(currentToken));
+}
+/** Even duplicate rows/aliases must yield at most one highlighted object. */
+export function findPlayingSource<T extends Source>(sources: T[], token?: string): T | undefined {
+  return sources.find(s => s.playable !== false && isSourceActiveToken(s.sourceToken, token));
+}
+/** The resolve response identifies the bytes the player actually receives. */
+export function resolvedPlayingToken(serverToken: unknown, requestedToken?: string): string {
+  return typeof serverToken === 'string' && serverToken.trim() ? serverToken : requestedToken || '';
 }

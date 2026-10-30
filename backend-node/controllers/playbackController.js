@@ -508,7 +508,7 @@ export const sanitizeCandidateForResponse = (candidate) => ({
   subtitleTracks: Array.isArray(candidate.subtitleTracks) ? candidate.subtitleTracks : [],
 });
 
-export const SOURCE_TOKEN_PATTERN = /^[a-f0-9]{40}(?::(?:index:\d+|unknown:[^|\s]+|\d+))?$/i;
+export const SOURCE_TOKEN_PATTERN = /^[a-f0-9]{40}(?::(?:index:\d+|unknown:[^|\x00-\x1f\x7f]{1,1024}|\d+))?$/i;
 
 /**
  * The token the client echoes back as `sourceToken` to pin a release.

@@ -114,3 +114,20 @@ Sanitized raw results: [seek-http-20261030.json](evidence/seek-http-20261030.jso
 Physical Safari acceptance, true 4K behavior, progressive subtitle inventory
 and the iPhone seek benchmark remain pending; this experiment closes none of
 those acceptance criteria.
+
+## Controlled LAN activation
+
+After the complete [CI run 41075997183](https://github.com/minhancr123/movie_web/actions/runs/41075997183)
+passed, backend `52e1209` was activated with HTTP reuse explicitly enabled.
+Before restart there were zero FFmpeg writers. All 208 backend source files
+matched the Git archive, and a separate loopback-only preview became ready.
+The public frontend remained `6ad7dcb`; the native start hint stayed withdrawn.
+Actual new production FFmpeg processes carry both transport flags, retain video
+copy/AAC, and configuration remains window 900 / read rate 2 / burst 8.
+
+The user then reported faster seeking on Safari. That is qualitative acceptance
+of an improvement, not a calibrated sub-3-second or 4K guarantee; iPhone and
+progressive subtitle inventory acceptance remain pending. The user also found
+an inconsistent source badge, being addressed separately without retuning HLS.
+Backup, readiness evidence, source-integrity record and guarded rollback are
+under `~/cinevn-deploy-backups/20261030-52e1209ff39429a461096ab3d3318633e4dc4073/`.
