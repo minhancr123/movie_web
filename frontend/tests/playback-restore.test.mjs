@@ -71,6 +71,26 @@ test('native HLS waits for target coverage and cancelling a pipeline removes cal
   assert.equal(ready, 0);
 });
 
+test('fresh native decoder loads initial data before seeking; never plays origin or settles on metadata', async () => {
+  const media = new Media(); media.readyState = 1;
+  let ready = 0, primed = 0;
+  const cancel = restoreBeforePlayback(media, 3.183, {
+    covered: () => true, waitForInitialData: true, primeWhenCovered: true,
+    prime: () => primed++, ready: () => ready++, failed: () => assert.fail('unexpected timeout'),
+  });
+  media.event('loadedmetadata'); media.event('progress');
+  await new Promise(resolve => setTimeout(resolve, 850));
+  assert.deepEqual(media.assignments, [], 'an exact seek must not interrupt initial native decoding');
+  assert.equal(primed, 0, 'preloading must not play the origin as a workaround');
+  assert.equal(ready, 0);
+  media.readyState = 2; media.event('loadeddata');
+  assert.deepEqual(media.assignments, [3.183]);
+  assert.equal(ready, 0, 'the origin frame is not the destination');
+  media.position = 3.183; media.seeking = false; media.event('seeked');
+  assert.equal(ready, 1);
+  cancel();
+});
+
 test('native HLS seeks a prepared playlist before downloading the destination, then waits for its frame',()=>{
  const media=new Media();media.readyState=1;media.duration=900;
  media.seekable=media.buffered={length:0};let ready=0;

@@ -43,6 +43,10 @@ export const restoreBeforePlayback = (video: RestoreMedia, target: number, optio
   /** Native HLS may not fetch its target while paused, so buffered remains
    * empty until play(). Coverage still has to come from the new playlist. */
   primeWhenCovered?: boolean;
+  /** A fresh native decoder must load its initial sample before an exact seek.
+   * Seeking at HAVE_METADATA can leave WebKit permanently seeking with no
+   * buffered media. Keep preload active, but never play the old origin. */
+  waitForInitialData?: boolean;
   failed: () => void;
   timeoutMs?: number;
 }) => {
@@ -67,6 +71,7 @@ export const restoreBeforePlayback = (video: RestoreMedia, target: number, optio
   const check = (event?: Event) => {
     if (cancelled || video.readyState < 1 || (options.covered && !options.covered())) return;
     if (!assigned) {
+      if (options.waitForInitialData && target > 0 && video.readyState < 2) return;
       if (!video.seeking && Math.abs(video.currentTime - target) <= 0.5) {
         if (video.readyState < 2) {
           if (options.primeWhenCovered && options.prime) {
