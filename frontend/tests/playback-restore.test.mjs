@@ -11,7 +11,16 @@ const out = mkdtempSync(path.join(tmpdir(), 'playback-restore-'));
 execFileSync(process.execPath, [path.join(root, 'node_modules/typescript/bin/tsc'),
   'src/lib/playback-restore.ts', '--outDir', out, '--module', 'commonjs',
   '--target', 'es2020', '--moduleResolution', 'node', '--skipLibCheck'], { cwd: root });
-const { restoreBeforePlayback, restorePlayIntent, nativeSeekCovered, pipelineRestoreTarget } = await import(pathToFileURL(path.join(out, 'playback-restore.js')));
+const { restoreBeforePlayback, restorePlayIntent, nativeSeekCovered, pipelineRestoreTarget, canRetryNativeWithMse } = await import(pathToFileURL(path.join(out, 'playback-restore.js')));
+test('Safari metadata-only restore may switch loader once without treating metadata as a decoded frame',()=>{
+ assert.equal(canRetryNativeWithMse(true,true,1,false,null),true);
+ for(const args of [[false,true,1,false,null],[true,false,1,false,null],[true,true,2,false,null],
+   [true,true,1,true,null],[true,true,1,false,3],[true,true,0,false,null]])assert.equal(canRetryNativeWithMse(...args),false);
+ const checkpoint={delivery:'same-source',requested:27,position:27};
+ assert.equal(pipelineRestoreTarget('same-source',27,checkpoint,null),27);
+ assert.equal(restorePlayIntent(true,true,false,true),true);
+ assert.equal(restorePlayIntent(true,true,true,false),false);
+});
 process.on('exit', () => rmSync(out, { recursive: true, force: true }));
 
 class Media extends EventTarget {

@@ -30,7 +30,7 @@ import {
     type SubCue, type SubTrack,
 } from '@/lib/subtitles';
 import { computeResumeAt, pickDisplayDuration, decideSeekTarget, nextRemuxWindowAt, planResume, shouldDowngradeForDropped, subtitleLookupTime, classifyStartAt, toLocalSeekTarget } from '@/lib/playback-progress';
-import { restoreBeforePlayback, restorePlayIntent, nativeSeekCovered, pipelineRestoreTarget, type PipelineCheckpoint } from '@/lib/playback-restore';
+import { restoreBeforePlayback, restorePlayIntent, nativeSeekCovered, pipelineRestoreTarget, canRetryNativeWithMse, type PipelineCheckpoint } from '@/lib/playback-restore';
 import {
     useAudioEnhancer, DEFAULT_AUDIO_ENHANCER,
     type AudioEnhancerSettings,
@@ -306,12 +306,14 @@ export default function VideoPlayer({ src, playbackStartedAt, movie, episode, au
         typeof window === 'undefined' ? '#ffffff' : readPrefs().subColor);
     const [audioFx, setAudioFx] = useState<AudioEnhancerSettings>(() =>
         typeof window === 'undefined' ? DEFAULT_AUDIO_ENHANCER : readPrefs().audio);
-    const nativeHlsPreferred = typeof navigator !== 'undefined'
+    const [mseFallbackFor, setMseFallbackFor] = useState<string | null>(null);
+    const platformPrefersNativeHls = typeof navigator !== 'undefined'
         && prefersNativeHls(navigator.userAgent, navigator.platform, navigator.maxTouchPoints);
+    const nativeHlsPreferred = platformPrefersNativeHls && mseFallbackFor !== src;
     // Web Audio can only tap the element on the MSE path; the hook decides and
     // reports back so the UI can say why it is unavailable instead of going quiet.
     const audioFxStatus = useAudioEnhancer(
-        videoRef, src, typeof window !== 'undefined' && Hls.isSupported() && !nativeHlsPreferred, audioFx,
+        videoRef, src, typeof window !== 'undefined' && Hls.isSupported() && !platformPrefersNativeHls, audioFx,
     );
     const [cinema, setCinema] = useState<CinemaMode>(() =>
         typeof window === 'undefined' ? 'off' : readPrefs().cinema);
@@ -596,7 +598,7 @@ export default function VideoPlayer({ src, playbackStartedAt, movie, episode, au
         // A pending resolve may change its timestamp while the previous source
         // still plays. Re-arm only when that source/session actually changes.
         // eslint-disable-next-line react-hooks/exhaustive-deps
-    }, [src, reloadKey, subContext?.playbackSessionId, authToken]);
+    }, [src, reloadKey, subContext?.playbackSessionId, authToken, nativeHlsPreferred]);
 
     const handoffStalledWindow = () => {
         const video = videoRef.current;
@@ -1612,6 +1614,15 @@ export default function VideoPlayer({ src, playbackStartedAt, movie, episode, au
                 waitForInitialData: primeWhenCovered,
                 failed: () => {
                     if (cancelled) return;
+                    if (isHlsSrc && canRetryNativeWithMse(nativeHlsPreferred, Hls.isSupported(),
+                        video.readyState, video.buffered.length > 0, video.error?.code ?? null)) {
+                        // Rebuild the loader once for this source. Keep the
+                        // checkpoint and seek lock so the origin cannot replace
+                        // the requested frame; cleanup preserves play intent.
+                        setMseFallbackFor(src);
+                        setIsLoading(true);
+                        return;
+                    }
                     clearSeekLock();
                     setIsLoading(false);
                     const reason = 'Chưa tải được điểm cần xem; đang giữ nguyên vị trí tua.';

@@ -1,5 +1,11 @@
 import { shouldAutoplayAfterRebuild } from './playback-progress';
 
+/** Retry a metadata-only native loader through MSE, never an already decoded
+ * or explicitly failed stream. The caller pins the override to this source. */
+export const canRetryNativeWithMse = (nativePreferred: boolean, mseSupported: boolean,
+  readyState: number, hasBuffer: boolean, mediaError: number | null): boolean =>
+  nativePreferred && mseSupported && readyState === 1 && !hasBuffer && !mediaError;
+
 /** Snapshot intent before pause/load events from a replacement pipeline. */
 export const restorePlayIntent = (hadPlayed: boolean, paused: boolean, userPaused: boolean, seekIntent: boolean | null) =>
   seekIntent ?? (shouldAutoplayAfterRebuild(hadPlayed, paused) && !userPaused);
