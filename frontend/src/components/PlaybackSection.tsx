@@ -5,9 +5,8 @@ import Link from 'next/link';
 import Image from 'next/image';
 import { useSession } from 'next-auth/react';
 import { Loader2, AlertCircle, Key, RefreshCw, CheckCircle2, Download, Film, Layers, PictureInPicture2, ChevronLeft, ChevronRight, ListVideo } from 'lucide-react';
-// Loaded on demand: hls.js + the 3k-line player (plus its audio graph) are
-// dead weight during the resolve stage, which can legitimately take tens of
-// seconds on a cold source — the shell renders instantly without them.
+// Keep the player out of catalog-only loads. Once playback is requested, its
+// module downloads alongside resolve instead of after the backend is ready.
 import dynamic from 'next/dynamic';
 const VideoPlayer = dynamic(() => import('@/components/VideoPlayer'), {
   ssr: false,
@@ -1367,6 +1366,10 @@ export default function PlaybackSection({
       serverRetry?: boolean;
     },
   ) => {
+    // Importing does not mount a video/audio graph or start media requests.
+    // A cold phone can otherwise pay another chunk-download/parse round trip
+    // only after the producer has finished preparing its first segments.
+    void import('@/components/VideoPlayer').catch(() => {});
     playbackRequestAtRef.current = performance.now();
     // Storage can throw when blocked: never let it reject the resolve.
     let rememberedToken = '';

@@ -71,3 +71,13 @@ export function findPlayingSource<T extends Source>(sources: T[], token?: string
 export function resolvedPlayingToken(serverToken: unknown, requestedToken?: string): string {
   return typeof serverToken === 'string' && serverToken.trim() ? serverToken : requestedToken || '';
 }
+
+/** Use the same episode-specific pin as playback; storage can be unavailable. */
+export function prewarmSourceToken(read: (key: string) => string | null, type: string, tmdbId: number,
+  season?: number, episode?: number): string | undefined {
+  if (type !== 'movie' && type !== 'tv') return undefined;
+  if (type === 'tv' && (!Number.isInteger(season) || season! < 0 || !Number.isInteger(episode) || episode! < 1)) return undefined;
+  const key = `playback:selectedSource:${type}:${tmdbId}:${type === 'tv' ? season : 'movie'}:${type === 'tv' ? episode : 'full'}`;
+  try { const value = read(key); return typeof value === 'string' && value.trim() ? value.trim() : undefined; }
+  catch { return undefined; }
+}

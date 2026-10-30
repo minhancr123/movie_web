@@ -85,3 +85,14 @@ test('VIP numbers follow the complete sorted group, not raw order or the current
  const filtered=m.filterPlaybackSources(all,'direct');assert.equal(filtered.length,2);
  assert.equal(g.sourceOrdinal(groups,filtered.find(s=>s.sourceToken==='a')),2,'hiding VIP 1 must not relabel VIP 2');
 });
+
+test('prewarm reads the exact movie or complete episode pin and survives blocked storage', () => {
+ const keys=[];const read=key=>{keys.push(key);return 'selected-file';};
+ assert.equal(m.prewarmSourceToken(read,'movie',299534), 'selected-file');
+ assert.equal(keys.pop(),'playback:selectedSource:movie:299534:movie:full');
+ assert.equal(m.prewarmSourceToken(read,'tv',1396,2,8),'selected-file');
+ assert.equal(keys.pop(),'playback:selectedSource:tv:1396:2:8');
+ assert.equal(m.prewarmSourceToken(read,'tv',1396,2),undefined);assert.equal(keys.length,0);
+ assert.equal(m.prewarmSourceToken(()=>{throw Error('blocked');},'movie',1),undefined);
+ assert.equal(m.prewarmSourceToken(()=>null,'movie',1),undefined);
+});

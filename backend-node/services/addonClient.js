@@ -1,6 +1,7 @@
 import { isErrorSubtitleText } from './playback/subtitleQuality.js';
 import { boundedSettled } from './playback/bounded-settled.js';
 import { requestedCandidates } from './requests/library.js';
+import { createPinnedDiscoveryResolver, pinnedDiscoveryScope } from './playback/pinnedDiscovery.js';
 /**
  * Stremio-protocol addon client.
  *
@@ -822,10 +823,13 @@ const getConfiguredStreamCandidates = async params => {
   return getNativeCandidates(params);
 };
 
-export const getStreamCandidates = async params => {
+export const getStreamCandidates = createPinnedDiscoveryResolver(async params => {
   const [normal, library] = await Promise.all([getConfiguredStreamCandidates(params), requestedCandidates(params)]);
   return library.length ? mergeStreamCandidates([{ candidates: library, errors: [] }, normal]) : normal;
-};
+}, {
+  scopeOf: pinnedDiscoveryScope,
+  matches: matchCandidateToken, identityOf: candidateIdentity,
+});
 
 export default {
   candidateIdentity,
