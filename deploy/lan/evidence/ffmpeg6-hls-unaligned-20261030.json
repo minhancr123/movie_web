@@ -1,0 +1,376 @@
+{
+  "accepted": false,
+  "purpose": "Known FFmpeg 6.1.1 upstream fMP4 HLS non-boundary input-seek limitation, not a passing media acceptance test",
+  "ffmpeg": "6.1.1-3ubuntu5",
+  "node": "24.21.0",
+  "inputSeekSeconds": 5,
+  "remuxOptimizationFixesThis": false,
+  "diagnostics": [
+    {
+      "kind": "hls",
+      "name": "baseline",
+      "audioPackets": 0,
+      "videoPackets": 0,
+      "writerWarnings": "[aost#0:1/aac @ 0x55862c91f400] No filtered frames for output stream, trying to initialize anyway.\n[out#0/hls @ 0x55862c8a79c0] Output file is empty, nothing was encoded(check -ss / -t / -frames parameters if used)"
+    },
+    {
+      "hlsInputStreams": [
+        {
+          "codec_name": "h264",
+          "time_base": "1/24000",
+          "start_time": "0.083000",
+          "disposition": {
+            "default": 1,
+            "dub": 0,
+            "original": 0,
+            "comment": 0,
+            "lyrics": 0,
+            "karaoke": 0,
+            "forced": 0,
+            "hearing_impaired": 0,
+            "visual_impaired": 0,
+            "clean_effects": 0,
+            "attached_pic": 0,
+            "timed_thumbnails": 0,
+            "non_diegetic": 0,
+            "captions": 0,
+            "descriptions": 0,
+            "metadata": 0,
+            "dependent": 0,
+            "still_image": 0
+          },
+          "tags": {
+            "variant_bitrate": "0",
+            "language": "und",
+            "handler_name": "VideoHandler",
+            "vendor_id": "[0][0][0][0]",
+            "minor_version": "512",
+            "compatible_brands": "iso5iso6mp41",
+            "major_brand": "iso5",
+            "encoder": "Lavf60.16.100"
+          }
+        },
+        {
+          "codec_name": "aac",
+          "time_base": "1/48000",
+          "start_time": "0.062000",
+          "disposition": {
+            "default": 1,
+            "dub": 0,
+            "original": 0,
+            "comment": 0,
+            "lyrics": 0,
+            "karaoke": 0,
+            "forced": 0,
+            "hearing_impaired": 0,
+            "visual_impaired": 0,
+            "clean_effects": 0,
+            "attached_pic": 0,
+            "timed_thumbnails": 0,
+            "non_diegetic": 0,
+            "captions": 0,
+            "descriptions": 0,
+            "metadata": 0,
+            "dependent": 0,
+            "still_image": 0
+          },
+          "tags": {
+            "variant_bitrate": "0",
+            "language": "und",
+            "handler_name": "SoundHandler",
+            "vendor_id": "[0][0][0][0]"
+          }
+        }
+      ],
+      "firstSourceVideo": {
+        "codec_type": "video",
+        "pts_time": "0.083000",
+        "dts_time": "-0.000417"
+      },
+      "firstSourceAudio": {
+        "codec_type": "audio",
+        "pts_time": "0.062000",
+        "dts_time": "0.062000"
+      }
+    },
+    {
+      "control": "zero",
+      "count": 429,
+      "firstVideo": {
+        "codec_type": "video",
+        "pts_time": "0.083000",
+        "dts_time": "-0.000417"
+      },
+      "firstAudio": {
+        "codec_type": "audio",
+        "pts_time": "0.041000",
+        "dts_time": "0.041000"
+      },
+      "warnings": ""
+    },
+    {
+      "control": "long",
+      "count": 0,
+      "warnings": "[aost#0:1/aac @ 0x5611cdb83340] No filtered frames for output stream, trying to initialize anyway.\n[out#0/hls @ 0x5611cdb0b900] Output file is empty, nothing was encoded(check -ss / -t / -frames parameters if used)\n"
+    },
+    {
+      "control": "keyframe",
+      "count": 429,
+      "firstVideo": {
+        "codec_type": "video",
+        "pts_time": "0.099000",
+        "dts_time": "0.015583"
+      },
+      "firstAudio": {
+        "codec_type": "audio",
+        "pts_time": "0.000000",
+        "dts_time": "0.000000"
+      },
+      "warnings": ""
+    },
+    {
+      "kind": "hls",
+      "name": "reuse",
+      "audioPackets": 0,
+      "videoPackets": 0,
+      "writerWarnings": "[aost#0:1/aac @ 0x556e8c466680] No filtered frames for output stream, trying to initialize anyway.\n[out#0/hls @ 0x556e8c3eeb40] Output file is empty, nothing was encoded(check -ss / -t / -frames parameters if used)"
+    },
+    {
+      "hlsInputStreams": [
+        {
+          "codec_name": "h264",
+          "time_base": "1/24000",
+          "start_time": "0.083000",
+          "disposition": {
+            "default": 1,
+            "dub": 0,
+            "original": 0,
+            "comment": 0,
+            "lyrics": 0,
+            "karaoke": 0,
+            "forced": 0,
+            "hearing_impaired": 0,
+            "visual_impaired": 0,
+            "clean_effects": 0,
+            "attached_pic": 0,
+            "timed_thumbnails": 0,
+            "non_diegetic": 0,
+            "captions": 0,
+            "descriptions": 0,
+            "metadata": 0,
+            "dependent": 0,
+            "still_image": 0
+          },
+          "tags": {
+            "variant_bitrate": "0",
+            "language": "und",
+            "handler_name": "VideoHandler",
+            "vendor_id": "[0][0][0][0]",
+            "minor_version": "512",
+            "compatible_brands": "iso5iso6mp41",
+            "major_brand": "iso5",
+            "encoder": "Lavf60.16.100"
+          }
+        },
+        {
+          "codec_name": "aac",
+          "time_base": "1/48000",
+          "start_time": "0.062000",
+          "disposition": {
+            "default": 1,
+            "dub": 0,
+            "original": 0,
+            "comment": 0,
+            "lyrics": 0,
+            "karaoke": 0,
+            "forced": 0,
+            "hearing_impaired": 0,
+            "visual_impaired": 0,
+            "clean_effects": 0,
+            "attached_pic": 0,
+            "timed_thumbnails": 0,
+            "non_diegetic": 0,
+            "captions": 0,
+            "descriptions": 0,
+            "metadata": 0,
+            "dependent": 0,
+            "still_image": 0
+          },
+          "tags": {
+            "variant_bitrate": "0",
+            "language": "und",
+            "handler_name": "SoundHandler",
+            "vendor_id": "[0][0][0][0]"
+          }
+        }
+      ],
+      "firstSourceVideo": {
+        "codec_type": "video",
+        "pts_time": "0.083000",
+        "dts_time": "-0.000417"
+      },
+      "firstSourceAudio": {
+        "codec_type": "audio",
+        "pts_time": "0.062000",
+        "dts_time": "0.062000"
+      }
+    },
+    {
+      "control": "zero",
+      "count": 429,
+      "firstVideo": {
+        "codec_type": "video",
+        "pts_time": "0.083000",
+        "dts_time": "-0.000417"
+      },
+      "firstAudio": {
+        "codec_type": "audio",
+        "pts_time": "0.041000",
+        "dts_time": "0.041000"
+      },
+      "warnings": ""
+    },
+    {
+      "control": "long",
+      "count": 0,
+      "warnings": "[aost#0:1/aac @ 0x56526aed2680] No filtered frames for output stream, trying to initialize anyway.\n[out#0/hls @ 0x56526ae5ab40] Output file is empty, nothing was encoded(check -ss / -t / -frames parameters if used)\n"
+    },
+    {
+      "control": "keyframe",
+      "count": 429,
+      "firstVideo": {
+        "codec_type": "video",
+        "pts_time": "0.099000",
+        "dts_time": "0.015583"
+      },
+      "firstAudio": {
+        "codec_type": "audio",
+        "pts_time": "0.000000",
+        "dts_time": "0.000000"
+      },
+      "warnings": ""
+    },
+    {
+      "kind": "hls",
+      "name": "server-closes",
+      "audioPackets": 0,
+      "videoPackets": 0,
+      "writerWarnings": "[aost#0:1/aac @ 0x564c9b80e580] No filtered frames for output stream, trying to initialize anyway.\n[out#0/hls @ 0x564c9b796a40] Output file is empty, nothing was encoded(check -ss / -t / -frames parameters if used)"
+    },
+    {
+      "hlsInputStreams": [
+        {
+          "codec_name": "h264",
+          "time_base": "1/24000",
+          "start_time": "0.083000",
+          "disposition": {
+            "default": 1,
+            "dub": 0,
+            "original": 0,
+            "comment": 0,
+            "lyrics": 0,
+            "karaoke": 0,
+            "forced": 0,
+            "hearing_impaired": 0,
+            "visual_impaired": 0,
+            "clean_effects": 0,
+            "attached_pic": 0,
+            "timed_thumbnails": 0,
+            "non_diegetic": 0,
+            "captions": 0,
+            "descriptions": 0,
+            "metadata": 0,
+            "dependent": 0,
+            "still_image": 0
+          },
+          "tags": {
+            "variant_bitrate": "0",
+            "language": "und",
+            "handler_name": "VideoHandler",
+            "vendor_id": "[0][0][0][0]",
+            "minor_version": "512",
+            "compatible_brands": "iso5iso6mp41",
+            "major_brand": "iso5",
+            "encoder": "Lavf60.16.100"
+          }
+        },
+        {
+          "codec_name": "aac",
+          "time_base": "1/48000",
+          "start_time": "0.062000",
+          "disposition": {
+            "default": 1,
+            "dub": 0,
+            "original": 0,
+            "comment": 0,
+            "lyrics": 0,
+            "karaoke": 0,
+            "forced": 0,
+            "hearing_impaired": 0,
+            "visual_impaired": 0,
+            "clean_effects": 0,
+            "attached_pic": 0,
+            "timed_thumbnails": 0,
+            "non_diegetic": 0,
+            "captions": 0,
+            "descriptions": 0,
+            "metadata": 0,
+            "dependent": 0,
+            "still_image": 0
+          },
+          "tags": {
+            "variant_bitrate": "0",
+            "language": "und",
+            "handler_name": "SoundHandler",
+            "vendor_id": "[0][0][0][0]"
+          }
+        }
+      ],
+      "firstSourceVideo": {
+        "codec_type": "video",
+        "pts_time": "0.083000",
+        "dts_time": "-0.000417"
+      },
+      "firstSourceAudio": {
+        "codec_type": "audio",
+        "pts_time": "0.062000",
+        "dts_time": "0.062000"
+      }
+    },
+    {
+      "control": "zero",
+      "count": 429,
+      "firstVideo": {
+        "codec_type": "video",
+        "pts_time": "0.083000",
+        "dts_time": "-0.000417"
+      },
+      "firstAudio": {
+        "codec_type": "audio",
+        "pts_time": "0.041000",
+        "dts_time": "0.041000"
+      },
+      "warnings": ""
+    },
+    {
+      "control": "long",
+      "count": 0,
+      "warnings": "[aost#0:1/aac @ 0x55aca81a2580] No filtered frames for output stream, trying to initialize anyway.\n[out#0/hls @ 0x55aca812aa40] Output file is empty, nothing was encoded(check -ss / -t / -frames parameters if used)\n"
+    },
+    {
+      "control": "keyframe",
+      "count": 429,
+      "firstVideo": {
+        "codec_type": "video",
+        "pts_time": "0.099000",
+        "dts_time": "0.015583"
+      },
+      "firstAudio": {
+        "codec_type": "audio",
+        "pts_time": "0.000000",
+        "dts_time": "0.000000"
+      },
+      "warnings": ""
+    }
+  ]
+}

@@ -79,6 +79,20 @@ No quality guard was weakened and no automatic downgrade was introduced.
 
 ## Safety and reproducibility
 
+- Expanded testing exposed an existing FFmpeg 6.1 upstream **fMP4 HLS**
+  non-boundary input-seek limitation: `-ss 5` yielded zero audio/video packets
+  with reuse OFF, ON, and server-forced closes. A longer source/window did not
+  help. The same source works at 0 and its 4s fragment boundary; the LAN's
+  FFmpeg 9 also works at 5s. **This is not fixed or accepted by this change.**
+  [Recorded negative diagnostics](evidence/ffmpeg6-hls-unaligned-20261030.json)
+  retain the failure and source PTS/DTS/time bases. The transport comparison
+  uses the supported fragment boundary for upstream fMP4 HLS, while the added
+  upstream MPEG-TS HLS case retains the unaligned 5s input seek. Both still
+  require actual audio/video packets and exact timestamps/payload/frames.
+  The pre-existing HEVC/A/V timestamp suites and their tolerances are untouched.
+- [ffmpeg6-audit.Dockerfile](ffmpeg6-audit.Dockerfile) pins the Ubuntu image and
+  FFmpeg 6.1.1 package used to reproduce this locally, separately from the
+  production FFmpeg binary. The temporary test containers publish no ports.
 - `npm run test:seek-transport --prefix backend-node`: real ranged-HTTP fixture
   compares exact packet PTS/DTS/duration/payload and decoded frames for H.264
   and HEVC Main10; also exercises MP4 and upstream HLS, encoded/copied audio
