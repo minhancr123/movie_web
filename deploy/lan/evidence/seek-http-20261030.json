@@ -1,0 +1,321 @@
+{
+  "productionChangedDuringMeasurement": false,
+  "results": {
+    "cinevn-isolated-seek-results": [
+      {
+        "fixture": {
+          "codec": "h264",
+          "height": 804,
+          "audioChannels": 6,
+          "selectedAudio": 0
+        },
+        "productionUnchanged": true
+      },
+      {
+        "source_id": "1a4a9892819f",
+        "startAt": 6336,
+        "requested": 6339,
+        "burst": 8,
+        "init_s": 3.801,
+        "first_segment_s": 3.801,
+        "target_runway_s": 4.232,
+        "head_s": 9.676,
+        "decoded_target": true,
+        "target_frame_hash": "6de273a60ef010088b594bb89c220fce"
+      },
+      {
+        "source_id": "1a4a9892819f",
+        "startAt": 6336,
+        "requested": 6339,
+        "burst": 12,
+        "init_s": 3.977,
+        "first_segment_s": 4.002,
+        "target_runway_s": 4.51,
+        "head_s": 9.676,
+        "decoded_target": true,
+        "target_frame_hash": "6de273a60ef010088b594bb89c220fce"
+      },
+      {
+        "source_id": "1a4a9892819f",
+        "startAt": 6336,
+        "requested": 6339,
+        "burst": 20,
+        "init_s": 3.978,
+        "first_segment_s": 3.978,
+        "target_runway_s": 4.562,
+        "head_s": 9.676,
+        "decoded_target": true,
+        "target_frame_hash": "6de273a60ef010088b594bb89c220fce"
+      },
+      {
+        "source_id": "1a4a9892819f",
+        "startAt": 6336,
+        "requested": 6339,
+        "burst": 8,
+        "init_s": 4.026,
+        "first_segment_s": 4.026,
+        "target_runway_s": 4.584,
+        "head_s": 9.676,
+        "decoded_target": true,
+        "target_frame_hash": "6de273a60ef010088b594bb89c220fce"
+      },
+      {
+        "same_target_frame": true
+      }
+    ],
+    "cinevn-isolated-http-results": [
+      {
+        "fixture": {
+          "codec": "h264",
+          "height": 804,
+          "audioChannels": 6,
+          "selectedAudio": 0
+        },
+        "productionUnchanged": true
+      },
+      {
+        "variant": "baseline",
+        "http_requests": 6,
+        "connection_attempts": 6,
+        "source_id": "1a4a9892819f",
+        "startAt": 6336,
+        "requested": 6339,
+        "burst": 8,
+        "init_s": 4.288,
+        "first_segment_s": 4.288,
+        "target_runway_s": 4.845,
+        "head_s": 9.676,
+        "decoded_target": true,
+        "target_frame_hash": "6de273a60ef010088b594bb89c220fce"
+      },
+      {
+        "variant": "keepalive",
+        "http_requests": 6,
+        "connection_attempts": 4,
+        "source_id": "1a4a9892819f",
+        "startAt": 6336,
+        "requested": 6339,
+        "burst": 8,
+        "init_s": 3.355,
+        "first_segment_s": 3.355,
+        "target_runway_s": 3.912,
+        "head_s": 9.676,
+        "decoded_target": true,
+        "target_frame_hash": "6de273a60ef010088b594bb89c220fce"
+      },
+      {
+        "variant": "keepalive-shortseek",
+        "http_requests": 6,
+        "connection_attempts": 4,
+        "source_id": "1a4a9892819f",
+        "startAt": 6336,
+        "requested": 6339,
+        "burst": 8,
+        "init_s": 3.338,
+        "first_segment_s": 3.338,
+        "target_runway_s": 3.769,
+        "head_s": 9.676,
+        "decoded_target": true,
+        "target_frame_hash": "6de273a60ef010088b594bb89c220fce"
+      },
+      {
+        "variant": "baseline",
+        "http_requests": 6,
+        "connection_attempts": 6,
+        "source_id": "1a4a9892819f",
+        "startAt": 6336,
+        "requested": 6339,
+        "burst": 8,
+        "init_s": 4.192,
+        "first_segment_s": 4.192,
+        "target_runway_s": 4.851,
+        "head_s": 9.676,
+        "decoded_target": true,
+        "target_frame_hash": "6de273a60ef010088b594bb89c220fce"
+      },
+      {
+        "same_target_frame": true
+      }
+    ],
+    "cinevn-isolated-http-bounded-results": [
+      {
+        "fixture": {
+          "codec": "h264",
+          "height": 804,
+          "audioChannels": 6,
+          "selectedAudio": 0
+        },
+        "productionUnchanged": true
+      },
+      {
+        "variant": "baseline",
+        "ranges": [
+          "0-",
+          "23545727113-",
+          "7447-",
+          "23545286048-",
+          "1123468-",
+          "13509072303-"
+        ],
+        "http_requests": 6,
+        "connection_attempts": 6,
+        "source_id": "1a4a9892819f",
+        "startAt": 6336,
+        "requested": 6339,
+        "burst": 8,
+        "init_s": 4.476,
+        "first_segment_s": 4.476,
+        "target_runway_s": 5.186,
+        "head_s": 9.676,
+        "decoded_target": true,
+        "target_frame_hash": "6de273a60ef010088b594bb89c220fce"
+      },
+      {
+        "variant": "keepalive-shortseek",
+        "ranges": [
+          "0-",
+          "23545727113-",
+          "7447-",
+          "23545286048-",
+          "1123468-",
+          "13509072303-"
+        ],
+        "http_requests": 6,
+        "connection_attempts": 4,
+        "source_id": "1a4a9892819f",
+        "startAt": 6336,
+        "requested": 6339,
+        "burst": 8,
+        "init_s": 3.491,
+        "first_segment_s": 3.491,
+        "target_runway_s": 3.998,
+        "head_s": 9.676,
+        "decoded_target": true,
+        "target_frame_hash": "6de273a60ef010088b594bb89c220fce"
+      },
+      {
+        "variant": "bounded-initial",
+        "ranges": [
+          "0-1048575",
+          "23545727113-23546775688",
+          "7447-1056022",
+          "1056023-",
+          "23545286048-",
+          "1123468-",
+          "13509072303-"
+        ],
+        "http_requests": 7,
+        "connection_attempts": 3,
+        "source_id": "1a4a9892819f",
+        "startAt": 6336,
+        "requested": 6339,
+        "burst": 8,
+        "init_s": 3.946,
+        "first_segment_s": 3.946,
+        "target_runway_s": 4.452,
+        "head_s": 9.676,
+        "decoded_target": true,
+        "target_frame_hash": "6de273a60ef010088b594bb89c220fce"
+      },
+      {
+        "variant": "baseline",
+        "ranges": [
+          "0-",
+          "23545727113-",
+          "7447-",
+          "23545286048-",
+          "1123468-",
+          "13509072303-"
+        ],
+        "http_requests": 6,
+        "connection_attempts": 6,
+        "source_id": "1a4a9892819f",
+        "startAt": 6336,
+        "requested": 6339,
+        "burst": 8,
+        "init_s": 4.064,
+        "first_segment_s": 4.064,
+        "target_runway_s": 4.798,
+        "head_s": 9.676,
+        "decoded_target": true,
+        "target_frame_hash": "6de273a60ef010088b594bb89c220fce"
+      },
+      {
+        "same_target_frame": true
+      }
+    ],
+    "cinevn-repro-transport-results": [
+      {
+        "fixture": {
+          "codec": "h264",
+          "height": 804,
+          "audioChannels": 6,
+          "selectedAudio": 0
+        },
+        "productionUnchanged": true
+      },
+      {
+        "fixture": "3b4c5053f623",
+        "version": "ffmpeg version n9.0.2 Copyright (c) 2000-2026 the FFmpeg developers",
+        "codec": "h264",
+        "height": 804,
+        "startAt": 6336,
+        "origin": 6334.662,
+        "target": 6339,
+        "productionUnchanged": true
+      },
+      {
+        "fixture": "3b4c5053f623",
+        "reuseHttp": false,
+        "initMs": 3974,
+        "firstSegmentMs": 3974,
+        "targetRunwayMs": 4904,
+        "headSeconds": 9.675999999999998,
+        "targetFrameHash": "6de273a60ef010088b594bb89c220fce",
+        "httpRequests": 6,
+        "connectionAttempts": 6,
+        "maxObservedRssMiB": 88
+      },
+      {
+        "fixture": "3b4c5053f623",
+        "reuseHttp": true,
+        "initMs": 3335,
+        "firstSegmentMs": 3335,
+        "targetRunwayMs": 3726,
+        "headSeconds": 9.675999999999998,
+        "targetFrameHash": "6de273a60ef010088b594bb89c220fce",
+        "httpRequests": 6,
+        "connectionAttempts": 4,
+        "maxObservedRssMiB": 78
+      },
+      {
+        "fixture": "3b4c5053f623",
+        "reuseHttp": true,
+        "initMs": 2313,
+        "firstSegmentMs": 2313,
+        "targetRunwayMs": 3048,
+        "headSeconds": 9.675999999999998,
+        "targetFrameHash": "6de273a60ef010088b594bb89c220fce",
+        "httpRequests": 6,
+        "connectionAttempts": 4,
+        "maxObservedRssMiB": 78
+      },
+      {
+        "fixture": "3b4c5053f623",
+        "reuseHttp": false,
+        "initMs": 3482,
+        "firstSegmentMs": 3482,
+        "targetRunwayMs": 4144,
+        "headSeconds": 9.675999999999998,
+        "targetFrameHash": "6de273a60ef010088b594bb89c220fce",
+        "httpRequests": 6,
+        "connectionAttempts": 6,
+        "maxObservedRssMiB": 88
+      },
+      {
+        "sameTargetFrame": true,
+        "runs": 4
+      }
+    ]
+  }
+}

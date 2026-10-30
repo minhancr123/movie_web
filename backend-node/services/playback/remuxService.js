@@ -1024,7 +1024,14 @@ export const buildVideoArgs = (video, encoder) => {
   };
 };
 
-export const buildFfmpegArgs = ({ inputUrl, outputDir, audioCopy = false, segmentSeconds = REMUX_SEGMENT_SECONDS, audioStreamIndex = null, audioChannels = null, audioDelayMs = 0, video = null, encoder = null, readRate = process.env.REMUX_READ_RATE, initialBurstSeconds = process.env.REMUX_INITIAL_BURST_SECONDS, windowSeconds = 0, resumeStartNumber = null }) => {
+/** Opt-in transport reuse; never affects packet clocks, muxing or file inputs.
+ * Keep the readahead bounded to 1 MiB and use options supported by FFmpeg 6.1+.
+ */
+export const httpInputReuseArgs = (inputUrl, enabled = false) =>
+  enabled === true && /^https?:\/\//i.test(String(inputUrl || ''))
+    ? ['-multiple_requests', '1', '-short_seek_size', '1048576'] : [];
+
+export const buildFfmpegArgs = ({ inputUrl, outputDir, audioCopy = false, segmentSeconds = REMUX_SEGMENT_SECONDS, audioStreamIndex = null, audioChannels = null, audioDelayMs = 0, video = null, encoder = null, readRate = process.env.REMUX_READ_RATE, initialBurstSeconds = process.env.REMUX_INITIAL_BURST_SECONDS, httpKeepAlive = process.env.REMUX_HTTP_KEEPALIVE === '1', windowSeconds = 0, resumeStartNumber = null }) => {
   // Explicit output-side audio delay, chained onto any existing audio filter
   // before the stereo fold. Byte-identical to the old command when 0, which is
   // what every caller passes: a container mux offset is NOT a defect to correct
@@ -1057,6 +1064,7 @@ export const buildFfmpegArgs = ({ inputUrl, outputDir, audioCopy = false, segmen
   // builds a buffer while leaving CPU for API requests and other viewers.
   ...(Number(readRate) > 0 ? ['-readrate', String(Number(readRate))] : []),
   ...(burstSeconds > 0 ? ['-readrate_initial_burst', String(burstSeconds)] : []),
+  ...httpInputReuseArgs(inputUrl, httpKeepAlive && videoCopy),
   '-i',
   inputUrl,
   ...(windowSeconds > 0 ? ['-t', String(windowSeconds)] : []),
