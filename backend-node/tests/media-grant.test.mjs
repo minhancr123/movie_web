@@ -488,6 +488,38 @@ check('manifest-response-missing-file-answers-404', async () => {
   assert.equal(res.jsonBody.success, false);
 });
 
+check('native-start-hint-does-not-change-clocks-or-leak-between-cached-responses', async () => {
+  const raw = '#EXTM3U\n#EXT-X-VERSION:7\n#EXT-X-MAP:URI="init.mp4"\n#EXTINF:10.427,\nseg_00000.m4s\n#EXTINF:10.385,\nseg_00001.m4s\n#EXT-X-ENDLIST\n';
+  const hinted = grant.withManifestStartHint(raw, '12.34');
+  assert.ok(hinted.includes('#EXT-X-START:TIME-OFFSET=12.34,PRECISE=YES\n'));
+  assert.equal(hinted.replace(/^#EXT-X-START:[^\n]*\n/m, ''), raw,
+    'duration, segment mapping and timeline stay identical');
+  for (const bad of [undefined, '', ' ', -1, 0, NaN, Infinity, '20.812', '172801', ['12'], {}, '12\n#EXT-X-ENDLIST']) {
+    assert.equal(grant.withManifestStartHint(raw, bad), raw);
+  }
+  assert.equal(grant.withManifestStartHint('#EXTM3U\n#EXT-X-STREAM-INF:BANDWIDTH=10\nvideo.m3u8\n', 1),
+    '#EXTM3U\n#EXT-X-STREAM-INF:BANDWIDTH=10\nvideo.m3u8\n', 'do not invent master-playlist coverage');
+  const twice = grant.withManifestStartHint(hinted, 6.16);
+  assert.equal((twice.match(/#EXT-X-START:/g) || []).length, 1);
+  assert.ok(twice.includes('TIME-OFFSET=6.16,'));
+  const file = manifestTmp.file + '.hint';
+  await manifestTmp.fs.writeFile(file, raw);
+  try {
+    const a = fakeManifestRes(), b = fakeManifestRes(), legacy = fakeManifestRes();
+    await grant.serveManifestResponse(a, file, 'G1', { startAt: '6.16' });
+    await grant.serveManifestResponse(b, file, 'G1', { startAt: '12.34' });
+    await grant.serveManifestResponse(legacy, file, 'G1');
+    assert.ok(a.body.includes('TIME-OFFSET=6.16,'));
+    assert.ok(b.body.includes('TIME-OFFSET=12.34,'));
+    assert.equal(legacy.body.includes('#EXT-X-START:'), false);
+    for (const response of [a, b, legacy]) {
+      assert.equal(response.headers['Cache-Control'], 'private, no-store');
+      assert.ok(response.body.includes('seg_00001.m4s?media_grant=G1'));
+    }
+    assert.equal(await manifestTmp.fs.readFile(file, 'utf8'), raw, 'disk playlist stays untouched');
+  } finally { await manifestTmp.fs.rm(file, { force: true }); }
+});
+
 // --- mid-playback expiry: a grant that dies while the viewer watches must
 // read as expired (never scope-mismatch/invalid), miss the stable cache,
 // and rotate to a fresh grant for the same session — the exact signal chain

@@ -61,6 +61,19 @@ try {
     assert.deepEqual(Buffer.from(await r.arrayBuffer()), (await fs.readFile(path.join(dir, path.basename(child.pathname)))).subarray(0, 32));
     assert.match(r.headers.get('cache-control'), /private/); assert(!r.headers.get('cache-control').includes('public'));
   });
+  await check('native-start-hint-is-private-request-local-and-does-not-bypass-grants', async () => {
+    const hinted = await fetch(`${base}${route}index.m3u8?start=1.25`, { headers });
+    assert.equal(hinted.status, 200);
+    assert.match(hinted.headers.get('cache-control'), /private.*no-store/);
+    const body = await hinted.text();
+    assert.match(body, /#EXT-X-START:TIME-OFFSET=1.25,PRECISE=YES/);
+    assert(!body.includes(login));
+    const next = body.split('\n').find(l => l && !l.startsWith('#'));
+    assert.equal((await fetch(new URL(next, `${base}${route}`))).status, 200);
+    const legacy = await fetch(`${base}${route}index.m3u8`, { headers });
+    assert(!(await legacy.text()).includes('#EXT-X-START:'));
+    assert.equal((await fetch(`${base}${route}index.m3u8?start=1.25`)).status, 401);
+  });
   await check('bare-old-child-fails-closed-MSE-Bearer-still-works', async () => {
     const bare = `${base}${child.pathname}`; assert.equal((await fetch(bare)).status, 401);
     assert.equal((await fetch(bare, { headers })).status, 200);
@@ -70,6 +83,7 @@ try {
   await check('expired-grant-and-Bearer-manifest-refresh', async () => {
     const url = `${base}${route}index.m3u8?media_grant=${expired}`;
     assert.equal((await fetch(url)).status, 401);
+    assert.equal((await fetch(`${url}&start=1.25`)).status, 401);
     const refreshed = await fetch(url, { headers }); assert.equal(refreshed.status, 200);
     const body = await refreshed.text(); assert(!body.includes(expired));
     const urlChild = body.split('\n').find(l => l && !l.startsWith('#'));

@@ -18,6 +18,19 @@ export const prefersNativeHls = (userAgent: string, platform = '', maxTouchPoint
         && /Version\/[\d.]+.*Safari\//i.test(userAgent)
         && !/Chrome|Chromium|Edg\/|OPR\/|Firefox|FxiOS|CriOS/i.test(userAgent));
 
+/** Let native HLS select the destination segment before its first data load.
+ * The exact decoded-position restore still validates the requested frame.
+ */
+export const withNativeStartHint = (src: string, localTarget: number): string => {
+    if (!Number.isFinite(localTarget) || localTarget <= 0) return src;
+    try {
+        const url = new URL(src, 'https://cinevn.invalid');
+        if (!url.pathname.startsWith('/api/playback/hls/') || !url.pathname.endsWith('.m3u8')) return src;
+        url.searchParams.set('start', String(localTarget));
+        return /^[a-z][a-z\d+.-]*:/i.test(src) ? url.href : `${url.pathname}${url.search}${url.hash}`;
+    } catch { return src; }
+};
+
 export const isTaintFreePipeline = (src: string, hlsSupported: boolean, nativePreferred = false): boolean => {
     // Mirrors the player's own branch: the MSE path, and only that.
     const isHlsSrc = /\.m3u8(\?|#|$)/i.test(src);

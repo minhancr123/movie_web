@@ -4822,7 +4822,7 @@ export const serveHlsAsset = async (req, res) => {
       // Finished bytes are immutable, but the manifest response embeds a
       // per-viewer grant for the native player, so it stays private.
       if (asset === 'index.m3u8') {
-        return await serveManifestResponse(res, filePath, sessionGrantToken(req, session, sessionId));
+        return await serveManifestResponse(res, filePath, sessionGrantToken(req, session, sessionId), { startAt: req.query?.start });
       }
       const ext = asset.endsWith('.m3u8') ? '.m3u8' : asset.endsWith('.m4s') ? '.m4s' : '.mp4';
       res.setHeader('Content-Type', ASSET_CONTENT_TYPES[ext]);
@@ -4895,7 +4895,7 @@ export const serveHlsAsset = async (req, res) => {
     // Growing EVENT playlist: rewrite child URLs with a session-scoped grant
     // in memory. The bytes on disk stay token-free relative URIs.
     if (asset === 'index.m3u8') {
-      return await serveManifestResponse(res, filePath, sessionGrantToken(req, session, sessionId));
+      return await serveManifestResponse(res, filePath, sessionGrantToken(req, session, sessionId), { startAt: req.query?.start });
     }
 
     const ext = asset.endsWith('.m3u8') ? '.m3u8' : asset.endsWith('.m4s') ? '.m4s' : '.mp4';
@@ -5014,7 +5014,7 @@ export const serveRenditionAsset = async (req, res) => {
         }
       }
       if (!token) return fail(res, 403, 'Chưa tạo được quyền phát tài nguyên');
-      return await serveManifestResponse(res, filePath, token);
+      return await serveManifestResponse(res, filePath, token, { startAt: req.query?.start });
     }
     const extension = asset.endsWith('.m4s') ? '.m4s' : '.mp4';
     res.setHeader('Content-Type', ASSET_CONTENT_TYPES[extension]);

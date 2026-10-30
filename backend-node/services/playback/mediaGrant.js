@@ -311,7 +311,24 @@ export const clearManifestBodyCache = () => manifestBodies.clear();
  * ENOENT between stat and read (janitor won the race) answers 404 so the
  * player falls back to recovery instead of hanging.
  */
-export const serveManifestResponse = async (res, filePath, grantToken, { param = MEDIA_GRANT_QUERY } = {}) => {
+/** Preferred initial position in playlist-local seconds (RFC 8216 §4.3.5.2).
+ * This is a fetch hint, never a clock offset or proof that the frame decoded.
+ * Ignore malformed/unavailable targets; legacy requests stay byte-identical.
+ */
+export const withManifestStartHint = (body, requested) => {
+  if (!(typeof requested === 'number' || typeof requested === 'string')
+      || String(requested).trim() === '') return body;
+  const at = Number(requested);
+  if (!Number.isFinite(at) || at <= 0 || at > 172800) return body;
+  const duration = [...body.matchAll(/^#EXTINF:([\d.]+)/gm)]
+    .reduce((sum, match) => sum + Number(match[1]), 0);
+  if (!(at + 0.5 <= duration)) return body;
+  const withoutStart = body.replace(/^#EXT-X-START:[^\r\n]*\r?\n/gm, '');
+  return withoutStart.replace(/^#EXTM3U\r?\n/,
+    `#EXTM3U\n#EXT-X-START:TIME-OFFSET=${at},PRECISE=YES\n`);
+};
+
+export const serveManifestResponse = async (res, filePath, grantToken, { param = MEDIA_GRANT_QUERY, startAt } = {}) => {
   // mtime is read before the body: a cache entry written for an older mtime
   // must never survive past the write that produced a newer one.
   let mtimeMs = null;
@@ -342,5 +359,7 @@ export const serveManifestResponse = async (res, filePath, grantToken, { param =
   }
   res.setHeader('Content-Type', MANIFEST_CONTENT_TYPE);
   res.setHeader('Cache-Control', MANIFEST_CACHE_CONTROL);
-  return res.send(body);
+  // Apply per request AFTER the cached grant rewrite, so two simultaneous
+  // viewers/seek targets cannot inherit one another's preferred position.
+  return res.send(withManifestStartHint(body, startAt));
 };

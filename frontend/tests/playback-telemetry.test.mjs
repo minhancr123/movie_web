@@ -4,6 +4,21 @@ import fs from 'node:fs';
 import vm from 'node:vm';
 import ts from 'typescript';
 const load=(file,globals={})=>{const context={exports:{},setTimeout,clearTimeout,...globals};vm.runInNewContext(ts.transpileModule(fs.readFileSync(new URL(`../src/lib/${file}.ts`,import.meta.url),'utf8'),{compilerOptions:{module:ts.ModuleKind.CommonJS,target:ts.ScriptTarget.ES2020}}).outputText,context);return context.exports;};
+test('native HLS start hint uses the local clock and preserves grants without changing direct URLs',()=>{
+ const {withNativeStartHint}=load('mediaPipeline',{URL});
+ const src='/api/playback/hls/abc/index.m3u8?media_grant=G&start=9';
+ const hinted=new URL(withNativeStartHint(src,6.16),'https://cinevn.me');
+ assert.equal(hinted.searchParams.get('start'),'6.16');
+ assert.equal(hinted.searchParams.get('media_grant'),'G');
+ assert.equal(hinted.searchParams.getAll('start').length,1);
+ const absolute='https://cinevn.me/api/playback/hls/r/abc/index.m3u8?access_token=a%2Bb#anchor';
+ const next=new URL(withNativeStartHint(absolute,19.183));
+ assert.equal(next.origin,'https://cinevn.me');
+ assert.equal(next.searchParams.get('access_token'),'a+b');
+ assert.equal(next.hash,'#anchor');
+ for(const at of [0,-1,NaN,Infinity])assert.equal(withNativeStartHint(src,at),src);
+ for(const other of ['https://cdn.example/movie.mp4','https://cdn.example/stream.m3u8'])assert.equal(withNativeStartHint(other,12),other);
+});
 test('Apple mobile and desktop Safari prefer native HLS; other desktops keep MSE sampling',()=>{
  const {prefersNativeHls,isTaintFreePipeline}=load('mediaPipeline');
  assert.equal(prefersNativeHls('Mozilla/5.0 (iPhone; CPU iPhone OS 18_0 like Mac OS X)'),true);

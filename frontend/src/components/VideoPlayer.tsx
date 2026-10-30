@@ -36,7 +36,7 @@ import {
     type AudioEnhancerSettings,
 } from '../hooks/useAudioEnhancer';
 import { clampLipSyncMs } from '@/lib/audioEnhancerGraph';
-import { isTaintFreePipeline, prefersNativeHls } from '@/lib/mediaPipeline';
+import { isTaintFreePipeline, prefersNativeHls, withNativeStartHint } from '@/lib/mediaPipeline';
 import { CINEMA_BRIGHT_ATTR, type CinemaMode } from '@/components/CinemaLayer';
 import { readShaderEnabled, setShaderEnabled } from '@/lib/shaderPref';
 import { clampWidth } from '@/lib/audioEnhancerGraph';
@@ -1961,8 +1961,9 @@ export default function VideoPlayer({ src, playbackStartedAt, movie, episode, au
             // Stop the old source, reset its ranges, then wait for the new
             // seek to finish. Never play its keyframe origin while restoring.
             video.pause();
-            video.src = authToken && src.includes('/api/playback/hls/')
+            const nativeSrc = authToken && src.includes('/api/playback/hls/')
                 ? `${src}${src.includes('?') ? '&' : '?'}access_token=${encodeURIComponent(authToken)}` : src;
+            video.src = withNativeStartHint(nativeSrc, restoreTargetLocal);
             video.load();
             awaitPositionRestore(restoreTargetLocal, nativeCovered, true);
         } else {
