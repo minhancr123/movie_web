@@ -81,7 +81,8 @@ No quality guard was weakened and no automatic downgrade was introduced.
 
 - `npm run test:seek-transport --prefix backend-node`: real ranged-HTTP fixture
   compares exact packet PTS/DTS/duration/payload and decoded frames for H.264
-  and HEVC Main10; exercises encoded/copied audio and `Connection: close`.
+  and HEVC Main10; also exercises MP4 and upstream HLS, encoded/copied audio
+  and `Connection: close`.
 - Backend full suite passed on LAN with Node 24.21.0 / FFmpeg n9.0.2. CI runs
   the same new test on Ubuntu 24.04 / FFmpeg 6.1, plus the existing frontend,
   typecheck, build, media/timestamp and deployment checks.
