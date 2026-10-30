@@ -1,3 +1,15 @@
+/** A bounded fMP4 window can have video beyond the last audio packet. MSE's
+ * common buffered range then ends before duration and `ended` never fires.
+ * Preserve the current absolute frame instead of waiting for that event. */
+export function stalledWindowAt(origin: number, localTime: number, fullDuration: number,
+  windowSeconds: number, bufferedEnd: number, finishedEnd?: number): number | null {
+  if (![origin, localTime, fullDuration, windowSeconds, bufferedEnd, finishedEnd].every(Number.isFinite)
+    || windowSeconds <= 0 || Number(finishedEnd) < windowSeconds - 0.5
+    || localTime < windowSeconds - 0.5 || bufferedEnd < localTime - 0.1
+    || bufferedEnd - localTime > 0.25 || origin + localTime >= fullDuration - 2) return null;
+  return Math.max(0, origin + localTime);
+}
+
 /** Predict the next window from the server's budget, not a growing EVENT head. */
 export function prepareWindowAt(origin: number, localTime: number, fullDuration: number, windowSeconds: number, finishedEnd?: number): number | null {
   const end = Number.isFinite(finishedEnd) && Number(finishedEnd) > 0 ? Number(finishedEnd) : windowSeconds;

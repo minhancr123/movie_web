@@ -5,7 +5,7 @@ import React, { useEffect, useRef, useState, useCallback } from 'react';
 import { createPortal } from 'react-dom';
 import { enterCssFullscreen } from '@/lib/css-fullscreen';
 import { observeBuffering, armStallDeadline } from '@/lib/media-buffering';
-import { prepareWindowAt } from '@/lib/prepared-window';
+import { prepareWindowAt, stalledWindowAt } from '@/lib/prepared-window';
 import { loadingPresentation } from '@/lib/autoplay';
 import { nativeMediaNeedsAnotherSource } from '@/lib/source-delivery';
 import Hls from 'hls.js';
@@ -598,6 +598,23 @@ export default function VideoPlayer({ src, playbackStartedAt, movie, episode, au
         // eslint-disable-next-line react-hooks/exhaustive-deps
     }, [src, reloadKey, subContext?.playbackSessionId, authToken]);
 
+    const handoffStalledWindow = () => {
+        const video = videoRef.current;
+        if (!video || video.paused || restorePendingRef.current || seekTargetRef.current !== null
+            || !onSeekToPosition || windowSeconds <= 0 || video.buffered.length === 0) return false;
+        const details = hlsRef.current?.levels.find(level => level.details)?.details;
+        // hls.js exposes ENDLIST. Native HLS does not: only consider its
+        // finite extent once it has reached the declared bounded window.
+        const finishedEnd = details?.live === false ? details.totalduration
+            : nativeHlsPreferred && Number.isFinite(video.duration) && video.duration >= windowSeconds - 0.5
+                ? video.duration : undefined;
+        const at = stalledWindowAt(sessionStartAt, video.currentTime, durationSeconds || 0,
+            windowSeconds, video.buffered.end(video.buffered.length - 1), finishedEnd);
+        if (at === null) return false;
+        beginSeekLock(at, true);
+        return true;
+    };
+
     /** One local loader retry before the bounded parent recovery. Browser
         readiness events must not postpone either no-progress deadline. */
     const LOCAL_STALL_RECOVERY_MS = 15000; // Increased from 8s to 15s to allow for cold resumes
@@ -609,6 +626,7 @@ export default function VideoPlayer({ src, playbackStartedAt, movie, episode, au
         const armed = armStallDeadline(stallTimerRef, () => {
             const video = videoRef.current;
             if (video && !video.paused && !video.ended) {
+                if (handoffStalledWindow()) return;
                 // A trickling CDN (a frame every ~10s) defeats a "did it move
                 // at all" check while looking frozen to the viewer: demand
                 // meaningful advance (2s per 15s window, ~0.13x). Normal
@@ -2162,6 +2180,7 @@ export default function VideoPlayer({ src, playbackStartedAt, movie, episode, au
             void saveProgressRef.current?.(true);
         };
         const handleWaiting = () => {
+            if (handoffStalledWindow()) return;
             if (!video.paused) armStallTimer();
         };
         const handlePlaying = () => armStallTimer();
@@ -2218,7 +2237,7 @@ export default function VideoPlayer({ src, playbackStartedAt, movie, episode, au
             video.removeEventListener('canplay', handleCanPlay);
             video.removeEventListener('ended', handleEnded);
         }
-    }, [onNextEpisode, durationSeconds, onPlaybackFailure, onPlaybackProgress, sessionStartAt, windowSeconds, onSeekToPosition, onPrepareWindow, src]);
+    }, [onNextEpisode, durationSeconds, onPlaybackFailure, onPlaybackProgress, sessionStartAt, windowSeconds, onSeekToPosition, onPrepareWindow, src, nativeHlsPreferred]);
 
     // Decode-overload watchdog: caps report decodability, never speed. A slow
     // decoder lags every heavy title with audio permanently ahead of the

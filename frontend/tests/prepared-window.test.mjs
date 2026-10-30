@@ -1,7 +1,19 @@
 import test from 'node:test';import assert from 'node:assert/strict';
 import fs from 'node:fs';import vm from 'node:vm';import ts from 'typescript';
 const ctx={exports:{},setTimeout,clearTimeout};vm.runInNewContext(ts.transpileModule(fs.readFileSync(new URL('../src/lib/prepared-window.ts',import.meta.url),'utf8'),{compilerOptions:{module:ts.ModuleKind.CommonJS,target:ts.ScriptTarget.ES2020}}).outputText,ctx);
-const {prepareWindowAt,preparedWindowCovers,restoreRequestedPosition,preparationMatches,waitForPreparation}=ctx.exports;
+const {prepareWindowAt,preparedWindowCovers,restoreRequestedPosition,preparationMatches,waitForPreparation,stalledWindowAt}=ctx.exports;
+test('finished window audio/video tail mismatch hands off at the exact shared edge',()=>{
+ assert.equal(stalledWindowAt(0,599.965132,1421,600,600.021333,604.394),599.965132);
+ assert.equal(stalledWindowAt(599.057,599.9,1421,600,600.02,604),599.057+599.9);
+ assert.equal(stalledWindowAt(0,599.965132,1421,600,600.021333,604.394),
+   restoreRequestedPosition(600,599.965132));
+});
+test('ordinary stalls, growing prefixes, usable tails and the final movie edge do not hand off',()=>{
+ for(const args of [[0,570,1421,600,570.1,604],[0,599.9,1421,600,600.02,undefined],
+   [0,599.9,1421,600,600.02,599],[0,599.9,1421,600,604,604],
+   [0,599.9,600,600,600.02,604],[0,599.9,1421,0,600.02,604],
+   [0,599.9,1421,600,NaN,604]])assert.equal(stalledWindowAt(...args),null);
+});
 test('prepares near the planned edge, never the growing prefix or final film edge',()=>{
  assert.equal(prepareWindowAt(900,25,7200,600),null);
  assert.equal(prepareWindowAt(900,570,7200,600),1499);
