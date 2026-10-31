@@ -1,3 +1,4 @@
+import { torboxCdnCircuit } from '../debrid/cdnCircuit.js';
 import { createAdmissionQueue, abortedResolve } from './admissionQueue.js';
 import fs from 'fs/promises';
 import path from 'path';
@@ -1947,6 +1948,7 @@ export const startRemuxSession = async ({ sessionId, inputUrl, audioCopy = false
     session.stderr = `${session.stderr}${chunk.toString()}`.slice(-4000);
   });
   child.on('close', (code) => {
+    if (code !== 0) torboxCdnCircuit.recordFailure(inputUrl, session.stderr, { stopped: child.killed });
     session.exitCode = code;
     session.closedAt = new Date();
     // A mid-stream death used to be completely silent: the playlist simply

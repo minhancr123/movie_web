@@ -1,3 +1,4 @@
+import { assertCdnAvailable } from './cdnCircuit.js';
 /**
  * TorBox debrid adapter.
  *
@@ -451,7 +452,7 @@ export const getDownloadUrl = async (key, { torrentId, fileId, userId, forceRefr
 
   const cacheKey = `torbox:link:${userId || 'anon'}:${torrentId}:${fileId ?? 'auto'}`;
   const hit = forceRefresh ? null : await cacheClient.get(cacheKey).catch(() => null);
-  if (hit) return hit;
+  if (hit) return assertCdnAvailable(hit);
 
   const payload = await request('/torrents/requestdl', key, {
     params: {
@@ -468,7 +469,7 @@ export const getDownloadUrl = async (key, { torrentId, fileId, userId, forceRefr
   }
 
   await cacheClient.set(cacheKey, url, 'EX', LINK_TTL_SECONDS).catch(() => {});
-  return url;
+  return assertCdnAvailable(url);
 };
 
 /**

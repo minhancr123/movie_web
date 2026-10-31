@@ -1,3 +1,4 @@
+import { torboxCdnCircuit } from '../services/debrid/cdnCircuit.js';
 import { registerViewerResolve } from '../services/playback/resolveViewerScope.js';
 import { isErrorSubtitleText } from '../services/playback/subtitleQuality.js';
 import { getEmbeddedSources, embeddedPickerEntry } from './embeddedPlaybackController.js';
@@ -1860,6 +1861,7 @@ export const resolvePlayback = async (req, res) => {
       try {
         probe = await ffprobe(inputUrl);
       } catch (error) {
+        torboxCdnCircuit.recordFailure(inputUrl, error?.message);
         // The message is the whole diagnosis (HTTP status from the CDN,
         // "Invalid data", timeout): without it every probe failure looks
         // identical in the logs and the cause is unfindable. This exact
