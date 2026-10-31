@@ -4,7 +4,7 @@ import crypto from 'node:crypto';
  * account listing. Keep only ready results briefly, isolated by credential.
  * Fresh checks bypass and invalidate it; links and credentials are not stored.
  */
-export function createPreparedSourceCache(prepare, { now = Date.now, ttlMs = 30000, maxEntries = 64 } = {}) {
+export function createPreparedSourceCache(prepare, { now = Date.now, ttlMs = 120000, maxEntries = 64 } = {}) {
   const ready = new Map();
   const flights = new Map();
   return async (credential, request) => {

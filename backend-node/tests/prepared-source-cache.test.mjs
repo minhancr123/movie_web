@@ -54,3 +54,12 @@ test('a superseded cached lookup cannot refill the cache after an explicit fresh
   assert.equal((await prepare('a',request)).state,'downloading');
   assert.equal(calls,3);
 });
+
+
+test('default ready-inventory cache covers nearby seeks for two minutes without caching links', async () => {
+  let calls=0; let clock=0;
+  const prepare=createPreparedSourceCache(async()=>{calls++;return result();},{now:()=>clock});
+  await prepare('a',request);
+  clock=119999; await prepare('a',request); assert.equal(calls,1);
+  clock=120001; await prepare('a',request); assert.equal(calls,2);
+});
