@@ -37,3 +37,7 @@ This is a backend resolve measurement, not time to first moving frame.
 - Screenshot: /tmp/cinevn-fast-start-after.png.
 - These are individual observations, not an identical cold-start A/B: the earlier 20.6s run was Auto with a failed HEVC candidate, whereas the 5.3s run pinned the previously successful H.264 candidate. Do not attribute the entire difference to this release or claim instant playback. The initial real outage can still cost one connection timeout before the node is learned; the circuit is process-local and lasts 60s.
 - Actual production cooldown failure/skip sequencing was not forced in the user's browser. Adapter tests prove both link paths enforce the guard. Physical Safari/iPhone startup/seek timings and a long playback soak remain unverified for this release.
+
+### Follow-up limitation
+
+The initial screenshot at 7:21 contains a loading spinner. Later samples advanced to 8:18 and 9:05 without a media error, but readyState was 2 with approximately 0.24s of common buffered data at both observations. Meanwhile the writer's disk playlist had 324s prepared. This does not establish uninterrupted playback: delivery/player buffering requires separate investigation. The test was deliberately paused at 9:44 and navigated home before closing to release its session. Final paused screenshot: /tmp/cinevn-fast-start-paused.png. Do not present either screenshot as proof of consistently smooth playback or instant seek.
