@@ -1,3 +1,4 @@
+import { ownedPinnedCandidate } from '../services/playback/ownedPinnedSource.js';
 import { torboxCdnCircuit } from '../services/debrid/cdnCircuit.js';
 import { registerViewerResolve } from '../services/playback/resolveViewerScope.js';
 import { isErrorSubtitleText } from '../services/playback/subtitleQuality.js';
@@ -1472,7 +1473,26 @@ export const resolvePlayback = async (req, res) => {
 
     // 3. Addon candidates keyed on the Stremio id.
     stage('sources');
-    const { candidates, errors: addonErrors } = detail.imdbId 
+    let ownedPin = null;
+    if (sourceToken) {
+      const previous = await db.collection('playback_sessions').findOne({
+        userIdStr: String(req.user.userId), contentRef: detail.contentRef,
+        sourceIdentity: sourceToken.toLowerCase(), provider: PROVIDER,
+        mode: { $in: ['direct', 'remux'] }, expiresAt: { $gt: new Date() },
+        ...(type === 'tv' ? { season, episode } : {}),
+      }, { sort: { updatedAt: -1 }, projection: {
+        userIdStr: 1, contentRef: 1, sourceIdentity: 1, provider: 1, mode: 1,
+        expiresAt: 1, mediaType: 1, tmdbId: 1, season: 1, episode: 1, infoHash: 1,
+        sourceFileName: 1, videoHeight: 1, videoCodec: 1, videoSize: 1, candidate: 1,
+      } });
+      ownedPin = ownedPinnedCandidate(previous, {
+        userId: req.user.userId, contentRef: detail.contentRef, mediaType: type,
+        tmdbId, season, episode, sourceToken,
+      });
+    }
+    const { candidates, errors: addonErrors } = ownedPin
+      ? { candidates: [ownedPin], errors: [] }
+      : detail.imdbId
       ? await getStreamCandidates({
           debridKey,
           sourceToken,
