@@ -33,3 +33,13 @@ test('admin list projections never expose account secrets or playback capabiliti
   }
   assert.equal(SESSION_FIELDS.tmdbId, 1);
 });
+
+test('user filters validate login, device, provider, dates and sort without accepting operators', async () => {
+ const {adminUserFilters,adminUserSort}=await import('../services/admin/policy.js');
+ const now=Date.parse('2026-11-01T00:00:00Z');
+ const query=adminUserFilters({loginWithin:'7',createdWithin:'90',provider:'google',browser:'Safari',os:'macOS',status:'active'},now);
+ assert.equal(+query['lastLogin.at'].$gte,now-7*86400000);assert.equal(+query.createdAt.$gte,now-90*86400000);
+ assert.equal(query['lastLogin.device.browser'],'Safari');assert.equal(query['lastLogin.device.os'],'macOS');assert.deepEqual(query.authProvider.$in,['google','local_and_google']);
+ assert.deepEqual(adminUserFilters({provider:{$ne:null},browser:{$ne:null},os:'garbage',loginWithin:{$ne:null}}),{});
+ assert.deepEqual(adminUserSort('__proto__'),{createdAt:-1,_id:-1});assert.deepEqual(adminUserSort('login'),{'lastLogin.at':-1,_id:-1});
+});

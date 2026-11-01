@@ -331,15 +331,13 @@ export default function VideoPlayer({ src, playbackStartedAt, movie, episode, au
     useEffect(() => {
         onCinemaChange?.(effectiveCinema);
     }, [effectiveCinema, onCinemaChange]);
-    // The surround lives in the parent, so it has to be handed back the element
-    // it samples, and told to stop when this player goes away.
-    useEffect(() => {
-        onVideoReady?.(videoRef.current);
-        return () => {
-            onVideoReady?.(null);
-            onCinemaChange?.('off');
-        };
-    }, [onVideoReady, onCinemaChange]);
+    // Bind when the actual DOM element attaches, including recovery after the
+    // error view. A mount-only effect can miss an element mounted later.
+    const bindVideo = useCallback((element: HTMLVideoElement | null) => {
+        videoRef.current = element;
+        onVideoReady?.(element);
+    }, [onVideoReady]);
+    useEffect(() => () => { onCinemaChange?.('off'); }, [onCinemaChange]);
 
     const changeCinema = (next: CinemaMode) => {
         setCinema(next);
@@ -2877,7 +2875,7 @@ export default function VideoPlayer({ src, playbackStartedAt, movie, episode, au
             {!suspended && !episodeEnded && <RememberedIntroSkip contentRef={movie.slug} at={displayTime} onSeek={seekToAbsolute} />}
             {onNextEpisode && <NextEpisodePrompt ended={episodeEnded} enabled={autoNextEnabled} label={nextEpisodeLabel || 'Tập tiếp theo'} onNext={onNextEpisode} onCancel={() => setEpisodeEnded(false)} />}
             <video
-                ref={videoRef}
+                ref={bindVideo}
                 className={`w-full h-full ${videoScale === 'cover' ? 'object-cover' : videoScale === 'fill' ? 'object-fill' : 'object-contain'}`}
                 playsInline
                 preload="auto"

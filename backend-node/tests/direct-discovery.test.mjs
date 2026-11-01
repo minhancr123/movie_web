@@ -126,3 +126,12 @@ test('recommendation requires ready compatible direct sources without picture/ne
  }
  for (const directPlay of ['remux', 'unknown', 'unavailable']) assert.equal(isRecommendedDirectSource({ directPlay, cached: true }), false);
 });
+
+test('higher bitrate ready picture can be recommended through remux over an adequate but compressed direct file',()=>{
+ const low={infoHash:'direct',filename:'Film.1080p.H264.AAC.mp4',cached:true,sizeBytes:3.2e9};
+ const high={infoHash:'remux',filename:'Film.1080p.H264.AAC.mkv',cached:true,sizeBytes:8e9};
+ const r=rankCandidates([low,high],{maxHeight:1080},{runtimeMinutes:100});
+ assert.equal(r.best.infoHash,'remux');assert.equal(r.best.recommended,true);assert.equal(r.best.qualityLabel,'Ưu tiên hình ảnh');assert.equal(r.playable.filter(s=>s.recommended).length,1);
+ const equal=rankCandidates([{...high,sizeBytes:3.2e9},low],{maxHeight:1080},{runtimeMinutes:100});assert.equal(equal.best.infoHash,'direct','direct preference remains within comparable picture tiers');
+ const tiny=rankCandidates([{...low,sizeBytes:100e6},high],{maxHeight:1080},{runtimeMinutes:100});assert.equal(tiny.playable.find(s=>s.infoHash==='direct').recommended,false);
+});

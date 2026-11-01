@@ -1,4 +1,5 @@
 'use client';
+import { observeViewing } from '@/lib/viewing-presence';
 
 import React, { useEffect, useState, useCallback, useRef } from 'react';
 import Link from 'next/link';
@@ -91,6 +92,7 @@ interface PlaybackSectionProps {
 interface SourceCandidate extends GroupableSource {
   directPlay?: DeliveryState;
   recommended?: boolean;
+  qualityLabel?: string | null;
   sourceToken?: string;
   filename?: string;
   playable?: boolean;
@@ -996,21 +998,9 @@ export default function PlaybackSection({
   // preparation, staging, paused or stalled playback as actively watching.
   useEffect(() => {
     if (!videoEl || !isSessionActive || !playbackSessionId) return;
-    const report = () => {
-      const state = videoEl.ended ? 'ended' : videoEl.paused ? 'paused'
-        : videoEl.seeking || videoEl.readyState < 3 ? 'buffering' : 'playing';
-      void playbackAPI.heartbeat(playbackSessionId, getViewerId(), {
-        state, position: Math.max(0, (startOffsetRef.current || 0) + videoEl.currentTime),
-      }).catch(() => {});
-    };
-    const events = ['playing', 'pause', 'waiting', 'ended', 'seeking', 'seeked'];
-    events.forEach(event => videoEl.addEventListener(event, report));
-    report();
-    const timer = setInterval(report, 25000);
-    return () => {
-      clearInterval(timer);
-      events.forEach(event => videoEl.removeEventListener(event, report));
-    };
+    return observeViewing(videoEl, report => {
+      void playbackAPI.heartbeat(playbackSessionId, getViewerId(), report).catch(() => {});
+    }, { offset: () => startOffsetRef.current || 0 });
     // Stable viewer identity and offsets are read at report time.
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [videoEl, isSessionActive, playbackSessionId]);
@@ -2372,7 +2362,7 @@ export default function PlaybackSection({
             )}
 
             <div className="max-h-80 space-y-1.5 overflow-y-auto">
-              <SourceDeliveryFilter value={sourceFilter} onChange={setSourceFilter} />
+              <SourceDeliveryFilter value={sourceFilter} onChange={setSourceFilter} /><p className="text-xs text-cinema-subtle">Đề xuất cân nhắc độ nét và mức nén. Phát thẳng / Qua máy chủ mô tả cách phát.</p>
               {filterPlaybackSources(sources, sourceFilter).length === 0 && <p className="p-3 text-xs text-cinema-subtle">Chưa có nguồn phù hợp bộ lọc này. Chọn Tất cả để xem nguồn khác.</p>}
               {groupPlaybackSources(filterPlaybackSources(sources, sourceFilter)).flatMap((group) => [
                 <h5 key={`group-${group.key}`} className="sticky top-0 z-10 rounded-lg bg-surface-dark px-3 py-2 text-xs font-bold text-white">
@@ -2418,12 +2408,10 @@ export default function PlaybackSection({
                       {group.key === 'vietsub'
                         ? `Vietsub VIP ${index + 1}`
                         : group.key === '4k'
-                        ? (index === 0 ? '4K VIP 1 ★ Tối ưu' : `4K VIP ${index + 1}`)
-                        : index === 0
-                        ? 'VIP 1 ★ Tối ưu'
+                        ? `4K VIP ${index + 1}`
                         : `VIP ${index + 1}`}
                     </span>
-                    <SourceDeliveryBadge state={src.directPlay} recommended={src.recommended} />
+                    <SourceDeliveryBadge state={src.directPlay} recommended={src.recommended} qualityLabel={src.qualityLabel} />
                     {src.hasViSub && (
                       <span className="rounded bg-emerald-500/15 px-2 py-0.5 font-bold text-emerald-400" title={`Phụ đề Việt khớp release: ${src.viSubRelease ?? ""}`}>
                         🇻🇳 Sub khớp
@@ -2873,7 +2861,7 @@ export default function PlaybackSection({
                 </span>
               </div>
             )}
-            <SourceDeliveryFilter value={sourceFilter} onChange={setSourceFilter} />
+            <SourceDeliveryFilter value={sourceFilter} onChange={setSourceFilter} /><p className="text-xs text-cinema-subtle">Đề xuất cân nhắc độ nét và mức nén. Phát thẳng / Qua máy chủ mô tả cách phát.</p>
             {filterPlaybackSources(sources, sourceFilter).length === 0 && <p className="p-3 text-xs text-cinema-subtle">Chưa có nguồn phù hợp bộ lọc này. Chọn Tất cả để xem nguồn khác.</p>}
             {groupPlaybackSources(filterPlaybackSources(sources, sourceFilter)).flatMap((group) => [
                 <h5 key={`group-${group.key}`} className="sticky top-0 z-10 rounded-lg bg-surface-dark px-3 py-2 text-xs font-bold text-white">
@@ -2920,12 +2908,10 @@ export default function PlaybackSection({
                     {group.key === 'vietsub'
                       ? `Vietsub VIP ${index + 1}`
                       : group.key === '4k'
-                      ? (index === 0 ? '4K VIP 1 ★ Tối ưu' : `4K VIP ${index + 1}`)
-                      : index === 0
-                      ? 'VIP 1 ★ Tối ưu'
+                      ? `4K VIP ${index + 1}`
                       : `VIP ${index + 1}`}
                   </span>
-                  <SourceDeliveryBadge state={src.directPlay} recommended={src.recommended} />
+                  <SourceDeliveryBadge state={src.directPlay} recommended={src.recommended} qualityLabel={src.qualityLabel} />
                   {src.hasViSub && (
                     <span className="rounded bg-emerald-500/15 px-2 py-0.5 font-bold text-emerald-400" title={`Phụ đề Việt khớp release: ${src.viSubRelease ?? ""}`}>
                       🇻🇳 Sub khớp

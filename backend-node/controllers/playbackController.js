@@ -11,7 +11,6 @@ const renditionGate = createRenditionGate();
 import { retrySubtitleTracksIndividually } from '../services/playback/subtitleInventory.js';
 import { sourceListingFailure, incompatibleSourcesFailure } from '../services/playback/sourceAvailability.js';
 import { SEEK_BUCKET_SECONDS, bucketSeekStart, seekBufferFloor, startupTarget, sessionStartupTarget, hasPlayableBuffer, initialStartupFloor, sessionPlaylistFloor } from '../services/playback/startupPolicy.js';
-import { isRecommendedDirectSource } from '../services/playback/directPlayVerdict.js';
 /**
  * Playback resolution + HLS asset serving.
  *
@@ -502,7 +501,8 @@ export const sanitizeCandidateForResponse = (candidate) => ({
   resolution: candidate.resolution || null,
   codec: PUBLIC_MODE ? null : (candidate.codec || null),
   directPlay: candidate.directPlay || 'unknown',
-  recommended: isRecommendedDirectSource(candidate),
+  recommended: candidate.recommended === true,
+  qualityLabel: candidate.qualityLabel || null,
   hdr: candidate.hdr || null,
   releaseSource: PUBLIC_MODE ? null : (candidate.releaseSource || null),
   sizeBytes: PUBLIC_MODE ? null : (candidate.sizeBytes || null),

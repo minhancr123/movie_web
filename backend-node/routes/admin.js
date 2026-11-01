@@ -1,4 +1,4 @@
-import { activeViewingQuery, VIEWING_FIELDS } from '../services/playback/viewingPresence.js';
+import { freshViewingQuery, filterViewingOwners, VIEWING_FIELDS } from '../services/playback/viewingPresence.js';
 import express from 'express';
 import { ObjectId } from 'mongodb';
 import os from 'node:os';
@@ -12,7 +12,7 @@ import { getServerHealth } from '../services/admin/serverHealth.js';
 import { adminMiddleware } from '../middleware/auth.js';
 import { getSiteSetting, setSiteSetting } from '../services/siteSettings.js';
 import { adminTraffic } from '../services/admin/traffic.js';
-import { getCatalogLimit, setCatalogLimit, validCatalogLimit, parseAdminList, literalSearch, adminUserFilters, USER_FIELDS, SESSION_FIELDS } from '../services/admin/policy.js';
+import { getCatalogLimit, setCatalogLimit, validCatalogLimit, parseAdminList, literalSearch, adminUserFilters, adminUserSort, USER_FIELDS, SESSION_FIELDS } from '../services/admin/policy.js';
 
 const router = express.Router();
 router.get('/site-settings/hover-trailer', async (_req, res) => {
@@ -75,18 +75,20 @@ router.get('/stats', route(async (_req, res) => {
       release: process.env.RELEASE_ID || 'development', nodeVersion: process.version },
   } });
 }));
-const viewingForUsers = async (ids) => {
-  if (!ids.length) return [];
-  const rows = await getDB().collection('playback_presence').find(activeViewingQuery(ids),
-    { projection: VIEWING_FIELDS }).sort({ seenAt: -1 }).limit(100).toArray();
+const viewingForUsers = async () => {
+  const rows = await getDB().collection('playback_presence').find(freshViewingQuery(),
+    { projection: VIEWING_FIELDS }).sort({ seenAt: -1 }).toArray();
   const titles = new Map();
-  await Promise.all([...new Set(rows.map(r => `${r.type}:${r.tmdbId}`))].map(async key => {
-    const [type, id] = key.split(':');
-    try {
-      const detail = await cached(`catalog:detail:${type}:${id}:v3`, CACHE_TTL.DETAIL,
-        () => tmdb.getDetail(type, Number(id)), tmdb.STALE_OPTS);
-      if (detail?.title) titles.set(key, detail.title);
-    } catch { /* Keep the content identity when the catalog is unavailable. */ }
+  const identities = [...new Set(rows.map(r => `${r.type}:${r.tmdbId}`))];
+  await Promise.all(Array.from({ length: Math.min(4, identities.length) }, async () => {
+    while (identities.length) {
+      const key = identities.shift(), [type, id] = key.split(':');
+      try {
+        const detail = await cached(`catalog:detail:${type}:${id}:v3`, CACHE_TTL.DETAIL,
+          () => tmdb.getDetail(type, Number(id)), tmdb.STALE_OPTS);
+        if (detail?.title) titles.set(key, detail.title);
+      } catch { /* Keep the content identity when the catalog is unavailable. */ }
+    }
   }));
   return rows.map(r => ({ ...r, title: titles.get(`${r.type}:${r.tmdbId}`) || `TMDB ${r.tmdbId}` }));
 };
@@ -96,12 +98,23 @@ router.get('/users', route(async (req, res) => {
   // is user, exactly as the token issuer and admin table already treat them.
   if (role) query.role = role === 'user' ? { $in: ['user', null] } : 'admin';
   if (search) query.$or = ['email', 'username'].map(key => ({ [key]: { $regex: literalSearch(search), $options: 'i' } }));
+  const viewing = await viewingForUsers();
+  const constrained = ['playing','paused','buffering','inactive'].includes(req.query.viewing)
+    || (typeof req.query.content === 'string' && /^(movie|tv):[1-9]\d{0,9}$/.test(req.query.content));
+  if (constrained) {
+    const ids = filterViewingOwners(viewing, req.query).filter(id => ObjectId.isValid(id)).map(id => new ObjectId(id));
+    query._id = req.query.viewing === 'inactive' ? { $nin: ids } : { $in: ids };
+  }
   const collection = getDB().collection('users');
-  const [total, data] = await Promise.all([collection.countDocuments(query), collection.find(query, { projection: USER_FIELDS }).sort({ createdAt: -1, _id: -1 }).skip((page - 1) * limit).limit(limit).toArray()]);
-  const viewing = await viewingForUsers(data.map(u => String(u._id)));
-  for (const user of data) user.watching = user.isBanned ? [] : viewing.filter(r => r.userIdStr === String(user._id))
-    .map(({ userIdStr, sessionId, ...safe }) => safe);
-  res.json({ success: true, data, pagination: { page, limit, total, pages: Math.max(1, Math.ceil(total / limit)) } });
+  const [total, data] = await Promise.all([collection.countDocuments(query), collection.find(query, { projection: USER_FIELDS }).sort(adminUserSort(req.query.sort)).skip((page - 1) * limit).limit(limit).toArray()]);
+  for (const user of data) {
+    user.viewing = user.isBanned ? [] : viewing.filter(r => r.userIdStr === String(user._id))
+      .map(({ userIdStr, sessionId, ...safe }) => safe);
+    user.watching = user.viewing.filter(row => row.state === 'playing');
+  }
+  const viewingTitles = [...new Map(viewing.map(row => [`${row.type}:${row.tmdbId}`,
+    { key: `${row.type}:${row.tmdbId}`, title: row.title }])).values()].sort((a,b) => a.title.localeCompare(b.title, 'vi'));
+  res.json({ success: true, data, viewingTitles, pagination: { page, limit, total, pages: Math.max(1, Math.ceil(total / limit)) } });
 }));
 router.patch('/users/:id/status', route(async (req, res) => {
   if (!/^[a-f0-9]{24}$/i.test(req.params.id) || typeof req.body?.isBanned !== 'boolean') return res.status(400).json({ success: false, message: 'Tài khoản hoặc trạng thái không hợp lệ.' });

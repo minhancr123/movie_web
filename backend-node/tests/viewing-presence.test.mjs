@@ -36,3 +36,12 @@ test('active admin reads require playing and recent unexpired evidence, and proj
   assert.equal(+query.expiresAt.$gt, +now);
   for (const key of ['directUrl', 'sourceToken', 'infoHash', 'viewerId', 'authToken']) assert.equal(VIEWING_FIELDS[key], undefined);
 });
+
+test('viewing filters combine state and film on the same tab and keep paused films visible', async () => {
+  const {filterViewingOwners,freshViewingQuery}=await import('../services/playback/viewingPresence.js');
+  const rows=[{userIdStr:'a',state:'playing',type:'movie',tmdbId:1},{userIdStr:'a',state:'paused',type:'movie',tmdbId:2},{userIdStr:'b',state:'playing',type:'tv',tmdbId:2}];
+  assert.deepEqual(filterViewingOwners(rows,{viewing:'paused'}),['a']);
+  assert.deepEqual(filterViewingOwners(rows,{viewing:'playing',content:'movie:2'}),[]);
+  assert.deepEqual(filterViewingOwners(rows,{viewing:'playing',content:'tv:2'}),['b']);
+  assert.deepEqual(freshViewingQuery(now).state.$in,['playing','paused','buffering']);
+});

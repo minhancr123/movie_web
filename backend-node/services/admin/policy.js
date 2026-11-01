@@ -29,6 +29,19 @@ export const USER_FIELDS = { isBanned: 1, bannedAt: 1, username: 1, email: 1, ro
 export const SESSION_FIELDS = { userId: 1, userIdStr: 1, mediaType: 1, sessionId: 1, tmdbId: 1, type: 1, season: 1, episode: 1, mode: 1, provider: 1, progress: 1, createdAt: 1, updatedAt: 1, expiresAt: 1, startAt: 1 };
 
 export const adminUserFilters = (query, now = Date.now()) => ({
-  ...(['1', '7', '30'].includes(query.createdWithin) ? { createdAt: { $gte: new Date(now - Number(query.createdWithin) * 86400000) } } : {}),
+  ...(['1', '7', '30', '90'].includes(query.createdWithin) ? { createdAt: { $gte: new Date(now - Number(query.createdWithin) * 86400000) } } : {}),
   ...(query.status === 'banned' ? { isBanned: true } : query.status === 'active' ? { isBanned: { $ne: true } } : {}),
+  ...(['1','7','30','90'].includes(query.loginWithin) ? { 'lastLogin.at': { $gte: new Date(now - Number(query.loginWithin) * 86400000) } }
+    : query.loginWithin === 'never' ? { 'lastLogin.at': { $exists: false } } : {}),
+  ...(query.provider === 'google' ? { authProvider: { $in: ['google','local_and_google'] } }
+    : query.provider === 'email' ? { authProvider: { $in: [null,'local','local_and_google'] } } : {}),
+  ...(['Chrome','Safari','Firefox','Edge','Opera','Ứng dụng Apple'].includes(query.browser) ? { 'lastLogin.device.browser': query.browser } : {}),
+  ...(['Windows','macOS','iOS / iPadOS','Android','Linux'].includes(query.os) ? { 'lastLogin.device.os': query.os } : {}),
 });
+export const adminUserSort = value => {
+  const sorts = {
+  newest: { createdAt: -1, _id: -1 }, oldest: { createdAt: 1, _id: 1 },
+  login: { 'lastLogin.at': -1, _id: -1 }, name: { username: 1, _id: 1 },
+};
+  return typeof value === 'string' && Object.hasOwn(sorts, value) ? sorts[value] : sorts.newest;
+};

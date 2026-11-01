@@ -601,7 +601,7 @@ export const prioritizeDirectCandidates = (ranked, caps = {}, options = {}) => {
   const groups = new Map();
   const priority = source => source.cached ? directPlayPriority(directPlayVerdict(source, caps, options)) : 0;
   const keyFor = (source) => JSON.stringify([
-    source.playable, source.resolution, Boolean(source.cached), source.hdr, source.qualityRisk || null,
+    source.playable, source.resolution, Boolean(source.cached), source.hdr, source.qualityRisk || null, source.pictureQualityRank ?? 1,
   ]);
   for (const source of ranked) {
     const key = keyFor(source);
@@ -644,7 +644,9 @@ export const rankCandidates = (
       const target = BITRATE_TARGET[parsed.resolution] || BITRATE_TARGET[1080];
       const qualityRisk = bitrate && parsed.resolution && bitrate < target.min ? 'low_bitrate'
         : bitrate && caps.maxBitrateMbps && bitrate > caps.maxBitrateMbps ? 'network' : null;
-      return { ...parsed, score, playable, reasons, directPlay, qualityRisk };
+      const pictureQualityRank = qualityRisk === 'low_bitrate' ? 0 : bitrate ? (bitrate >= target.ideal ? 3 : 2) : 1;
+      const qualityLabel = qualityRisk === 'low_bitrate' ? 'Nén mạnh' : bitrate ? (pictureQualityRank === 3 ? 'Ưu tiên hình ảnh' : 'Cân bằng') : 'Chưa rõ mức nén';
+      return { ...parsed, score, playable, reasons, directPlay, qualityRisk, pictureQualityRank, qualityLabel };
     })
     .sort((a, b) => {
       if (a.playable !== b.playable) return a.playable ? -1 : 1;
@@ -661,12 +663,16 @@ export const rankCandidates = (
       }
       if (Boolean(a.cached) !== Boolean(b.cached)) return a.cached ? -1 : 1;
       if (a.resolution === b.resolution && Boolean(a.qualityRisk) !== Boolean(b.qualityRisk)) return a.qualityRisk ? 1 : -1;
+      if (a.resolution === b.resolution && a.codec === b.codec && a.hdr === b.hdr && !a.qualityRisk && !b.qualityRisk
+          && a.pictureQualityRank !== b.pictureQualityRank && a.pictureQualityRank !== 1 && b.pictureQualityRank !== 1) return b.pictureQualityRank - a.pictureQualityRank;
       return b.score - a.score;
     });
 
   // Resolve, prewarm and the picker share the same order, so prewarming never
   // spends a TorBox/probe round trip on a different release than Auto opens.
   const ordered = prioritizeDirectCandidates(ranked, caps, { contentLanguage, audioIndex });
+  const recommended = ordered.find(source => source.playable && source.cached && !source.qualityRisk);
+  for (const source of ordered) source.recommended = source === recommended;
   return {
     caps,
     best: ordered.find((candidate) => candidate.playable) || null,

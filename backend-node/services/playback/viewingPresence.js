@@ -23,4 +23,15 @@ export const activeViewingQuery = (userIds, now = new Date()) => ({
 });
 
 export const VIEWING_FIELDS = { _id: 0, userIdStr: 1, sessionId: 1, tmdbId: 1,
-  type: 1, season: 1, episode: 1, position: 1, seenAt: 1 };
+  state: 1, type: 1, season: 1, episode: 1, position: 1, seenAt: 1 };
+
+export const freshViewingQuery = (now = new Date()) => ({
+  state: { $in: ['playing', 'paused', 'buffering'] },
+  seenAt: { $gt: new Date(now.getTime() - VIEWING_FRESH_MS) }, expiresAt: { $gt: now },
+});
+
+export function filterViewingOwners(rows, { viewing, content } = {}) {
+  const key = typeof content === 'string' && /^(movie|tv):[1-9]\d{0,9}$/.test(content) ? content : '';
+  return [...new Set(rows.filter(row => (!['playing','paused','buffering'].includes(viewing) || row.state === viewing)
+    && (!key || `${row.type}:${row.tmdbId}` === key)).map(row => row.userIdStr))];
+}
