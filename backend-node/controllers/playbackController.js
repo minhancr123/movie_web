@@ -4857,8 +4857,8 @@ export const serveHlsAsset = async (req, res) => {
         const qStr = query.toString() ? `?${query.toString()}` : '';
         const indexUrl = `index.m3u8${qStr}`;
         const masterBody = await buildMasterPlaylist({
-        playlistPath: sessionPath(sessionId, 'index.m3u8'), indexUrl,
-      });
+          playlistPath: renditionPath(session.publishedRenditionId, 'index.m3u8'), indexUrl,
+        });
         res.setHeader('Content-Type', MANIFEST_CONTENT_TYPE);
         res.setHeader('Cache-Control', MANIFEST_CACHE_CONTROL);
         return res.send(masterBody);
