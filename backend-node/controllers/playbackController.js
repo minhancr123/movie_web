@@ -1986,7 +1986,7 @@ export const resolvePlayback = async (req, res) => {
       // Only direct candidates need this extra request. Cache by immutable
       // file + CDN origin; signed URLs are never stored in this key or value.
       let upstreamRangeSupported;
-      if (decidePlaybackMode(probe, caps, audioIdx, { videoTranscode, contentLanguage: detail?.originalLanguage }).mode === 'direct') {
+      if (decidePlaybackMode(probe, caps, audioIdx, { videoTranscode, contentLanguage: detail?.originalLanguage, filename: file?.name || candidate.fileName || candidate.sourceFileName }).mode === 'direct') {
         const originScope = crypto.createHash('sha256').update(new URL(inputUrl).origin).digest('hex').slice(0, 16);
         const rangeKey = `playback:range:v1:${fileIdentity(candidate.infoHash, file.fileId)}:${originScope}`;
         let range = await getCache(rangeKey);
@@ -2009,6 +2009,7 @@ export const resolvePlayback = async (req, res) => {
         contentLanguage: detail?.originalLanguage ?? null,
         lan,
         activeKbps: activeEgressKbps(),
+        filename: file?.name || candidate.fileName || candidate.sourceFileName,
       });
       if (rejected) {
         lastError = rejected;

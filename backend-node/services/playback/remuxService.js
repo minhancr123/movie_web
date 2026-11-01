@@ -620,6 +620,32 @@ export const decidePlaybackMode = (probe, caps = {}, preferredAudioIdx = null, o
     };
   }
 
+  // High-bitrate BDRemux sources contain open-GOP streams with missing DTS that
+  // fail browser hardware decoders (Apple VideoToolbox / Chrome) when copied raw (-c:v copy).
+  // When hardware encoding is available, transcode to pristine 1080p H.264 at 400+ FPS.
+  const bitrate = Number(probe?.bitrate || probe?.video?.bitrate || 0);
+  const isHighBitrateRemux = codec === 'h264' && (
+    bitrate > 25000000 ||
+    /BDRemux|Remux/i.test(opts.filename || '')
+  );
+  if (isHighBitrateRemux && opts.videoTranscode?.hardware) {
+    const plan = planCodecTranscode(probe, caps, opts.videoTranscode);
+    if (plan) {
+      return {
+        mode: 'remux',
+        reason: `BDRemux bitrate cao (${Math.round(bitrate / 1000000)}Mbps) — GPU transcode sang AVC 1080p`,
+        videoTranscode: plan,
+        videoCopy: false,
+        audioCopy: false,
+        audioBrowserSafe,
+        directBrowserSafe: false,
+        audioStreamIndex: audio ? audio.streamIndex : null,
+        audioChannels: audio ? audio.channels : null,
+        audioIndex: targetAudioIdx,
+      };
+    }
+  }
+
   return {
     mode: 'remux',
     reason: `Remux video copy, audio ${audio?.codec || 'unknown'} ${audio?.codec === 'aac' && audio?.profile === 'LC' && Number(audio?.channels) <= 2 ? 'copy' : '-> AAC-LC'}`,
@@ -660,8 +686,9 @@ export const planCandidateDelivery = ({
   lan = false,
   activeKbps = 0,
   budgetKbps,
+  filename = null,
 } = {}) => {
-  const decision = decidePlaybackMode(probe, caps, audioIdx, { videoTranscode, contentLanguage, upstreamRangeSupported });
+  const decision = decidePlaybackMode(probe, caps, audioIdx, { videoTranscode, contentLanguage, upstreamRangeSupported, filename });
   if (decision.mode === 'reject') {
     return {
       rejected: decision.policyBlocked
@@ -781,7 +808,7 @@ export const detectVideoEncoder = async () => {
   }
   try {
     const { stdout } = await run(FFMPEG_BIN, ['-hide_banner', '-encoders'], { timeoutMs: 10000 });
-    const hasNvenc = /h264_nvenc/.test(stdout);
+    const hasNvenc = /\bh264_nvenc\b/.test(stdout);
     encoderCache = hasNvenc
       ? { encoder: 'h264_nvenc', hardware: true }
       : { encoder: 'libx264', hardware: false };
@@ -891,7 +918,7 @@ export const isTenBitVideo = (video) =>
 // Build 10 preserves the demuxer time base and derives non-B HEVC packet
 // duration from NEXT_DTS. FFmpeg 6.1 otherwise rounds fractional MKV clocks;
 // duration=0 also invents a nominal frame at VFR fragment boundaries.
-export const REMUX_BUILD = 11;
+export const REMUX_BUILD = 12;
 
 /** VBR targets for codec-transcode rungs (H.264, SDR). */
 export const transcodeKbpsForHeight = (height) => {
@@ -1011,12 +1038,14 @@ export const buildVideoArgs = (video, encoder) => {
   const vf = tonemap
     ? `scale=-2:${height},${TONEMAP_FILTERS},format=yuv420p`
     : `scale=-2:${height},format=yuv420p`;
+  const encName = encoder?.encoder || 'libx264';
+  const isNvenc = encName.includes('nvenc');
   return {
     input: seekInput,
     output: [
       '-vf', vf,
-      '-c:v', encoder?.encoder || 'libx264',
-      '-preset', 'veryfast',
+      '-c:v', encName,
+      '-preset', isNvenc ? 'p4' : 'veryfast',
       '-b:v', `${kbps}k`,
       '-maxrate', `${Math.round(kbps * 1.5)}k`,
       '-bufsize', `${kbps * 2}k`,
