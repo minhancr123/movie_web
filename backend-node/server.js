@@ -63,7 +63,7 @@ const io = new Server(httpServer, {
 const PORT = process.env.PORT || 5001;
 
 // Middleware
-app.use(helmet()); // Security headers
+app.use(helmet({ crossOriginResourcePolicy: { policy: "cross-origin" } })); // Security headers
 app.use(compression()); // Gzip compression
 app.use(cors({
   origin: allowedOrigins,

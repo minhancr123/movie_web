@@ -123,6 +123,9 @@ import {
 import { setResolveStage, getResolveStage as readResolveStage, isResolveId } from '../services/playback/resolveProgress.js';
 import {
   mintMediaGrant,
+  buildMasterPlaylist,
+  MANIFEST_CONTENT_TYPE,
+  MEDIA_GRANT_QUERY,
   selectAuthorizingSession,
   getStableGrant,
   putStableGrant,
@@ -4698,7 +4701,7 @@ const ASSET_CONTENT_TYPES = {
 
 const isAllowedAsset = (asset) => {
   const name = String(asset || '');
-  if (name === 'index.m3u8' || name === 'init.mp4') return true;
+  if (name === 'index.m3u8' || name === 'master.m3u8' || name === 'init.mp4') return true;
   return /^seg_\d+\.m4s$/.test(name);
 };
 
@@ -4846,6 +4849,18 @@ export const serveHlsAsset = async (req, res) => {
       if (asset === 'index.m3u8') {
         await touchPublishedRendition(db, session.publishedRenditionId);
       }
+      if (asset === 'master.m3u8') {
+        const grantToken = sessionGrantToken(req, session, sessionId);
+        const query = new URLSearchParams();
+        if (grantToken) query.set(MEDIA_GRANT_QUERY, grantToken);
+        if (req.query?.start) query.set('start', String(req.query.start));
+        const qStr = query.toString() ? `?${query.toString()}` : '';
+        const indexUrl = `index.m3u8${qStr}`;
+        const masterBody = buildMasterPlaylist(session, indexUrl);
+        res.setHeader('Content-Type', MANIFEST_CONTENT_TYPE);
+        res.setHeader('Cache-Control', MANIFEST_CACHE_CONTROL);
+        return res.send(masterBody);
+      }
       const filePath = path.resolve(renditionPath(session.publishedRenditionId, asset));
       try {
         await fs.stat(filePath);
@@ -4923,6 +4938,19 @@ export const serveHlsAsset = async (req, res) => {
       await fs.stat(filePath);
     } catch {
       return fail(res, 404, 'Tài nguyên chưa sẵn sàng');
+    }
+
+    if (asset === 'master.m3u8') {
+      const grantToken = sessionGrantToken(req, session, sessionId);
+      const query = new URLSearchParams();
+      if (grantToken) query.set(MEDIA_GRANT_QUERY, grantToken);
+      if (req.query?.start) query.set('start', String(req.query.start));
+      const qStr = query.toString() ? `?${query.toString()}` : '';
+      const indexUrl = `index.m3u8${qStr}`;
+      const masterBody = buildMasterPlaylist(session, indexUrl);
+      res.setHeader('Content-Type', MANIFEST_CONTENT_TYPE);
+      res.setHeader('Cache-Control', MANIFEST_CACHE_CONTROL);
+      return res.send(masterBody);
     }
 
     // Growing EVENT playlist: rewrite child URLs with a session-scoped grant
@@ -5016,6 +5044,34 @@ export const serveRenditionAsset = async (req, res) => {
     if (!state.exists || !state.ended) return fail(res, 404, 'Bản hoàn chỉnh không còn');
     if (asset === 'index.m3u8') {
       await touchPublishedRendition(db, renditionId);
+    }
+    if (asset === 'master.m3u8') {
+      let token = (typeof req.mediaGrantToken === 'string' && req.mediaGrantToken) || null;
+      if (!token) {
+        const key = `r:${renditionId}:${String(authSession.sessionId).toLowerCase()}`;
+        token = getStableGrant(key);
+        if (!token) {
+          try {
+            const minted = mintMediaGrant({
+              sessionId: authSession.sessionId,
+              renditionId,
+              sessionExpiresAtMs: sessionExpiryMs(authSession),
+            });
+            token = putStableGrant(key, minted.token, minted.expiresAtMs);
+          } catch {
+            token = null;
+          }
+        }
+      }
+      const query = new URLSearchParams();
+      if (token) query.set(MEDIA_GRANT_QUERY, token);
+      if (req.query?.start) query.set('start', String(req.query.start));
+      const qStr = query.toString() ? `?${query.toString()}` : '';
+      const indexUrl = `index.m3u8${qStr}`;
+      const masterBody = buildMasterPlaylist(authSession, indexUrl);
+      res.setHeader('Content-Type', MANIFEST_CONTENT_TYPE);
+      res.setHeader('Cache-Control', MANIFEST_CACHE_CONTROL);
+      return res.send(masterBody);
     }
 
     const filePath = path.resolve(renditionPath(renditionId, asset));

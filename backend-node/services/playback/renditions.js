@@ -125,7 +125,7 @@ export const readRenditionState = async (renditionId) => {
 
 const isAllowedAsset = (name) => {
   const base = path.basename(String(name || ''));
-  if (base === 'index.m3u8' || base === 'init.mp4' || base === 'meta.json') return true;
+  if (base === 'index.m3u8' || base === 'master.m3u8' || base === 'init.mp4' || base === 'meta.json') return true;
   return /^seg_\d+\.m4s$/.test(base);
 };
 

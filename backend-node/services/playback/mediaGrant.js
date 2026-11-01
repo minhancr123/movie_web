@@ -366,3 +366,44 @@ export const serveManifestResponse = async (res, filePath, grantToken, { param =
   // viewers/seek targets cannot inherit one another's preferred position.
   return res.send(withManifestStartHint(body, startAt));
 };
+
+export const hlsMasterCodecs = (session) => {
+  const isTranscode = Boolean(session?.videoAction && session.videoAction !== 'copy');
+  const vCodec = isTranscode ? 'h264' : (session?.videoCodec || session?.candidate?.codec || '').toLowerCase();
+  const vProfile = (session?.videoProfile || '').toLowerCase();
+  const height = Number(session?.videoHeight) || 1080;
+
+  let videoCodecs = 'avc1.640029';
+  if (vCodec === 'hevc' || vCodec === 'h265') {
+    const is10Bit = vProfile.includes('10') || session?.candidate?.hdr;
+    const level = height > 1080 ? 'L150' : 'L120';
+    videoCodecs = is10Bit ? `hvc1.2.4.${level}.B0` : `hvc1.1.6.${level}.B0`;
+  } else if (vCodec === 'h264' || vCodec === 'avc') {
+    videoCodecs = height > 1080 ? 'avc1.640033' : 'avc1.640029';
+  } else if (vCodec === 'av1') {
+    videoCodecs = 'av01.0.08M.10';
+  }
+
+  const audioCodecs = 'mp4a.40.2';
+  return `${videoCodecs},${audioCodecs}`;
+};
+
+export const buildMasterPlaylist = (session, indexUrl) => {
+  const height = Number(session?.videoHeight) || 1080;
+  const width = Math.round(height * 16 / 9);
+  const kbps = Number(session?.candidate?.sizeBytes) && Number(session?.durationSeconds) > 0
+    ? Math.round((Number(session.candidate.sizeBytes) * 8) / (Number(session.durationSeconds) * 1000))
+    : 10000;
+  const bandwidth = Math.round((kbps || 10000) * 1000);
+  const codecs = hlsMasterCodecs(session);
+  const fps = Number(session?.videoFrameRate) > 0 ? `,FRAME-RATE=${Number(session.videoFrameRate).toFixed(3)}` : '';
+
+  return [
+    '#EXTM3U',
+    '#EXT-X-VERSION:7',
+    '#EXT-X-INDEPENDENT-SEGMENTS',
+    `#EXT-X-STREAM-INF:BANDWIDTH=${bandwidth},RESOLUTION=${width}x${height},CODECS="${codecs}"${fps}`,
+    indexUrl,
+    '',
+  ].join('\n');
+};

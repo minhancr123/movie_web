@@ -723,6 +723,7 @@ const DIALOGUE_DOWNMIX = [
   'aformat=channel_layouts=5.1',
   'pan=stereo|FL=0.65*FC+0.38*FL+0.20*BL|FR=0.65*FC+0.38*FR+0.20*BR',
   'alimiter=limit=0.95:level=disabled',
+  'aresample=async=1000',
 ].join(',');
 
 /**
@@ -890,7 +891,7 @@ export const isTenBitVideo = (video) =>
 // Build 10 preserves the demuxer time base and derives non-B HEVC packet
 // duration from NEXT_DTS. FFmpeg 6.1 otherwise rounds fractional MKV clocks;
 // duration=0 also invents a nominal frame at VFR fragment boundaries.
-export const REMUX_BUILD = 10;
+export const REMUX_BUILD = 11;
 
 /** VBR targets for codec-transcode rungs (H.264, SDR). */
 export const transcodeKbpsForHeight = (height) => {
@@ -1058,7 +1059,7 @@ export const buildFfmpegArgs = ({ inputUrl, outputDir, audioCopy = false, segmen
   'warning',
   '-nostdin',
   '-fflags',
-  '+genpts',
+  '+genpts+igndts',
   // Hardware decode has to be declared before the input it applies to.
   ...videoArgs.input,
   // Pace background processing on small VPSes. Two times playback still
@@ -1116,6 +1117,8 @@ export const buildFfmpegArgs = ({ inputUrl, outputDir, audioCopy = false, segmen
       ]),
   '-avoid_negative_ts',
   'make_zero',
+  '-strict',
+  '-2',
   '-sn',
   '-f',
   'hls',
