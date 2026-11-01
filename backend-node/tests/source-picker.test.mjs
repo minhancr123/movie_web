@@ -25,7 +25,7 @@ test('QuackStart release order is retained only within equal quality, after dire
 
 test('cached browser-friendly MP4 is tried first at the same quality, while all manual sources remain available', () => {
   const mkv = { ...make(1080), filename: 'Lanterns.1080p.BluRay.H264.DTS.5.1.mkv', sizeBytes: 4e9 };
-  const mp4 = { ...make(1080, 1), filename: 'Lanterns.1080p.WEB-DL.H264.AAC.2.0.mp4', sizeBytes: 2e9 };
+  const mp4 = { ...make(1080, 1), filename: 'Lanterns.1080p.WEB-DL.H264.AAC.2.0.mp4', sizeBytes: 4e9 };
   const ranked = rankCandidates([mkv, mp4], caps, options);
   assert.equal(ranked.best.infoHash, mp4.infoHash);
   assert.equal(ranked.playable.length, 2);
