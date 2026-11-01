@@ -107,7 +107,6 @@ import {
   // Single definition on purpose: a redaction that exists in two places is one
   // that will be tightened in one of them and left leaking in the other.
   redactSecrets,
-  probeViaRange,
 } from '../services/playback/remuxService.js';
 import { isLanClient } from '../services/playback/clientNetwork.js';
 import {
@@ -1881,30 +1880,22 @@ export const resolvePlayback = async (req, res) => {
       // once instead (the fresh doc then serves everyone).
       if (probe && probe.video && (!('startTime' in probe.video) || !('hasBFrames' in probe.video))) probe = null;
       if (!probe) {
-      // Fast path: probe a few MB via HTTP Range instead of reading the whole
-      // file. Falls back to the full probe (with node rotation) on failure.
-      try { probe = await probeViaRange(inputUrl); } catch { probe = null; }
-      if (!probe || !probe.video) probe = null;
-      if (!probe) {
-      const probeNodes = [null, 118, 119, 230, 231, 270, 271];
-      const probeUrls = probeNodes.map((node) => node === null ? inputUrl : torbox.rewriteToWorkingNode(inputUrl, node));
-      let probeError = null;
-      try {
-        probe = await Promise.any(probeUrls.map(async (u) => {
-          try { return await ffprobe(u); }
-          catch (e) { torboxCdnCircuit.recordFailure(u, e?.message); throw e; }
-        }));
-      } catch (e) {
-        probeError = (e && Array.isArray(e.errors) && e.errors[0]) || e;
-      }
-      if (probeError) {
-        console.error(
-          `resolvePlayback probe failed tmdb=${tmdbId} infoHash=${String(candidate.infoHash).slice(0, 12)}: ${probeError?.message}`,
-        );
-        lastError = probeError;
-        continue;
-      }
-      }
+        // ffprobe already seeks over HTTP Range to the container metadata.
+        // Concatenating the head and tail invalidates MP4 chunk offsets and
+        // added a failed download/probe before this same remote probe on Verity.
+        const probeNodes = [null, 118, 119, 230, 231, 270, 271];
+        const probeUrls = [...new Set(probeNodes.map(node => node === null ? inputUrl : torbox.rewriteToWorkingNode(inputUrl, node)))];
+        try {
+          probe = await Promise.any(probeUrls.map(async url => {
+            try { return await ffprobe(url); }
+            catch (error) { torboxCdnCircuit.recordFailure(url, error?.message); throw error; }
+          }));
+        } catch (error) {
+          const cause = Array.isArray(error?.errors) ? error.errors[0] : error;
+          console.error(`resolvePlayback probe failed tmdb=${tmdbId} infoHash=${String(candidate.infoHash).slice(0, 12)}: ${cause?.message}`);
+          lastError = cause;
+          continue;
+        }
         await setCache(probeCacheKey, probe, PROBE_RESULT_TTL);
       }
       // Record before acting on it: a rejection here is exactly the fact the
