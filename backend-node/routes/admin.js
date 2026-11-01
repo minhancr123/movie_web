@@ -1,3 +1,4 @@
+import { activeViewingQuery, VIEWING_FIELDS } from '../services/playback/viewingPresence.js';
 import express from 'express';
 import { ObjectId } from 'mongodb';
 import os from 'node:os';
@@ -74,6 +75,21 @@ router.get('/stats', route(async (_req, res) => {
       release: process.env.RELEASE_ID || 'development', nodeVersion: process.version },
   } });
 }));
+const viewingForUsers = async (ids) => {
+  if (!ids.length) return [];
+  const rows = await getDB().collection('playback_presence').find(activeViewingQuery(ids),
+    { projection: VIEWING_FIELDS }).sort({ seenAt: -1 }).limit(100).toArray();
+  const titles = new Map();
+  await Promise.all([...new Set(rows.map(r => `${r.type}:${r.tmdbId}`))].map(async key => {
+    const [type, id] = key.split(':');
+    try {
+      const detail = await cached(`catalog:detail:${type}:${id}:v3`, CACHE_TTL.DETAIL,
+        () => tmdb.getDetail(type, Number(id)), tmdb.STALE_OPTS);
+      if (detail?.title) titles.set(key, detail.title);
+    } catch { /* Keep the content identity when the catalog is unavailable. */ }
+  }));
+  return rows.map(r => ({ ...r, title: titles.get(`${r.type}:${r.tmdbId}`) || `TMDB ${r.tmdbId}` }));
+};
 router.get('/users', route(async (req, res) => {
   const { page, limit, search, role } = parseAdminList(req.query), query = adminUserFilters(req.query);
   // Older Google-created accounts have no explicit role; their effective role
@@ -82,6 +98,9 @@ router.get('/users', route(async (req, res) => {
   if (search) query.$or = ['email', 'username'].map(key => ({ [key]: { $regex: literalSearch(search), $options: 'i' } }));
   const collection = getDB().collection('users');
   const [total, data] = await Promise.all([collection.countDocuments(query), collection.find(query, { projection: USER_FIELDS }).sort({ createdAt: -1, _id: -1 }).skip((page - 1) * limit).limit(limit).toArray()]);
+  const viewing = await viewingForUsers(data.map(u => String(u._id)));
+  for (const user of data) user.watching = user.isBanned ? [] : viewing.filter(r => r.userIdStr === String(user._id))
+    .map(({ userIdStr, sessionId, ...safe }) => safe);
   res.json({ success: true, data, pagination: { page, limit, total, pages: Math.max(1, Math.ceil(total / limit)) } });
 }));
 router.patch('/users/:id/status', route(async (req, res) => {
@@ -93,7 +112,10 @@ router.patch('/users/:id/status', route(async (req, res) => {
   const isBanned = req.body.isBanned;
   await db.collection('users').updateOne({ _id: id }, { $set: { isBanned, bannedAt: isBanned ? new Date() : null, updatedAt: new Date() } });
   accountStatus.invalidate(id);
-  if (isBanned) await db.collection('playback_sessions').updateMany({ userIdStr: String(id) }, { $set: { expiresAt: new Date() } });
+  if (isBanned) {
+    await db.collection('playback_sessions').updateMany({ userIdStr: String(id) }, { $set: { expiresAt: new Date() } });
+    await db.collection('playback_presence').deleteMany({ userIdStr: String(id) });
+  }
   await audit(req, isBanned ? 'ban-account' : 'unban-account', { userId: String(id) });
   res.json({ success: true, data: { isBanned } });
 }));
@@ -118,6 +140,15 @@ router.get('/sessions', route(async (req, res) => {
   const collection = getDB().collection('playback_sessions');
   const [total, data] = await Promise.all([collection.countDocuments(query), collection.find(query, { projection: SESSION_FIELDS }).sort({ createdAt: -1, _id: -1 }).skip((page - 1) * limit).limit(limit).toArray()]);
   for (const row of data) row.type = row.type || row.mediaType || 'movie';
+  const ids = [...new Set(data.map(r => String(r.userIdStr || r.userId || '')).filter(Boolean))];
+  const accounts = ids.length ? await getDB().collection('users').find({ _id: { $in: ids.map(id => ObjectId.isValid(id) ? new ObjectId(id) : id) } }, { projection: { username: 1, email: 1 } }).toArray() : [];
+  const accountsById = new Map(accounts.map(u => [String(u._id), u]));
+  for (const row of data) {
+    const user = accountsById.get(String(row.userIdStr || row.userId || ''));
+    row.viewerUsername = user?.username || null;
+    row.viewerEmail = user?.email || null;
+  }
+
   const titles = new Map();
   const identities = [...new Set(data.filter(row => row.tmdbId).map(row => `${row.type || 'movie'}:${row.tmdbId}`))];
   await Promise.all(Array.from({ length: Math.min(4, identities.length) }, async () => {

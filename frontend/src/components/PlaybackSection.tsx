@@ -992,6 +992,29 @@ export default function PlaybackSection({
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [playbackSessionId, isSessionActive]);
 
+  // Report actual media state separately from the resource lease. Never mark
+  // preparation, staging, paused or stalled playback as actively watching.
+  useEffect(() => {
+    if (!videoEl || !isSessionActive || !playbackSessionId) return;
+    const report = () => {
+      const state = videoEl.ended ? 'ended' : videoEl.paused ? 'paused'
+        : videoEl.seeking || videoEl.readyState < 3 ? 'buffering' : 'playing';
+      void playbackAPI.heartbeat(playbackSessionId, getViewerId(), {
+        state, position: Math.max(0, (startOffsetRef.current || 0) + videoEl.currentTime),
+      }).catch(() => {});
+    };
+    const events = ['playing', 'pause', 'waiting', 'ended', 'seeking', 'seeked'];
+    events.forEach(event => videoEl.addEventListener(event, report));
+    report();
+    const timer = setInterval(report, 25000);
+    return () => {
+      clearInterval(timer);
+      events.forEach(event => videoEl.removeEventListener(event, report));
+    };
+    // Stable viewer identity and offsets are read at report time.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [videoEl, isSessionActive, playbackSessionId]);
+
   // Direct-playback URLs die after expiresIn (~15 min): refresh ahead of
   // expiry instead of letting the film stop mid-watch and fall back to a
   // full re-resolve. Keyed on the session id captured below, not just the

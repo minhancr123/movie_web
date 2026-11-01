@@ -95,6 +95,8 @@ const createIndexes = async () => {
       ['provider_connections', { userId: 1, provider: 1 }, { unique: true }],
       ['provider_connections', { userIdStr: 1, provider: 1 }],
       // Session ids are unguessable randoms; ownership is checked per request.
+      ['playback_presence', { userIdStr: 1, sessionId: 1, viewerId: 1 }, { unique: true }],
+      ['playback_presence', { expiresAt: 1 }, { expireAfterSeconds: 0 }],
       ['playback_sessions', { sessionId: 1 }, { unique: true }],
       ['playback_sessions', { userId: 1, createdAt: -1 }],
       ['playback_sessions',

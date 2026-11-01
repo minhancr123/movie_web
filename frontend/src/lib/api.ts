@@ -242,8 +242,8 @@ export const playbackAPI = {
     sourceToken?: string;
   }) => enhancePlaybackPayload(data).then(payload => authClient.post('/playback/sources', payload)),
   getSession: (sessionId: string) => authClient.get(`/playback/session/${sessionId}`),
-  heartbeat: (sessionId: string, viewerId: string) =>
-    authClient.post(`/playback/session/${encodeURIComponent(sessionId)}/heartbeat`, { viewerId }),
+  heartbeat: (sessionId: string, viewerId: string, playback?: { state: 'playing' | 'paused' | 'buffering' | 'ended'; position: number }) =>
+    authClient.post(`/playback/session/${encodeURIComponent(sessionId)}/heartbeat`, { viewerId, playback }),
   leave: (sessionId: string, viewerId: string) =>
     authClient.post(`/playback/session/${encodeURIComponent(sessionId)}/leave`, { viewerId }),
   // Re-mint an expiring direct-playback URL without a full re-resolve. The

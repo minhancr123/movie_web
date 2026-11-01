@@ -1,3 +1,4 @@
+import { recordViewingPresence } from '../services/playback/viewingPresence.js';
 import { ownedPinnedCandidate } from '../services/playback/ownedPinnedSource.js';
 import { torboxCdnCircuit } from '../services/debrid/cdnCircuit.js';
 import { registerViewerResolve } from '../services/playback/resolveViewerScope.js';
@@ -4490,6 +4491,7 @@ export const heartbeatPlaybackSession = async (req, res) => {
     if (!isSessionOwner(session, req.user.userId)) {
       return fail(res, 403, 'Không có quyền truy cập phiên phát này');
     }
+    await recordViewingPresence(db, session, req.user.userId, viewerId, req.body?.playback).catch(() => {});
     registerSessionViewer(sessionId, viewerId);
     if (session?.adoptedFromSessionId) registerSessionViewer(session.adoptedFromSessionId, viewerId);
     // A published session serves shared immutable bytes: pin its rendition
@@ -4527,6 +4529,7 @@ export const leavePlaybackSession = async (req, res) => {
     if (!isSessionOwner(session, req.user.userId)) {
       return fail(res, 403, 'Không có quyền truy cập phiên phát này');
     }
+    await db.collection('playback_presence').deleteOne({ userIdStr: String(req.user.userId), sessionId, viewerId }).catch(() => {});
     const remaining = removeSessionViewer(sessionId, viewerId);
     if (session?.adoptedFromSessionId) removeSessionViewer(session.adoptedFromSessionId, viewerId);
     const leaveRenditionId = session.publishedRenditionId || session.renditionKey;
