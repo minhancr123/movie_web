@@ -29,7 +29,7 @@ const hook = registerHooks({ resolve(specifier, context, next) {
 let server, edge;
 try {
   const { mediaAuthMiddleware } = await import('../middleware/auth.js');
-  const { serveRenditionAsset } = await import('../controllers/playbackController.js');
+  const { serveRenditionAsset, serveHlsAsset } = await import('../controllers/playbackController.js');
   const { mintMediaGrant } = await import('../services/playback/mediaGrant.js');
   const dir = path.join(root, rid); await fs.mkdir(dir);
   const media = spawnSync('ffmpeg', ['-hide_banner', '-loglevel', 'error', '-f', 'lavfi', '-i', 'color=black:s=64x64:r=24',
@@ -38,6 +38,7 @@ try {
     '-hls_segment_filename', path.join(dir, 'seg_%05d.m4s'), path.join(dir, 'index.m3u8')], { encoding: 'utf8', timeout: 30000 });
   assert.equal(media.status, 0, media.stderr); // Mandatory: never skip missing media tools.
   const app = express(); app.get('/api/playback/hls/r/:renditionId/:asset', mediaAuthMiddleware, serveRenditionAsset);
+  app.get('/api/playback/hls/:sessionId/:asset', mediaAuthMiddleware, serveHlsAsset);
   server = app.listen(0, '127.0.0.1'); await new Promise(resolve => server.once('listening', resolve));
   const base = `http://127.0.0.1:${server.address().port}`;
   const route = `/api/playback/hls/r/${rid}/`;
@@ -46,6 +47,33 @@ try {
   const checks = [];
   const check = async (name, fn) => { await fn(); checks.push(name); console.log(`ok - staging ${name}`); };
   let child, manifestBody;
+  await check('master-to-index-to-init-and-segments-stable-and-session-routes', async () => {
+    for (const kind of ['rendition', 'published-session', 'growing-session']) {
+      row.mode = 'remux';
+      if (kind === 'growing-session') {
+        delete row.publishedRenditionId;
+        await fs.mkdir(path.join(process.env.TRANSCODE_ROOT, sid), { recursive: true });
+        await fs.cp(dir, path.join(process.env.TRANSCODE_ROOT, sid), { recursive: true });
+      }
+      const prefix = kind === 'rendition' ? route : `/api/playback/hls/${sid}/`;
+      const master = await fetch(`${base}${prefix}master.m3u8?start=1.25`, { headers });
+      assert.equal(master.status, 200, kind);
+      assert.match(master.headers.get('cache-control'), /private.*no-store/);
+      const body = await master.text();
+      assert.match(body, /RESOLUTION=64x64,CODECS="avc1\.[0-9a-f]{6},mp4a\.40\.2"/);
+      const index = new URL(body.split('\n').find(l => l && !l.startsWith('#')), `${base}${prefix}`);
+      assert(index.searchParams.has('media_grant')); assert(!body.includes(login));
+      const response = await fetch(index); assert.equal(response.status, 200, kind);
+      const media = await response.text(); assert.match(media, /#EXT-X-START:TIME-OFFSET=1.25/);
+      const init = /URI="([^"]+)"/.exec(media)[1];
+      const segment = media.split('\n').find(l => l && !l.startsWith('#'));
+      for (const uri of [init, segment]) assert.equal((await fetch(new URL(uri, index))).status, 200);
+      assert.equal((await fetch(`${base}${prefix}master.m3u8`)).status, 401);
+      const foreign = jwt.sign({userId:'other-viewer'}, process.env.JWT_SECRET);
+      assert.equal((await fetch(`${base}${prefix}master.m3u8`, {headers:{Authorization:`Bearer ${foreign}`}})).status,403);
+    }
+    row.publishedRenditionId = rid;
+  });
   await check('legacy-native-manifest-and-scoped-child-URLs', async () => {
     const r = await fetch(`${base}${route}index.m3u8?access_token=${login}`); assert.equal(r.status, 200);
     assert.match(r.headers.get('cache-control'), /private.*no-store/); manifestBody = await r.text();

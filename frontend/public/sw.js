@@ -18,7 +18,7 @@
  */
 
 /** Bump on any behavioural change: the old cache is purged on activate. */
-const VERSION = 'cinevn-v6';
+const VERSION = 'cinevn-v7';
 const OFFLINE_PAGE = `/offline.html?rev=${VERSION}`;
 const SHELL_CACHE = `cinevn-shell-${VERSION}`;
 const ASSET_CACHE = `cinevn-assets-${VERSION}`;

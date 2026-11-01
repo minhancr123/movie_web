@@ -4856,7 +4856,9 @@ export const serveHlsAsset = async (req, res) => {
         if (req.query?.start) query.set('start', String(req.query.start));
         const qStr = query.toString() ? `?${query.toString()}` : '';
         const indexUrl = `index.m3u8${qStr}`;
-        const masterBody = buildMasterPlaylist(session, indexUrl);
+        const masterBody = await buildMasterPlaylist({
+        playlistPath: sessionPath(sessionId, 'index.m3u8'), indexUrl,
+      });
         res.setHeader('Content-Type', MANIFEST_CONTENT_TYPE);
         res.setHeader('Cache-Control', MANIFEST_CACHE_CONTROL);
         return res.send(masterBody);
@@ -4932,14 +4934,6 @@ export const serveHlsAsset = async (req, res) => {
       }
     }
 
-    // sendFile() throws on relative paths, which used to surface as a 500.
-    const filePath = path.resolve(sessionPath(sessionId, asset));
-    try {
-      await fs.stat(filePath);
-    } catch {
-      return fail(res, 404, 'Tài nguyên chưa sẵn sàng');
-    }
-
     if (asset === 'master.m3u8') {
       const grantToken = sessionGrantToken(req, session, sessionId);
       const query = new URLSearchParams();
@@ -4947,10 +4941,20 @@ export const serveHlsAsset = async (req, res) => {
       if (req.query?.start) query.set('start', String(req.query.start));
       const qStr = query.toString() ? `?${query.toString()}` : '';
       const indexUrl = `index.m3u8${qStr}`;
-      const masterBody = buildMasterPlaylist(session, indexUrl);
+      const masterBody = await buildMasterPlaylist({
+        playlistPath: sessionPath(sessionId, 'index.m3u8'), indexUrl,
+      });
       res.setHeader('Content-Type', MANIFEST_CONTENT_TYPE);
       res.setHeader('Cache-Control', MANIFEST_CACHE_CONTROL);
       return res.send(masterBody);
+    }
+
+    // sendFile() throws on relative paths, which used to surface as a 500.
+    const filePath = path.resolve(sessionPath(sessionId, asset));
+    try {
+      await fs.stat(filePath);
+    } catch {
+      return fail(res, 404, 'Tài nguyên chưa sẵn sàng');
     }
 
     // Growing EVENT playlist: rewrite child URLs with a session-scoped grant
@@ -4968,6 +4972,7 @@ export const serveHlsAsset = async (req, res) => {
     );
     return res.sendFile(filePath);
   } catch (error) {
+    if (error?.code === 'ENOENT') return fail(res, 404, 'Tài nguyên chưa sẵn sàng');
     console.error('serveHlsAsset error:', error.message);
     return fail(res, 500, 'Lỗi server');
   }
@@ -5068,7 +5073,7 @@ export const serveRenditionAsset = async (req, res) => {
       if (req.query?.start) query.set('start', String(req.query.start));
       const qStr = query.toString() ? `?${query.toString()}` : '';
       const indexUrl = `index.m3u8${qStr}`;
-      const masterBody = buildMasterPlaylist(authSession, indexUrl);
+      const masterBody = await buildMasterPlaylist({ playlistPath: renditionPath(renditionId, 'index.m3u8'), indexUrl });
       res.setHeader('Content-Type', MANIFEST_CONTENT_TYPE);
       res.setHeader('Cache-Control', MANIFEST_CACHE_CONTROL);
       return res.send(masterBody);
@@ -5111,6 +5116,7 @@ export const serveRenditionAsset = async (req, res) => {
     res.setHeader('Cache-Control', 'private, max-age=31536000, immutable');
     return res.sendFile(filePath);
   } catch (error) {
+    if (error?.code === 'ENOENT') return fail(res, 404, 'Tài nguyên chưa sẵn sàng');
     console.error('serveRenditionAsset error:', error.message);
     return fail(res, 500, 'Lỗi server');
   }

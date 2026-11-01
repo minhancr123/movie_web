@@ -1969,6 +1969,11 @@ export default function VideoPlayer({ src, playbackStartedAt, movie, episode, au
             const onNativeError = () => {
                 cancelPositionRestore?.();
                 if (cancelled) return;
+                if (isHlsSrc && nativeHlsPreferred && Hls.isSupported()) {
+                    setMseFallbackFor(src);
+                    setIsLoading(true);
+                    return;
+                }
                 if (nativeMediaNeedsAnotherSource(video.error?.code)) {
                     const unplayable = onUnplayableSourceRef.current;
                     if (unplayable) unplayable();
@@ -1985,8 +1990,11 @@ export default function VideoPlayer({ src, playbackStartedAt, movie, episode, au
             // Stop the old source, reset its ranges, then wait for the new
             // seek to finish. Never play its keyframe origin while restoring.
             video.pause();
-            const nativeSrc = authToken && src.includes('/api/playback/hls/')
+            let nativeSrc = authToken && src.includes('/api/playback/hls/')
                 ? `${src}${src.includes('?') ? '&' : '?'}access_token=${encodeURIComponent(authToken)}` : src;
+            if (isHlsSrc && nativeSrc.includes('/api/playback/hls/')) {
+                nativeSrc = nativeSrc.replace(/\/index\.m3u8(?=[?#]|$)/, '/master.m3u8');
+            }
             video.src = withNativeStartHint(nativeSrc, restoreTargetLocal,
                 process.env.NEXT_PUBLIC_NATIVE_HLS_START_HINT === '1');
             video.load();
