@@ -62,3 +62,26 @@ test('a silent OS pause is checked again when the waiting delay expires', () => 
   const f = fixture(); f.event('waiting'); f.video.paused = true; f.tick();
   assert.equal(f.loading(), false); f.cleanup();
 });
+
+test('an MSE decoder failure escalates once even with enough buffer and a browser-induced pause', () => {
+  const context={exports:{}};vm.runInNewContext(code,context);
+  const video=Object.assign(new EventTarget(),{error:{code:3},paused:true,readyState:4});
+  let failovers=0;const stop=context.exports.observeDecoderFailure(video,()=>{
+    failovers++;video.dispatchEvent(new Event('error'));
+  });
+  video.dispatchEvent(new Event('error'));video.dispatchEvent(new Event('error'));
+  assert.equal(failovers,1,'nested/repeated decoder events cannot change sources twice');stop();
+});
+test('network and abort events keep their existing retry policy; a later decoder rejection escalates', () => {
+  const context={exports:{}};vm.runInNewContext(code,context);
+  const video=Object.assign(new EventTarget(),{error:null});let failovers=0;
+  const stop=context.exports.observeDecoderFailure(video,()=>failovers++);
+  for(const value of [null,{code:1},{code:2}]){video.error=value;video.dispatchEvent(new Event('error'));}
+  assert.equal(failovers,0);video.error={code:4};video.dispatchEvent(new Event('error'));assert.equal(failovers,1);stop();
+});
+test('retired MSE elements cannot trigger a failover on the next source', () => {
+  const context={exports:{}};vm.runInNewContext(code,context);
+  const video=Object.assign(new EventTarget(),{error:{code:3}});let failovers=0;
+  const stop=context.exports.observeDecoderFailure(video,()=>failovers++);stop();
+  video.dispatchEvent(new Event('error'));assert.equal(failovers,0);
+});

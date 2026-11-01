@@ -38,3 +38,19 @@ export function observeBuffering(video: BufferingMedia, loading: (value: boolean
     for (const [name, handler] of events) video.removeEventListener(name, handler);
   };
 }
+
+/** A decoder rejection can close MSE without hls.js marking its event fatal.
+ * Buffered data and paused=true do not make that source usable again. */
+export function observeDecoderFailure(
+  video: Pick<HTMLVideoElement, 'error' | 'addEventListener' | 'removeEventListener'>,
+  fail: () => void,
+): () => void {
+  let failed = false;
+  const error = () => {
+    if (failed || (video.error?.code !== 3 && video.error?.code !== 4)) return;
+    failed = true;
+    fail();
+  };
+  video.addEventListener('error', error);
+  return () => video.removeEventListener('error', error);
+}

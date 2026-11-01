@@ -4,7 +4,7 @@ import { SeekTrace } from '@/lib/seek-trace';
 import React, { useEffect, useRef, useState, useCallback } from 'react';
 import { createPortal } from 'react-dom';
 import { enterCssFullscreen } from '@/lib/css-fullscreen';
-import { observeBuffering, armStallDeadline } from '@/lib/media-buffering';
+import { observeBuffering, armStallDeadline, observeDecoderFailure } from '@/lib/media-buffering';
 import { prepareWindowAt, stalledWindowAt } from '@/lib/prepared-window';
 import { loadingPresentation } from '@/lib/autoplay';
 import { nativeMediaNeedsAnotherSource } from '@/lib/source-delivery';
@@ -1548,6 +1548,7 @@ export default function VideoPlayer({ src, playbackStartedAt, movie, episode, au
         // A play() promise still pending at that moment rejects with AbortError
         // ("interrupted by a new load request"), so ignore results once stale.
         let cancelled = false;
+        let decodeFailurePauseIntent: boolean | null = null;
         // Resume-coverage timeout holder: cleared if the pipeline tears down
         // before the playlist reports how much of the film it covers yet.
         let resumeTimer: ReturnType<typeof setTimeout> | undefined;
@@ -1701,6 +1702,24 @@ export default function VideoPlayer({ src, playbackStartedAt, movie, episode, au
                 },
             });
             hlsRef.current = hls;
+            let unplayableDetected = false;
+            const failUnplayable = () => {
+                if (cancelled || unplayableDetected) return;
+                unplayableDetected = true;
+                decodeFailurePauseIntent = userPausedRef.current;
+                if (!restorePendingRef.current && Number.isFinite(video.currentTime)) {
+                    onPlaybackProgress?.(sessionStartAt + video.currentTime);
+                }
+                cancelPositionRestore?.();
+                restorePendingRef.current = true;
+                setIsLoading(true);
+                hls.destroy();
+                const unplayable = onUnplayableSourceRef.current;
+                if (unplayable) unplayable();
+                else if (onPlaybackFailure) onPlaybackFailure('Trình duyệt không giải mã được bản phát này.');
+                else setError('Trình duyệt không giải mã được bản phát này. Bấm Thử lại để nối lại.');
+            };
+            nativeCleanupRef.current = observeDecoderFailure(video, failUnplayable);
             let fatalNetworkRecoveries = 0;
             let fatalMediaRecoveries = 0;
             // Same-fragment failure streak: a segment the server can never
@@ -1845,6 +1864,12 @@ export default function VideoPlayer({ src, playbackStartedAt, movie, episode, au
             // Bearer would 401 forever, so the same src rebuilds at most
             // once per 5h (a 6h grant cannot legitimately die twice faster).
             hls.on(Hls.Events.ERROR, (event, data) => {
+                if (cancelled || unplayableDetected) return;
+                if (video.error?.code === 3 || video.error?.code === 4) {
+                    failUnplayable();
+                    return;
+                }
+
                 const sn = typeof data?.frag?.sn === 'number' ? data.frag.sn : null;
                 const respCode = Number(
                     (data as { response?: { code?: unknown } })?.response?.code,
@@ -1922,11 +1947,7 @@ export default function VideoPlayer({ src, playbackStartedAt, movie, episode, au
                         detail === Hls.ErrorDetails.BUFFER_ADD_CODEC_ERROR ||
                         (detail === Hls.ErrorDetails.FRAG_PARSING_ERROR && !fragBufferedOk)
                     ) {
-                        const unplayable = onUnplayableSourceRef.current;
-                        if (unplayable) unplayable();
-                        else if (onPlaybackFailure) onPlaybackFailure('Trình duyệt không giải mã được bản phát này.');
-                        else setError('Trình duyệt không giải mã được bản phát này. Bấm Thử lại để nối lại.');
-                        hls.destroy();
+                        failUnplayable();
                         return;
                     }
                     switch (data.type) {
@@ -2008,8 +2029,8 @@ export default function VideoPlayer({ src, playbackStartedAt, movie, episode, au
             cancelled = true;
             // Remember intent for the next pipeline: a paused teardown must
             // rebuild paused, a playing one may resume playing.
-            pausedBeforeRebuildRef.current = restorePendingRef.current ? !playAfterRestore
-                : seekResumeIntentRef.current ? false : video.paused;
+            pausedBeforeRebuildRef.current = decodeFailurePauseIntent ?? (restorePendingRef.current ? !playAfterRestore
+                : seekResumeIntentRef.current ? false : video.paused);
             cancelPositionRestore?.();
             if (resumeTimer !== undefined) {
                 clearTimeout(resumeTimer);
@@ -2182,7 +2203,7 @@ export default function VideoPlayer({ src, playbackStartedAt, movie, episode, au
             armStallTimer();
         };
         const handlePause = () => {
-            if (seekTargetRef.current === null && !restorePendingRef.current) {
+            if (!video.error && seekTargetRef.current === null && !restorePendingRef.current) {
                 userPausedRef.current = true;
                 // A short beat, so scrubbing-pauses and instant re-plays never
                 // flash the dim; buffering/stall pauses don't land here.
