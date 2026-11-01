@@ -48,7 +48,9 @@ assert.equal(
   buildRenditionId({ ...base, video: { mode: 'copy', height: 9999 } }),
   buildRenditionId({ ...base, video: { mode: 'copy' } }),
 );
-console.log('ok - copy-mode renditions share one id');
+assert.notEqual(buildRenditionId({...base,video:{mode:'copy',codec:'h264'}}),
+  buildRenditionId({...base,video:{mode:'copy'}}), 'AVC TS must not reuse earlier fMP4 bytes');
+console.log('ok - copy-mode identities distinguish AVC transport');
 
 // Seek-started sessions hold truncated bytes: same file and settings at a
 // different start must never share an id, while startAt: 0 stays identical

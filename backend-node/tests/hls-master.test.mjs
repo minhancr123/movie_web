@@ -38,3 +38,28 @@ test('real fMP4 output: actual aspect ratio, measured bitrate, no master file re
     await assert.rejects(buildMasterPlaylist({playlistPath:path.join(dir,'index.m3u8'),indexUrl:'index.m3u8'}),{code:'ENOENT'});
   } finally {await fs.rm(dir,{recursive:true,force:true});}
 });
+
+test('copied AVC TS has correct master metadata, preserves frames, and publishes without an init file', async () => {
+  const dir=await fs.mkdtemp(path.join(os.tmpdir(),'cinevn-avc-ts-'));
+  process.env.TRANSCODE_ROOT=path.join(dir,'sessions');process.env.RENDITIONS_ROOT=path.join(dir,'renditions');
+  const {buildFfmpegArgs,sessionPath}=await import('../services/playback/remuxService.js');
+  const {publishRendition,renditionPath}=await import('../services/playback/renditions.js');
+  const run=(args)=>{const r=spawnSync('ffmpeg',['-v','error',...args],{encoding:'utf8',timeout:30000});assert.equal(r.status,0,r.stderr);return r.stdout;};
+  try {
+    const source=path.join(dir,'source.mkv'),sid='e'.repeat(32),rid='f'.repeat(32),out=path.dirname(sessionPath(sid));await fs.mkdir(out,{recursive:true});
+    run(['-f','lavfi','-i','testsrc2=size=192x80:rate=24','-f','lavfi','-i','sine=sample_rate=48000','-t','3',
+      '-c:v','libx264','-threads','1','-g','24','-c:a','aac',source]);
+    const args=buildFfmpegArgs({inputUrl:source,outputDir:out,readRate:0,video:{mode:'copy',codec:'h264'},audioCopy:true});
+    assert.equal(args[args.indexOf('-hls_segment_type')+1],'mpegts');
+    assert(!args.includes('independent_segments'),'copied open GOPs are not advertised as independently decodable');run(args);
+    const master=await buildMasterPlaylist({playlistPath:path.join(out,'index.m3u8'),indexUrl:'index.m3u8'});
+    assert.match(master,/RESOLUTION=192x80,CODECS="avc1\.[0-9a-f]{6},mp4a\.40\.2"/);
+    assert(!await fs.stat(path.join(out,'init.mp4')).then(()=>true,()=>false));
+    const hashes=p=>run(['-i',p,'-map','0:v:0','-f','framemd5','-']).split('\n').filter(l=>l&&!l.startsWith('#')).map(l=>l.split(',').at(-1).trim());
+    assert.deepEqual(hashes(path.join(out,'index.m3u8')),hashes(source),'compressed video is copied without picture loss');
+    const result=await publishRendition({sessionId:sid,renditionId:rid});assert.equal(result.ok,true);
+    assert.match(await fs.readFile(renditionPath(rid,'index.m3u8'),'utf8'),/seg_\d+\.ts/);
+    const legacy=buildFfmpegArgs({inputUrl:source,outputDir:out,readRate:0,video:{mode:'copy',codec:'hevc'}});
+    assert.equal(legacy[legacy.indexOf('-hls_segment_type')+1],'fmp4','HEVC container stays unchanged');
+  } finally {await fs.rm(dir,{recursive:true,force:true});}
+});

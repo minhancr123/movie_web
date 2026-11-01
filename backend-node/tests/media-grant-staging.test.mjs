@@ -147,6 +147,27 @@ try {
     assert.equal((await fetch(`${proxy}${child.pathname}${child.search}`)).status, 200);
     assert.equal((await fetch(`${proxy}${child.pathname}`)).status, 401); assert.equal(cache.size, 0);
   });
+  await check('TS masters and scoped segments work on stable and growing routes', async () => {
+    const tsRid = 'd'.repeat(32), tsDir = path.join(root, tsRid); await fs.mkdir(tsDir);
+    const result = spawnSync('ffmpeg', ['-v','error','-i',path.join(dir,'index.m3u8'),'-c','copy',
+      '-f','hls','-hls_segment_type','mpegts','-hls_playlist_type','vod','-hls_time','1',
+      '-hls_segment_filename',path.join(tsDir,'seg_%05d.ts'),path.join(tsDir,'index.m3u8')],{encoding:'utf8',timeout:30000});
+    assert.equal(result.status,0,result.stderr);
+    row.publishedRenditionId=tsRid;
+    for (const prefix of [`/api/playback/hls/r/${tsRid}/`, `/api/playback/hls/${sid}/`]) {
+      const master=await fetch(`${base}${prefix}master.m3u8`,{headers});assert.equal(master.status,200);
+      const body=await master.text();assert.match(body,/CODECS="avc1\.[0-9a-f]{6},mp4a\.40\.2"/);
+      const index=new URL(body.split('\n').find(l=>l&&!l.startsWith('#')),`${base}${prefix}`);
+      const media=await (await fetch(index)).text();assert(!media.includes('#EXT-X-MAP'));
+      const segment=new URL(media.split('\n').find(l=>l&&!l.startsWith('#')),index);
+      const response=await fetch(segment,{headers:{Range:'bytes=0-31'}});assert.equal(response.status,206);
+      assert.match(response.headers.get('content-type'),/video\/mp2t/);
+      assert.equal((await fetch(`${base}${segment.pathname}`)).status,401);
+    }
+    const sessionDir=path.join(process.env.TRANSCODE_ROOT,sid);
+    await fs.rm(sessionDir,{recursive:true,force:true});await fs.cp(tsDir,sessionDir,{recursive:true});delete row.publishedRenditionId;
+    const response=await fetch(`${base}/api/playback/hls/${sid}/master.m3u8`,{headers});assert.equal(response.status,200);
+  });
   console.log(JSON.stringify({ staging: 'local-HTTP-real-controller', checks: checks.length, externalCDN: 'not-tested', oldPublicCachePurge: 'required-before-release' }));
 } finally {
   await Promise.all([server, edge].filter(Boolean).map(s => new Promise(resolve => s.close(resolve))));

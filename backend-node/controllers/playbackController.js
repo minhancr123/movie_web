@@ -742,8 +742,14 @@ const findReusableRemuxSession = async (db, { userId, type, tmdbId, season, epis
       const playlistPath = sessionPath(session.sessionId, 'index.m3u8');
       if (await fs.access(sessionPath(session.sessionId, '.interrupted')).then(() => true, () => false)) continue;
       await fs.access(playlistPath);
-      await fs.access(sessionPath(session.sessionId, 'init.mp4'));
       const playlist = await fs.readFile(playlistPath, 'utf8');
+      if (session.videoCodec === 'h264' && !/^seg_\d+\.ts$/m.test(playlist)) continue;
+      if (playlist.includes('#EXT-X-MAP:')) await fs.access(sessionPath(session.sessionId, 'init.mp4'));
+      else {
+        const firstSegment = /^seg_\d+\.ts$/m.exec(playlist)?.[0];
+        if (!firstSegment) continue;
+        await fs.access(sessionPath(session.sessionId, firstSegment));
+      }
       const complete = playlist.includes('#EXT-X-ENDLIST');
 
       // Check if session has buffered enough to cover requestedStartAt + buffer
@@ -824,6 +830,7 @@ const findReusableRemuxSession = async (db, { userId, type, tmdbId, season, epis
         },
       );
     }
+      if (reusableProbe.video?.codec === 'h264' && !/^seg_\d+\.ts$/m.test(playlist)) continue;
       const compatibility = decidePlaybackMode(reusableProbe, caps, audioIndex);
       if (compatibility.mode === 'reject') {
         await db.collection('playback_sessions').updateOne(
@@ -4696,13 +4703,14 @@ export const refreshPlaybackUrl = async (req, res) => {
 const ASSET_CONTENT_TYPES = {
   '.m3u8': 'application/vnd.apple.mpegurl',
   '.m4s': 'video/iso.segment',
+  '.ts': 'video/mp2t',
   '.mp4': 'video/mp4',
 };
 
 const isAllowedAsset = (asset) => {
   const name = String(asset || '');
   if (name === 'index.m3u8' || name === 'master.m3u8' || name === 'init.mp4') return true;
-  return /^seg_\d+\.m4s$/.test(name);
+  return /^seg_\d+\.(?:m4s|ts)$/.test(name);
 };
 
 /**
@@ -4874,7 +4882,7 @@ export const serveHlsAsset = async (req, res) => {
       if (asset === 'index.m3u8') {
         return await serveManifestResponse(res, filePath, sessionGrantToken(req, session, sessionId), { startAt: req.query?.start });
       }
-      const ext = asset.endsWith('.m3u8') ? '.m3u8' : asset.endsWith('.m4s') ? '.m4s' : '.mp4';
+      const ext = asset.endsWith('.m3u8') ? '.m3u8' : asset.endsWith('.m4s') ? '.m4s' : asset.endsWith('.ts') ? '.ts' : '.mp4';
       res.setHeader('Content-Type', ASSET_CONTENT_TYPES[ext]);
       res.setHeader(
         'Cache-Control',
@@ -4963,7 +4971,7 @@ export const serveHlsAsset = async (req, res) => {
       return await serveManifestResponse(res, filePath, sessionGrantToken(req, session, sessionId), { startAt: req.query?.start });
     }
 
-    const ext = asset.endsWith('.m3u8') ? '.m3u8' : asset.endsWith('.m4s') ? '.m4s' : '.mp4';
+    const ext = asset.endsWith('.m3u8') ? '.m3u8' : asset.endsWith('.m4s') ? '.m4s' : asset.endsWith('.ts') ? '.ts' : '.mp4';
     res.setHeader('Content-Type', ASSET_CONTENT_TYPES[ext]);
     // Playlist must not be cached (live window); segments are immutable.
     res.setHeader(
@@ -5110,7 +5118,7 @@ export const serveRenditionAsset = async (req, res) => {
       if (!token) return fail(res, 403, 'Chưa tạo được quyền phát tài nguyên');
       return await serveManifestResponse(res, filePath, token, { startAt: req.query?.start });
     }
-    const extension = asset.endsWith('.m4s') ? '.m4s' : '.mp4';
+    const extension = asset.endsWith('.m4s') ? '.m4s' : asset.endsWith('.ts') ? '.ts' : '.mp4';
     res.setHeader('Content-Type', ASSET_CONTENT_TYPES[extension]);
     // Browser reuse is safe; shared edge caching requires separate edge auth.
     res.setHeader('Cache-Control', 'private, max-age=31536000, immutable');

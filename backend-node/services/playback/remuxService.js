@@ -1049,6 +1049,10 @@ export const buildFfmpegArgs = ({ inputUrl, outputDir, audioCopy = false, segmen
   ].join(',');
   const videoArgs = buildVideoArgs(video, encoder);
   const videoCopy = !video || video.mode !== 'transcode';
+  // Copied AVC with recovery-point SEI can fail VideoToolbox on the fMP4
+  // passthrough path. TS lets HLS clients rebuild AVC sample metadata while
+  // preserving the original compressed picture (no video re-encode).
+  const transportStream = videoCopy && video?.codec === 'h264';
   // Opt in on hosts with FFmpeg >= 6.1. Only burst copied video, and cap the
   // media allowance: expensive video encodes retain their existing pacing.
   const burstSeconds = videoCopy && Number(readRate) > 0
@@ -1120,12 +1124,14 @@ export const buildFfmpegArgs = ({ inputUrl, outputDir, audioCopy = false, segmen
   '-strict',
   '-2',
   '-sn',
+  // MPEG-TS defaults to a 1.4s mux lead; keep the existing subtitle clock.
+  ...(transportStream ? ['-muxdelay', '0', '-muxpreload', '0'] : []),
   '-f',
   'hls',
   '-hls_time',
   String(segmentSeconds),
   '-hls_segment_type',
-  'fmp4',
+  transportStream ? 'mpegts' : 'fmp4',
   // A movie is VOD, not a live feed. The previous flags made this a sliding
   // window: delete_segments+omit_endlist with hls_list_size 10 kept only the
   // newest ~10 segments and dropped EXT-X-ENDLIST, so EXT-X-MEDIA-SEQUENCE kept
@@ -1137,14 +1143,13 @@ export const buildFfmpegArgs = ({ inputUrl, outputDir, audioCopy = false, segmen
   // t=0 while ffmpeg is still writing; ENDLIST is emitted when it exits cleanly.
   '-hls_playlist_type',
   'event',
-  '-hls_flags',
-  'independent_segments',
+  // Copied AVC may use open GOPs; do not promise independent TS segments.
+  ...(!transportStream ? ['-hls_flags', 'independent_segments'] : []),
   '-hls_list_size',
   '0',
-  '-hls_fmp4_init_filename',
-  'init.mp4',
+  ...(!transportStream ? ['-hls_fmp4_init_filename', 'init.mp4'] : []),
   '-hls_segment_filename',
-  path.join(outputDir, 'seg_%05d.m4s'),
+  path.join(outputDir, transportStream ? 'seg_%05d.ts' : 'seg_%05d.m4s'),
   path.join(outputDir, 'index.m3u8'),
   ];
 };
