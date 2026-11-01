@@ -397,6 +397,48 @@ const probeFile = async (inputUrl) => {
   };
 };
 
+export const probeViaRange = async (inputUrl) => {
+  // Fast path: pull only the first/last few MB (where the moov/cluster
+  // headers live) instead of reading the whole file across the CDN. Falls
+  // back to null so the caller can use the full ffprobe path.
+  let size = 0;
+  try {
+    const head = await fetch(inputUrl, { method: 'HEAD' });
+    size = Number(head.headers.get('content-length') || 0);
+  } catch { size = 0; }
+  const chunk = 4 * 1024 * 1024;
+  let buf;
+  try {
+    if (size > 0 && size <= chunk * 2) {
+      const r = await fetch(inputUrl);
+      if (!r.ok) return null;
+      buf = Buffer.from(await r.arrayBuffer());
+    } else {
+      const firstRes = await fetch(inputUrl, { headers: { Range: `bytes=0-${chunk - 1}` } });
+      if (!firstRes.ok && firstRes.status !== 206) return null;
+      const firstBuf = Buffer.from(await firstRes.arrayBuffer());
+      let lastBuf = Buffer.alloc(0);
+      if (size > chunk) {
+        const start = size - chunk;
+        const lastRes = await fetch(inputUrl, { headers: { Range: `bytes=${start}-${size - 1}` } });
+        if (lastRes.ok || lastRes.status === 206) lastBuf = Buffer.from(await lastRes.arrayBuffer());
+      }
+      buf = Buffer.concat([firstBuf, lastBuf]);
+    }
+  } catch { return null; }
+  if (!buf || buf.length < 1024) return null;
+  const tmpPath = `/tmp/scratchpad/rangeprobe-${Date.now()}-${Math.random().toString(36).slice(2)}.bin`;
+  try {
+    await fs.writeFile(tmpPath, buf);
+    const data = await probeFile(tmpPath);
+    if (!data || !data.video || !Array.isArray(data.audio) || data.audio.length === 0) return null;
+    return data;
+  } catch { return null; }
+  finally {
+    try { await fs.unlink(tmpPath); } catch {}
+  }
+};
+
 export const ffprobe = async inputUrl => {
   const hit = getCachedProbe(inputUrl);
   if (hit) return hit;

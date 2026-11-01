@@ -44,6 +44,7 @@ const toPage = (value) => {
 export const getHome = async (req, res) => {
   try {
     const data = await cached('catalog:home', CACHE_TTL.HOME, () => tmdb.getHome(), tmdb.STALE_OPTS);
+    res.set('Cache-Control', 'public, max-age=60, s-maxage=300');
     return res.json({ success: true, data });
   } catch (error) {
     return handleError(res, 'getHome', error);
@@ -64,6 +65,7 @@ export const searchCatalog = async (req, res) => {
 
     const key = `catalog:search:${query.toLowerCase()}:${page}`;
     const data = await cached(key, CACHE_TTL.SEARCH, () => tmdb.search(query, page), tmdb.STALE_OPTS_SHORT);
+    res.set('Cache-Control', 'public, max-age=60, s-maxage=120');
     return res.json({ success: true, data });
   } catch (error) {
     return handleError(res, 'searchCatalog', error);
@@ -82,6 +84,7 @@ export const discoverCatalog = async (req, res) => {
     const data = await cached(key, CACHE_TTL.DISCOVER, () =>
       tmdb.discover({ type, genre, region, year, page }), tmdb.STALE_OPTS_SHORT
     );
+    res.set('Cache-Control', 'public, max-age=60, s-maxage=120');
     return res.json({ success: true, data });
   } catch (error) {
     return handleError(res, 'discoverCatalog', error);
@@ -116,6 +119,22 @@ export const getDetail = async (req, res) => {
     );
 
     if (!data) return fail(res, 404, 'Không tìm thấy nội dung');
+    // Prefetch playback in background (Nuvio-style): when a logged-in user
+    // opens a title page, resolve the source now so Play is instant later.
+    try {
+      const auth = req.headers?.authorization;
+      if (auth && type === 'movie') {
+        setImmediate(() => {
+          fetch('http://127.0.0.1:5001/api/playback/resolve', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json', Authorization: auth },
+            body: JSON.stringify({
+              type, tmdbId, capabilities: { hls: true, fmp4: true, windowedRemux: true },
+            }),
+          }).catch(() => {});
+        });
+      }
+    } catch {}
     return res.json({ success: true, data });
   } catch (error) {
     return handleError(res, 'getDetail', error);

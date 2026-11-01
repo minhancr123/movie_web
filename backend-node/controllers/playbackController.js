@@ -106,6 +106,7 @@ import {
   // Single definition on purpose: a redaction that exists in two places is one
   // that will be tightened in one of them and left leaking in the other.
   redactSecrets,
+  probeViaRange,
 } from '../services/playback/remuxService.js';
 import { isLanClient } from '../services/playback/clientNetwork.js';
 import {
@@ -197,6 +198,7 @@ const clampLipSyncMs = (v) => Math.min(1000, Math.max(0, Math.round(Number(v) ||
 const probeResultKey = (infoHash, fileId) =>
   `playback:probefull:v${PROBE_SHAPE_VERSION}:${String(infoHash).toLowerCase()}:${String(fileId ?? 'default')}`;
 
+const mediaBase = () => String(process.env.MEDIA_BASE_URL || '').replace(/\/+$/, '');
 const fail = (res, status, message, extra = {}) =>
   res.status(status).json({ success: false, message, ...extra });
 
@@ -1878,19 +1880,29 @@ export const resolvePlayback = async (req, res) => {
       // once instead (the fresh doc then serves everyone).
       if (probe && probe.video && (!('startTime' in probe.video) || !('hasBFrames' in probe.video))) probe = null;
       if (!probe) {
+      // Fast path: probe a few MB via HTTP Range instead of reading the whole
+      // file. Falls back to the full probe (with node rotation) on failure.
+      try { probe = await probeViaRange(inputUrl); } catch { probe = null; }
+      if (!probe || !probe.video) probe = null;
+      if (!probe) {
+      const probeNodes = [null, 118, 119, 230, 231, 270, 271];
+      const probeUrls = probeNodes.map((node) => node === null ? inputUrl : torbox.rewriteToWorkingNode(inputUrl, node));
+      let probeError = null;
       try {
-        probe = await ffprobe(inputUrl);
-      } catch (error) {
-        torboxCdnCircuit.recordFailure(inputUrl, error?.message);
-        // The message is the whole diagnosis (HTTP status from the CDN,
-        // "Invalid data", timeout): without it every probe failure looks
-        // identical in the logs and the cause is unfindable. This exact
-        // silence once cost an evening of guessing.
+        probe = await Promise.any(probeUrls.map(async (u) => {
+          try { return await ffprobe(u); }
+          catch (e) { torboxCdnCircuit.recordFailure(u, e?.message); throw e; }
+        }));
+      } catch (e) {
+        probeError = (e && Array.isArray(e.errors) && e.errors[0]) || e;
+      }
+      if (probeError) {
         console.error(
-          `resolvePlayback probe failed tmdb=${tmdbId} infoHash=${String(candidate.infoHash).slice(0, 12)}: ${error?.message}`,
+          `resolvePlayback probe failed tmdb=${tmdbId} infoHash=${String(candidate.infoHash).slice(0, 12)}: ${probeError?.message}`,
         );
-        lastError = error;
+        lastError = probeError;
         continue;
+      }
       }
         await setCache(probeCacheKey, probe, PROBE_RESULT_TTL);
       }
@@ -2296,7 +2308,7 @@ export const resolvePlayback = async (req, res) => {
         // Stable cross-viewer URL (not per-session): every viewer of these
         // exact bytes shares one CDN edge object. The per-user session record
         // still governs history, subtitles and polling.
-        const stablePlaylistUrl = `/api/playback/hls/r/${renditionKey}/index.m3u8`;
+        const stablePlaylistUrl = `${mediaBase()}/api/playback/hls/r/${renditionKey}/index.m3u8`;
         await saveCandidateSession({
           sessionId: pubSessionId,
           userId: toObjectIdOrRaw(req.user.userId),
@@ -2414,7 +2426,7 @@ export const resolvePlayback = async (req, res) => {
               progress: 100,
               startAt: adoptedOrigin,
               windowSeconds: adoptedWindow,
-              playlistUrl: `/api/playback/hls/${adoptedId}/index.m3u8`,
+              playlistUrl: `${mediaBase()}/api/playback/hls/${adoptedId}/index.m3u8`,
               candidate: sanitizeCandidateForResponse(candidate),
             });
             console.warn(`resolvePlayback adopted writer session=${sessionId} from=${adoptedId} tmdb=${tmdbId}`);
@@ -2425,7 +2437,7 @@ export const resolvePlayback = async (req, res) => {
                 videoAction,
                 audioAction,
                 sessionId,
-                playlistUrl: `/api/playback/hls/${adoptedId}/index.m3u8`,
+                playlistUrl: `${mediaBase()}/api/playback/hls/${adoptedId}/index.m3u8`,
                 durationSeconds: fullDurationSeconds,
                 reason: publicText('Đang phát chung bản đang tạo', 'Đang phát'),
                 fileName: publicFileName(file.name || ''),
@@ -2721,7 +2733,7 @@ export const resolvePlayback = async (req, res) => {
           presentationShiftMs: shiftMs,
           audioIndex: decision.audioIndex ?? 0,
           progress: 100,
-        playlistUrl: `/api/playback/hls/${sessionId}/index.m3u8`,
+        playlistUrl: `${mediaBase()}/api/playback/hls/${sessionId}/index.m3u8`,
         candidate: sanitizeCandidateForResponse(candidate),
       });
 
@@ -2732,7 +2744,7 @@ export const resolvePlayback = async (req, res) => {
           videoAction,
           audioAction,
           sessionId,
-          playlistUrl: `/api/playback/hls/${sessionId}/index.m3u8`,
+          playlistUrl: `${mediaBase()}/api/playback/hls/${sessionId}/index.m3u8`,
           durationSeconds: fullDurationSeconds,
           reason: publicText(decision.reason, 'Đang phát'),
           fileName: publicFileName(file.name || ''),
@@ -2882,6 +2894,8 @@ export const resolvePlayback = async (req, res) => {
       `origin=${lastSeekOrigin === null ? '-' : `${lastSeekOrigin}s`} ` +
       `vfps=${lastVfps ?? '?'} ${spans}`,
     );
+    // device-direct-play telemetry: helps decide whether pre-transcode is worth it.
+    console.info(`[device-play] tmdb=${tmdbId} mode=${lastResolveMode ?? '?'}`);
   } catch {
     // Logging must never break the response path.
   }

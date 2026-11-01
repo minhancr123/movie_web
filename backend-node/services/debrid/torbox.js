@@ -445,6 +445,24 @@ export const prepareSource = async (
  * and a page reload during playback should not spend a fresh call. The cache key
  * includes userId because the link is account-scoped.
  */
+const WORKING_CDN_NODES = (process.env.TORBOX_CDN_NODES || '118,119,230,231,270,271')
+  .split(',').map((n) => Number(n.trim())).filter((n) => Number.isInteger(n) && n > 0);
+export const rewriteToWorkingNode = (url, preferred = null) => {
+  try {
+    const parsed = new URL(url);
+    if (parsed.protocol !== 'https:' || !parsed.hostname.endsWith('.tb-cdn.pw')) return url;
+    const current = Number((parsed.hostname.match(/nexus-(\d+)/) || [])[1]);
+    const target = (preferred && WORKING_CDN_NODES.includes(preferred))
+      ? preferred
+      : (WORKING_CDN_NODES.includes(current) ? current : WORKING_CDN_NODES[0]);
+    if (target === undefined) return url;
+    parsed.hostname = `nexus-${target}.apac.tb-cdn.pw`;
+    return parsed.toString();
+  } catch {
+    return url;
+  }
+};
+
 export const getDownloadUrl = async (key, { torrentId, fileId, userId, forceRefresh = false }) => {
   if (torrentId === undefined || torrentId === null) {
     throw new DebridError('Thiếu torrentId', { status: 400, code: 'bad_request' });
@@ -452,7 +470,10 @@ export const getDownloadUrl = async (key, { torrentId, fileId, userId, forceRefr
 
   const cacheKey = `torbox:link:${userId || 'anon'}:${torrentId}:${fileId ?? 'auto'}`;
   const hit = forceRefresh ? null : await cacheClient.get(cacheKey).catch(() => null);
-  if (hit) return assertCdnAvailable(hit);
+  if (hit) {
+    const workingHit = rewriteToWorkingNode(String(hit));
+    return assertCdnAvailable(workingHit);
+  }
 
   const payload = await request('/torrents/requestdl', key, {
     params: {
@@ -463,11 +484,12 @@ export const getDownloadUrl = async (key, { torrentId, fileId, userId, forceRefr
     },
   });
 
-  const url = payload?.data;
-  if (!url || typeof url !== 'string') {
+  const rawUrl = payload?.data;
+  if (!rawUrl || typeof rawUrl !== 'string') {
     throw new DebridError('TorBox không trả về link tải');
   }
-
+  assertCdnAvailable(rawUrl);
+  let url = rewriteToWorkingNode(rawUrl);
   await cacheClient.set(cacheKey, url, 'EX', LINK_TTL_SECONDS).catch(() => {});
   return assertCdnAvailable(url);
 };
